@@ -61,14 +61,21 @@
 - Config-based market enabling — add credentials to config, market goes live
 - No third-party monitoring tools (no Grafana/Prometheus) — custom dashboards only
 
-## A²E Core Logic
-```
-Route to HIGHEST PAYING market for operators (NOT cheapest for buyers)
+## A²E Core Logic (from TokenOS docs)
 
-if (externalRate > internalRate) → route external
-else if (internalRate >= yieldFloor) → route internal
-else → route internal, enforce yield floor
+**Two Revenue Streams:**
+1. **High Yield (Retail):** Internal TokenOS agent tasks → Premium rate (PRIORITY)
+2. **Guaranteed Yield (Wholesale):** External networks (Akash, IO.net) → Fallback
+
 ```
+1. Check for internal demand (TokenOS agent tasks)
+   └── YES → Route INTERNAL (Premium Retail Rate)
+   └── NO  → Check external markets (Akash, IO.net)
+             └── Route to HIGHEST PAYING external market
+             └── Enforce cost floor as minimum
+```
+
+**Key insight:** Internal jobs get PRIORITY because they pay premium. External markets are FALLBACK to monetize idle capacity.
 
 ## TokenOS Platform Rates (from compute.tokenos.ai)
 
