@@ -1,6 +1,14 @@
 # Project notes - not tracked (contains client-sensitive info)
 /notes/
 
+# Local development instructions (not for client)
+CLAUDE.md
+
+# Local reports (PDFs/HTMLs for local reference only)
+/docs/reports/*.html
+/docs/reports/*.pdf
+/docs/reports/REPORTING-GUIDE.md
+
 # Dependencies
 node_modules/
 .pnpm-store/
