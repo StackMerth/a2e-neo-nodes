@@ -1,0 +1,184 @@
+// API Client for A²E Engine
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://a2e.byredstone.com'
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'a2e-dev-key-2026'
+
+interface FetchOptions extends RequestInit {
+  params?: Record<string, string | number | boolean | undefined>
+}
+
+async function apiFetch<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
+  const { params, ...fetchOptions } = options
+
+  let url = `${API_BASE}${endpoint}`
+  if (params) {
+    const searchParams = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) {
+        searchParams.append(key, String(value))
+      }
+    })
+    const queryString = searchParams.toString()
+    if (queryString) {
+      url += `?${queryString}`
+    }
+  }
+
+  const response = await fetch(url, {
+    ...fetchOptions,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': API_KEY,
+      ...fetchOptions.headers,
+    },
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: 'Request failed' }))
+    throw new Error(error.message || `HTTP ${response.status}`)
+  }
+
+  return response.json()
+}
+
+// Health
+export const api = {
+  health: {
+    check: () => apiFetch<{ status: string; timestamp: string }>('/health'),
+    detailed: () => apiFetch<{ status: string; services: Record<string, unknown> }>('/health/detailed'),
+  },
+
+  // Nodes
+  nodes: {
+    list: (params?: { status?: string; gpuTier?: string; page?: number; limit?: number }) =>
+      apiFetch<{
+        nodes: Array<{
+          id: string
+          walletAddress: string
+          gpuTier: string
+          nodeType: string
+          status: string
+          region: string | null
+          lastHeartbeat: string
+          createdAt: string
+        }>
+        pagination: { page: number; limit: number; total: number; totalPages: number }
+      }>('/v1/nodes', { params }),
+
+    get: (id: string) => apiFetch<Record<string, unknown>>(`/v1/nodes/${id}`),
+
+    register: (data: { walletAddress: string; gpuTier: string; nodeType?: string; region?: string }) =>
+      apiFetch<{ id: string; walletAddress: string; gpuTier: string; status: string }>('/v1/nodes', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    heartbeat: (id: string, data?: { gpuUtilization?: number; gpuTemperature?: number }) =>
+      apiFetch<{ status: string; lastHeartbeat: string }>(`/v1/nodes/${id}/heartbeat`, {
+        method: 'POST',
+        body: JSON.stringify(data || {}),
+      }),
+
+    delete: (id: string) =>
+      apiFetch<void>(`/v1/nodes/${id}`, { method: 'DELETE' }),
+  },
+
+  // Routing
+  route: (data: { deploymentId: string; gpuTier: string; hasInternalDemand?: boolean }) =>
+    apiFetch<{
+      jobId: string
+      deploymentId: string
+      market: string
+      ratePerHour: number
+      ratePerDay: number
+      reason: string
+      yieldFloorApplied: boolean
+      decisionTimeMs: number
+      timestamp: string
+    }>('/v1/route', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  // Jobs
+  jobs: {
+    list: (params?: { status?: string; market?: string; page?: number; limit?: number }) =>
+      apiFetch<{
+        jobs: Array<{
+          id: string
+          deploymentId: string
+          gpuTier: string
+          status: string
+          market: string | null
+          ratePerHour: number | null
+          requestedAt: string
+        }>
+        pagination: { page: number; limit: number; total: number; totalPages: number }
+      }>('/v1/jobs', { params }),
+
+    get: (id: string) => apiFetch<Record<string, unknown>>(`/v1/jobs/${id}`),
+  },
+
+  // Rates
+  rates: {
+    current: (params?: { gpuTier?: string; market?: string }) =>
+      apiFetch<{
+        rates: Array<{
+          market: string
+          gpuTier: string
+          ratePerHour: number
+          ratePerDay: number
+          available: boolean
+          enabled: boolean
+          fetchedAt: string
+        }>
+        lastUpdated: string
+      }>('/v1/rates', { params }),
+
+    history: (params: { gpuTier: string; market: string; limit?: number }) =>
+      apiFetch<{
+        history: Array<{ ratePerHour: number; ratePerDay: number; fetchedAt: string }>
+      }>('/v1/rates/history', { params }),
+  },
+
+  // Config
+  config: {
+    yieldFloors: () =>
+      apiFetch<{
+        floors: Array<{
+          gpuTier: string
+          ratePerHour: number
+          ratePerDay: number
+          isCustom: boolean
+          defaultFloor: number
+        }>
+      }>('/v1/config/yield-floors'),
+
+    updateYieldFloor: (data: { gpuTier: string; ratePerDay: number }) =>
+      apiFetch<{ gpuTier: string; ratePerHour: number; ratePerDay: number }>('/v1/config/yield-floors', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+
+    markets: () =>
+      apiFetch<{
+        markets: Array<{ market: string; enabled: boolean; priority: number }>
+      }>('/v1/config/markets'),
+
+    updateMarket: (data: { market: string; enabled?: boolean; priority?: number }) =>
+      apiFetch<{ market: string; enabled: boolean; priority: number }>('/v1/config/markets', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+  },
+
+  // Stats
+  stats: () =>
+    apiFetch<{
+      timestamp: string
+      nodes: { total: number; byStatus: Record<string, number>; byTier: Record<string, number> }
+      jobs: { total: number; byStatus: Record<string, number>; byMarket: Record<string, number>; last24h: number }
+      routing: { decisionsLast24h: number; byMarket: Record<string, number>; avgDecisionTimeMs: number }
+      earnings: { last24h: { total: number; gpuSeconds: number; jobCount: number } }
+    }>('/v1/stats'),
+}
