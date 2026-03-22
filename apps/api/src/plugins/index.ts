@@ -1,0 +1,6 @@
+// Plugins barrel export
+
+export { default as prismaPlugin } from './prisma'
+export { default as redisPlugin } from './redis'
+export { default as authPlugin } from './auth'
+export { default as corsPlugin } from './cors'

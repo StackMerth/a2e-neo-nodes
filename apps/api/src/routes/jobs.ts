@@ -1,0 +1,289 @@
+// Job Management Routes
+// Job submission and status tracking
+
+import type { FastifyInstance } from 'fastify'
+import { z } from 'zod'
+import type { GpuTier, JobStatus, Market } from '@a2e/database'
+
+const submitJobSchema = z.object({
+  deploymentId: z.string().min(1).max(128),
+  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300']),
+  nodeId: z.string().optional(),
+})
+
+const listJobsQuerySchema = z.object({
+  status: z.enum(['PENDING', 'ROUTING', 'ASSIGNED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED']).optional(),
+  market: z.enum(['INTERNAL', 'AKASH', 'IONET']).optional(),
+  nodeId: z.string().optional(),
+  page: z.coerce.number().min(1).default(1),
+  limit: z.coerce.number().min(1).max(100).default(20),
+})
+
+const updateJobSchema = z.object({
+  status: z.enum(['RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED']).optional(),
+  durationSeconds: z.number().positive().optional(),
+  errorMessage: z.string().max(1000).optional(),
+})
+
+export async function jobRoutes(fastify: FastifyInstance) {
+  // Submit new job
+  fastify.post(
+    '/v1/jobs',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const parseResult = submitJobSchema.safeParse(request.body)
+
+      if (!parseResult.success) {
+        return reply.code(400).send({
+          error: 'Validation Error',
+          message: parseResult.error.errors[0]?.message ?? 'Invalid input',
+          details: parseResult.error.errors,
+        })
+      }
+
+      const { deploymentId, gpuTier, nodeId } = parseResult.data
+
+      // Verify node exists if specified
+      if (nodeId) {
+        const node = await fastify.prisma.node.findUnique({ where: { id: nodeId } })
+        if (!node) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'Specified node not found',
+          })
+        }
+      }
+
+      const job = await fastify.prisma.job.create({
+        data: {
+          deploymentId,
+          gpuTier: gpuTier as GpuTier,
+          nodeId,
+          status: 'PENDING' as JobStatus,
+        },
+      })
+
+      reply.code(201).send({
+        id: job.id,
+        deploymentId: job.deploymentId,
+        gpuTier: job.gpuTier,
+        status: job.status,
+        nodeId: job.nodeId,
+        createdAt: job.createdAt.toISOString(),
+      })
+    }
+  )
+
+  // List jobs with filters
+  fastify.get(
+    '/v1/jobs',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const parseResult = listJobsQuerySchema.safeParse(request.query)
+
+      if (!parseResult.success) {
+        return reply.code(400).send({
+          error: 'Validation Error',
+          message: parseResult.error.errors[0]?.message ?? 'Invalid query',
+        })
+      }
+
+      const { status, market, nodeId, page, limit } = parseResult.data
+      const skip = (page - 1) * limit
+
+      const where: { status?: JobStatus; market?: Market; nodeId?: string } = {}
+      if (status) where.status = status as JobStatus
+      if (market) where.market = market as Market
+      if (nodeId) where.nodeId = nodeId
+
+      const [jobs, total] = await Promise.all([
+        fastify.prisma.job.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            deploymentId: true,
+            nodeId: true,
+            gpuTier: true,
+            status: true,
+            market: true,
+            ratePerHour: true,
+            requestedAt: true,
+            routedAt: true,
+            startedAt: true,
+            completedAt: true,
+            durationSeconds: true,
+            earnings: true,
+          },
+        }),
+        fastify.prisma.job.count({ where }),
+      ])
+
+      reply.send({
+        jobs: jobs.map((j) => ({
+          ...j,
+          requestedAt: j.requestedAt.toISOString(),
+          routedAt: j.routedAt?.toISOString() ?? null,
+          startedAt: j.startedAt?.toISOString() ?? null,
+          completedAt: j.completedAt?.toISOString() ?? null,
+        })),
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      })
+    }
+  )
+
+  // Get single job
+  fastify.get(
+    '/v1/jobs/:id',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+
+      const job = await fastify.prisma.job.findUnique({
+        where: { id },
+        include: {
+          node: {
+            select: {
+              id: true,
+              walletAddress: true,
+              gpuTier: true,
+              status: true,
+            },
+          },
+          routingLog: true,
+        },
+      })
+
+      if (!job) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Job not found',
+        })
+      }
+
+      reply.send({
+        id: job.id,
+        deploymentId: job.deploymentId,
+        gpuTier: job.gpuTier,
+        status: job.status,
+        market: job.market,
+        ratePerHour: job.ratePerHour,
+        node: job.node,
+        timing: {
+          requestedAt: job.requestedAt.toISOString(),
+          routedAt: job.routedAt?.toISOString() ?? null,
+          startedAt: job.startedAt?.toISOString() ?? null,
+          completedAt: job.completedAt?.toISOString() ?? null,
+          durationSeconds: job.durationSeconds,
+        },
+        earnings: job.earnings,
+        errorMessage: job.errorMessage,
+        retryCount: job.retryCount,
+        routingLog: job.routingLog
+          ? {
+              selectedMarket: job.routingLog.selectedMarket,
+              selectedRate: job.routingLog.selectedRate,
+              internalRate: job.routingLog.internalRate,
+              akashRate: job.routingLog.akashRate,
+              ionetRate: job.routingLog.ionetRate,
+              yieldFloor: job.routingLog.yieldFloor,
+              yieldFloorApplied: job.routingLog.yieldFloorApplied,
+              reason: job.routingLog.reason,
+              decisionTimeMs: job.routingLog.decisionTimeMs,
+              timestamp: job.routingLog.timestamp.toISOString(),
+            }
+          : null,
+      })
+    }
+  )
+
+  // Update job status
+  fastify.patch(
+    '/v1/jobs/:id',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const parseResult = updateJobSchema.safeParse(request.body)
+
+      if (!parseResult.success) {
+        return reply.code(400).send({
+          error: 'Validation Error',
+          message: parseResult.error.errors[0]?.message ?? 'Invalid input',
+        })
+      }
+
+      const job = await fastify.prisma.job.findUnique({ where: { id } })
+
+      if (!job) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Job not found',
+        })
+      }
+
+      const { status, durationSeconds, errorMessage } = parseResult.data
+
+      const updateData: {
+        status?: JobStatus
+        durationSeconds?: number
+        errorMessage?: string
+        startedAt?: Date
+        completedAt?: Date
+        earnings?: number
+      } = {}
+
+      if (status) {
+        updateData.status = status as JobStatus
+
+        if (status === 'RUNNING' && !job.startedAt) {
+          updateData.startedAt = new Date()
+        }
+
+        if ((status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED') && !job.completedAt) {
+          updateData.completedAt = new Date()
+        }
+      }
+
+      if (durationSeconds !== undefined) {
+        updateData.durationSeconds = durationSeconds
+
+        // Calculate earnings based on duration and rate
+        if (job.ratePerHour) {
+          updateData.earnings = (durationSeconds / 3600) * job.ratePerHour
+        }
+      }
+
+      if (errorMessage !== undefined) {
+        updateData.errorMessage = errorMessage
+      }
+
+      const updatedJob = await fastify.prisma.job.update({
+        where: { id },
+        data: updateData,
+      })
+
+      reply.send({
+        id: updatedJob.id,
+        status: updatedJob.status,
+        durationSeconds: updatedJob.durationSeconds,
+        earnings: updatedJob.earnings,
+        updatedAt: updatedJob.updatedAt.toISOString(),
+      })
+    }
+  )
+}

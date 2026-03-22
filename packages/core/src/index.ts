@@ -4,3 +4,5 @@
 export * from './routing-engine'
 export * from './rate-provider'
 export * from './yield-floor'
+export * from './adapters/akash'
+export * from './adapters/ionet'
