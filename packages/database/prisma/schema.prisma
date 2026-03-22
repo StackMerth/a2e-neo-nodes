@@ -1,0 +1,263 @@
+// A²E Engine Database Schema
+// TokenOS Arbitrage & Orchestration Engine
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum GpuTier {
+  H100
+  H200
+  B200
+  B300
+  GB300
+}
+
+enum NodeType {
+  PROVISIONED // TokenOS provisions from data center
+  BYOG        // Bring Your Own GPU
+}
+
+enum NodeStatus {
+  ONLINE
+  DEGRADED
+  OFFLINE
+}
+
+enum JobStatus {
+  PENDING    // Job submitted, waiting for routing
+  ROUTING    // A²E is deciding where to route
+  ASSIGNED   // Assigned to a node/market
+  RUNNING    // Job is executing
+  COMPLETED  // Job finished successfully
+  FAILED     // Job failed
+  CANCELLED  // Job was cancelled
+}
+
+enum Market {
+  INTERNAL   // TokenOS internal (premium retail rate)
+  AKASH      // Akash Network (external)
+  IONET      // IO.net (external)
+}
+
+// ============================================================================
+// NODES
+// ============================================================================
+
+model Node {
+  id            String     @id @default(cuid())
+  walletAddress String     @unique
+  gpuTier       GpuTier
+  nodeType      NodeType
+  status        NodeStatus @default(ONLINE)
+  region        String?
+
+  // Health tracking
+  lastHeartbeat DateTime   @default(now())
+  missedBeats   Int        @default(0)
+
+  // Timestamps
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // Relations
+  jobs          Job[]
+  earnings      Earning[]
+  heartbeats    Heartbeat[]
+
+  @@index([status])
+  @@index([gpuTier])
+  @@index([lastHeartbeat])
+}
+
+model Heartbeat {
+  id          String   @id @default(cuid())
+  nodeId      String
+  node        Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  // GPU Metrics (optional)
+  gpuUtilization  Float?   // 0-100%
+  gpuTemperature  Float?   // Celsius
+  gpuMemoryUsed   Float?   // GB
+  gpuMemoryTotal  Float?   // GB
+
+  timestamp   DateTime @default(now())
+
+  @@index([nodeId, timestamp])
+}
+
+// ============================================================================
+// JOBS
+// ============================================================================
+
+model Job {
+  id            String    @id @default(cuid())
+  deploymentId  String    // External reference from TokenOS
+
+  // Assignment
+  nodeId        String?
+  node          Node?     @relation(fields: [nodeId], references: [id])
+
+  // Routing decision
+  market        Market?
+  ratePerHour   Float?
+
+  // Job details
+  gpuTier       GpuTier
+  status        JobStatus @default(PENDING)
+
+  // Timing
+  requestedAt   DateTime  @default(now())
+  routedAt      DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+
+  // Duration and earnings
+  durationSeconds Int?
+  earnings        Float?
+
+  // Error tracking
+  errorMessage  String?
+  retryCount    Int       @default(0)
+
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  routingLog    RoutingLog?
+
+  @@index([status])
+  @@index([deploymentId])
+  @@index([nodeId])
+  @@index([market])
+  @@index([requestedAt])
+}
+
+// ============================================================================
+// ROUTING DECISIONS
+// ============================================================================
+
+model RoutingLog {
+  id              String   @id @default(cuid())
+  jobId           String   @unique
+  job             Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  // Decision
+  selectedMarket  Market
+  selectedRate    Float    // Rate per hour that was selected
+
+  // Rates at decision time
+  internalRate    Float?
+  akashRate       Float?
+  ionetRate       Float?
+
+  // Yield floor
+  yieldFloor          Float
+  yieldFloorApplied   Boolean  @default(false)
+
+  // Reasoning
+  reason          String   // Human-readable explanation
+
+  // Decision metadata
+  decisionTimeMs  Int?     // How long the decision took
+
+  timestamp       DateTime @default(now())
+
+  @@index([selectedMarket])
+  @@index([timestamp])
+}
+
+// ============================================================================
+// MARKET RATES
+// ============================================================================
+
+model MarketRate {
+  id          String   @id @default(cuid())
+  market      Market
+  gpuTier     GpuTier
+  ratePerHour Float
+  ratePerDay  Float
+  available   Boolean  @default(true)
+
+  fetchedAt   DateTime @default(now())
+
+  @@unique([market, gpuTier])
+  @@index([market, gpuTier, fetchedAt])
+}
+
+model MarketRateHistory {
+  id          String   @id @default(cuid())
+  market      Market
+  gpuTier     GpuTier
+  ratePerHour Float
+  ratePerDay  Float
+
+  fetchedAt   DateTime @default(now())
+
+  @@index([market, gpuTier, fetchedAt])
+}
+
+// ============================================================================
+// EARNINGS
+// ============================================================================
+
+model Earning {
+  id            String   @id @default(cuid())
+  nodeId        String
+  node          Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  date          DateTime @db.Date
+  market        Market
+
+  gpuSeconds    Int      @default(0)
+  earnings      Float    @default(0)
+  jobCount      Int      @default(0)
+
+  // Timestamps
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([nodeId, date, market])
+  @@index([nodeId, date])
+  @@index([date])
+}
+
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+model Config {
+  key       String   @id
+  value     String
+
+  updatedAt DateTime @updatedAt
+}
+
+model YieldFloor {
+  gpuTier     GpuTier  @id
+  ratePerHour Float
+  ratePerDay  Float
+
+  updatedAt   DateTime @updatedAt
+}
+
+model MarketConfig {
+  market      Market   @id
+  enabled     Boolean  @default(true)
+  priority    Int      @default(0)  // Higher = preferred when rates equal
+
+  // API configuration (stored encrypted in practice)
+  apiEndpoint String?
+
+  updatedAt   DateTime @updatedAt
+}

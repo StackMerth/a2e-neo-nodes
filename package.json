@@ -1,0 +1,28 @@
+{
+  "name": "a2e-engine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A²E (Arbitrage & Orchestration Engine) for TokenOS",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "db:generate": "pnpm --filter @a2e/database generate",
+    "db:migrate": "pnpm --filter @a2e/database migrate",
+    "db:studio": "pnpm --filter @a2e/database studio",
+    "clean": "turbo clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "prettier": "^3.2.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.3.0"
+  },
+  "packageManager": "pnpm@8.15.0",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

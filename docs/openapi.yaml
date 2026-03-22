@@ -1,0 +1,1040 @@
+openapi: 3.1.0
+info:
+  title: A²E Engine API
+  description: |
+    Arbitrage & Orchestration Engine for TokenOS.
+
+    This API provides:
+    - Job routing decisions (internal vs external markets)
+    - Node registration and health monitoring
+    - Real-time rate comparison
+    - Earnings tracking and reporting
+
+    ## Integration
+
+    The main integration point is `POST /v1/route`. TokenOS calls this endpoint
+    when a job needs routing, and A²E returns which market to use.
+
+    ## Authentication
+
+    All endpoints require an API key in the `X-API-Key` header.
+  version: 1.0.0
+  contact:
+    name: Redstone
+    email: contact@redstone.ai
+
+servers:
+  - url: https://a2e.tokenos.ai/v1
+    description: Production
+  - url: http://localhost:3001/v1
+    description: Development
+
+tags:
+  - name: Routing
+    description: A²E routing decisions
+  - name: Nodes
+    description: Node registration and management
+  - name: Jobs
+    description: Job submission and tracking
+  - name: Rates
+    description: Market rate information
+  - name: Earnings
+    description: Earnings and accounting
+  - name: Health
+    description: System health
+
+paths:
+  # ==========================================================================
+  # ROUTING (Main Integration Point)
+  # ==========================================================================
+  /route:
+    post:
+      tags: [Routing]
+      summary: Get routing decision
+      description: |
+        Main integration endpoint. TokenOS calls this to determine which market
+        a job should be routed to.
+
+        The A²E engine will:
+        1. Check if internal demand exists (premium retail rate)
+        2. If not, compare external market rates (Akash, IO.net)
+        3. Route to highest-paying market above yield floor
+      operationId: route
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteRequest'
+            example:
+              deploymentId: "#104"
+              gpuTier: "H100"
+              hasInternalDemand: false
+      responses:
+        '200':
+          description: Routing decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteResponse'
+              example:
+                market: "AKASH"
+                ratePerHour: 5.25
+                ratePerDay: 126.00
+                reason: "No internal demand — routing to AKASH ($126.00/day)"
+                timestamp: "2026-03-22T10:30:00Z"
+                yieldFloorApplied: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ==========================================================================
+  # NODES
+  # ==========================================================================
+  /nodes:
+    get:
+      tags: [Nodes]
+      summary: List all nodes
+      operationId: listNodes
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/NodeStatus'
+        - name: gpuTier
+          in: query
+          schema:
+            $ref: '#/components/schemas/GpuTier'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of nodes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Node'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+    post:
+      tags: [Nodes]
+      summary: Register a new node
+      operationId: registerNode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeRegistration'
+      responses:
+        '201':
+          description: Node registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Node'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Node already exists (wallet address conflict)
+
+  /nodes/{nodeId}:
+    get:
+      tags: [Nodes]
+      summary: Get node details
+      operationId: getNode
+      parameters:
+        - $ref: '#/components/parameters/NodeId'
+      responses:
+        '200':
+          description: Node details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Node'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Nodes]
+      summary: Deregister a node
+      operationId: deregisterNode
+      parameters:
+        - $ref: '#/components/parameters/NodeId'
+      responses:
+        '204':
+          description: Node deregistered
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /nodes/{nodeId}/heartbeat:
+    post:
+      tags: [Nodes]
+      summary: Send node heartbeat
+      description: Nodes should send heartbeats every 30 seconds
+      operationId: nodeHeartbeat
+      parameters:
+        - $ref: '#/components/parameters/NodeId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Heartbeat'
+      responses:
+        '200':
+          description: Heartbeat received
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    $ref: '#/components/schemas/NodeStatus'
+                  nextHeartbeatDue:
+                    type: string
+                    format: date-time
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /nodes/stats:
+    get:
+      tags: [Nodes]
+      summary: Get node statistics
+      operationId: getNodeStats
+      responses:
+        '200':
+          description: Node statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeStats'
+
+  # ==========================================================================
+  # JOBS
+  # ==========================================================================
+  /jobs:
+    get:
+      tags: [Jobs]
+      summary: List jobs
+      operationId: listJobs
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/JobStatus'
+        - name: market
+          in: query
+          schema:
+            $ref: '#/components/schemas/Market'
+        - name: nodeId
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+                  total:
+                    type: integer
+
+    post:
+      tags: [Jobs]
+      summary: Submit a job
+      operationId: submitJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobSubmission'
+      responses:
+        '201':
+          description: Job submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+
+  /jobs/{jobId}:
+    get:
+      tags: [Jobs]
+      summary: Get job details
+      operationId: getJob
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /jobs/stats:
+    get:
+      tags: [Jobs]
+      summary: Get job statistics
+      operationId: getJobStats
+      responses:
+        '200':
+          description: Job statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStats'
+
+  # ==========================================================================
+  # RATES
+  # ==========================================================================
+  /rates:
+    get:
+      tags: [Rates]
+      summary: Get current market rates
+      operationId: getRates
+      parameters:
+        - name: gpuTier
+          in: query
+          schema:
+            $ref: '#/components/schemas/GpuTier'
+      responses:
+        '200':
+          description: Current market rates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketRates'
+
+  /rates/history:
+    get:
+      tags: [Rates]
+      summary: Get rate history
+      operationId: getRateHistory
+      parameters:
+        - name: gpuTier
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/GpuTier'
+        - name: market
+          in: query
+          schema:
+            $ref: '#/components/schemas/Market'
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Rate history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RateHistoryEntry'
+
+  # ==========================================================================
+  # ROUTING LOG
+  # ==========================================================================
+  /routing-log:
+    get:
+      tags: [Routing]
+      summary: Get routing decision log
+      operationId: getRoutingLog
+      parameters:
+        - name: market
+          in: query
+          schema:
+            $ref: '#/components/schemas/Market'
+        - name: yieldFloorApplied
+          in: query
+          schema:
+            type: boolean
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Routing log entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RoutingLogEntry'
+                  total:
+                    type: integer
+
+  # ==========================================================================
+  # EARNINGS
+  # ==========================================================================
+  /earnings:
+    get:
+      tags: [Earnings]
+      summary: Get earnings summary
+      operationId: getEarningsSummary
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Earnings summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EarningsSummary'
+
+  /earnings/nodes/{nodeId}:
+    get:
+      tags: [Earnings]
+      summary: Get earnings for a specific node
+      operationId: getNodeEarnings
+      parameters:
+        - $ref: '#/components/parameters/NodeId'
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Node earnings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeEarnings'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /earnings/export:
+    get:
+      tags: [Earnings]
+      summary: Export earnings as CSV
+      operationId: exportEarnings
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  # ==========================================================================
+  # CONFIGURATION
+  # ==========================================================================
+  /config/yield-floors:
+    get:
+      tags: [Configuration]
+      summary: Get yield floor configuration
+      operationId: getYieldFloors
+      responses:
+        '200':
+          description: Yield floor configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/YieldFloor'
+
+    patch:
+      tags: [Configuration]
+      summary: Update yield floor
+      operationId: updateYieldFloor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                gpuTier:
+                  $ref: '#/components/schemas/GpuTier'
+                ratePerDay:
+                  type: number
+              required:
+                - gpuTier
+                - ratePerDay
+      responses:
+        '200':
+          description: Yield floor updated
+
+  /config/markets:
+    get:
+      tags: [Configuration]
+      summary: Get market configuration
+      operationId: getMarketConfig
+      responses:
+        '200':
+          description: Market configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/MarketConfig'
+
+    patch:
+      tags: [Configuration]
+      summary: Update market configuration
+      operationId: updateMarketConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                market:
+                  $ref: '#/components/schemas/Market'
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Market config updated
+
+  # ==========================================================================
+  # HEALTH
+  # ==========================================================================
+  /health:
+    get:
+      tags: [Health]
+      summary: Basic health check
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /health/detailed:
+    get:
+      tags: [Health]
+      summary: Detailed health check
+      operationId: detailedHealthCheck
+      responses:
+        '200':
+          description: Detailed health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailedHealth'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  parameters:
+    NodeId:
+      name: nodeId
+      in: path
+      required: true
+      schema:
+        type: string
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    # Enums
+    GpuTier:
+      type: string
+      enum: [H100, H200, B200, B300, GB300]
+
+    NodeType:
+      type: string
+      enum: [PROVISIONED, BYOG]
+
+    NodeStatus:
+      type: string
+      enum: [ONLINE, DEGRADED, OFFLINE]
+
+    JobStatus:
+      type: string
+      enum: [PENDING, ROUTING, ASSIGNED, RUNNING, COMPLETED, FAILED, CANCELLED]
+
+    Market:
+      type: string
+      enum: [INTERNAL, AKASH, IONET]
+
+    # Routing
+    RouteRequest:
+      type: object
+      properties:
+        deploymentId:
+          type: string
+          description: External deployment ID from TokenOS
+        gpuTier:
+          $ref: '#/components/schemas/GpuTier'
+        hasInternalDemand:
+          type: boolean
+          description: Whether internal (premium) demand exists
+          default: false
+        durationSeconds:
+          type: integer
+          description: Expected job duration in seconds
+      required:
+        - deploymentId
+        - gpuTier
+
+    RouteResponse:
+      type: object
+      properties:
+        market:
+          $ref: '#/components/schemas/Market'
+        ratePerHour:
+          type: number
+        ratePerDay:
+          type: number
+        reason:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        yieldFloorApplied:
+          type: boolean
+
+    # Nodes
+    NodeRegistration:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        gpuTier:
+          $ref: '#/components/schemas/GpuTier'
+        nodeType:
+          $ref: '#/components/schemas/NodeType'
+        region:
+          type: string
+      required:
+        - walletAddress
+        - gpuTier
+        - nodeType
+
+    Node:
+      type: object
+      properties:
+        id:
+          type: string
+        walletAddress:
+          type: string
+        gpuTier:
+          $ref: '#/components/schemas/GpuTier'
+        nodeType:
+          $ref: '#/components/schemas/NodeType'
+        status:
+          $ref: '#/components/schemas/NodeStatus'
+        region:
+          type: string
+        lastHeartbeat:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    Heartbeat:
+      type: object
+      properties:
+        gpuUtilization:
+          type: number
+          minimum: 0
+          maximum: 100
+        gpuTemperature:
+          type: number
+        gpuMemoryUsed:
+          type: number
+        gpuMemoryTotal:
+          type: number
+
+    NodeStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        online:
+          type: integer
+        degraded:
+          type: integer
+        offline:
+          type: integer
+        byTier:
+          type: object
+          additionalProperties:
+            type: integer
+
+    # Jobs
+    JobSubmission:
+      type: object
+      properties:
+        deploymentId:
+          type: string
+        gpuTier:
+          $ref: '#/components/schemas/GpuTier'
+        nodeId:
+          type: string
+          description: Optional specific node to assign to
+      required:
+        - deploymentId
+        - gpuTier
+
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+        deploymentId:
+          type: string
+        nodeId:
+          type: string
+        market:
+          $ref: '#/components/schemas/Market'
+        ratePerHour:
+          type: number
+        gpuTier:
+          $ref: '#/components/schemas/GpuTier'
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        requestedAt:
+          type: string
+          format: date-time
+        routedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        durationSeconds:
+          type: integer
+        earnings:
+          type: number
+
+    JobStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        pending:
+          type: integer
+        running:
+          type: integer
+        completed:
+          type: integer
+        failed:
+          type: integer
+        byMarket:
+          type: object
+          additionalProperties:
+            type: integer
+
+    # Rates
+    MarketRates:
+      type: object
+      properties:
+        gpuTier:
+          $ref: '#/components/schemas/GpuTier'
+        internal:
+          $ref: '#/components/schemas/RateInfo'
+        akash:
+          $ref: '#/components/schemas/RateInfo'
+        ionet:
+          $ref: '#/components/schemas/RateInfo'
+        yieldFloor:
+          $ref: '#/components/schemas/YieldFloor'
+
+    RateInfo:
+      type: object
+      properties:
+        ratePerHour:
+          type: number
+        ratePerDay:
+          type: number
+        available:
+          type: boolean
+        fetchedAt:
+          type: string
+          format: date-time
+
+    RateHistoryEntry:
+      type: object
+      properties:
+        market:
+          $ref: '#/components/schemas/Market'
+        gpuTier:
+          $ref: '#/components/schemas/GpuTier'
+        ratePerHour:
+          type: number
+        ratePerDay:
+          type: number
+        fetchedAt:
+          type: string
+          format: date-time
+
+    # Routing Log
+    RoutingLogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        jobId:
+          type: string
+        selectedMarket:
+          $ref: '#/components/schemas/Market'
+        selectedRate:
+          type: number
+        internalRate:
+          type: number
+        akashRate:
+          type: number
+        ionetRate:
+          type: number
+        yieldFloor:
+          type: number
+        yieldFloorApplied:
+          type: boolean
+        reason:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    # Earnings
+    EarningsSummary:
+      type: object
+      properties:
+        totalEarnings:
+          type: number
+        totalGpuSeconds:
+          type: integer
+        totalJobs:
+          type: integer
+        byMarket:
+          type: object
+          additionalProperties:
+            type: number
+        period:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date
+            end:
+              type: string
+              format: date
+
+    NodeEarnings:
+      type: object
+      properties:
+        nodeId:
+          type: string
+        totalEarnings:
+          type: number
+        totalGpuSeconds:
+          type: integer
+        totalJobs:
+          type: integer
+        byMarket:
+          type: object
+          additionalProperties:
+            type: number
+        daily:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              earnings:
+                type: number
+              gpuSeconds:
+                type: integer
+              market:
+                $ref: '#/components/schemas/Market'
+
+    # Configuration
+    YieldFloor:
+      type: object
+      properties:
+        ratePerHour:
+          type: number
+        ratePerDay:
+          type: number
+
+    MarketConfig:
+      type: object
+      properties:
+        market:
+          $ref: '#/components/schemas/Market'
+        enabled:
+          type: boolean
+        priority:
+          type: integer
+
+    # Health
+    DetailedHealth:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+        timestamp:
+          type: string
+          format: date-time
+        services:
+          type: object
+          properties:
+            database:
+              $ref: '#/components/schemas/ServiceHealth'
+            redis:
+              $ref: '#/components/schemas/ServiceHealth'
+            akash:
+              $ref: '#/components/schemas/ServiceHealth'
+            ionet:
+              $ref: '#/components/schemas/ServiceHealth'
+
+    ServiceHealth:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, error]
+        latencyMs:
+          type: integer
+        message:
+          type: string
+
+    # Errors
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+
+security:
+  - ApiKeyAuth: []
