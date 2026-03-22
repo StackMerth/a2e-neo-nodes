@@ -67,8 +67,32 @@ Route to HIGHEST PAYING market for operators (NOT cheapest for buyers)
 
 if (externalRate > internalRate) → route external
 else if (internalRate >= yieldFloor) → route internal
-else → route internal, enforce yield floor ($0.85/hr)
+else → route internal, enforce yield floor
 ```
+
+## TokenOS Platform Rates (from compute.tokenos.ai)
+
+### Internal Daily Yields (Revenue)
+| GPU | Daily Yield | Hourly Rate |
+|-----|-------------|-------------|
+| H100 | $140.15/day | $5.84/hr |
+| H200 | $179.85/day | $7.49/hr |
+| B200 | $321.10/day | $13.38/hr |
+| B300 | $431.75/day | $17.99/hr |
+| GB300 | $499.35/day | $20.81/hr |
+
+### Cost Floor (Wholesale)
+| GPU | Daily Cost | Hourly Cost |
+|-----|------------|-------------|
+| H100 | ~$83/day | ~$3.46/hr |
+| H200 | ~$105/day | ~$4.38/hr |
+| B200 | ~$170/day | ~$7.08/hr |
+
+### Platform Stats (as of 2026-03-22)
+- 105 active nodes
+- $846,078 total earnings paid
+- 99.9% uptime
+- Payments: USD → SOL (Solana), on-chain via Solscan
 
 ## Client Sensitivities
 - Client is **very concerned about AI-generated code** — all work must appear professionally human-written
