@@ -1,10 +1,6 @@
-// Health Check Routes
-// Basic and detailed health status endpoints
-
 import type { FastifyInstance } from 'fastify'
 
 export async function healthRoutes(fastify: FastifyInstance) {
-  // Basic health check (no auth required)
   fastify.get('/health', async () => {
     return {
       status: 'ok',
@@ -12,7 +8,6 @@ export async function healthRoutes(fastify: FastifyInstance) {
     }
   })
 
-  // Detailed health check with dependency status
   fastify.get(
     '/health/detailed',
     {
@@ -35,7 +30,6 @@ export async function healthRoutes(fastify: FastifyInstance) {
         },
       }
 
-      // Check database
       try {
         const dbStart = Date.now()
         await fastify.prisma.$queryRaw`SELECT 1`
@@ -51,7 +45,6 @@ export async function healthRoutes(fastify: FastifyInstance) {
         health.status = 'degraded'
       }
 
-      // Check Redis
       try {
         const redisStart = Date.now()
         await fastify.redis.ping()
@@ -67,7 +60,6 @@ export async function healthRoutes(fastify: FastifyInstance) {
         health.status = 'degraded'
       }
 
-      // Overall status
       if (health.services.database.status === 'down' && health.services.redis.status === 'down') {
         health.status = 'down'
       }

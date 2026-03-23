@@ -1,6 +1,3 @@
-// Node Management Routes
-// CRUD operations for GPU node registry
-
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { GpuTier, NodeType, NodeStatus } from '@a2e/database'
@@ -27,7 +24,6 @@ const heartbeatSchema = z.object({
 })
 
 export async function nodeRoutes(fastify: FastifyInstance) {
-  // Register new node
   fastify.post(
     '/v1/nodes',
     {
@@ -46,7 +42,6 @@ export async function nodeRoutes(fastify: FastifyInstance) {
 
       const { walletAddress, gpuTier, nodeType, region } = parseResult.data
 
-      // Check for duplicate wallet address
       const existing = await fastify.prisma.node.findUnique({
         where: { walletAddress },
       })
@@ -70,7 +65,6 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         },
       })
 
-      // Emit WebSocket event
       fastify.io?.emit('node:registered', {
         id: node.id,
         walletAddress: node.walletAddress,
@@ -92,7 +86,6 @@ export async function nodeRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // List nodes with filters
   fastify.get(
     '/v1/nodes',
     {
@@ -151,7 +144,6 @@ export async function nodeRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // Get single node
   fastify.get(
     '/v1/nodes/:id',
     {
@@ -206,7 +198,6 @@ export async function nodeRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // Delete/deregister node
   fastify.delete(
     '/v1/nodes/:id',
     {
@@ -226,7 +217,6 @@ export async function nodeRoutes(fastify: FastifyInstance) {
 
       await fastify.prisma.node.delete({ where: { id } })
 
-      // Emit WebSocket event
       fastify.io?.emit('node:offline', {
         id: node.id,
         walletAddress: node.walletAddress,
@@ -238,7 +228,6 @@ export async function nodeRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // Node heartbeat
   fastify.post(
     '/v1/nodes/:id/heartbeat',
     {
@@ -266,7 +255,6 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         })
       }
 
-      // Update node and create heartbeat in transaction
       const [updatedNode, heartbeat] = await fastify.prisma.$transaction([
         fastify.prisma.node.update({
           where: { id },
@@ -287,7 +275,6 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         }),
       ])
 
-      // Emit WebSocket event
       fastify.io?.emit('node:heartbeat', {
         nodeId: id,
         gpuUtilization,

@@ -1,11 +1,7 @@
-// Statistics Routes
-// System-wide statistics and metrics
-
 import type { FastifyInstance } from 'fastify'
 import type { GpuTier, Market, JobStatus, NodeStatus } from '@a2e/database'
 
 export async function statsRoutes(fastify: FastifyInstance) {
-  // Get system statistics
   fastify.get(
     '/v1/stats',
     {
@@ -16,7 +12,6 @@ export async function statsRoutes(fastify: FastifyInstance) {
       const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
       const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000)
 
-      // Node stats
       const nodeStats = await fastify.prisma.node.groupBy({
         by: ['status'],
         _count: true,
@@ -41,7 +36,6 @@ export async function statsRoutes(fastify: FastifyInstance) {
         tierCounts[stat.gpuTier] = stat._count
       }
 
-      // Job stats
       const jobStats = await fastify.prisma.job.groupBy({
         by: ['status'],
         _count: true,
@@ -69,7 +63,6 @@ export async function statsRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // Routing stats (last 24h)
       const routingLogs = await fastify.prisma.routingLog.findMany({
         where: { timestamp: { gte: oneDayAgo } },
         select: {
@@ -92,13 +85,11 @@ export async function statsRoutes(fastify: FastifyInstance) {
 
       const avgRoutingTimeMs = routingLogs.length > 0 ? totalRoutingTime / routingLogs.length : 0
 
-      // Earnings stats (last 24h)
       const earningsAgg = await fastify.prisma.earning.aggregate({
         where: { date: { gte: oneDayAgo } },
         _sum: { earnings: true, gpuSeconds: true, jobCount: true },
       })
 
-      // Heartbeat stats (last hour)
       const heartbeatCount = await fastify.prisma.heartbeat.count({
         where: { timestamp: { gte: oneHourAgo } },
       })
@@ -136,7 +127,6 @@ export async function statsRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // Get node statistics by tier
   fastify.get(
     '/v1/stats/nodes',
     {
@@ -169,7 +159,6 @@ export async function statsRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // Get routing decision statistics
   fastify.get(
     '/v1/stats/routing',
     {

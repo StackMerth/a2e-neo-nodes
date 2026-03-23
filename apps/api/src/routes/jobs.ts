@@ -1,14 +1,15 @@
-// Job Management Routes
-// Job submission and status tracking
-
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { GpuTier, JobStatus, Market } from '@a2e/database'
+import { submitJobToQueue, requeueJob } from '../jobs/job-processor'
+import '../types' // Type augmentations
 
 const submitJobSchema = z.object({
   deploymentId: z.string().min(1).max(128),
   gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300']),
   nodeId: z.string().optional(),
+  hasInternalDemand: z.boolean().optional().default(false),
+  autoRoute: z.boolean().optional().default(true),
 })
 
 const listJobsQuerySchema = z.object({
@@ -26,7 +27,6 @@ const updateJobSchema = z.object({
 })
 
 export async function jobRoutes(fastify: FastifyInstance) {
-  // Submit new job
   fastify.post(
     '/v1/jobs',
     {
@@ -43,9 +43,8 @@ export async function jobRoutes(fastify: FastifyInstance) {
         })
       }
 
-      const { deploymentId, gpuTier, nodeId } = parseResult.data
+      const { deploymentId, gpuTier, nodeId, hasInternalDemand, autoRoute } = parseResult.data
 
-      // Verify node exists if specified
       if (nodeId) {
         const node = await fastify.prisma.node.findUnique({ where: { id: nodeId } })
         if (!node) {
@@ -65,18 +64,29 @@ export async function jobRoutes(fastify: FastifyInstance) {
         },
       })
 
+      // Submit to job processing queue for auto-routing and node assignment
+      if (autoRoute && fastify.jobQueue) {
+        await submitJobToQueue(fastify.jobQueue, {
+          jobId: job.id,
+          deploymentId,
+          gpuTier: gpuTier as GpuTier,
+          hasInternalDemand,
+          preferredNodeId: nodeId,
+        })
+      }
+
       reply.code(201).send({
         id: job.id,
         deploymentId: job.deploymentId,
         gpuTier: job.gpuTier,
         status: job.status,
         nodeId: job.nodeId,
+        queued: autoRoute,
         createdAt: job.createdAt.toISOString(),
       })
     }
   )
 
-  // List jobs with filters
   fastify.get(
     '/v1/jobs',
     {
@@ -143,7 +153,6 @@ export async function jobRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // Get single job
   fastify.get(
     '/v1/jobs/:id',
     {
@@ -210,7 +219,6 @@ export async function jobRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // Update job status
   fastify.patch(
     '/v1/jobs/:id',
     {
@@ -262,7 +270,6 @@ export async function jobRoutes(fastify: FastifyInstance) {
       if (durationSeconds !== undefined) {
         updateData.durationSeconds = durationSeconds
 
-        // Calculate earnings based on duration and rate
         if (job.ratePerHour) {
           updateData.earnings = (durationSeconds / 3600) * job.ratePerHour
         }
@@ -283,6 +290,63 @@ export async function jobRoutes(fastify: FastifyInstance) {
         durationSeconds: updatedJob.durationSeconds,
         earnings: updatedJob.earnings,
         updatedAt: updatedJob.updatedAt.toISOString(),
+      })
+    }
+  )
+
+  // Retry a failed job
+  fastify.post(
+    '/v1/jobs/:id/retry',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+
+      const job = await fastify.prisma.job.findUnique({ where: { id } })
+
+      if (!job) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Job not found',
+        })
+      }
+
+      if (job.status !== 'FAILED') {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: `Cannot retry job with status ${job.status}. Only FAILED jobs can be retried.`,
+        })
+      }
+
+      if (job.retryCount >= 3) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'Job has exceeded maximum retry attempts (3)',
+        })
+      }
+
+      if (!fastify.jobQueue) {
+        return reply.code(503).send({
+          error: 'Service Unavailable',
+          message: 'Job queue not initialized',
+        })
+      }
+
+      const requeued = await requeueJob(fastify.jobQueue, fastify.prisma, id)
+
+      if (!requeued) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'Could not requeue job',
+        })
+      }
+
+      reply.send({
+        id: job.id,
+        status: 'PENDING',
+        message: 'Job requeued for retry',
+        retryCount: job.retryCount + 1,
       })
     }
   )

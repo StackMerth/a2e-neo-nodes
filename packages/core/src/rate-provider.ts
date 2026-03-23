@@ -1,6 +1,3 @@
-// Rate Provider
-// Fetches and caches rates from internal config and external markets
-
 import type { GpuTier } from '@a2e/shared'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 
@@ -79,7 +76,6 @@ export class DefaultRateProvider implements RateProvider {
       fetchedAt: now,
     }
 
-    // Fetch external rates from adapters
     const akashAdapter = this.adapters.get('AKASH')
     const ionetAdapter = this.adapters.get('IONET')
 

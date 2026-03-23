@@ -1,6 +1,3 @@
-// Rate Fetcher Job
-// BullMQ worker to fetch market rates periodically
-
 import { Queue, Worker, Job, type ConnectionOptions } from 'bullmq'
 import type { PrismaClient, GpuTier, Market } from '@a2e/database'
 import { AkashAdapter, IONetAdapter } from '@a2e/core'
@@ -54,9 +51,7 @@ export function createRateFetcherWorker(deps: RateFetcherDeps): Worker {
         available: boolean
       }> = []
 
-      // Fetch rates for each GPU tier from each market
       for (const gpuTier of GPU_TIERS) {
-        // Akash rates
         if (akashAdapter.isEnabled()) {
           try {
             const akashRate = await akashAdapter.getRate(gpuTier)
@@ -72,7 +67,6 @@ export function createRateFetcherWorker(deps: RateFetcherDeps): Worker {
           }
         }
 
-        // IO.net rates
         if (ionetAdapter.isEnabled()) {
           try {
             const ionetRate = await ionetAdapter.getRate(gpuTier)
@@ -89,9 +83,7 @@ export function createRateFetcherWorker(deps: RateFetcherDeps): Worker {
         }
       }
 
-      // Update database
       for (const rate of results) {
-        // Upsert current rate
         await prisma.marketRate.upsert({
           where: {
             market_gpuTier: {
@@ -114,7 +106,6 @@ export function createRateFetcherWorker(deps: RateFetcherDeps): Worker {
           },
         })
 
-        // Store in history
         await prisma.marketRateHistory.create({
           data: {
             market: rate.market,
@@ -124,7 +115,6 @@ export function createRateFetcherWorker(deps: RateFetcherDeps): Worker {
           },
         })
 
-        // Emit WebSocket event
         io?.emit('rate:updated', {
           market: rate.market,
           gpuTier: rate.gpuTier,

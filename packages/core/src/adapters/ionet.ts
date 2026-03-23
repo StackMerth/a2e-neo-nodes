@@ -1,6 +1,3 @@
-// IO.net Market Adapter
-// Fetches GPU pricing from IO.net marketplace
-
 import type { GpuTier } from '@a2e/shared'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import type { ExternalMarketAdapter, MarketRateInfo } from '../rate-provider'
@@ -34,12 +31,8 @@ export class IONetAdapter implements ExternalMarketAdapter {
     }
 
     try {
-      // IO.net API integration (mock for now - real API TBD)
-      // When real API is available, uncomment and implement:
-      // const pricing = await this.fetchFromApi(gpuTier)
-
-      // For now, return estimated rates based on market positioning
-      const pricing = this.getEstimatedRate(gpuTier)
+      const apiPricing = await this.fetchFromApi(gpuTier)
+      const pricing = apiPricing ?? this.getEstimatedRate(gpuTier)
 
       return {
         ratePerHour: pricing.pricePerHour,
@@ -69,7 +62,6 @@ export class IONetAdapter implements ExternalMarketAdapter {
     }
   }
 
-  // Reserved for future real API integration
   private async fetchFromApi(_gpuTier: GpuTier): Promise<{ pricePerHour: number; available: boolean } | null> {
     if (!this.apiEndpoint) {
       return null
@@ -94,7 +86,7 @@ export class IONetAdapter implements ExternalMarketAdapter {
         }
       }
     } catch {
-      // API not available
+      return null
     }
 
     return null

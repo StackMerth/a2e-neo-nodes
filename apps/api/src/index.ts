@@ -1,7 +1,5 @@
-// A²E API Server
-// Main entry point for the Arbitrage & Orchestration Engine API
-
 import Fastify from 'fastify'
+import './types' // Type augmentations
 import { prismaPlugin, redisPlugin, authPlugin, corsPlugin } from './plugins'
 import {
   healthRoutes,
@@ -23,6 +21,10 @@ import {
   createNodeHealthWorker,
   scheduleNodeHealthChecker,
 } from './jobs/node-health'
+import {
+  createJobProcessorQueue,
+  createJobProcessorWorker,
+} from './jobs/job-processor'
 
 const server = Fastify({
   logger: {
@@ -39,16 +41,13 @@ const server = Fastify({
 
 async function start() {
   try {
-    // Register plugins
     await server.register(corsPlugin)
     await server.register(prismaPlugin)
     await server.register(redisPlugin)
     await server.register(authPlugin)
 
-    // Setup WebSocket server
     setupWebSocket(server)
 
-    // Register routes
     await server.register(healthRoutes)
     await server.register(nodeRoutes)
     await server.register(jobRoutes)
@@ -57,10 +56,13 @@ async function start() {
     await server.register(configRoutes)
     await server.register(statsRoutes)
 
-    // Setup BullMQ queues and workers
     const redisConnection = server.redis as unknown as import('bullmq').ConnectionOptions
     const rateFetcherQueue = createRateFetcherQueue(redisConnection)
     const nodeHealthQueue = createNodeHealthQueue(redisConnection)
+    const jobProcessorQueue = createJobProcessorQueue(redisConnection)
+
+    // Decorate server with job queue for routes to access
+    server.decorate('jobQueue', jobProcessorQueue)
 
     createRateFetcherWorker({
       redis: redisConnection,
@@ -74,11 +76,16 @@ async function start() {
       io: server.io,
     })
 
-    // Schedule jobs
+    createJobProcessorWorker({
+      redis: redisConnection,
+      prisma: server.prisma,
+      io: server.io,
+    })
+
     await scheduleRateFetcher(rateFetcherQueue)
     await scheduleNodeHealthChecker(nodeHealthQueue)
+    server.log.info('Job processor queue initialized')
 
-    // Start server
     const port = parseInt(process.env.PORT ?? '3001', 10)
     const host = process.env.HOST ?? '0.0.0.0'
 
@@ -92,7 +99,6 @@ async function start() {
   }
 }
 
-// Graceful shutdown
 const shutdown = async (signal: string) => {
   server.log.info(`Received ${signal}, shutting down gracefully...`)
   await server.close()

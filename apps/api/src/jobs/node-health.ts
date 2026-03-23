@@ -1,6 +1,3 @@
-// Node Health Checker Job
-// BullMQ worker to check node health and mark offline nodes
-
 import { Queue, Worker, Job, type ConnectionOptions } from 'bullmq'
 import type { PrismaClient, NodeStatus } from '@a2e/database'
 import type { Server as SocketServer } from 'socket.io'
@@ -35,7 +32,6 @@ export function createNodeHealthWorker(deps: NodeHealthDeps): Worker {
       const degradedThreshold = new Date(now.getTime() - DEGRADED_THRESHOLD_MS)
       const offlineThreshold = new Date(now.getTime() - OFFLINE_THRESHOLD_MS)
 
-      // Find nodes that need status updates
       const nodesToCheck = await prisma.node.findMany({
         where: {
           status: { in: ['ONLINE', 'DEGRADED'] },
@@ -56,13 +52,11 @@ export function createNodeHealthWorker(deps: NodeHealthDeps): Worker {
         let newStatus: NodeStatus | null = null
 
         if (node.lastHeartbeat < offlineThreshold) {
-          // Node should be OFFLINE
           if (node.status !== 'OFFLINE') {
             newStatus = 'OFFLINE'
             offlineCount++
           }
         } else if (node.lastHeartbeat < degradedThreshold) {
-          // Node should be DEGRADED
           if (node.status === 'ONLINE') {
             newStatus = 'DEGRADED'
             degradedCount++
@@ -78,7 +72,6 @@ export function createNodeHealthWorker(deps: NodeHealthDeps): Worker {
             },
           })
 
-          // Emit WebSocket event for offline nodes
           if (newStatus === 'OFFLINE') {
             io?.emit('node:offline', {
               id: node.id,

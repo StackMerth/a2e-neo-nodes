@@ -1,6 +1,3 @@
-// Akash Network Market Adapter
-// Fetches GPU pricing from Akash marketplace
-
 import type { GpuTier } from '@a2e/shared'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import type { ExternalMarketAdapter, MarketRateInfo } from '../rate-provider'
@@ -77,7 +74,6 @@ export class AkashAdapter implements ExternalMarketAdapter {
   }
 
   private async fetchPricing(gpuTier: GpuTier): Promise<AkashGpuPricing | null> {
-    // Try to fetch real rates from Akash/Cloudmos API
     try {
       const response = await fetch(`${this.apiEndpoint}/v1/gpu-prices`, {
         method: 'GET',
@@ -92,10 +88,9 @@ export class AkashAdapter implements ExternalMarketAdapter {
         return this.findMatchingGpu(data, gpuTier)
       }
     } catch {
-      // API not available, fall back to estimated rates
+      // Fall back to estimated rates
     }
 
-    // Return estimated rates based on market research
     return this.getEstimatedRate(gpuTier)
   }
 

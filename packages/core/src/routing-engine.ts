@@ -1,6 +1,3 @@
-// A²E Routing Engine
-// Core arbitrage logic for routing jobs to optimal markets
-
 import type { GpuTier, Market, RoutingDecision } from '@a2e/shared'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import type { RateProvider, MarketRates } from './rate-provider'

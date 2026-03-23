@@ -1,6 +1,3 @@
-// Configuration Routes
-// Yield floors and market settings
-
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
@@ -19,7 +16,6 @@ const updateMarketConfigSchema = z.object({
 })
 
 export async function configRoutes(fastify: FastifyInstance) {
-  // Get yield floors
   fastify.get(
     '/v1/config/yield-floors',
     {
@@ -49,7 +45,6 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // Update yield floor
   fastify.patch(
     '/v1/config/yield-floors',
     {
@@ -68,7 +63,6 @@ export async function configRoutes(fastify: FastifyInstance) {
       const { gpuTier, ratePerDay } = parseResult.data
       const tierConfig = GPU_TIER_CONFIG[gpuTier as GpuTier]
 
-      // Validate rate is not below cost floor
       if (ratePerDay < tierConfig.costFloor) {
         return reply.code(400).send({
           error: 'Validation Error',
@@ -98,7 +92,6 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // Reset yield floor to default
   fastify.delete(
     '/v1/config/yield-floors/:gpuTier',
     {
@@ -116,9 +109,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
       await fastify.prisma.yieldFloor.delete({
         where: { gpuTier: gpuTier as GpuTier },
-      }).catch(() => {
-        // Ignore if not exists
-      })
+      }).catch(() => {})
 
       const tierConfig = GPU_TIER_CONFIG[gpuTier as GpuTier]
 
@@ -131,7 +122,6 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // Get market configurations
   fastify.get(
     '/v1/config/markets',
     {
@@ -171,7 +161,6 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // Update market configuration
   fastify.patch(
     '/v1/config/markets',
     {

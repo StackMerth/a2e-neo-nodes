@@ -1,6 +1,3 @@
-// Rate Query Routes
-// Current and historical market rates
-
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
@@ -20,7 +17,6 @@ const rateHistoryQuerySchema = z.object({
 })
 
 export async function rateRoutes(fastify: FastifyInstance) {
-  // Get current rates
   fastify.get(
     '/v1/rates',
     {
@@ -38,7 +34,6 @@ export async function rateRoutes(fastify: FastifyInstance) {
 
       const { gpuTier, market } = parseResult.data
 
-      // Get stored external rates
       const externalRates = await fastify.prisma.marketRate.findMany({
         where: {
           ...(gpuTier ? { gpuTier: gpuTier as GpuTier } : {}),
@@ -47,11 +42,9 @@ export async function rateRoutes(fastify: FastifyInstance) {
         orderBy: [{ gpuTier: 'asc' }, { market: 'asc' }],
       })
 
-      // Get market configs for enabled status
       const marketConfigs = await fastify.prisma.marketConfig.findMany()
       const configMap = new Map(marketConfigs.map((c) => [c.market, c]))
 
-      // Build response with internal rates included
       const tiers: GpuTier[] = gpuTier
         ? [gpuTier as GpuTier]
         : ['H100', 'H200', 'B200', 'B300', 'GB300']
@@ -69,7 +62,6 @@ export async function rateRoutes(fastify: FastifyInstance) {
       for (const tier of tiers) {
         const tierConfig = GPU_TIER_CONFIG[tier]
 
-        // Add internal rate (always available)
         if (!market || market === 'INTERNAL') {
           rates.push({
             market: 'INTERNAL',
@@ -83,7 +75,6 @@ export async function rateRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // Add external rates
       for (const rate of externalRates) {
         const config = configMap.get(rate.market)
         rates.push({
@@ -97,7 +88,6 @@ export async function rateRoutes(fastify: FastifyInstance) {
         })
       }
 
-      // Sort by tier then market
       const tierOrder: Record<string, number> = { H100: 1, H200: 2, B200: 3, B300: 4, GB300: 5 }
       const marketOrder: Record<string, number> = { INTERNAL: 1, AKASH: 2, IONET: 3 }
       rates.sort((a, b) => {
@@ -113,7 +103,6 @@ export async function rateRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // Get rate history
   fastify.get(
     '/v1/rates/history',
     {

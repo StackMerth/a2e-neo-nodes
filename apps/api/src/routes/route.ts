@@ -1,6 +1,3 @@
-// Main Routing Endpoint
-// POST /v1/route - Primary integration point for TokenOS
-
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { RoutingEngine } from '@a2e/core'
@@ -15,7 +12,6 @@ const routeRequestSchema = z.object({
 })
 
 export async function routeRoutes(fastify: FastifyInstance) {
-  // Main routing decision endpoint
   fastify.post(
     '/v1/route',
     {
@@ -35,11 +31,9 @@ export async function routeRoutes(fastify: FastifyInstance) {
       const { deploymentId, gpuTier, hasInternalDemand, durationSeconds } = parseResult.data
       const startTime = Date.now()
 
-      // Get rates from cache/database
       const rates = await getRatesFromCache(fastify, gpuTier as GpuTier)
       const yieldFloor = await getYieldFloor(fastify, gpuTier as GpuTier)
 
-      // Create routing engine with current rates
       const rateProvider = {
         getRates: async () => rates,
         refreshRates: async () => {},
@@ -55,7 +49,6 @@ export async function routeRoutes(fastify: FastifyInstance) {
         yieldFloorConfig,
       })
 
-      // Get routing decision
       const decision = await routingEngine.route({
         gpuTier: gpuTier as GpuTier,
         hasInternalDemand,
@@ -64,7 +57,6 @@ export async function routeRoutes(fastify: FastifyInstance) {
 
       const decisionTimeMs = Date.now() - startTime
 
-      // Create job and routing log in transaction
       const [job] = await fastify.prisma.$transaction([
         fastify.prisma.job.create({
           data: {
@@ -79,7 +71,6 @@ export async function routeRoutes(fastify: FastifyInstance) {
         }),
       ])
 
-      // Create routing log after job is created
       await fastify.prisma.routingLog.create({
         data: {
           jobId: job.id,
@@ -95,7 +86,6 @@ export async function routeRoutes(fastify: FastifyInstance) {
         },
       })
 
-      // Emit WebSocket event
       fastify.io?.emit('job:routed', {
         jobId: job.id,
         deploymentId,
