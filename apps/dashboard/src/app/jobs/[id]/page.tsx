@@ -1,0 +1,389 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { Card, StatCard } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { api } from '@/lib/api'
+
+interface JobDetail {
+  id: string
+  deploymentId: string
+  gpuTier: string
+  status: string
+  market: string | null
+  ratePerHour: number | null
+  node: {
+    id: string
+    walletAddress: string
+    gpuTier: string
+    status: string
+  } | null
+  timing: {
+    requestedAt: string
+    routedAt: string | null
+    startedAt: string | null
+    completedAt: string | null
+    durationSeconds: number | null
+  }
+  earnings: number | null
+  errorMessage: string | null
+  retryCount: number
+  routingLog: {
+    selectedMarket: string
+    selectedRate: number
+    internalRate: number
+    akashRate: number | null
+    ionetRate: number | null
+    yieldFloor: number
+    yieldFloorApplied: boolean
+    reason: string
+    decisionTimeMs: number
+    timestamp: string
+  } | null
+}
+
+const STATUS_STEPS = ['PENDING', 'ROUTING', 'ASSIGNED', 'RUNNING', 'COMPLETED']
+
+export default function JobDetailPage() {
+  const params = useParams()
+  const router = useRouter()
+  const jobId = params.id as string
+
+  const [job, setJob] = useState<JobDetail | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    loadJob()
+    // Auto-refresh if job is in progress
+    const interval = setInterval(() => {
+      if (job && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status)) {
+        loadJob()
+      }
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [jobId])
+
+  async function loadJob() {
+    try {
+      const data = await api.jobs.get(jobId) as unknown as JobDetail
+      setJob(data)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load job')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'COMPLETED': return 'bg-accent text-accent'
+      case 'RUNNING': return 'bg-blue-500 text-blue-400'
+      case 'ASSIGNED': return 'bg-purple-500 text-purple-400'
+      case 'ROUTING': return 'bg-yellow-500 text-yellow-400'
+      case 'PENDING': return 'bg-warning text-warning'
+      case 'FAILED': return 'bg-error text-error'
+      case 'CANCELLED': return 'bg-text-muted text-text-muted'
+      default: return 'bg-text-muted text-text-muted'
+    }
+  }
+
+  const getMarketColor = (market: string | null) => {
+    switch (market) {
+      case 'INTERNAL': return 'bg-accent/10 text-accent border-accent/20'
+      case 'AKASH': return 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+      case 'IONET': return 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+      default: return 'bg-surface text-text-muted'
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-text-muted">Loading job...</div>
+      </div>
+    )
+  }
+
+  if (error || !job) {
+    return (
+      <div className="space-y-4">
+        <Link href="/jobs" className="text-accent hover:underline text-sm">
+          &larr; Back to Jobs
+        </Link>
+        <Card className="border-error">
+          <p className="text-error">{error || 'Job not found'}</p>
+          <Button onClick={() => router.push('/jobs')} variant="outline" className="mt-4">
+            Return to Jobs
+          </Button>
+        </Card>
+      </div>
+    )
+  }
+
+  // Calculate current step index for timeline
+  const currentStepIndex = job.status === 'FAILED' || job.status === 'CANCELLED'
+    ? -1
+    : STATUS_STEPS.indexOf(job.status)
+
+  return (
+    <div className="space-y-8">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm">
+        <Link href="/jobs" className="text-text-muted hover:text-accent">
+          Jobs
+        </Link>
+        <span className="text-text-muted">/</span>
+        <span className="text-text-primary">{job.deploymentId}</span>
+      </div>
+
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-2xl font-bold text-text-primary">{job.deploymentId}</h1>
+            <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getMarketColor(job.market)}`}>
+              {job.market || 'PENDING'}
+            </span>
+          </div>
+          <p className="text-text-muted">
+            {job.gpuTier} • Created {new Date(job.timing.requestedAt).toLocaleString()}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`w-3 h-3 rounded-full ${getStatusColor(job.status).split(' ')[0]}`} />
+          <span className="text-lg font-medium text-text-primary">{job.status}</span>
+        </div>
+      </div>
+
+      {/* Status Timeline */}
+      <Card title="Job Timeline">
+        <div className="mt-6 mb-4">
+          <div className="flex items-center justify-between relative">
+            {/* Progress Line */}
+            <div className="absolute top-4 left-0 right-0 h-0.5 bg-border" />
+            <div
+              className="absolute top-4 left-0 h-0.5 bg-accent transition-all"
+              style={{
+                width: currentStepIndex >= 0
+                  ? `${(currentStepIndex / (STATUS_STEPS.length - 1)) * 100}%`
+                  : '0%'
+              }}
+            />
+
+            {STATUS_STEPS.map((step, index) => {
+              const isCompleted = currentStepIndex >= index
+              const isCurrent = currentStepIndex === index
+              const isFailed = job.status === 'FAILED' && step === 'COMPLETED'
+
+              return (
+                <div key={step} className="flex flex-col items-center relative z-10">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                    isFailed ? 'bg-error text-white' :
+                    isCompleted ? 'bg-accent text-white' :
+                    isCurrent ? 'bg-accent/20 text-accent border-2 border-accent' :
+                    'bg-surface text-text-muted border-2 border-border'
+                  }`}>
+                    {isFailed ? '!' : isCompleted ? '✓' : index + 1}
+                  </div>
+                  <span className={`text-xs mt-2 ${
+                    isCompleted || isCurrent ? 'text-text-primary' : 'text-text-muted'
+                  }`}>
+                    {step}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Timing Details */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-border">
+          <div>
+            <p className="text-xs text-text-muted mb-1">Requested</p>
+            <p className="text-sm text-text-primary">{new Date(job.timing.requestedAt).toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-xs text-text-muted mb-1">Routed</p>
+            <p className="text-sm text-text-primary">
+              {job.timing.routedAt ? new Date(job.timing.routedAt).toLocaleString() : '-'}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-text-muted mb-1">Started</p>
+            <p className="text-sm text-text-primary">
+              {job.timing.startedAt ? new Date(job.timing.startedAt).toLocaleString() : '-'}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-text-muted mb-1">Completed</p>
+            <p className="text-sm text-text-primary">
+              {job.timing.completedAt ? new Date(job.timing.completedAt).toLocaleString() : '-'}
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard
+          label="Rate"
+          value={job.ratePerHour ? (job.ratePerHour * 24).toFixed(2) : '0'}
+          prefix="$"
+          suffix="/day"
+        />
+        <StatCard
+          label="Duration"
+          value={job.timing.durationSeconds ? Math.round(job.timing.durationSeconds / 60) : 0}
+          suffix=" min"
+        />
+        <StatCard
+          label="Earnings"
+          value={job.earnings?.toFixed(4) || '0'}
+          prefix="$"
+        />
+        <StatCard
+          label="Retries"
+          value={job.retryCount}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Routing Decision */}
+        {job.routingLog && (
+          <Card title="Routing Decision" description="How this job was routed">
+            <div className="space-y-4 mt-4">
+              {/* Selected Market */}
+              <div className="p-4 bg-background rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-text-muted">Selected Market</span>
+                  <span className={`px-4 py-2 rounded-lg font-bold ${getMarketColor(job.routingLog.selectedMarket)}`}>
+                    {job.routingLog.selectedMarket}
+                  </span>
+                </div>
+                <p className="text-sm text-text-secondary">{job.routingLog.reason}</p>
+              </div>
+
+              {/* Rate Comparison */}
+              <div className="space-y-3">
+                <p className="text-sm text-text-muted">Rate Comparison</p>
+
+                <div className="flex items-center justify-between p-3 bg-background rounded-lg">
+                  <span className="text-accent font-medium">Internal</span>
+                  <span className="text-text-primary">${(job.routingLog.internalRate * 24).toFixed(2)}/day</span>
+                </div>
+
+                {job.routingLog.akashRate !== null && (
+                  <div className="flex items-center justify-between p-3 bg-background rounded-lg">
+                    <span className="text-blue-400 font-medium">Akash</span>
+                    <span className="text-text-primary">${(job.routingLog.akashRate * 24).toFixed(2)}/day</span>
+                  </div>
+                )}
+
+                {job.routingLog.ionetRate !== null && (
+                  <div className="flex items-center justify-between p-3 bg-background rounded-lg">
+                    <span className="text-purple-400 font-medium">IO.net</span>
+                    <span className="text-text-primary">${(job.routingLog.ionetRate * 24).toFixed(2)}/day</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between p-3 bg-surface-hover rounded-lg border border-border">
+                  <span className="text-text-muted">Yield Floor</span>
+                  <div className="text-right">
+                    <span className="text-text-primary">${(job.routingLog.yieldFloor * 24).toFixed(2)}/day</span>
+                    {job.routingLog.yieldFloorApplied && (
+                      <span className="ml-2 px-2 py-0.5 bg-warning/10 text-warning text-xs rounded">APPLIED</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Decision Meta */}
+              <div className="flex items-center justify-between text-sm text-text-muted pt-3 border-t border-border">
+                <span>Decision Time: {job.routingLog.decisionTimeMs}ms</span>
+                <span>{new Date(job.routingLog.timestamp).toLocaleString()}</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Assigned Node */}
+        <Card title="Assigned Node">
+          {job.node ? (
+            <div className="space-y-4 mt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${
+                    job.node.status === 'ONLINE' ? 'bg-accent' :
+                    job.node.status === 'DEGRADED' ? 'bg-warning' : 'bg-error'
+                  }`} />
+                  <span className="text-text-primary font-medium">{job.node.status}</span>
+                </div>
+                <span className="px-2 py-1 bg-accent/10 text-accent text-sm rounded">{job.node.gpuTier}</span>
+              </div>
+
+              <div className="p-4 bg-background rounded-lg">
+                <p className="text-xs text-text-muted mb-1">Wallet Address</p>
+                <p className="text-sm text-text-primary font-mono break-all">{job.node.walletAddress}</p>
+              </div>
+
+              <div className="p-4 bg-background rounded-lg">
+                <p className="text-xs text-text-muted mb-1">Node ID</p>
+                <p className="text-sm text-text-primary font-mono break-all">{job.node.id}</p>
+              </div>
+
+              <Link href={`/nodes/${job.node.id}`}>
+                <Button variant="secondary" className="w-full">
+                  View Node Details
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-32 text-text-muted">
+              <p>No node assigned yet</p>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Error Message */}
+      {job.errorMessage && (
+        <Card title="Error Details" className="border-error/50">
+          <div className="mt-4 p-4 bg-error/10 rounded-lg">
+            <p className="text-error font-mono text-sm">{job.errorMessage}</p>
+          </div>
+          {job.retryCount > 0 && (
+            <p className="mt-3 text-sm text-text-muted">
+              This job has been retried {job.retryCount} time{job.retryCount > 1 ? 's' : ''}.
+            </p>
+          )}
+        </Card>
+      )}
+
+      {/* Job Info */}
+      <Card title="Job Information">
+        <div className="grid grid-cols-2 gap-4 mt-4">
+          <div className="p-4 bg-background rounded-lg">
+            <p className="text-xs text-text-muted mb-1">Job ID</p>
+            <p className="text-sm text-text-primary font-mono break-all">{job.id}</p>
+          </div>
+          <div className="p-4 bg-background rounded-lg">
+            <p className="text-xs text-text-muted mb-1">Deployment ID</p>
+            <p className="text-sm text-text-primary">{job.deploymentId}</p>
+          </div>
+          <div className="p-4 bg-background rounded-lg">
+            <p className="text-xs text-text-muted mb-1">GPU Tier</p>
+            <p className="text-sm text-text-primary">{job.gpuTier}</p>
+          </div>
+          <div className="p-4 bg-background rounded-lg">
+            <p className="text-xs text-text-muted mb-1">Rate per Hour</p>
+            <p className="text-sm text-text-primary">${job.ratePerHour?.toFixed(4) || '0'}</p>
+          </div>
+        </div>
+      </Card>
+    </div>
+  )
+}

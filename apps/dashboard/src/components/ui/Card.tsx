@@ -3,15 +3,19 @@ interface CardProps {
   className?: string
   title?: string
   description?: string
+  action?: React.ReactNode
 }
 
-export function Card({ children, className = '', title, description }: CardProps) {
+export function Card({ children, className = '', title, description, action }: CardProps) {
   return (
     <div className={`bg-surface border border-border rounded-xl p-6 ${className}`}>
-      {(title || description) && (
-        <div className="mb-4">
-          {title && <h3 className="text-lg font-semibold text-text-primary">{title}</h3>}
-          {description && <p className="text-sm text-text-muted mt-1">{description}</p>}
+      {(title || description || action) && (
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            {title && <h3 className="text-lg font-semibold text-text-primary">{title}</h3>}
+            {description && <p className="text-sm text-text-muted mt-1">{description}</p>}
+          </div>
+          {action && <div className="shrink-0">{action}</div>}
         </div>
       )}
       {children}

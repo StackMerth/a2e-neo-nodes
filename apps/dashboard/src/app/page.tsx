@@ -5,6 +5,9 @@ import Link from 'next/link'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { api } from '@/lib/api'
+import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
+import { SystemHealth } from '@/components/dashboard/SystemHealth'
+import { EarningsChart } from '@/components/dashboard/EarningsChart'
 
 interface Stats {
   nodes: { total: number; byStatus: Record<string, number> }
@@ -26,7 +29,7 @@ export default function OverviewPage() {
 
   async function loadStats() {
     try {
-      const data = await api.stats()
+      const data = await api.stats.overview()
       setStats(data)
       setError(null)
     } catch (err) {
@@ -158,6 +161,22 @@ export default function OverviewPage() {
             )}
           </div>
         </Card>
+      </div>
+
+      {/* Earnings Chart */}
+      <EarningsChart />
+
+      {/* System Status Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* System Health */}
+        <div className="lg:col-span-1">
+          <SystemHealth />
+        </div>
+
+        {/* Activity Feed */}
+        <div className="lg:col-span-2">
+          <ActivityFeed />
+        </div>
       </div>
 
       {/* Quick Actions */}

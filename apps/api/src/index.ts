@@ -10,6 +10,7 @@ import {
   configRoutes,
   statsRoutes,
 } from './routes'
+import { authRoutes } from './routes/auth'
 import { setupWebSocket } from './websocket'
 import {
   createRateFetcherQueue,
@@ -49,6 +50,7 @@ async function start() {
     setupWebSocket(server)
 
     await server.register(healthRoutes)
+    await server.register(authRoutes)
     await server.register(nodeRoutes)
     await server.register(jobRoutes)
     await server.register(routeRoutes)

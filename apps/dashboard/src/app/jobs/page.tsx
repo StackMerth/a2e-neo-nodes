@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { Select } from '@/components/ui/Input'
 import { api } from '@/lib/api'
 
 interface Job {
@@ -15,20 +17,36 @@ interface Job {
   requestedAt: string
 }
 
+const STATUS_OPTIONS = [
+  { value: '', label: 'All Statuses' },
+  { value: 'PENDING', label: 'Pending' },
+  { value: 'ROUTING', label: 'Routing' },
+  { value: 'ASSIGNED', label: 'Assigned' },
+  { value: 'RUNNING', label: 'Running' },
+  { value: 'COMPLETED', label: 'Completed' },
+  { value: 'FAILED', label: 'Failed' },
+]
+
+const MARKET_OPTIONS = [
+  { value: '', label: 'All Markets' },
+  { value: 'INTERNAL', label: 'Internal' },
+  { value: 'AKASH', label: 'Akash' },
+  { value: 'IONET', label: 'IO.net' },
+]
+
 export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState('')
+  const [marketFilter, setMarketFilter] = useState('')
 
-  useEffect(() => {
-    loadJobs()
-    const interval = setInterval(loadJobs, 5000)
-    return () => clearInterval(interval)
-  }, [])
-
-  async function loadJobs() {
+  const loadJobs = useCallback(async () => {
     try {
-      const data = await api.jobs.list({ limit: 50 })
+      const params: { limit: number; status?: string; market?: string } = { limit: 50 }
+      if (statusFilter) params.status = statusFilter
+      if (marketFilter) params.market = marketFilter
+      const data = await api.jobs.list(params)
       setJobs(data.jobs)
       setError(null)
     } catch (err) {
@@ -36,7 +54,13 @@ export default function JobsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [statusFilter, marketFilter])
+
+  useEffect(() => {
+    loadJobs()
+    const interval = setInterval(loadJobs, 5000)
+    return () => clearInterval(interval)
+  }, [loadJobs])
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -73,6 +97,36 @@ export default function JobsPage() {
         </Button>
       </div>
 
+      {/* Filters */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="w-40">
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            options={STATUS_OPTIONS}
+          />
+        </div>
+        <div className="w-40">
+          <Select
+            value={marketFilter}
+            onChange={(e) => setMarketFilter(e.target.value)}
+            options={MARKET_OPTIONS}
+          />
+        </div>
+        {(statusFilter || marketFilter) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setStatusFilter(''); setMarketFilter('') }}
+          >
+            Clear Filters
+          </Button>
+        )}
+        <span className="text-sm text-text-muted ml-auto">
+          {jobs.length} job{jobs.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
       {error && (
         <div className="p-4 bg-error/10 border border-error/20 rounded-lg">
           <p className="text-error text-sm">{error}</p>
@@ -104,7 +158,11 @@ export default function JobsPage() {
               <tbody>
                 {jobs.map((job) => (
                   <tr key={job.id} className="border-b border-border/50 hover:bg-surface-hover">
-                    <td className="py-3 px-4 text-sm text-text-primary font-medium">{job.deploymentId}</td>
+                    <td className="py-3 px-4">
+                      <Link href={`/jobs/${job.id}`} className="text-sm text-accent hover:underline font-medium">
+                        {job.deploymentId}
+                      </Link>
+                    </td>
                     <td className="py-3 px-4">
                       <span className="px-2 py-1 bg-accent/10 text-accent text-xs rounded">
                         {job.gpuTier}

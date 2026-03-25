@@ -81,6 +81,12 @@ export const api = {
 
     delete: (id: string) =>
       apiFetch<void>(`/v1/nodes/${id}`, { method: 'DELETE' }),
+
+    updateStatus: (id: string, status: 'ONLINE' | 'PAUSED' | 'MAINTENANCE') =>
+      apiFetch<{ id: string; status: string }>(`/v1/nodes/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      }),
   },
 
   // Routing
@@ -173,12 +179,60 @@ export const api = {
   },
 
   // Stats
-  stats: () =>
-    apiFetch<{
-      timestamp: string
-      nodes: { total: number; byStatus: Record<string, number>; byTier: Record<string, number> }
-      jobs: { total: number; byStatus: Record<string, number>; byMarket: Record<string, number>; last24h: number }
-      routing: { decisionsLast24h: number; byMarket: Record<string, number>; avgDecisionTimeMs: number }
-      earnings: { last24h: { total: number; gpuSeconds: number; jobCount: number } }
-    }>('/v1/stats'),
+  stats: {
+    overview: () =>
+      apiFetch<{
+        timestamp: string
+        nodes: { total: number; byStatus: Record<string, number>; byTier: Record<string, number> }
+        jobs: { total: number; byStatus: Record<string, number>; byMarket: Record<string, number>; last24h: number }
+        routing: { decisionsLast24h: number; byMarket: Record<string, number>; avgDecisionTimeMs: number }
+        earnings: { last24h: { total: number; gpuSeconds: number; jobCount: number } }
+      }>('/v1/stats'),
+
+    earningsTrend: (days: number = 7) =>
+      apiFetch<{
+        data: Array<{
+          date: string
+          internal: number
+          akash: number
+          ionet: number
+          total: number
+        }>
+      }>('/v1/stats/earnings/trend', { params: { days } }),
+  },
+
+  // Auth
+  auth: {
+    login: (username: string, password: string) =>
+      apiFetch<{ token: string; user: { id: string; username: string; role: string } }>('/v1/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      }),
+
+    verify: (token: string) =>
+      apiFetch<{ valid: boolean; user: { id: string; username: string; role: string } }>('/v1/auth/verify', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      }),
+
+    logout: () =>
+      apiFetch<{ success: boolean }>('/v1/auth/logout', { method: 'POST' }),
+  },
+
+  // Config audit log
+  configAudit: {
+    list: (params?: { page?: number; limit?: number }) =>
+      apiFetch<{
+        logs: Array<{
+          id: string
+          action: string
+          field: string
+          oldValue: string
+          newValue: string
+          changedBy: string
+          changedAt: string
+        }>
+        pagination: { page: number; limit: number; total: number }
+      }>('/v1/config/audit', { params }),
+  },
 }
