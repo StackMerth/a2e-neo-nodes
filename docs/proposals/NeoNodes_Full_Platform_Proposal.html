@@ -1,0 +1,1754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NeoNodes Platform Proposal</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --primary-red: #E53935;
+      --dark-bg: #0a0a0a;
+      --text-primary: #1a1a1a;
+      --text-secondary: #666;
+      --text-light: #999;
+      --border-color: #e0e0e0;
+      --success-green: #22c55e;
+      --card-bg: #fafafa;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 8.5pt;
+      line-height: 1.4;
+      color: var(--text-primary);
+      background: white;
+    }
+
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      padding: 10mm 13mm;
+      margin: 0 auto;
+      background: white;
+      page-break-after: always;
+    }
+
+    .page:last-child {
+      page-break-after: auto;
+    }
+
+    /* Cover Page */
+    .cover-page {
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a0a0a 50%, #2a0a0a 100%);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 18mm;
+    }
+
+    .cover-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .logo {
+      font-size: 20pt;
+      font-weight: 700;
+    }
+
+    .logo span {
+      color: var(--primary-red);
+    }
+
+    .confidential-badge {
+      background: var(--primary-red);
+      color: white;
+      padding: 5px 12px;
+      font-size: 7pt;
+      font-weight: 600;
+      letter-spacing: 1px;
+      border-radius: 4px;
+    }
+
+    .cover-content {
+      margin-top: 45mm;
+    }
+
+    .cover-subtitle {
+      color: var(--primary-red);
+      font-size: 8pt;
+      font-weight: 600;
+      letter-spacing: 3px;
+      margin-bottom: 15px;
+    }
+
+    .cover-title {
+      font-size: 34pt;
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 20px;
+    }
+
+    .cover-title .highlight {
+      color: var(--primary-red);
+    }
+
+    .cover-description {
+      font-size: 11pt;
+      color: #ccc;
+      max-width: 450px;
+      line-height: 1.6;
+    }
+
+    .cover-footer {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-top: auto;
+    }
+
+    .cover-meta {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .cover-meta-label {
+      color: var(--text-light);
+      font-size: 7pt;
+      letter-spacing: 1px;
+      margin-bottom: 3px;
+    }
+
+    .cover-meta-value {
+      color: white;
+      font-weight: 500;
+      font-size: 9pt;
+    }
+
+    /* Content Pages */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 15px;
+    }
+
+    .page-header-logo {
+      font-size: 11pt;
+      font-weight: 700;
+    }
+
+    .page-header-logo span {
+      color: var(--primary-red);
+    }
+
+    .page-header-title {
+      color: var(--text-light);
+      font-size: 7pt;
+    }
+
+    .section-number {
+      font-size: 48pt;
+      font-weight: 800;
+      color: #e8e8e8;
+      line-height: 1;
+      margin-bottom: -6px;
+    }
+
+    .section-title {
+      font-size: 20pt;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .section-title .highlight {
+      color: var(--primary-red);
+    }
+
+    .section-intro {
+      color: var(--text-secondary);
+      font-size: 9pt;
+      margin-bottom: 18px;
+      max-width: 550px;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin: 18px 0;
+    }
+
+    .stat-card {
+      text-align: center;
+      padding: 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+    }
+
+    .stat-value {
+      font-size: 24pt;
+      font-weight: 700;
+      color: var(--primary-red);
+    }
+
+    .stat-label {
+      font-size: 6pt;
+      color: var(--text-light);
+      letter-spacing: 1px;
+      margin-top: 3px;
+    }
+
+    /* Feature Cards */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin: 12px 0;
+    }
+
+    .feature-card {
+      padding: 10px 14px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .feature-check {
+      width: 16px;
+      height: 16px;
+      background: var(--primary-red);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 8pt;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .feature-check.pending {
+      background: #f59e0b;
+    }
+
+    .feature-check.new {
+      background: #3b82f6;
+    }
+
+    .feature-content h4 {
+      font-size: 8pt;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .feature-content p {
+      font-size: 7pt;
+      color: var(--text-secondary);
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 8pt;
+    }
+
+    thead {
+      background: var(--card-bg);
+    }
+
+    th {
+      text-align: left;
+      padding: 8px 10px;
+      font-weight: 600;
+      color: var(--primary-red);
+      font-size: 7pt;
+      letter-spacing: 0.5px;
+      border-bottom: 2px solid var(--border-color);
+    }
+
+    td {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: top;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .status-complete {
+      color: var(--success-green);
+      font-weight: 600;
+    }
+
+    .status-pending {
+      color: #f59e0b;
+      font-weight: 600;
+    }
+
+    .status-new {
+      color: #3b82f6;
+      font-weight: 600;
+    }
+
+    /* Milestone Cards */
+    .milestone-card {
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      margin: 12px 0;
+      overflow: hidden;
+    }
+
+    .milestone-header {
+      background: var(--card-bg);
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .milestone-header h3 {
+      font-size: 10pt;
+      font-weight: 600;
+    }
+
+    .milestone-badge {
+      background: var(--primary-red);
+      color: white;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 7pt;
+      font-weight: 600;
+    }
+
+    .milestone-badge.complete {
+      background: var(--success-green);
+    }
+
+    .milestone-badge.pending {
+      background: #f59e0b;
+    }
+
+    .milestone-badge.new {
+      background: #3b82f6;
+    }
+
+    .milestone-body {
+      padding: 12px 14px;
+    }
+
+    .milestone-body h4 {
+      font-size: 7pt;
+      font-weight: 600;
+      color: var(--text-light);
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+
+    .milestone-body ul {
+      list-style: none;
+      margin-bottom: 10px;
+    }
+
+    .milestone-body li {
+      padding: 2px 0;
+      padding-left: 14px;
+      position: relative;
+      font-size: 7.5pt;
+    }
+
+    .milestone-body li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: var(--primary-red);
+    }
+
+    /* Pricing Box */
+    .pricing-box {
+      background: var(--dark-bg);
+      color: white;
+      padding: 20px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 18px 0;
+    }
+
+    .pricing-left h4 {
+      font-size: 7pt;
+      color: var(--text-light);
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+
+    .pricing-amount {
+      font-size: 32pt;
+      font-weight: 700;
+      color: var(--primary-red);
+    }
+
+    .pricing-note {
+      font-size: 8pt;
+      color: var(--text-light);
+      margin-top: 4px;
+    }
+
+    .pricing-right {
+      text-align: right;
+    }
+
+    .pricing-right h4 {
+      font-size: 7pt;
+      color: var(--text-light);
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+
+    .pricing-timeline {
+      font-size: 22pt;
+      font-weight: 700;
+      color: var(--primary-red);
+    }
+
+    .pricing-sub {
+      font-size: 8pt;
+      color: var(--text-light);
+    }
+
+    /* Callout Box */
+    .callout {
+      border-left: 3px solid var(--primary-red);
+      background: #fff5f5;
+      padding: 10px 14px;
+      margin: 12px 0;
+      border-radius: 0 6px 6px 0;
+    }
+
+    .callout h4 {
+      color: var(--primary-red);
+      font-size: 9pt;
+      margin-bottom: 4px;
+    }
+
+    .callout p {
+      font-size: 8pt;
+      color: var(--text-secondary);
+    }
+
+    .callout.green {
+      border-left-color: var(--success-green);
+      background: #f0fdf4;
+    }
+
+    .callout.green h4 {
+      color: var(--success-green);
+    }
+
+    /* Architecture Diagram */
+    .architecture-box {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 12px;
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 6pt;
+      white-space: pre;
+      line-height: 1.3;
+      overflow-x: auto;
+    }
+
+    /* Section Lists */
+    .section-list {
+      margin: 12px 0;
+    }
+
+    .section-list h3 {
+      font-size: 10pt;
+      font-weight: 600;
+      margin-bottom: 10px;
+      padding-bottom: 5px;
+      border-bottom: 2px solid var(--primary-red);
+      display: inline-block;
+    }
+
+    .section-list ul {
+      list-style: none;
+    }
+
+    .section-list li {
+      padding: 5px 0;
+      padding-left: 18px;
+      position: relative;
+      font-size: 8pt;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .section-list li:last-child {
+      border-bottom: none;
+    }
+
+    .section-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: var(--primary-red);
+      font-size: 11pt;
+      line-height: 1;
+    }
+
+    /* Tech Tags */
+    .tech-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 12px 0;
+    }
+
+    .tech-tag {
+      padding: 4px 10px;
+      border: 1px solid var(--border-color);
+      border-radius: 15px;
+      font-size: 7pt;
+      font-weight: 500;
+    }
+
+    .tech-tag.primary {
+      background: #fff5f5;
+      border-color: var(--primary-red);
+      color: var(--primary-red);
+    }
+
+    /* Two Column */
+    .two-column {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    /* Print Styles */
+    @media print {
+      .page {
+        margin: 0;
+        padding: 15mm;
+        box-shadow: none;
+      }
+
+      body {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    }
+
+    @page {
+      size: A4;
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Cover Page -->
+  <div class="page cover-page">
+    <div class="cover-header">
+      <div class="logo">Token<span>OS</span></div>
+      <div class="confidential-badge">CONFIDENTIAL</div>
+    </div>
+
+    <div class="cover-content">
+      <div class="cover-subtitle">REVISED ENGINEERING PROPOSAL</div>
+      <h1 class="cover-title">
+        NeoNodes<br>
+        <span class="highlight">Complete GPU</span><br>
+        <span class="highlight">Marketplace</span>
+      </h1>
+      <p class="cover-description">
+        A fully automated, standalone GPU compute marketplace. From node runner
+        onboarding to customer job submission, automatic execution, yield optimization,
+        and settlement — with zero manual intervention required.
+      </p>
+    </div>
+
+    <div class="cover-footer">
+      <div class="cover-meta">
+        <span class="cover-meta-label">PROJECT</span>
+        <span class="cover-meta-value">NeoNodes Platform</span>
+      </div>
+      <div class="cover-meta">
+        <span class="cover-meta-label">DATE</span>
+        <span class="cover-meta-value">24 March 2026</span>
+      </div>
+      <div class="cover-meta">
+        <span class="cover-meta-label">CLIENT</span>
+        <span class="cover-meta-value">Emmanuel</span>
+      </div>
+      <div class="cover-meta">
+        <span class="cover-meta-label">VERSION</span>
+        <span class="cover-meta-value">2.0 — Full Platform</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Executive Summary -->
+  <div class="page">
+    <div class="page-header">
+      <div class="page-header-logo">Token<span>OS</span></div>
+      <div class="page-header-title">NeoNodes Platform • Revised Proposal</div>
+    </div>
+
+    <div class="section-number">01</div>
+    <h2 class="section-title">Executive <span class="highlight">Summary</span></h2>
+    <p class="section-intro">
+      NeoNodes is a complete, standalone GPU compute marketplace that replaces the current
+      manual TokenOS workflow. Node runners onboard themselves, customers submit jobs directly,
+      and the A²E engine handles all routing, execution, and settlement automatically.
+    </p>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value">5</div>
+        <div class="stat-label">GPU TIERS</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">3</div>
+        <div class="stat-label">MARKETS</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">150+</div>
+        <div class="stat-label">FEATURES</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">100%</div>
+        <div class="stat-label">AUTOMATED</div>
+      </div>
+    </div>
+
+    <h3 style="font-size: 11pt; margin: 18px 0 10px;">What This Platform Delivers</h3>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-check">✓</div>
+        <div class="feature-content">
+          <h4>Self-Service Node Onboarding</h4>
+          <p>Node runners register, download agent, and start earning automatically</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-check">✓</div>
+        <div class="feature-content">
+          <h4>Customer Job Submission</h4>
+          <p>Customers submit compute jobs via portal or API with instant pricing</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-check">✓</div>
+        <div class="feature-content">
+          <h4>Automatic Job Execution</h4>
+          <p>Node agent receives jobs and executes Docker containers autonomously</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-check">✓</div>
+        <div class="feature-content">
+          <h4>A²E Yield Optimization</h4>
+          <p>Routes to highest-paying market with cost floor protection</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-check">✓</div>
+        <div class="feature-content">
+          <h4>External Market Integration</h4>
+          <p>Overflow to Akash & IO.net when internal demand is low</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-check">✓</div>
+        <div class="feature-content">
+          <h4>Automated Settlement</h4>
+          <p>Track earnings, calculate payouts, process settlements on schedule</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout green">
+      <h4>Zero Manual Intervention</h4>
+      <p>Once deployed, NeoNodes operates fully autonomously. Nodes join, jobs execute,
+      payments settle — all without admin involvement. Your time is freed from manual
+      compute management entirely.</p>
+    </div>
+  </div>
+
+  <!-- Progress Update -->
+  <div class="page">
+    <div class="page-header">
+      <div class="page-header-logo">Token<span>OS</span></div>
+      <div class="page-header-title">NeoNodes Platform • Revised Proposal</div>
+    </div>
+
+    <div class="section-number">02</div>
+    <h2 class="section-title">Progress <span class="highlight">Update</span></h2>
+    <p class="section-intro">
+      Work completed to date under the original Phase 1 agreement. The foundation
+      is built and operational — ready for expansion to full standalone platform.
+    </p>
+
+    <div class="milestone-card">
+      <div class="milestone-header">
+        <h3>Milestone 1 — Architecture & Design</h3>
+        <span class="milestone-badge complete">$800 COMPLETE</span>
+      </div>
+      <div class="milestone-body">
+        <h4>DELIVERED</h4>
+        <ul>
+          <li>Full system architecture document with service diagrams</li>
+          <li>Database schema design — 12 tables with Prisma ORM</li>
+          <li>OpenAPI specification for all REST endpoints</li>
+          <li>Pricing model and arbitrage logic specification</li>
+          <li>Provider yield floor model with worked examples</li>
+          <li>Job abstraction and failure scenario documentation</li>
+          <li>Arbitrage rule set design with decision flow</li>
+          <li>Monorepo structure with shared TypeScript types</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="milestone-card">
+      <div class="milestone-header">
+        <h3>Milestone 2 — Node Registry, Orchestration & A²E Engine</h3>
+        <span class="milestone-badge complete">$1,100 COMPLETE</span>
+      </div>
+      <div class="milestone-body">
+        <h4>DELIVERED</h4>
+        <ul>
+          <li>Node Registry API — registration, listing, details, deregistration</li>
+          <li>Heartbeat system — 30-second health checks with GPU metrics</li>
+          <li>Node health state machine — ONLINE → DEGRADED → OFFLINE</li>
+          <li>A²E Routing Engine — compares Internal vs Akash vs IO.net rates</li>
+          <li>Rule-based routing with yield floor enforcement</li>
+          <li>BullMQ job queue with retry logic (3 attempts, exponential backoff)</li>
+          <li>Auto node assignment with load balancing</li>
+          <li>Full job lifecycle tracking — PENDING → ASSIGNED → COMPLETED</li>
+          <li>Rate fetching from Akash (live) and IO.net (mock)</li>
+          <li>Redis caching with 60-second rate refresh</li>
+          <li>WebSocket server for real-time events</li>
+          <li>Configuration API — yield floors, market toggles</li>
+          <li>Statistics API — nodes, jobs, earnings aggregations</li>
+          <li>API authentication with X-API-Key validation</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="pricing-box" style="margin-top: 18px;">
+      <div class="pricing-left">
+        <h4>COMPLETED INVESTMENT</h4>
+        <div class="pricing-amount">$1,900</div>
+        <div class="pricing-note">M1 + M2 delivered and operational</div>
+      </div>
+      <div class="pricing-right">
+        <h4>API STATUS</h4>
+        <div class="pricing-timeline" style="font-size: 20pt;">LIVE</div>
+        <div class="pricing-sub">https://a2e.byredstone.com</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Platform Architecture -->
+  <div class="page">
+    <div class="page-header">
+      <div class="page-header-logo">Token<span>OS</span></div>
+      <div class="page-header-title">NeoNodes Platform • Revised Proposal</div>
+    </div>
+
+    <div class="section-number">03</div>
+    <h2 class="section-title">Platform <span class="highlight">Architecture</span></h2>
+    <p class="section-intro">
+      Complete system architecture for the fully automated NeoNodes marketplace.
+    </p>
+
+    <div class="architecture-box">
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          NEONODES PLATFORM                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐              │
+│   │  NODE RUNNER   │   │    CUSTOMER    │   │     ADMIN      │              │
+│   │    PORTAL      │   │    PORTAL      │   │   DASHBOARD    │              │
+│   │                │   │                │   │                │              │
+│   │ • Onboarding   │   │ • Job Submit   │   │ • Monitoring   │              │
+│   │ • Earnings     │   │ • Billing      │   │ • Config       │              │
+│   │ • Node Mgmt    │   │ • API Keys     │   │ • Overrides    │              │
+│   └───────┬────────┘   └───────┬────────┘   └───────┬────────┘              │
+│           │                    │                    │                        │
+│   ┌───────▼────────────────────▼────────────────────▼───────┐               │
+│   │                   A²E ORCHESTRATION ENGINE               │               │
+│   │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │               │
+│   │  │ ROUTING  │ │   JOB    │ │  RATE    │ │SETTLEMENT│   │               │
+│   │  │ ENGINE   │ │  QUEUE   │ │ FETCHER  │ │  ENGINE  │   │               │
+│   │  └──────────┘ └──────────┘ └──────────┘ └──────────┘   │               │
+│   └─────────────────────────┬───────────────────────────────┘               │
+│                             │                                                │
+│   ┌─────────────────────────▼───────────────────────────────┐               │
+│   │               EXTERNAL MARKET BRIDGE                     │               │
+│   │         ┌──────────────┐    ┌──────────────┐            │               │
+│   │         │    AKASH     │    │    IO.NET    │            │               │
+│   │         │   ADAPTER    │    │   ADAPTER    │            │               │
+│   │         └──────────────┘    └──────────────┘            │               │
+│   └─────────────────────────────────────────────────────────┘               │
+│                                                                              │
+└──────────────────────────────────┬──────────────────────────────────────────┘
+                                   │
+          ┌────────────────────────┼────────────────────────┐
+          ▼                        ▼                        ▼
+   ┌─────────────┐          ┌─────────────┐          ┌─────────────┐
+   │ NODE AGENT  │          │ NODE AGENT  │          │ NODE AGENT  │
+   │   (H100)    │          │   (H200)    │          │   (B200)    │
+   │             │          │             │          │             │
+   │ • Register  │          │ • Register  │          │ • Register  │
+   │ • Execute   │          │ • Execute   │          │ • Execute   │
+   │ • Report    │          │ • Report    │          │ • Report    │
+   └─────────────┘          └─────────────┘          └─────────────┘
+    </div>
+
+    <h3 style="font-size: 11pt; margin: 18px 0 10px;">Data Flow</h3>
+
+    <table>
+      <thead>
+        <tr>
+          <th>STEP</th>
+          <th>COMPONENT</th>
+          <th>ACTION</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>Node Runner Portal</td>
+          <td>Node runner signs up, connects wallet, downloads agent</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>Node Agent</td>
+          <td>Agent registers with A²E, starts sending heartbeats</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>Customer Portal</td>
+          <td>Customer submits job with GPU requirements</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>A²E Routing Engine</td>
+          <td>Compares rates, selects market, assigns to best node</td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td>Node Agent</td>
+          <td>Receives job, pulls Docker image, executes workload</td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td>Node Agent</td>
+          <td>Reports completion with duration and metrics</td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td>Settlement Engine</td>
+          <td>Calculates earnings, queues payout to node runner</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Remaining Scope - Admin Dashboard -->
+  <div class="page">
+    <div class="page-header">
+      <div class="page-header-logo">Token<span>OS</span></div>
+      <div class="page-header-title">NeoNodes Platform • Revised Proposal</div>
+    </div>
+
+    <div class="section-number">04</div>
+    <h2 class="section-title">Scope of <span class="highlight">Work</span></h2>
+    <p class="section-intro">
+      Complete breakdown of all remaining features required to deliver the
+      fully automated NeoNodes marketplace platform.
+    </p>
+
+    <div class="milestone-card">
+      <div class="milestone-header">
+        <h3>Module A — Admin Dashboard</h3>
+        <span class="milestone-badge pending">PENDING</span>
+      </div>
+      <div class="milestone-body">
+        <h4>DASHBOARD CORE</h4>
+        <ul>
+          <li>Next.js 14 application with App Router architecture</li>
+          <li>Admin authentication with secure session management</li>
+          <li>Responsive design optimized for desktop and tablet</li>
+          <li>TokenOS-style dark theme with real-time WebSocket updates</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">OVERVIEW DASHBOARD</h4>
+        <ul>
+          <li>Key metrics cards — total nodes, active jobs, earnings today</li>
+          <li>Live activity feed with real-time event streaming</li>
+          <li>System health indicators — API, database, Redis, external markets</li>
+          <li>Earnings visualization with time-series charts</li>
+          <li>Market status comparison — Internal vs Akash vs IO.net</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">NODE MANAGEMENT UI</h4>
+        <ul>
+          <li>Sortable, filterable table of all registered nodes</li>
+          <li>Node detail view — specs, metrics history, job history</li>
+          <li>Node status controls — pause, resume, maintenance mode</li>
+          <li>GPU health visualization — temperature, utilization charts</li>
+          <li>Bulk operations for multi-node actions</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">JOB MANAGEMENT UI</h4>
+        <ul>
+          <li>Job list with status, market, node, earnings columns</li>
+          <li>Job detail view — full info, routing decision, timeline</li>
+          <li>Job actions — cancel, retry, manual reassignment</li>
+          <li>Visual lifecycle progression indicator</li>
+          <li>Advanced filtering by status, market, node, date range</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">CONFIGURATION UI</h4>
+        <ul>
+          <li>Yield floor editor — adjust per GPU tier with instant preview</li>
+          <li>Market toggle controls — enable/disable external markets</li>
+          <li>Rate override capability for manual adjustments</li>
+          <li>Configuration change audit log</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">ROUTING SIMULATOR</h4>
+        <ul>
+          <li>Test interface to simulate routing decisions</li>
+          <li>What-if analysis for yield floor changes</li>
+          <li>Side-by-side market rate comparison</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Financial System -->
+  <div class="page">
+    <div class="page-header">
+      <div class="page-header-logo">Token<span>OS</span></div>
+      <div class="page-header-title">NeoNodes Platform • Revised Proposal</div>
+    </div>
+
+    <div class="milestone-card">
+      <div class="milestone-header">
+        <h3>Module B — Financial System</h3>
+        <span class="milestone-badge pending">PENDING</span>
+      </div>
+      <div class="milestone-body">
+        <h4>EARNINGS TRACKING</h4>
+        <ul>
+          <li>Automatic per-job earnings calculation on completion</li>
+          <li>Per-node earnings aggregation with historical tracking</li>
+          <li>Per-market revenue breakdown — Internal, Akash, IO.net</li>
+          <li>Per-GPU-tier earnings analysis</li>
+          <li>Automated daily earnings rollup and summaries</li>
+          <li>Earnings trend analysis with visualizations</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">COST TRACKING</h4>
+        <ul>
+          <li>Infrastructure cost recording and tracking</li>
+          <li>External market deployment cost tracking (Akash/IO.net)</li>
+          <li>True cost-per-job calculation</li>
+          <li>Margin analysis — revenue minus costs per market</li>
+          <li>Profitability reporting by tier and market</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">SETTLEMENT ENGINE</h4>
+        <ul>
+          <li>Payout calculation per node runner based on completed jobs</li>
+          <li>Configurable settlement periods — daily, weekly, monthly</li>
+          <li>Settlement queue with batch processing</li>
+          <li>Settlement status tracking — pending, processing, completed, failed</li>
+          <li>Minimum threshold configuration before payout triggers</li>
+          <li>Settlement retry logic for failed payouts</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">PAYMENT PROCESSING</h4>
+        <ul>
+          <li>Solana wallet integration for SOL/USDC payouts</li>
+          <li>Efficient multi-recipient payout batching</li>
+          <li>Full transaction recording with blockchain references</li>
+          <li>On-chain payment verification and confirmation</li>
+          <li>Failed payment handling with automatic retry</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">REPORTING</h4>
+        <ul>
+          <li>CSV export — earnings, settlements, jobs, nodes</li>
+          <li>PDF invoice generation for customer billing</li>
+          <li>Monthly earning statements for node runners</li>
+          <li>Tax-ready annual summaries for compliance</li>
+          <li>Custom date range reporting with flexible filters</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">FINANCIAL DASHBOARD</h4>
+        <ul>
+          <li>Revenue overview with trends and projections</li>
+          <li>Cost overview with expense breakdown</li>
+          <li>Net profit margins by market, tier, and time period</li>
+          <li>Pending settlements visibility and management</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Node Agent -->
+  <div class="page">
+    <div class="page-header">
+      <div class="page-header-logo">Token<span>OS</span></div>
+      <div class="page-header-title">NeoNodes Platform • Revised Proposal</div>
+    </div>
+
+    <div class="milestone-card">
+      <div class="milestone-header">
+        <h3>Module C — Node Agent</h3>
+        <span class="milestone-badge new">NEW SCOPE</span>
+      </div>
+      <div class="milestone-body">
+        <h4>AGENT CORE</h4>
+        <ul>
+          <li>Standalone binary executable for easy deployment</li>
+          <li>Automatic registration with A²E on first startup</li>
+          <li>Secure TLS-encrypted API communication</li>
+          <li>Heartbeat system sending health metrics every 30 seconds</li>
+          <li>Graceful shutdown — complete current job before stopping</li>
+          <li>Self-update capability to latest agent version</li>
+          <li>Configuration file with customizable settings</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">GPU MANAGEMENT</h4>
+        <ul>
+          <li>Automatic GPU detection via nvidia-smi integration</li>
+          <li>Multi-GPU support — handle multiple GPUs per node</li>
+          <li>Real-time GPU metrics — temperature, utilization, memory usage</li>
+          <li>GPU allocation — assign specific GPU to specific job</li>
+          <li>Health monitoring — detect GPU failures and thermal throttling</li>
+          <li>VRAM tracking and availability reporting</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">JOB EXECUTION</h4>
+        <ul>
+          <li>Job polling — check for assigned jobs on interval</li>
+          <li>Job acceptance — confirm job receipt to A²E</li>
+          <li>Docker integration — pull images, manage containers</li>
+          <li>Resource limits — enforce CPU, memory, GPU constraints</li>
+          <li>Execution timeout — kill jobs exceeding time limit</li>
+          <li>Output capture — collect stdout/stderr logs</li>
+          <li>Environment variable injection for job configuration</li>
+          <li>Volume mounting for data persistence</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">STATUS REPORTING</h4>
+        <ul>
+          <li>Job started notification — report RUNNING status instantly</li>
+          <li>Progress updates — periodic progress reporting to A²E</li>
+          <li>Job completed — report success with duration and metrics</li>
+          <li>Job failed — report failure with error details and logs</li>
+          <li>Resource usage metrics during execution</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">FAILURE RECOVERY</h4>
+        <ul>
+          <li>Crash recovery — resume state after agent restart</li>
+          <li>Job checkpointing — save state for long-running jobs</li>
+          <li>Automatic reconnection with exponential backoff</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">SECURITY</h4>
+        <ul>
+          <li>Container isolation — sandboxed execution environment</li>
+          <li>Resource limits — prevent resource exhaustion attacks</li>
+          <li>Network policies — restrict container network access</li>
+          <li>Image verification — only run trusted, verified images</li>
+          <li>Secure credential storage for API authentication</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">INSTALLATION</h4>
+        <ul>
+          <li>One-line installer script — curl | bash deployment</li>
+          <li>Docker prerequisite check and guidance</li>
+          <li>NVIDIA driver verification, guided setup wizard, systemd auto-start</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Node Runner Portal -->
+  <div class="page">
+    <div class="page-header">
+      <div class="page-header-logo">Token<span>OS</span></div>
+      <div class="page-header-title">NeoNodes Platform • Revised Proposal</div>
+    </div>
+
+    <div class="milestone-card">
+      <div class="milestone-header">
+        <h3>Module D — Node Runner Portal</h3>
+        <span class="milestone-badge new">NEW SCOPE</span>
+      </div>
+      <div class="milestone-body">
+        <h4>AUTHENTICATION</h4>
+        <ul>
+          <li>Wallet Connect integration — Phantom, Solflare support</li>
+          <li>Optional email registration for notifications</li>
+          <li>Secure session management with JWT tokens</li>
+          <li>Optional two-factor authentication (2FA)</li>
+          <li>Password recovery flow for email-based accounts</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">ONBOARDING FLOW</h4>
+        <ul>
+          <li>Welcome wizard with step-by-step guidance</li>
+          <li>System requirements display — GPU specs, Docker, drivers</li>
+          <li>Platform-specific agent download — Linux, Windows, macOS</li>
+          <li>Detailed installation guide with screenshots</li>
+          <li>Automatic verification when node comes online</li>
+          <li>Optional GPU benchmark for performance baseline</li>
+          <li>Terms of service and agreement acceptance</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">DASHBOARD</h4>
+        <ul>
+          <li>Earnings overview — today, this week, this month, all-time</li>
+          <li>Node status display — online/offline indicator, current job</li>
+          <li>Performance metrics — uptime percentage, jobs completed, efficiency</li>
+          <li>Earnings chart with time-series visualization</li>
+          <li>Recent activity feed showing job completions</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">NODE MANAGEMENT</h4>
+        <ul>
+          <li>Node list showing all registered nodes</li>
+          <li>Node details — specifications, status, job history</li>
+          <li>Pause/Resume controls — temporarily stop accepting jobs</li>
+          <li>Maintenance mode scheduling for planned downtime</li>
+          <li>Node removal — deregister from platform</li>
+          <li>Multiple node support per account</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">EARNINGS & PAYOUTS</h4>
+        <ul>
+          <li>Complete earnings history with transaction details</li>
+          <li>Pending earnings display — unsettled amounts</li>
+          <li>Payout history — all completed payouts with blockchain links</li>
+          <li>Payout settings — minimum threshold, frequency preferences</li>
+          <li>Wallet management — update payout wallet address</li>
+          <li>Earnings projection based on historical performance</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">JOB HISTORY</h4>
+        <ul>
+          <li>List of all completed jobs with details</li>
+          <li>Job detail view — duration, earnings, market routed</li>
+          <li>Execution logs access (if enabled by admin)</li>
+          <li>Filtering and search by date, status, earnings</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">NOTIFICATIONS</h4>
+        <ul>
+          <li>Email alerts — node offline, payout sent, important updates</li>
+          <li>In-app notification feed with real-time updates</li>
+          <li>Notification preferences — configure what to receive</li>
+          <li>Browser push notifications (optional)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Customer Portal -->
+  <div class="page">
+    <div class="page-header">
+      <div class="page-header-logo">Token<span>OS</span></div>
+      <div class="page-header-title">NeoNodes Platform • Revised Proposal</div>
+    </div>
+
+    <div class="milestone-card">
+      <div class="milestone-header">
+        <h3>Module E — Customer Portal</h3>
+        <span class="milestone-badge new">NEW SCOPE</span>
+      </div>
+      <div class="milestone-body">
+        <h4>AUTHENTICATION</h4>
+        <ul>
+          <li>Wallet Connect integration — Phantom, Solflare</li>
+          <li>Traditional email/password authentication option</li>
+          <li>API key generation for programmatic access</li>
+          <li>Team management — multiple users per organization</li>
+          <li>Role-based access control (admin, developer, viewer)</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">JOB SUBMISSION</h4>
+        <ul>
+          <li>Job creation form with GPU tier selection</li>
+          <li>Container configuration — image, command, environment</li>
+          <li>Resource selection — GPU count, memory, storage</li>
+          <li>Cost estimation displayed before submission</li>
+          <li>Job templates — save and reuse configurations</li>
+          <li>Batch job submission for multiple jobs</li>
+          <li>Priority levels for urgent jobs</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">JOB MONITORING</h4>
+        <ul>
+          <li>Active jobs list with real-time status updates</li>
+          <li>Job status progression — queued, running, completed</li>
+          <li>Live log streaming during execution</li>
+          <li>Resource metrics — GPU/CPU usage during execution</li>
+          <li>Cancel job functionality</li>
+          <li>Job queue position visibility</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">JOB HISTORY</h4>
+        <ul>
+          <li>Historical job list with search and filters</li>
+          <li>Job details — full execution information</li>
+          <li>Output download — retrieve job outputs</li>
+          <li>Rerun job — clone configuration and resubmit</li>
+          <li>Execution logs archive</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">BILLING</h4>
+        <ul>
+          <li>Account balance display</li>
+          <li>Add funds — SOL/USDC deposit with QR code</li>
+          <li>Usage history with detailed breakdown</li>
+          <li>Invoice download — PDF invoices</li>
+          <li>Spending limits — set maximum spend thresholds</li>
+          <li>Auto-recharge configuration</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">API ACCESS</h4>
+        <ul>
+          <li>Interactive API documentation with examples</li>
+          <li>API key management — create, revoke, rotate</li>
+          <li>API usage monitoring and rate limit visibility</li>
+          <li>SDK downloads — Python, JavaScript client libraries</li>
+          <li>Webhook configuration for job status callbacks</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- External Market Execution -->
+  <div class="page">
+    <div class="page-header">
+      <div class="page-header-logo">Token<span>OS</span></div>
+      <div class="page-header-title">NeoNodes Platform • Revised Proposal</div>
+    </div>
+
+    <div class="milestone-card">
+      <div class="milestone-header">
+        <h3>Module F — External Market Execution</h3>
+        <span class="milestone-badge new">NEW SCOPE</span>
+      </div>
+      <div class="milestone-body">
+        <h4>AKASH NETWORK INTEGRATION</h4>
+        <ul>
+          <li>Akash wallet setup and AKT balance management</li>
+          <li>SDL (Stack Definition Language) generation for jobs</li>
+          <li>Deployment creation via Akash CLI/API</li>
+          <li>Automatic bid selection from providers</li>
+          <li>Deployment status monitoring and health checks</li>
+          <li>Log retrieval from Akash deployments</li>
+          <li>Clean deployment termination on completion</li>
+          <li>AKT cost tracking per deployment</li>
+          <li>Provider reputation scoring</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">IO.NET INTEGRATION</h4>
+        <ul>
+          <li>IO.net API authentication and account management</li>
+          <li>Cluster creation and configuration</li>
+          <li>Job submission to IO.net network</li>
+          <li>Real-time status monitoring</li>
+          <li>Result retrieval and output handling</li>
+          <li>Cost tracking in IO credits</li>
+          <li>Failover handling between providers</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">MARKET ABSTRACTION</h4>
+        <ul>
+          <li>Unified interface across all external markets</li>
+          <li>Automatic failover — switch markets on failure</li>
+          <li>Cost normalization — compare apples to apples</li>
+          <li>Result aggregation — unified job results format</li>
+          <li>Market health monitoring and availability tracking</li>
+          <li>Rate limiting and quota management per market</li>
+        </ul>
+
+        <h4 style="margin-top: 10px;">BIDIRECTIONAL ROUTING</h4>
+        <ul>
+          <li>Internal demand high → serve internal customers at premium rates</li>
+          <li>Internal demand low → list idle nodes on Akash/IO.net for external jobs</li>
+          <li>Automatic switching based on demand levels</li>
+          <li>Node runners always earning — internal OR external, never idle</li>
+          <li>Hourly rate calculation regardless of job source</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout">
+      <h4>Bidirectional Market Routing</h4>
+      <p><strong>High Internal Demand:</strong> Node runners serve internal jobs at premium rates.<br>
+      <strong>Low Internal Demand:</strong> Idle nodes automatically list on Akash/IO.net to earn from external demand.<br>
+      <strong>Result:</strong> Node runners always earn — either from internal customers or external markets, calculated hourly.</p>
+    </div>
+
+    <div class="callout green">
+      <h4>Future: Data Center API Automation</h4>
+      <p>Node deployment currently requires manual data center coordination. If Hydrahost or similar providers
+      offer API-based provisioning, automated node deployment can be added as a future enhancement at no additional cost.</p>
+    </div>
+  </div>
+
+  <!-- Tech Stack -->
+  <div class="page">
+    <div class="page-header">
+      <div class="page-header-logo">Token<span>OS</span></div>
+      <div class="page-header-title">NeoNodes Platform • Revised Proposal</div>
+    </div>
+
+    <div class="section-number">05</div>
+    <h2 class="section-title">Tech <span class="highlight">Stack</span></h2>
+    <p class="section-intro">
+      100% Node.js — one language across the entire platform. Fast, unified, and fully owned.
+    </p>
+
+    <div class="tech-tags">
+      <span class="tech-tag primary">Node.js</span>
+      <span class="tech-tag primary">Fastify</span>
+      <span class="tech-tag primary">Next.js 14</span>
+      <span class="tech-tag primary">React</span>
+      <span class="tech-tag primary">Vite</span>
+      <span class="tech-tag">Tailwind CSS</span>
+      <span class="tech-tag">Socket.io</span>
+      <span class="tech-tag">BullMQ</span>
+      <span class="tech-tag">Redis</span>
+      <span class="tech-tag">PostgreSQL</span>
+      <span class="tech-tag">Prisma</span>
+      <span class="tech-tag">Docker</span>
+      <span class="tech-tag">Akash SDK</span>
+      <span class="tech-tag">IO.net API</span>
+      <span class="tech-tag">Solana Web3.js</span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>LAYER</th>
+          <th>TECHNOLOGY</th>
+          <th>PURPOSE</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Backend API</td>
+          <td>Node.js + Fastify</td>
+          <td>Core A²E engine, node registry, job processing, settlement</td>
+        </tr>
+        <tr>
+          <td>Admin Dashboard</td>
+          <td>Next.js 14 + React</td>
+          <td>Full admin control — monitoring, configuration, overrides</td>
+        </tr>
+        <tr>
+          <td>Node Runner Portal</td>
+          <td>Next.js 14 + Tailwind</td>
+          <td>Self-service onboarding, earnings tracking, node management</td>
+        </tr>
+        <tr>
+          <td>Customer Portal</td>
+          <td>Next.js 14 + Tailwind</td>
+          <td>Job submission, billing, API access, monitoring</td>
+        </tr>
+        <tr>
+          <td>Node Agent</td>
+          <td>Node.js + Docker SDK</td>
+          <td>GPU node daemon — job execution, metrics, heartbeat</td>
+        </tr>
+        <tr>
+          <td>Real-time</td>
+          <td>Socket.io</td>
+          <td>Live updates across all dashboards and portals</td>
+        </tr>
+        <tr>
+          <td>Job Queue</td>
+          <td>BullMQ + Redis</td>
+          <td>Async processing, retry logic, rate limiting</td>
+        </tr>
+        <tr>
+          <td>Database</td>
+          <td>PostgreSQL + Prisma</td>
+          <td>Node registry, jobs, earnings, settlements, audit logs</td>
+        </tr>
+        <tr>
+          <td>Payments</td>
+          <td>Solana Web3.js</td>
+          <td>SOL/USDC payouts to node runners</td>
+        </tr>
+        <tr>
+          <td>External Markets</td>
+          <td>Akash SDK + IO.net API</td>
+          <td>Live rates, job deployment, status monitoring</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout green" style="margin-top: 18px;">
+      <h4>Why Node.js for Everything?</h4>
+      <p>One language from backend to frontend to node agent means faster development, easier debugging,
+      shared types and utilities, and no context switching. The entire team works in TypeScript.
+      No Python, no Go, no fragmentation — just JavaScript everywhere.</p>
+    </div>
+  </div>
+
+  <!-- Milestone Breakdown -->
+  <div class="page">
+    <div class="page-header">
+      <div class="page-header-logo">Token<span>OS</span></div>
+      <div class="page-header-title">NeoNodes Platform • Revised Proposal</div>
+    </div>
+
+    <div class="section-number">06</div>
+    <h2 class="section-title">Milestone <span class="highlight">Breakdown</span></h2>
+    <p class="section-intro">
+      Seven milestones to deliver the complete NeoNodes platform. Payment released after
+      client review and approval of each milestone.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>MILESTONE</th>
+          <th>SCOPE</th>
+          <th>STATUS</th>
+          <th style="text-align: right;">INVESTMENT</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>M1</strong></td>
+          <td>Architecture & Economic Design</td>
+          <td class="status-complete">✓ COMPLETE</td>
+          <td style="text-align: right;">$800</td>
+        </tr>
+        <tr>
+          <td><strong>M2</strong></td>
+          <td>Node Registry, Orchestration & A²E Engine</td>
+          <td class="status-complete">✓ COMPLETE</td>
+          <td style="text-align: right;">$1,100</td>
+        </tr>
+        <tr>
+          <td><strong>M3</strong></td>
+          <td>Admin Dashboard & Configuration UI</td>
+          <td class="status-pending">PENDING</td>
+          <td style="text-align: right;">$1,200</td>
+        </tr>
+        <tr>
+          <td><strong>M4</strong></td>
+          <td>Financial System & Settlement Engine</td>
+          <td class="status-pending">PENDING</td>
+          <td style="text-align: right;">$1,600</td>
+        </tr>
+        <tr>
+          <td><strong>M5</strong></td>
+          <td>Node Agent & Execution Runtime</td>
+          <td class="status-new">NEW</td>
+          <td style="text-align: right;">$2,000</td>
+        </tr>
+        <tr>
+          <td><strong>M6</strong></td>
+          <td>Node Deployer Portal & Compute Buyer API</td>
+          <td class="status-new">NEW</td>
+          <td style="text-align: right;">$2,100</td>
+        </tr>
+        <tr>
+          <td><strong>M7</strong></td>
+          <td>External Market Overflow (Akash, IO.net, Vast.ai)</td>
+          <td class="status-new">NEW</td>
+          <td style="text-align: right;">$1,200</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="pricing-box">
+      <div class="pricing-left">
+        <h4>TOTAL PLATFORM INVESTMENT</h4>
+        <div class="pricing-amount">$10,000</div>
+        <div class="pricing-note"><s style="color: #666;">$11,200</s> <span style="color: #22c55e;">DISCOUNTED</span> • $1,900 paid • $8,100 remaining</div>
+      </div>
+      <div class="pricing-right">
+        <h4>TIMELINE</h4>
+        <div class="pricing-timeline">9 Weeks</div>
+        <div class="pricing-sub">From M3 start to full platform</div>
+      </div>
+    </div>
+
+    <h3 style="font-size: 11pt; margin: 18px 0 10px;">Payment Schedule</h3>
+
+    <table>
+      <thead>
+        <tr>
+          <th>MILESTONE</th>
+          <th>PAYMENT</th>
+          <th>TRIGGER</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>M1 + M2</td>
+          <td>$1,900</td>
+          <td class="status-complete">✓ PAID</td>
+        </tr>
+        <tr>
+          <td>M3 — Admin Dashboard</td>
+          <td>$1,200</td>
+          <td>Dashboard delivered and reviewed</td>
+        </tr>
+        <tr>
+          <td>M4 — Financial System</td>
+          <td>$1,600</td>
+          <td>Settlement engine operational</td>
+        </tr>
+        <tr>
+          <td>M5 — Node Agent</td>
+          <td>$2,000</td>
+          <td>Agent executing jobs autonomously</td>
+        </tr>
+        <tr>
+          <td>M6 — Portals</td>
+          <td>$2,100</td>
+          <td>Node runner and customer portals live</td>
+        </tr>
+        <tr>
+          <td>M7 — External Markets</td>
+          <td>$1,200</td>
+          <td>Akash & IO.net execution working</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Timeline -->
+  <div class="page">
+    <div class="page-header">
+      <div class="page-header-logo">Token<span>OS</span></div>
+      <div class="page-header-title">NeoNodes Platform • Revised Proposal</div>
+    </div>
+
+    <div class="section-number">07</div>
+    <h2 class="section-title">Delivery <span class="highlight">Timeline</span></h2>
+    <p class="section-intro">
+      Estimated delivery schedule for remaining milestones. Actual timing may vary
+      based on feedback cycles and scope refinements.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>MILESTONE</th>
+          <th>DURATION</th>
+          <th>CUMULATIVE</th>
+          <th>KEY DELIVERABLES</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>M3</strong></td>
+          <td>1 week</td>
+          <td>Week 1</td>
+          <td>Admin dashboard with full monitoring and controls</td>
+        </tr>
+        <tr>
+          <td><strong>M4</strong></td>
+          <td>1.5 weeks</td>
+          <td>Week 2.5</td>
+          <td>Earnings tracking, settlement engine, reports</td>
+        </tr>
+        <tr>
+          <td><strong>M5</strong></td>
+          <td>2 weeks</td>
+          <td>Week 4.5</td>
+          <td>Node agent with Docker execution runtime</td>
+        </tr>
+        <tr>
+          <td><strong>M6</strong></td>
+          <td>2.5 weeks</td>
+          <td>Week 7</td>
+          <td>Node runner portal + customer portal</td>
+        </tr>
+        <tr>
+          <td><strong>M7</strong></td>
+          <td>2 weeks</td>
+          <td>Week 9</td>
+          <td>Akash & IO.net job execution</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout" style="margin-top: 18px;">
+      <h4>Progressive Deployment</h4>
+      <p>Each milestone delivers working functionality. You don't wait 9 weeks to see results —
+      after M3 you have a dashboard, after M4 you have settlement, after M5 you have automatic
+      execution. The platform becomes more capable with each milestone.</p>
+    </div>
+
+    <h3 style="font-size: 11pt; margin: 25px 0 10px;">What You Get at Each Stage</h3>
+
+    <div class="two-column">
+      <div>
+        <h4 style="color: var(--primary-red); margin-bottom: 10px;">After M3 + M4</h4>
+        <ul style="list-style: none; font-size: 10pt;">
+          <li style="padding: 5px 0;">✓ Full admin visibility and control</li>
+          <li style="padding: 5px 0;">✓ Earnings tracking and settlement</li>
+          <li style="padding: 5px 0;">✓ Manual job submission via API</li>
+          <li style="padding: 5px 0;">✓ Routing decisions logged</li>
+        </ul>
+      </div>
+      <div>
+        <h4 style="color: var(--primary-red); margin-bottom: 10px;">After M5 + M6</h4>
+        <ul style="list-style: none; font-size: 10pt;">
+          <li style="padding: 5px 0;">✓ Node runners self-onboard</li>
+          <li style="padding: 5px 0;">✓ Jobs execute automatically</li>
+          <li style="padding: 5px 0;">✓ Customers submit via portal</li>
+          <li style="padding: 5px 0;">✓ Zero manual intervention</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="two-column" style="margin-top: 20px;">
+      <div>
+        <h4 style="color: var(--primary-red); margin-bottom: 10px;">After M7 (Complete)</h4>
+        <ul style="list-style: none; font-size: 10pt;">
+          <li style="padding: 5px 0;">✓ External market overflow</li>
+          <li style="padding: 5px 0;">✓ 100% GPU utilization</li>
+          <li style="padding: 5px 0;">✓ Multi-market arbitrage</li>
+          <li style="padding: 5px 0;">✓ Full NeoNodes platform</li>
+        </ul>
+      </div>
+      <div>
+        <h4 style="color: var(--success-green); margin-bottom: 10px;">Business Impact</h4>
+        <ul style="list-style: none; font-size: 10pt;">
+          <li style="padding: 5px 0;">✓ No more manual node management</li>
+          <li style="padding: 5px 0;">✓ Scale without headcount</li>
+          <li style="padding: 5px 0;">✓ Maximize node runner yield</li>
+          <li style="padding: 5px 0;">✓ Compete with Akash & IO.net</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ready to Start -->
+  <div class="page">
+    <div class="page-header">
+      <div class="page-header-logo">Token<span>OS</span></div>
+      <div class="page-header-title">NeoNodes Platform • Revised Proposal</div>
+    </div>
+
+    <div class="section-number">08</div>
+    <h2 class="section-title">Ready to <span class="highlight">Continue</span></h2>
+    <p class="section-intro">
+      The foundation is built and operational. We're ready to proceed with the remaining
+      milestones to deliver the complete NeoNodes platform.
+    </p>
+
+    <div class="feature-grid" style="margin-top: 18px;">
+      <div class="feature-card">
+        <div class="feature-check" style="background: var(--success-green);">✓</div>
+        <div class="feature-content">
+          <h4>API Live</h4>
+          <p>A²E engine operational at https://a2e.byredstone.com</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-check" style="background: var(--success-green);">✓</div>
+        <div class="feature-content">
+          <h4>Database Ready</h4>
+          <p>PostgreSQL with full schema deployed</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-check" style="background: var(--success-green);">✓</div>
+        <div class="feature-content">
+          <h4>Code Repository</h4>
+          <p>Private GitHub repo with full documentation</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-check" style="background: var(--success-green);">✓</div>
+        <div class="feature-content">
+          <h4>Rate Fetching</h4>
+          <p>Akash rates updating every 60 seconds</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout green" style="margin-top: 25px;">
+      <h4>Next Steps</h4>
+      <p>Upon approval of this revised proposal, we will immediately begin M3 (Admin Dashboard).
+      The dashboard will provide full visibility into the operational A²E engine while we build
+      out the remaining platform components.</p>
+    </div>
+
+    <div style="margin-top: 30px; padding: 18px; background: var(--card-bg); border-radius: 8px; text-align: center;">
+      <h3 style="font-size: 14pt; margin-bottom: 15px;">Investment Summary</h3>
+
+      <div style="display: flex; justify-content: center; gap: 60px; margin: 30px 0;">
+        <div>
+          <div style="font-size: 14pt; color: var(--success-green); font-weight: 700;">$1,900</div>
+          <div style="font-size: 9pt; color: var(--text-light);">COMPLETED</div>
+        </div>
+        <div>
+          <div style="font-size: 14pt; color: var(--primary-red); font-weight: 700;">$8,100</div>
+          <div style="font-size: 9pt; color: var(--text-light);">REMAINING</div>
+        </div>
+        <div>
+          <div style="font-size: 14pt; color: var(--text-primary); font-weight: 700;">$10,000</div>
+          <div style="font-size: 9pt; color: var(--text-light);">TOTAL <span style="color: var(--success-green);">(DISCOUNTED)</span></div>
+        </div>
+      </div>
+
+      <p style="font-size: 10pt; color: var(--text-secondary); max-width: 500px; margin: 0 auto;">
+        Complete NeoNodes platform with automated node onboarding, customer portal,
+        job execution, settlement, and external market integration.
+      </p>
+    </div>
+
+    <div style="margin-top: 35px; text-align: center; color: var(--text-light); font-size: 9pt;">
+      <p>Prepared by Redstone Development</p>
+      <p style="margin-top: 5px;">24 March 2026</p>
+    </div>
+  </div>
+
+</body>
+</html>

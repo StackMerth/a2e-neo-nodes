@@ -1,5 +1,6 @@
 // Routes barrel export
 
+export { authRoutes } from './auth'
 export { healthRoutes } from './health'
 export { nodeRoutes } from './nodes'
 export { jobRoutes } from './jobs'
@@ -7,3 +8,8 @@ export { routeRoutes } from './route'
 export { rateRoutes } from './rates'
 export { configRoutes } from './config'
 export { statsRoutes } from './stats'
+export { earningsRoutes } from './earnings'
+export { costsRoutes } from './costs'
+export { settlementsRoutes } from './settlements'
+export { paymentsRoutes } from './payments'
+export { reportsRoutes } from './reports'

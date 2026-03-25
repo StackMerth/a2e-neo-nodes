@@ -11,6 +11,7 @@ const navigation = [
   { name: 'ROUTING', href: '/routing' },
   { name: 'JOBS', href: '/jobs' },
   { name: 'RATES', href: '/rates' },
+  { name: 'FINANCIAL', href: '/financial' },
   { name: 'SETTINGS', href: '/settings' },
 ]
 

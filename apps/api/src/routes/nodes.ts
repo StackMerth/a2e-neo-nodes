@@ -228,6 +228,55 @@ export async function nodeRoutes(fastify: FastifyInstance) {
     }
   )
 
+  fastify.patch(
+    '/v1/nodes/:id/status',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const statusSchema = z.object({
+        status: z.enum(['ONLINE', 'PAUSED', 'MAINTENANCE']),
+      })
+
+      const parseResult = statusSchema.safeParse(request.body)
+
+      if (!parseResult.success) {
+        return reply.code(400).send({
+          error: 'Validation Error',
+          message: parseResult.error.errors[0]?.message ?? 'Invalid status',
+        })
+      }
+
+      const { status } = parseResult.data
+
+      const node = await fastify.prisma.node.findUnique({ where: { id } })
+
+      if (!node) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Node not found',
+        })
+      }
+
+      const updatedNode = await fastify.prisma.node.update({
+        where: { id },
+        data: { status: status as NodeStatus },
+      })
+
+      fastify.io?.emit('node:status', {
+        id: updatedNode.id,
+        status: updatedNode.status,
+        timestamp: new Date().toISOString(),
+      })
+
+      reply.send({
+        id: updatedNode.id,
+        status: updatedNode.status,
+      })
+    }
+  )
+
   fastify.post(
     '/v1/nodes/:id/heartbeat',
     {

@@ -38,6 +38,11 @@ async function apiFetch<T>(endpoint: string, options: FetchOptions = {}): Promis
     throw new Error(error.message || `HTTP ${response.status}`)
   }
 
+  // Handle 204 No Content responses
+  if (response.status === 204) {
+    return undefined as T
+  }
+
   return response.json()
 }
 
@@ -234,5 +239,175 @@ export const api = {
         }>
         pagination: { page: number; limit: number; total: number }
       }>('/v1/config/audit', { params }),
+  },
+
+  // Financial - Earnings
+  earnings: {
+    summary: (params?: { startDate?: string; endDate?: string }) =>
+      apiFetch<{
+        totalEarnings: number
+        totalGpuSeconds: number
+        totalJobs: number
+        byMarket: Record<string, { earnings: number; jobs: number }>
+        byNode: Record<string, { earnings: number; jobs: number }>
+      }>('/v1/earnings/summary', { params }),
+
+    byMarket: (params?: { days?: number }) =>
+      apiFetch<{
+        period: { start: string; end: string }
+        total: { earnings: number; gpuHours: number; jobCount: number }
+        byMarket: Record<string, { earnings: number; gpuHours: number; jobCount: number }>
+      }>('/v1/earnings/by-market', { params }),
+
+    trends: (params?: { days?: number; groupBy?: string }) =>
+      apiFetch<{
+        period: { start: string; end: string; days: number; groupBy: string }
+        trend: Array<{ date: string; earnings: number; gpuHours: number; jobCount: number }>
+      }>('/v1/earnings/trends', { params }),
+  },
+
+  // Financial - Costs
+  costs: {
+    list: (params?: { category?: string; limit?: number }) =>
+      apiFetch<{
+        costs: Array<{
+          id: string
+          nodeId: string | null
+          category: string
+          amount: number
+          currency: string
+          description: string | null
+          periodStart: string
+          periodEnd: string
+          createdAt: string
+        }>
+        total: number
+      }>('/v1/costs', { params }),
+
+    summary: (params?: { days?: number }) =>
+      apiFetch<{
+        period: { start: string; end: string }
+        total: number
+        byCategory: Record<string, number>
+      }>('/v1/costs/summary', { params }),
+
+    create: (data: {
+      category: string
+      amount: number
+      description?: string
+      periodStart: string
+      periodEnd: string
+      nodeId?: string
+    }) =>
+      apiFetch<{ id: string }>('/v1/costs', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    delete: (id: string) =>
+      apiFetch<{ success: boolean }>(`/v1/costs/${id}`, { method: 'DELETE' }),
+  },
+
+  // Financial - Margins
+  margins: (params?: { days?: number }) =>
+    apiFetch<{
+      period: { start: string; end: string }
+      revenue: number
+      costs: number
+      profit: number
+      marginPercent: number
+    }>('/v1/margins', { params }),
+
+  // Financial - Settlements
+  settlements: {
+    list: (params?: { status?: string; limit?: number }) =>
+      apiFetch<{
+        settlements: Array<{
+          id: string
+          nodeId: string
+          walletAddress: string
+          gpuTier: string
+          amount: number
+          currency: string
+          status: string
+          jobCount: number
+          periodStart: string
+          periodEnd: string
+          txHash: string | null
+          txConfirmed: boolean
+          createdAt: string
+          processedAt: string | null
+        }>
+        total: number
+      }>('/v1/settlements', { params }),
+
+    pending: () =>
+      apiFetch<{
+        pendingCount: number
+        totalAmount: number
+        pending: Array<{
+          nodeId: string
+          walletAddress: string
+          amount: number
+          jobCount: number
+        }>
+      }>('/v1/settlements/pending'),
+
+    config: () =>
+      apiFetch<{
+        period: string
+        minimumPayout: number
+        dayOfWeek: number | null
+        dayOfMonth: number | null
+        solanaRpcUrl: string | null
+        usdcMint: string | null
+      }>('/v1/settlements/config'),
+
+    updateConfig: (data: { period?: string; minimumPayout?: number; dayOfWeek?: number }) =>
+      apiFetch<Record<string, unknown>>('/v1/settlements/config', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+
+    trigger: (nodeId?: string) =>
+      apiFetch<{ message: string; settlementIds: string[] }>('/v1/settlements/trigger', {
+        method: 'POST',
+        body: JSON.stringify({ nodeId }),
+      }),
+
+    complete: (id: string, txHash: string) =>
+      apiFetch<{ message: string }>(`/v1/settlements/${id}/complete`, {
+        method: 'POST',
+        body: JSON.stringify({ txHash }),
+      }),
+  },
+
+  // Financial - Reports
+  reports: {
+    summary: (params?: { days?: number }) =>
+      apiFetch<{
+        period: { start: string; end: string }
+        revenue: { total: number; gpuHours: number; jobCount: number }
+        costs: { total: number }
+        profit: { gross: number; margin: number }
+        settlements: { completed: number; amount: number }
+        activity: { totalJobs: number; activeNodes: number }
+      }>('/v1/reports/summary', { params }),
+
+    downloadCSV: async (type: 'earnings' | 'settlements' | 'jobs' | 'nodes') => {
+      const response = await fetch(`${API_BASE}/v1/reports/${type}/csv`, {
+        headers: { 'X-API-Key': API_KEY },
+      })
+      if (!response.ok) throw new Error('Failed to download CSV')
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${type}-${new Date().toISOString().split('T')[0]}.csv`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    },
   },
 }

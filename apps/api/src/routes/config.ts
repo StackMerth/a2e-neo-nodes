@@ -208,4 +208,53 @@ export async function configRoutes(fastify: FastifyInstance) {
       })
     }
   )
+
+  // Config audit log (placeholder - returns recent config changes)
+  fastify.get(
+    '/v1/config/audit',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { limit = '20' } = request.query as { limit?: string }
+      const numLimit = Math.min(parseInt(limit, 10) || 20, 100)
+
+      // Get recent yield floor and market config updates
+      const [yieldFloors, marketConfigs] = await Promise.all([
+        fastify.prisma.yieldFloor.findMany({
+          orderBy: { updatedAt: 'desc' },
+          take: numLimit,
+        }),
+        fastify.prisma.marketConfig.findMany({
+          orderBy: { updatedAt: 'desc' },
+          take: numLimit,
+        }),
+      ])
+
+      const auditEntries = [
+        ...yieldFloors.map((f) => ({
+          id: `yf-${f.gpuTier}`,
+          action: 'UPDATE' as const,
+          field: `yield_floor.${f.gpuTier}`,
+          oldValue: null,
+          newValue: `$${f.ratePerDay}/day`,
+          changedBy: 'admin',
+          timestamp: f.updatedAt.toISOString(),
+        })),
+        ...marketConfigs.map((c) => ({
+          id: `mc-${c.market}`,
+          action: 'UPDATE' as const,
+          field: `market.${c.market}`,
+          oldValue: null,
+          newValue: c.enabled ? 'enabled' : 'disabled',
+          changedBy: 'admin',
+          timestamp: c.updatedAt.toISOString(),
+        })),
+      ]
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, numLimit)
+
+      reply.send({ entries: auditEntries })
+    }
+  )
 }

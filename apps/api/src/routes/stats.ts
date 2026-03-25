@@ -200,4 +200,52 @@ export async function statsRoutes(fastify: FastifyInstance) {
       })
     }
   )
+
+  // Earnings trend for chart
+  fastify.get(
+    '/v1/stats/earnings/trend',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { days = '7' } = request.query as { days?: string }
+      const numDays = Math.min(parseInt(days, 10) || 7, 90)
+
+      const startDate = new Date()
+      startDate.setDate(startDate.getDate() - numDays)
+      startDate.setHours(0, 0, 0, 0)
+
+      const earnings = await fastify.prisma.earning.findMany({
+        where: { date: { gte: startDate } },
+        orderBy: { date: 'asc' },
+      })
+
+      // Group by date and market
+      const byDate: Record<string, { internal: number; akash: number; ionet: number }> = {}
+
+      for (let i = 0; i < numDays; i++) {
+        const date = new Date(startDate)
+        date.setDate(date.getDate() + i)
+        const dateStr = date.toISOString().split('T')[0] as string
+        byDate[dateStr] = { internal: 0, akash: 0, ionet: 0 }
+      }
+
+      for (const earning of earnings) {
+        const dateStr = earning.date.toISOString().split('T')[0] as string
+        const entry = byDate[dateStr]
+        if (entry) {
+          const market = earning.market.toLowerCase() as 'internal' | 'akash' | 'ionet'
+          entry[market] += earning.earnings
+        }
+      }
+
+      const trend = Object.entries(byDate).map(([date, markets]) => ({
+        date,
+        ...markets,
+        total: markets.internal + markets.akash + markets.ionet,
+      }))
+
+      reply.send({ trend, days: numDays })
+    }
+  )
 }

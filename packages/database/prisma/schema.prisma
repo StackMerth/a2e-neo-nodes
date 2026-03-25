@@ -31,6 +31,8 @@ enum NodeStatus {
   ONLINE
   DEGRADED
   OFFLINE
+  PAUSED
+  MAINTENANCE
 }
 
 enum JobStatus {
@@ -70,9 +72,11 @@ model Node {
   updatedAt     DateTime   @updatedAt
 
   // Relations
-  jobs          Job[]
-  earnings      Earning[]
-  heartbeats    Heartbeat[]
+  jobs               Job[]
+  earnings           Earning[]
+  heartbeats         Heartbeat[]
+  settlements        Settlement[]
+  infrastructureCosts InfrastructureCost[]
 
   @@index([status])
   @@index([gpuTier])
@@ -260,4 +264,84 @@ model MarketConfig {
   apiEndpoint String?
 
   updatedAt   DateTime @updatedAt
+}
+
+// ============================================================================
+// SETTLEMENTS (M4)
+// ============================================================================
+
+model Settlement {
+  id            String           @id @default(cuid())
+  nodeId        String
+  walletAddress String
+  amount        Float
+  currency      String           @default("USD")
+  status        SettlementStatus @default(PENDING)
+  periodStart   DateTime
+  periodEnd     DateTime
+  jobCount      Int
+  txHash        String?
+  txConfirmed   Boolean          @default(false)
+  errorMessage  String?
+  createdAt     DateTime         @default(now())
+  processedAt   DateTime?
+
+  node          Node             @relation(fields: [nodeId], references: [id])
+  items         SettlementItem[]
+
+  @@index([nodeId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model SettlementItem {
+  id           String     @id @default(cuid())
+  settlementId String
+  jobId        String
+  amount       Float
+
+  settlement   Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+
+  @@index([settlementId])
+}
+
+model SettlementConfig {
+  id              String   @id @default("default")
+  period          String   @default("WEEKLY")
+  minimumPayout   Float    @default(10)
+  dayOfWeek       Int?     @default(1)
+  dayOfMonth      Int?
+  solanaRpcUrl    String?
+  payerPrivateKey String?
+  usdcMint        String?
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================================
+// INFRASTRUCTURE COSTS (M4)
+// ============================================================================
+
+model InfrastructureCost {
+  id          String   @id @default(cuid())
+  nodeId      String?
+  category    String
+  amount      Float
+  currency    String   @default("USD")
+  description String?
+  periodStart DateTime
+  periodEnd   DateTime
+  createdAt   DateTime @default(now())
+
+  node        Node?    @relation(fields: [nodeId], references: [id])
+
+  @@index([nodeId])
+  @@index([category])
+  @@index([periodStart, periodEnd])
+}
+
+enum SettlementStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
 }

@@ -9,8 +9,13 @@ import {
   rateRoutes,
   configRoutes,
   statsRoutes,
+  authRoutes,
+  earningsRoutes,
+  costsRoutes,
+  settlementsRoutes,
+  paymentsRoutes,
+  reportsRoutes,
 } from './routes'
-import { authRoutes } from './routes/auth'
 import { setupWebSocket } from './websocket'
 import {
   createRateFetcherQueue,
@@ -57,6 +62,11 @@ async function start() {
     await server.register(rateRoutes)
     await server.register(configRoutes)
     await server.register(statsRoutes)
+    await server.register(earningsRoutes)
+    await server.register(costsRoutes)
+    await server.register(settlementsRoutes)
+    await server.register(paymentsRoutes)
+    await server.register(reportsRoutes)
 
     const redisConnection = server.redis as unknown as import('bullmq').ConnectionOptions
     const rateFetcherQueue = createRateFetcherQueue(redisConnection)

@@ -28,11 +28,12 @@ interface StatCardProps {
   value: string | number
   prefix?: string
   suffix?: string
+  className?: string
 }
 
-export function StatCard({ label, value, prefix, suffix }: StatCardProps) {
+export function StatCard({ label, value, prefix, suffix, className = '' }: StatCardProps) {
   return (
-    <div className="bg-surface border border-border rounded-xl p-6 text-center">
+    <div className={`bg-surface border border-border rounded-xl p-6 text-center ${className}`}>
       <p className="text-xs text-text-muted uppercase tracking-wider mb-3">{label}</p>
       <p className="text-3xl md:text-4xl font-bold text-text-primary">
         {prefix && <span className="text-accent">{prefix}</span>}
