@@ -4,10 +4,14 @@
 # Local development instructions (not for client)
 CLAUDE.md
 
-# Local reports (PDFs/HTMLs for local reference only)
-/docs/reports/*.html
-/docs/reports/*.pdf
-/docs/reports/REPORTING-GUIDE.md
+# Local reports, proposals, and plans (not for GitHub)
+/docs/reports/
+/docs/proposals/
+/docs/*_REPORT.md
+/docs/*_DELIVERABLES.md
+/docs/*_TASKS.md
+/docs/DEVELOPMENT_PLAN.md
+/docs/UI_REDESIGN.md
 
 # Dependencies
 node_modules/
