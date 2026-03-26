@@ -345,3 +345,46 @@ enum SettlementStatus {
   COMPLETED
   FAILED
 }
+
+// ============================================================================
+// PAYMENTS (M4)
+// ============================================================================
+
+model Payment {
+  id            String        @id @default(cuid())
+  settlementId  String
+  amount        Float
+  currency      String        @default("USDC")
+  recipientAddress String
+
+  // Payment execution
+  status        PaymentStatus @default(PENDING)
+  txHash        String?
+  txConfirmed   Boolean       @default(false)
+  confirmations Int           @default(0)
+
+  // Dev mode tracking
+  isDevMode     Boolean       @default(false)
+
+  // Error handling
+  errorMessage  String?
+  retryCount    Int           @default(0)
+  maxRetries    Int           @default(3)
+
+  // Timestamps
+  createdAt     DateTime      @default(now())
+  processedAt   DateTime?
+  confirmedAt   DateTime?
+
+  @@index([settlementId])
+  @@index([status])
+  @@index([txHash])
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SENT
+  CONFIRMED
+  FAILED
+}

@@ -46,6 +46,13 @@ interface JobDetail {
 
 const STATUS_STEPS = ['PENDING', 'ROUTING', 'ASSIGNED', 'RUNNING', 'COMPLETED']
 
+interface NodeOption {
+  id: string
+  walletAddress: string
+  gpuTier: string
+  status: string
+}
+
 export default function JobDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -55,8 +62,18 @@ export default function JobDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Node assignment state
+  const [nodes, setNodes] = useState<NodeOption[]>([])
+  const [selectedNodeId, setSelectedNodeId] = useState<string>('')
+  const [assigning, setAssigning] = useState(false)
+
+  // Job completion state
+  const [durationHours, setDurationHours] = useState<string>('2')
+  const [completing, setCompleting] = useState(false)
+
   useEffect(() => {
     loadJob()
+    loadNodes()
     // Auto-refresh if job is in progress
     const interval = setInterval(() => {
       if (job && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status)) {
@@ -75,6 +92,52 @@ export default function JobDetailPage() {
       setError(err instanceof Error ? err.message : 'Failed to load job')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function loadNodes() {
+    try {
+      const data = await api.nodes.list({ status: 'ONLINE', limit: 100 })
+      setNodes(data.nodes)
+    } catch (err) {
+      console.error('Failed to load nodes:', err)
+    }
+  }
+
+  async function handleAssignNode() {
+    if (!selectedNodeId) return
+    setAssigning(true)
+    try {
+      await api.jobs.update(jobId, { nodeId: selectedNodeId })
+      await loadJob()
+      setSelectedNodeId('')
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to assign node')
+    } finally {
+      setAssigning(false)
+    }
+  }
+
+  async function handleCompleteJob() {
+    const hours = parseFloat(durationHours)
+    if (isNaN(hours) || hours <= 0) {
+      alert('Please enter a valid duration in hours')
+      return
+    }
+
+    if (!confirm(`Complete this job with ${hours} hours of work? This will calculate earnings.`)) {
+      return
+    }
+
+    setCompleting(true)
+    try {
+      const durationSeconds = Math.round(hours * 3600)
+      await api.jobs.update(jobId, { status: 'COMPLETED', durationSeconds })
+      await loadJob()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to complete job')
+    } finally {
+      setCompleting(false)
     }
   }
 
@@ -342,12 +405,69 @@ export default function JobDetailPage() {
               </Link>
             </div>
           ) : (
-            <div className="flex items-center justify-center h-32 text-text-muted">
-              <p>No node assigned yet</p>
+            <div className="space-y-4 mt-4">
+              <p className="text-text-muted text-sm">No node assigned yet. Select a node to assign:</p>
+
+              <select
+                value={selectedNodeId}
+                onChange={(e) => setSelectedNodeId(e.target.value)}
+                className="w-full px-4 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent"
+              >
+                <option value="">Select a node...</option>
+                {nodes.filter(n => n.gpuTier === job.gpuTier).map((node) => (
+                  <option key={node.id} value={node.id}>
+                    {node.walletAddress.slice(0, 8)}...{node.walletAddress.slice(-4)} ({node.gpuTier})
+                  </option>
+                ))}
+              </select>
+
+              {nodes.filter(n => n.gpuTier === job.gpuTier).length === 0 && (
+                <p className="text-warning text-xs">No online {job.gpuTier} nodes available</p>
+              )}
+
+              <Button
+                onClick={handleAssignNode}
+                disabled={!selectedNodeId || assigning}
+                variant="gradient"
+                className="w-full"
+              >
+                {assigning ? 'Assigning...' : 'Assign Node'}
+              </Button>
             </div>
           )}
         </Card>
       </div>
+
+      {/* Job Actions - Complete Job */}
+      {job.node && !['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status) && (
+        <Card title="Complete Job" description="Mark this job as completed with earnings">
+          <div className="space-y-4 mt-4">
+            <div>
+              <label className="block text-sm text-text-muted mb-2">Duration (hours)</label>
+              <input
+                type="number"
+                value={durationHours}
+                onChange={(e) => setDurationHours(e.target.value)}
+                step="0.5"
+                min="0.1"
+                className="w-full px-4 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent"
+                placeholder="e.g., 2.5"
+              />
+              <p className="text-xs text-text-muted mt-1">
+                Estimated earnings: ${((parseFloat(durationHours) || 0) * (job.ratePerHour || 0)).toFixed(2)}
+              </p>
+            </div>
+            <Button
+              onClick={handleCompleteJob}
+              disabled={completing}
+              variant="gradient"
+              className="w-full"
+            >
+              {completing ? 'Completing...' : 'Complete Job & Calculate Earnings'}
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Error Message */}
       {job.errorMessage && (

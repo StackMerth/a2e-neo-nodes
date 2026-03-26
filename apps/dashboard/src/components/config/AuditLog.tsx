@@ -28,7 +28,7 @@ export function AuditLog() {
     setLoading(true)
     try {
       const response = await api.configAudit.list({ limit: 20 })
-      setLogs(response.logs)
+      setLogs(response?.logs ?? [])
       setError(null)
     } catch (err) {
       // Generate mock data if API not available
@@ -112,7 +112,7 @@ export function AuditLog() {
         <div className="h-48 flex items-center justify-center">
           <p className="text-error text-sm">{error}</p>
         </div>
-      ) : logs.length === 0 ? (
+      ) : !Array.isArray(logs) || logs.length === 0 ? (
         <div className="h-48 flex items-center justify-center">
           <p className="text-text-muted">No configuration changes recorded</p>
         </div>

@@ -24,6 +24,7 @@ const updateJobSchema = z.object({
   status: z.enum(['RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED']).optional(),
   durationSeconds: z.number().positive().optional(),
   errorMessage: z.string().max(1000).optional(),
+  nodeId: z.string().optional(),
 })
 
 export async function jobRoutes(fastify: FastifyInstance) {
@@ -244,7 +245,7 @@ export async function jobRoutes(fastify: FastifyInstance) {
         })
       }
 
-      const { status, durationSeconds, errorMessage } = parseResult.data
+      const { status, durationSeconds, errorMessage, nodeId } = parseResult.data
 
       const updateData: {
         status?: JobStatus
@@ -253,7 +254,12 @@ export async function jobRoutes(fastify: FastifyInstance) {
         startedAt?: Date
         completedAt?: Date
         earnings?: number
+        nodeId?: string
       } = {}
+
+      if (nodeId !== undefined) {
+        updateData.nodeId = nodeId
+      }
 
       if (status) {
         updateData.status = status as JobStatus

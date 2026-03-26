@@ -42,11 +42,14 @@ export default function SettingsPage() {
         api.config.yieldFloors(),
         api.config.markets(),
       ])
-      setFloors(floorsData.floors)
-      setMarkets(marketsData.markets)
+      setFloors(floorsData?.floors ?? [])
+      setMarkets(marketsData?.markets ?? [])
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings')
+      // Set empty arrays on error to prevent undefined errors
+      setFloors([])
+      setMarkets([])
     } finally {
       setLoading(false)
     }
@@ -118,7 +121,7 @@ export default function SettingsPage() {
           {/* Yield Floors */}
           <Card title="Yield Floors" description="Minimum guaranteed rate per GPU tier">
             <div className="space-y-4 mt-4">
-              {floors.map((floor) => (
+              {Array.isArray(floors) && floors.length > 0 ? floors.map((floor) => (
                 <div
                   key={floor.gpuTier}
                   className="p-4 bg-background rounded-lg border border-border"
@@ -177,14 +180,16 @@ export default function SettingsPage() {
                     </div>
                   )}
                 </div>
-              ))}
+              )) : (
+                <p className="text-text-muted text-sm py-4 text-center">No yield floors configured</p>
+              )}
             </div>
           </Card>
 
           {/* Market Configuration */}
           <Card title="Market Configuration" description="Enable or disable external markets">
             <div className="space-y-4 mt-4">
-              {markets.map((market) => (
+              {Array.isArray(markets) && markets.length > 0 ? markets.map((market) => (
                 <div
                   key={market.market}
                   className="p-4 bg-background rounded-lg border border-border"
@@ -222,7 +227,9 @@ export default function SettingsPage() {
                     )}
                   </div>
                 </div>
-              ))}
+              )) : (
+                <p className="text-text-muted text-sm py-4 text-center">No markets configured</p>
+              )}
             </div>
 
             <div className="mt-6 p-4 bg-surface-hover rounded-lg">

@@ -1,9 +1,10 @@
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string
   error?: string
+  icon?: React.ReactNode
 }
 
-export function Input({ label, error, className = '', ...props }: InputProps) {
+export function Input({ label, error, icon, className = '', ...props }: InputProps) {
   return (
     <div className="space-y-1">
       {label && (
@@ -11,12 +12,25 @@ export function Input({ label, error, className = '', ...props }: InputProps) {
           {label}
         </label>
       )}
-      <input
-        className={`w-full px-4 py-2 bg-background border border-border rounded-lg text-text-primary placeholder-text-muted focus:border-accent focus:ring-1 focus:ring-accent ${
-          error ? 'border-error' : ''
-        } ${className}`}
-        {...props}
-      />
+      <div className="relative">
+        {icon && (
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none">
+            {icon}
+          </div>
+        )}
+        <input
+          className={`
+            w-full px-4 py-2 bg-background border border-border rounded-lg
+            text-text-primary placeholder-text-muted
+            focus:border-accent focus:ring-1 focus:ring-accent
+            transition-colors
+            ${icon ? 'pl-10' : ''}
+            ${error ? 'border-error' : ''}
+            ${className}
+          `}
+          {...props}
+        />
+      </div>
       {error && <p className="text-sm text-error">{error}</p>}
     </div>
   )
@@ -36,7 +50,7 @@ export function Select({ label, options, className = '', ...props }: SelectProps
         </label>
       )}
       <select
-        className={`w-full px-4 py-2 bg-background border border-border rounded-lg text-text-primary focus:border-accent focus:ring-1 focus:ring-accent ${className}`}
+        className={`w-full px-4 py-2 bg-background border border-border rounded-lg text-text-primary focus:border-accent focus:ring-1 focus:ring-accent transition-colors ${className}`}
         {...props}
       >
         {options.map((opt) => (

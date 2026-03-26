@@ -46,6 +46,12 @@ interface PendingSettlement {
   jobCount: number
 }
 
+interface PaymentMode {
+  mode: 'dev' | 'live'
+  description: string
+  devMode: boolean
+}
+
 export default function FinancialPage() {
   const [summary, setSummary] = useState<ReportSummary | null>(null)
   const [earningsByMarket, setEarningsByMarket] = useState<EarningsByMarket | null>(null)
@@ -57,6 +63,8 @@ export default function FinancialPage() {
   const [error, setError] = useState<string | null>(null)
   const [days, setDays] = useState(30)
   const [triggering, setTriggering] = useState(false)
+  const [paymentMode, setPaymentMode] = useState<PaymentMode | null>(null)
+  const [processingPayment, setProcessingPayment] = useState<string | null>(null)
 
   useEffect(() => {
     loadData()
@@ -65,12 +73,13 @@ export default function FinancialPage() {
   async function loadData() {
     setLoading(true)
     try {
-      const [summaryData, earningsData, costsData, settlementsData, pendingData] = await Promise.all([
+      const [summaryData, earningsData, costsData, settlementsData, pendingData, modeData] = await Promise.all([
         api.reports.summary({ days }),
         api.earnings.byMarket({ days }),
         api.costs.summary({ days }),
         api.settlements.list({ limit: 10 }),
         api.settlements.pending(),
+        api.payments.mode(),
       ])
 
       setSummary(summaryData)
@@ -79,6 +88,7 @@ export default function FinancialPage() {
       setSettlements(settlementsData.settlements)
       setPendingSettlements(pendingData.pending)
       setPendingTotal(pendingData.totalAmount)
+      setPaymentMode(modeData)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load financial data')
@@ -97,6 +107,27 @@ export default function FinancialPage() {
       alert(err instanceof Error ? err.message : 'Failed to trigger settlements')
     } finally {
       setTriggering(false)
+    }
+  }
+
+  async function handleProcessPayment(settlementId: string) {
+    if (!confirm(paymentMode?.devMode
+      ? 'Process this payment in DEV MODE? (No real funds will be transferred)'
+      : 'Process this payment? Real funds will be transferred.')) {
+      return
+    }
+
+    setProcessingPayment(settlementId)
+    try {
+      const result = await api.payments.process(settlementId, 'USDC')
+      alert(result.isDevMode
+        ? `DEV MODE: Payment simulated!\nTx: ${result.txHash.substring(0, 20)}...`
+        : `Payment sent!\nTx: ${result.txHash}`)
+      loadData()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to process payment')
+    } finally {
+      setProcessingPayment(null)
     }
   }
 
@@ -137,6 +168,28 @@ export default function FinancialPage() {
 
   return (
     <div className="space-y-8">
+      {/* Payment Mode Banner */}
+      {paymentMode && (
+        <div className={`p-4 rounded-lg border ${
+          paymentMode.devMode
+            ? 'bg-warning/10 border-warning/30'
+            : 'bg-accent/10 border-accent/30'
+        }`}>
+          <div className="flex items-center gap-3">
+            <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+              paymentMode.devMode
+                ? 'bg-warning/20 text-warning'
+                : 'bg-accent/20 text-accent'
+            }`}>
+              {paymentMode.mode.toUpperCase()} MODE
+            </span>
+            <span className={paymentMode.devMode ? 'text-warning' : 'text-accent'}>
+              {paymentMode.description}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -355,6 +408,7 @@ export default function FinancialPage() {
                     <th className="text-left text-xs font-medium text-text-muted pb-2">Status</th>
                     <th className="text-left text-xs font-medium text-text-muted pb-2">Jobs</th>
                     <th className="text-left text-xs font-medium text-text-muted pb-2">Date</th>
+                    <th className="text-left text-xs font-medium text-text-muted pb-2">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -392,6 +446,23 @@ export default function FinancialPage() {
                         <span className="text-sm text-text-muted">
                           {new Date(s.createdAt).toLocaleDateString()}
                         </span>
+                      </td>
+                      <td className="py-3">
+                        {s.status === 'PENDING' ? (
+                          <button
+                            onClick={() => handleProcessPayment(s.id)}
+                            disabled={processingPayment === s.id}
+                            className="px-3 py-1 bg-accent hover:bg-accent/80 disabled:bg-accent/50 text-white text-xs font-medium rounded transition-colors"
+                          >
+                            {processingPayment === s.id ? 'Paying...' : 'Pay'}
+                          </button>
+                        ) : s.status === 'COMPLETED' && s.txHash ? (
+                          <span className="text-xs text-text-muted font-mono">
+                            {s.txHash.substring(0, 12)}...
+                          </span>
+                        ) : (
+                          <span className="text-xs text-text-muted">-</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -435,6 +506,12 @@ export default function FinancialPage() {
             className="px-4 py-2 bg-surface-hover hover:bg-border rounded-lg text-sm font-medium text-text-primary transition-colors"
           >
             Export Jobs CSV
+          </button>
+          <button
+            onClick={() => api.reports.downloadCSV('nodes')}
+            className="px-4 py-2 bg-surface-hover hover:bg-border rounded-lg text-sm font-medium text-text-primary transition-colors"
+          >
+            Export Nodes CSV
           </button>
         </div>
       </Card>

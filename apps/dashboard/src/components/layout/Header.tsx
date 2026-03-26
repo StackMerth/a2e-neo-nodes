@@ -19,6 +19,7 @@ export function Header() {
   const pathname = usePathname()
   const { user, logout } = useAuth()
   const [showDropdown, setShowDropdown] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
 
   return (
     <header className="sticky top-0 z-50">
@@ -82,11 +83,36 @@ export function Header() {
                 <span className="text-xs text-accent font-medium tracking-wider">LIVE</span>
               </div>
 
-              {/* Notification Bell (placeholder) */}
-              <button className="relative p-2 text-text-secondary hover:text-text-primary hover:bg-surface-hover rounded-lg transition-colors">
-                <BellIcon className="w-5 h-5" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-accent rounded-full" />
-              </button>
+              {/* Notification Bell */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowNotifications(!showNotifications)}
+                  className="relative p-2 text-text-secondary hover:text-text-primary hover:bg-surface-hover rounded-lg transition-colors"
+                >
+                  <BellIcon className="w-5 h-5" />
+                </button>
+
+                {showNotifications && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setShowNotifications(false)}
+                    />
+                    <div className="absolute right-0 mt-2 w-80 bg-surface/95 backdrop-blur-xl border border-border rounded-xl shadow-xl z-20 animate-scaleIn origin-top-right overflow-hidden">
+                      <div className="p-4 border-b border-border">
+                        <h3 className="font-semibold text-text-primary">Notifications</h3>
+                      </div>
+                      <div className="p-6 text-center">
+                        <div className="w-12 h-12 bg-surface-hover rounded-full flex items-center justify-center mx-auto mb-3">
+                          <BellIcon className="w-6 h-6 text-text-muted" />
+                        </div>
+                        <p className="text-text-muted text-sm">No new notifications</p>
+                        <p className="text-text-muted text-xs mt-1">System alerts will appear here</p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* User Dropdown */}
               <div className="relative">

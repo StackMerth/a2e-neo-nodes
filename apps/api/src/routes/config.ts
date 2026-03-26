@@ -231,30 +231,33 @@ export async function configRoutes(fastify: FastifyInstance) {
         }),
       ])
 
-      const auditEntries = [
+      const logs = [
         ...yieldFloors.map((f) => ({
           id: `yf-${f.gpuTier}`,
           action: 'UPDATE' as const,
           field: `yield_floor.${f.gpuTier}`,
-          oldValue: null,
-          newValue: `$${f.ratePerDay}/day`,
+          oldValue: 'previous value',
+          newValue: `$${f.ratePerDay.toFixed(2)}/day`,
           changedBy: 'admin',
-          timestamp: f.updatedAt.toISOString(),
+          changedAt: f.updatedAt.toISOString(),
         })),
         ...marketConfigs.map((c) => ({
           id: `mc-${c.market}`,
           action: 'UPDATE' as const,
           field: `market.${c.market}`,
-          oldValue: null,
+          oldValue: c.enabled ? 'disabled' : 'enabled',
           newValue: c.enabled ? 'enabled' : 'disabled',
           changedBy: 'admin',
-          timestamp: c.updatedAt.toISOString(),
+          changedAt: c.updatedAt.toISOString(),
         })),
       ]
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .sort((a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime())
         .slice(0, numLimit)
 
-      reply.send({ entries: auditEntries })
+      reply.send({
+        logs,
+        pagination: { page: 1, limit: numLimit, total: logs.length }
+      })
     }
   )
 }

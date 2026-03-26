@@ -128,6 +128,18 @@ export const api = {
       }>('/v1/jobs', { params }),
 
     get: (id: string) => apiFetch<Record<string, unknown>>(`/v1/jobs/${id}`),
+
+    update: (id: string, data: { nodeId?: string; status?: string; durationSeconds?: number }) =>
+      apiFetch<{
+        id: string
+        status: string
+        durationSeconds: number | null
+        earnings: number | null
+        updatedAt: string
+      }>(`/v1/jobs/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
   },
 
   // Rates
@@ -380,6 +392,48 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ txHash }),
       }),
+  },
+
+  // Financial - Payments
+  payments: {
+    mode: () =>
+      apiFetch<{
+        mode: 'dev' | 'live'
+        description: string
+        devMode: boolean
+        rpcConfigured: boolean
+        payerConfigured: boolean
+      }>('/v1/payments/mode'),
+
+    process: (settlementId: string, currency: 'SOL' | 'USDC' = 'USDC') =>
+      apiFetch<{
+        success: boolean
+        paymentId: string
+        settlementId: string
+        txHash: string
+        amount: number
+        currency: string
+        recipientAddress: string
+        isDevMode: boolean
+        status: string
+        message: string
+      }>(`/v1/payments/process/${settlementId}`, {
+        method: 'POST',
+        body: JSON.stringify({ currency }),
+      }),
+
+    stats: () =>
+      apiFetch<{
+        currentMode: string
+        modeDescription: string
+        stats: {
+          total: number
+          confirmed: number
+          failed: number
+          devModePayments: number
+          totalAmountPaid: number
+        }
+      }>('/v1/payments/stats'),
   },
 
   // Financial - Reports
