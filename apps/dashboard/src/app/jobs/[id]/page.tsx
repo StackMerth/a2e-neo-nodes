@@ -71,6 +71,9 @@ export default function JobDetailPage() {
   const [durationHours, setDurationHours] = useState<string>('2')
   const [completing, setCompleting] = useState(false)
 
+  // Job actions state
+  const [actionInProgress, setActionInProgress] = useState<string | null>(null)
+
   useEffect(() => {
     loadJob()
     loadNodes()
@@ -138,6 +141,49 @@ export default function JobDetailPage() {
       alert(err instanceof Error ? err.message : 'Failed to complete job')
     } finally {
       setCompleting(false)
+    }
+  }
+
+  async function handleJobAction(action: 'cancel' | 'retry' | 'requeue') {
+    const confirmMessages = {
+      cancel: 'Are you sure you want to cancel this job?',
+      retry: 'Are you sure you want to retry this job?',
+      requeue: 'Are you sure you want to requeue this job?',
+    }
+    if (!confirm(confirmMessages[action])) return
+
+    setActionInProgress(action)
+    try {
+      switch (action) {
+        case 'cancel':
+          await api.jobs.cancel(jobId)
+          break
+        case 'retry':
+          await api.jobs.retry(jobId)
+          break
+        case 'requeue':
+          await api.jobs.requeue(jobId)
+          break
+      }
+      loadJob()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : `Failed to ${action} job`)
+    } finally {
+      setActionInProgress(null)
+    }
+  }
+
+  const canPerformAction = (action: 'cancel' | 'retry' | 'requeue') => {
+    if (!job) return false
+    switch (action) {
+      case 'cancel':
+        return ['PENDING', 'ROUTING', 'ASSIGNED', 'RUNNING'].includes(job.status)
+      case 'retry':
+        return job.status === 'FAILED'
+      case 'requeue':
+        return job.status === 'FAILED'
+      default:
+        return false
     }
   }
 
@@ -216,9 +262,44 @@ export default function JobDetailPage() {
             {job.gpuTier} • Created {new Date(job.timing.requestedAt).toLocaleString()}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`w-3 h-3 rounded-full ${getStatusColor(job.status).split(' ')[0]}`} />
-          <span className="text-lg font-medium text-text-primary">{job.status}</span>
+        <div className="flex items-center gap-4">
+          <div className="flex gap-2">
+            {canPerformAction('cancel') && (
+              <Button
+                onClick={() => handleJobAction('cancel')}
+                disabled={actionInProgress === 'cancel'}
+                variant="outline"
+                size="sm"
+                className="border-error text-error hover:bg-error/10"
+              >
+                {actionInProgress === 'cancel' ? 'Cancelling...' : 'Cancel Job'}
+              </Button>
+            )}
+            {canPerformAction('retry') && (
+              <Button
+                onClick={() => handleJobAction('retry')}
+                disabled={actionInProgress === 'retry'}
+                variant="primary"
+                size="sm"
+              >
+                {actionInProgress === 'retry' ? 'Retrying...' : 'Retry Job'}
+              </Button>
+            )}
+            {canPerformAction('requeue') && (
+              <Button
+                onClick={() => handleJobAction('requeue')}
+                disabled={actionInProgress === 'requeue'}
+                variant="secondary"
+                size="sm"
+              >
+                {actionInProgress === 'requeue' ? 'Requeuing...' : 'Requeue'}
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`w-3 h-3 rounded-full ${getStatusColor(job.status).split(' ')[0]}`} />
+            <span className="text-lg font-medium text-text-primary">{job.status}</span>
+          </div>
         </div>
       </div>
 
