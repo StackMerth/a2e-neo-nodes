@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Card } from '@/components/ui/Card'
+import { useState, useEffect } from 'react'
+import { Card, StatCard } from '@/components/ui/Card'
 import { DateRangePicker } from '@/components/ui/DateRangePicker'
 import { api } from '@/lib/api'
 
@@ -12,10 +12,48 @@ interface DateRange {
   end: Date | null
 }
 
+interface ReportSummary {
+  period: { start: string; end: string }
+  revenue: { total: number; gpuHours: number; jobCount: number }
+  costs: { total: number }
+  profit: { gross: number; margin: number }
+  settlements: { completed: number; amount: number }
+  activity: { totalJobs: number; activeNodes: number }
+}
+
 export default function ReportsPage() {
   const [reportType, setReportType] = useState<ReportType>('earnings')
   const [dateRange, setDateRange] = useState<DateRange>({ start: null, end: null })
   const [downloading, setDownloading] = useState<string | null>(null)
+  const [summary, setSummary] = useState<ReportSummary | null>(null)
+  const [loadingSummary, setLoadingSummary] = useState(false)
+
+  useEffect(() => {
+    loadSummary()
+  }, [dateRange])
+
+  async function loadSummary() {
+    setLoadingSummary(true)
+    try {
+      const days = dateRange.start && dateRange.end
+        ? Math.ceil((dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24))
+        : 30
+      const data = await api.reports.summary({ days })
+      setSummary(data)
+    } catch (err) {
+      console.error('Failed to load summary:', err)
+    } finally {
+      setLoadingSummary(false)
+    }
+  }
+
+  function formatCurrency(value: number): string {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+    }).format(value)
+  }
 
   const reportTypes: Array<{ value: ReportType; label: string; description: string; icon: React.ReactNode }> = [
     {
@@ -98,6 +136,42 @@ export default function ReportsPage() {
           )}
         </div>
       </Card>
+
+      {/* Report Summary Preview */}
+      {summary && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <StatCard
+            label="Total Revenue"
+            value={formatCurrency(summary.revenue.total)}
+            className={loadingSummary ? 'animate-pulse' : ''}
+          />
+          <StatCard
+            label="Total Costs"
+            value={formatCurrency(summary.costs.total)}
+            className={loadingSummary ? 'animate-pulse' : ''}
+          />
+          <StatCard
+            label="Gross Profit"
+            value={formatCurrency(summary.profit.gross)}
+            className={loadingSummary ? 'animate-pulse' : ''}
+          />
+          <StatCard
+            label="Profit Margin"
+            value={`${summary.profit.margin.toFixed(1)}%`}
+            className={loadingSummary ? 'animate-pulse' : ''}
+          />
+          <StatCard
+            label="Total Jobs"
+            value={summary.activity.totalJobs.toLocaleString()}
+            className={loadingSummary ? 'animate-pulse' : ''}
+          />
+          <StatCard
+            label="Settlements Paid"
+            value={formatCurrency(summary.settlements.amount)}
+            className={loadingSummary ? 'animate-pulse' : ''}
+          />
+        </div>
+      )}
 
       {/* Report Types */}
       <div className="grid md:grid-cols-2 gap-4">
@@ -182,6 +256,32 @@ export default function ReportsPage() {
             All Nodes (CSV)
           </button>
         </div>
+      </Card>
+
+      {/* Generate Invoice */}
+      <Card className="p-6">
+        <h3 className="font-semibold text-text-primary mb-2">Generate Invoice</h3>
+        <p className="text-sm text-text-muted mb-4">Create a PDF invoice for a specific settlement period</p>
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Invoice Period</label>
+            <DateRangePicker
+              value={dateRange}
+              onChange={setDateRange}
+              className="w-64"
+            />
+          </div>
+          <button
+            onClick={() => handleDownloadPDF('settlements')}
+            disabled={downloading === 'settlements-pdf' || !dateRange.start || !dateRange.end}
+            className="px-6 py-2.5 text-sm font-medium bg-accent text-white hover:bg-accent-hover rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {downloading === 'settlements-pdf' ? 'Generating...' : 'Generate Invoice PDF'}
+          </button>
+        </div>
+        {(!dateRange.start || !dateRange.end) && (
+          <p className="text-xs text-warning mt-2">Select a date range to generate an invoice</p>
+        )}
       </Card>
     </div>
   )
