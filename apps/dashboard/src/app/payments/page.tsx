@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { api } from '@/lib/api'
 
@@ -38,12 +39,22 @@ interface PendingSettlement {
   jobCount: number
 }
 
+interface Pagination {
+  page: number
+  limit: number
+  total: number
+  totalPages: number
+}
+
 export default function PaymentsPage() {
   const [payments, setPayments] = useState<Payment[]>([])
   const [stats, setStats] = useState<PaymentStats | null>(null)
   const [pendingSettlements, setPendingSettlements] = useState<PendingSettlement[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<string>('all')
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [pagination, setPagination] = useState<Pagination | null>(null)
   const [verifying, setVerifying] = useState<string | null>(null)
   const [selectedSettlements, setSelectedSettlements] = useState<string[]>([])
   const [batchProcessing, setBatchProcessing] = useState(false)
@@ -51,17 +62,22 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     loadData()
-  }, [filter])
+  }, [filter, page])
 
   async function loadData() {
     setLoading(true)
     try {
       const [paymentsRes, statsRes, pendingRes] = await Promise.all([
-        api.payments.list({ status: filter !== 'all' ? filter : undefined, limit: 50 }),
+        api.payments.list({
+          status: filter !== 'all' ? filter : undefined,
+          limit: 20,
+          page
+        }),
         api.payments.stats(),
         api.settlements.pending(),
       ])
       setPayments(paymentsRes.payments)
+      setPagination(paymentsRes.pagination)
       setStats(statsRes)
       setPendingSettlements(pendingRes.pending)
     } catch (err) {
@@ -69,6 +85,23 @@ export default function PaymentsPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // Filter payments by search term
+  const filteredPayments = useMemo(() => {
+    if (!search.trim()) return payments
+    const term = search.toLowerCase()
+    return payments.filter(
+      p =>
+        p.recipientAddress.toLowerCase().includes(term) ||
+        p.txHash?.toLowerCase().includes(term) ||
+        p.id.toLowerCase().includes(term) ||
+        p.settlementId.toLowerCase().includes(term)
+    )
+  }, [payments, search])
+
+  function handleExportCSV() {
+    api.reports.downloadCSV('settlements')
   }
 
   async function handleBatchProcess() {
@@ -131,6 +164,14 @@ export default function PaymentsPage() {
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Payments</h1>
           <p className="text-text-muted mt-1">Track and verify payment transactions</p>
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={loadData} variant="outline" size="sm">
+            Refresh
+          </Button>
+          <Button onClick={handleExportCSV} variant="outline" size="sm">
+            Export CSV
+          </Button>
         </div>
       </div>
 
@@ -232,21 +273,35 @@ export default function PaymentsPage() {
         </Card>
       )}
 
-      {/* Filter */}
-      <div className="flex gap-2">
-        {['all', 'PENDING', 'CONFIRMED', 'FAILED'].map((status) => (
-          <button
-            key={status}
-            onClick={() => setFilter(status)}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-              filter === status
-                ? 'bg-accent text-white'
-                : 'bg-surface-hover text-text-secondary hover:text-text-primary'
-            }`}
-          >
-            {status === 'all' ? 'All' : status}
-          </button>
-        ))}
+      {/* Filter and Search */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex gap-2">
+          {['all', 'PENDING', 'CONFIRMED', 'FAILED'].map((status) => (
+            <button
+              key={status}
+              onClick={() => {
+                setFilter(status)
+                setPage(1)
+              }}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                filter === status
+                  ? 'bg-accent text-white'
+                  : 'bg-surface-hover text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              {status === 'all' ? 'All' : status}
+            </button>
+          ))}
+        </div>
+        <div className="flex-1 max-w-md">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by address, tx hash, or ID..."
+            className="w-full px-4 py-2 bg-background border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+          />
+        </div>
       </div>
 
       {/* Payments Table */}
@@ -269,12 +324,14 @@ export default function PaymentsPage() {
                 <tr>
                   <td colSpan={7} className="py-8 text-center text-text-muted">Loading...</td>
                 </tr>
-              ) : payments.length === 0 ? (
+              ) : filteredPayments.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-text-muted">No payments found</td>
+                  <td colSpan={7} className="py-8 text-center text-text-muted">
+                    {search ? 'No payments match your search' : 'No payments found'}
+                  </td>
                 </tr>
               ) : (
-                payments.map((payment) => (
+                filteredPayments.map((payment) => (
                   <tr key={payment.id} className="border-b border-border/50 hover:bg-surface-hover/50">
                     <td className="py-3 px-4">
                       <span className="text-xs font-mono text-text-secondary">{payment.id.substring(0, 12)}...</span>
@@ -309,15 +366,23 @@ export default function PaymentsPage() {
                       </span>
                     </td>
                     <td className="py-3 px-4">
-                      {payment.txHash && !payment.isDevMode && (
-                        <button
-                          onClick={() => handleVerify(payment.txHash!)}
-                          disabled={verifying === payment.txHash}
-                          className="px-2 py-1 text-xs bg-accent/10 text-accent rounded hover:bg-accent/20 disabled:opacity-50"
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/settlements/${payment.settlementId}`}
+                          className="px-2 py-1 text-xs bg-surface-hover text-text-secondary rounded hover:bg-border transition-colors"
                         >
-                          {verifying === payment.txHash ? 'Verifying...' : 'Verify'}
-                        </button>
-                      )}
+                          View
+                        </Link>
+                        {payment.txHash && !payment.isDevMode && (
+                          <button
+                            onClick={() => handleVerify(payment.txHash!)}
+                            disabled={verifying === payment.txHash}
+                            className="px-2 py-1 text-xs bg-accent/10 text-accent rounded hover:bg-accent/20 disabled:opacity-50"
+                          >
+                            {verifying === payment.txHash ? 'Verifying...' : 'Verify'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -325,6 +390,34 @@ export default function PaymentsPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {pagination && pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between p-4 border-t border-border">
+            <p className="text-sm text-text-muted">
+              Showing {((page - 1) * pagination.limit) + 1} to {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} payments
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-3 py-1.5 text-sm bg-surface-hover hover:bg-border disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                Previous
+              </button>
+              <span className="px-3 py-1.5 text-sm text-text-muted">
+                Page {page} of {pagination.totalPages}
+              </span>
+              <button
+                onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
+                disabled={page === pagination.totalPages}
+                className="px-3 py-1.5 text-sm bg-surface-hover hover:bg-border disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Batch Processing Modal */}
