@@ -140,6 +140,63 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify(data),
       }),
+
+    create: (data: {
+      deploymentId: string
+      gpuTier: string
+      nodeId?: string
+      hasInternalDemand?: boolean
+      autoRoute?: boolean
+    }) =>
+      apiFetch<{
+        id: string
+        deploymentId: string
+        gpuTier: string
+        status: string
+        nodeId: string | null
+        queued: boolean
+        createdAt: string
+      }>('/v1/jobs', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    cancel: (id: string) =>
+      apiFetch<{ id: string; status: string; message: string }>(`/v1/jobs/${id}/cancel`, {
+        method: 'POST',
+      }),
+
+    retry: (id: string) =>
+      apiFetch<{ id: string; status: string; retryCount: number; message: string }>(`/v1/jobs/${id}/retry`, {
+        method: 'POST',
+      }),
+
+    requeue: (id: string) =>
+      apiFetch<{ id: string; status: string; message: string }>(`/v1/jobs/${id}/requeue`, {
+        method: 'POST',
+      }),
+
+    bulk: (jobs: Array<{ deploymentId: string; gpuTier: string; nodeId?: string }>) =>
+      apiFetch<{
+        success: boolean
+        created: number
+        failed: number
+        jobs: Array<{ id: string; deploymentId: string; status: string } | { error: string; deploymentId: string }>
+      }>('/v1/jobs/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ jobs }),
+      }),
+
+    bulkCancel: (jobIds: string[]) =>
+      apiFetch<{
+        success: boolean
+        cancelled: number
+        failed: number
+        results: Array<{ id: string; status: string } | { id: string; error: string }>
+      }>('/v1/jobs/bulk/cancel', {
+        method: 'POST',
+        body: JSON.stringify({ jobIds }),
+      }),
   },
 
   // Rates
@@ -193,6 +250,21 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify(data),
       }),
+
+    resetYieldFloor: (gpuTier: string) =>
+      apiFetch<{ gpuTier: string; ratePerHour: number; ratePerDay: number; message: string }>(
+        `/v1/config/yield-floors/${gpuTier}`,
+        { method: 'DELETE' }
+      ),
+
+    updateMarketPriority: (markets: Array<{ market: string; priority: number }>) =>
+      apiFetch<{ message: string; markets: Array<{ market: string; priority: number }> }>(
+        '/v1/config/markets/priority',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ markets }),
+        }
+      ),
   },
 
   // Stats
@@ -387,10 +459,52 @@ export const api = {
         body: JSON.stringify({ nodeId }),
       }),
 
+    get: (id: string) =>
+      apiFetch<{
+        id: string
+        nodeId: string
+        walletAddress: string
+        gpuTier: string
+        amount: number
+        currency: string
+        status: string
+        jobCount: number
+        periodStart: string
+        periodEnd: string
+        txHash: string | null
+        txConfirmed: boolean
+        createdAt: string
+        processedAt: string | null
+        jobs: Array<{
+          id: string
+          deploymentId: string
+          earnings: number
+          durationSeconds: number
+          completedAt: string
+        }>
+        payment: {
+          id: string
+          txHash: string
+          status: string
+          confirmedAt: string | null
+        } | null
+      }>(`/v1/settlements/${id}`),
+
     complete: (id: string, txHash: string) =>
       apiFetch<{ message: string }>(`/v1/settlements/${id}/complete`, {
         method: 'POST',
         body: JSON.stringify({ txHash }),
+      }),
+
+    fail: (id: string, reason: string) =>
+      apiFetch<{ message: string }>(`/v1/settlements/${id}/fail`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      }),
+
+    retry: (id: string) =>
+      apiFetch<{ message: string; settlementId: string }>(`/v1/settlements/${id}/retry`, {
+        method: 'POST',
       }),
   },
 
@@ -404,6 +518,44 @@ export const api = {
         rpcConfigured: boolean
         payerConfigured: boolean
       }>('/v1/payments/mode'),
+
+    list: (params?: { status?: string; limit?: number; page?: number }) =>
+      apiFetch<{
+        payments: Array<{
+          id: string
+          settlementId: string
+          amount: number
+          currency: string
+          recipientAddress: string
+          txHash: string | null
+          status: string
+          isDevMode: boolean
+          createdAt: string
+          confirmedAt: string | null
+        }>
+        pagination: { page: number; limit: number; total: number; totalPages: number }
+      }>('/v1/payments', { params }),
+
+    get: (id: string) =>
+      apiFetch<{
+        id: string
+        settlementId: string
+        amount: number
+        currency: string
+        recipientAddress: string
+        txHash: string | null
+        status: string
+        isDevMode: boolean
+        confirmations: number
+        createdAt: string
+        confirmedAt: string | null
+        settlement: {
+          id: string
+          nodeId: string
+          walletAddress: string
+          jobCount: number
+        }
+      }>(`/v1/payments/${id}`),
 
     process: (settlementId: string, currency: 'SOL' | 'USDC' = 'USDC') =>
       apiFetch<{
@@ -420,6 +572,32 @@ export const api = {
       }>(`/v1/payments/process/${settlementId}`, {
         method: 'POST',
         body: JSON.stringify({ currency }),
+      }),
+
+    batch: (settlementIds: string[], currency: 'SOL' | 'USDC' = 'USDC') =>
+      apiFetch<{
+        success: boolean
+        processed: number
+        failed: number
+        results: Array<{
+          settlementId: string
+          paymentId?: string
+          txHash?: string
+          error?: string
+        }>
+      }>('/v1/payments/batch', {
+        method: 'POST',
+        body: JSON.stringify({ settlementIds, currency }),
+      }),
+
+    verify: (txHash: string) =>
+      apiFetch<{
+        verified: boolean
+        confirmations: number
+        status: string
+        blockTime: string | null
+      }>(`/v1/payments/verify/${txHash}`, {
+        method: 'POST',
       }),
 
     stats: () =>
@@ -463,5 +641,56 @@ export const api = {
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
     },
+
+    downloadPDF: async (type: 'earnings' | 'settlements' | 'invoice', params?: { nodeId?: string; startDate?: string; endDate?: string }) => {
+      const queryParams = new URLSearchParams()
+      if (params?.nodeId) queryParams.append('nodeId', params.nodeId)
+      if (params?.startDate) queryParams.append('startDate', params.startDate)
+      if (params?.endDate) queryParams.append('endDate', params.endDate)
+      const queryString = queryParams.toString()
+      const url = `${API_BASE}/v1/reports/${type}/pdf${queryString ? `?${queryString}` : ''}`
+
+      const response = await fetch(url, {
+        headers: { 'X-API-Key': API_KEY },
+      })
+      if (!response.ok) throw new Error('Failed to download PDF')
+      const blob = await response.blob()
+      const blobUrl = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = `a2e-${type}-${new Date().toISOString().split('T')[0]}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(blobUrl)
+      document.body.removeChild(a)
+    },
+  },
+
+  // System
+  system: {
+    health: () =>
+      apiFetch<{
+        status: string
+        timestamp: string
+        services: {
+          database: { status: string; latencyMs: number }
+          redis: { status: string; latencyMs: number; memoryUsage?: string }
+          jobQueue: { status: string; waiting: number; active: number; completed: number; failed: number }
+          rateFetcher: { status: string; lastRun: string | null; nextRun: string | null }
+        }
+        uptime: number
+        version: string
+      }>('/v1/system/health'),
+
+    logs: (params?: { level?: string; limit?: number }) =>
+      apiFetch<{
+        logs: Array<{
+          id: string
+          level: string
+          message: string
+          context: Record<string, unknown>
+          timestamp: string
+        }>
+      }>('/v1/system/logs', { params }),
   },
 }
