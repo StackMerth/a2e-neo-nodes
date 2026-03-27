@@ -84,6 +84,7 @@ interface ConfirmModalProps {
   cancelText?: string
   variant?: 'danger' | 'warning' | 'default'
   loading?: boolean
+  children?: ReactNode
 }
 
 export function ConfirmModal({
@@ -96,6 +97,7 @@ export function ConfirmModal({
   cancelText = 'Cancel',
   variant = 'default',
   loading = false,
+  children,
 }: ConfirmModalProps) {
   const variantClasses = {
     danger: 'bg-error hover:bg-error/80',
@@ -105,7 +107,8 @@ export function ConfirmModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} size="sm">
-      <p className="text-text-secondary mb-6">{message}</p>
+      <p className="text-text-secondary mb-4">{message}</p>
+      {children}
       <div className="flex gap-3">
         <button
           onClick={onClose}
