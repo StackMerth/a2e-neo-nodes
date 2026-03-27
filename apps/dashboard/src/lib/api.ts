@@ -447,8 +447,18 @@ export const api = {
         usdcMint: string | null
       }>('/v1/settlements/config'),
 
-    updateConfig: (data: { period?: string; minimumPayout?: number; dayOfWeek?: number }) =>
-      apiFetch<Record<string, unknown>>('/v1/settlements/config', {
+    updateConfig: (data: {
+      period?: 'daily' | 'weekly' | 'monthly'
+      minimumPayout?: number
+      dayOfWeek?: number | null
+      dayOfMonth?: number | null
+    }) =>
+      apiFetch<{
+        period: string
+        minimumPayout: number
+        dayOfWeek: number | null
+        dayOfMonth: number | null
+      }>('/v1/settlements/config', {
         method: 'PATCH',
         body: JSON.stringify(data),
       }),

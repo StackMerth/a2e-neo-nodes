@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { api } from '@/lib/api'
@@ -52,6 +53,13 @@ interface PaymentMode {
   devMode: boolean
 }
 
+interface SettlementConfig {
+  period: string
+  minimumPayout: number
+  dayOfWeek: number | null
+  dayOfMonth: number | null
+}
+
 export default function FinancialPage() {
   const [summary, setSummary] = useState<ReportSummary | null>(null)
   const [earningsByMarket, setEarningsByMarket] = useState<EarningsByMarket | null>(null)
@@ -65,6 +73,10 @@ export default function FinancialPage() {
   const [triggering, setTriggering] = useState(false)
   const [paymentMode, setPaymentMode] = useState<PaymentMode | null>(null)
   const [processingPayment, setProcessingPayment] = useState<string | null>(null)
+  const [settlementConfig, setSettlementConfig] = useState<SettlementConfig | null>(null)
+  const [editingConfig, setEditingConfig] = useState(false)
+  const [configForm, setConfigForm] = useState<Partial<SettlementConfig>>({})
+  const [savingConfig, setSavingConfig] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -73,13 +85,14 @@ export default function FinancialPage() {
   async function loadData() {
     setLoading(true)
     try {
-      const [summaryData, earningsData, costsData, settlementsData, pendingData, modeData] = await Promise.all([
+      const [summaryData, earningsData, costsData, settlementsData, pendingData, modeData, configData] = await Promise.all([
         api.reports.summary({ days }),
         api.earnings.byMarket({ days }),
         api.costs.summary({ days }),
         api.settlements.list({ limit: 10 }),
         api.settlements.pending(),
         api.payments.mode(),
+        api.settlements.config(),
       ])
 
       setSummary(summaryData)
@@ -89,6 +102,7 @@ export default function FinancialPage() {
       setPendingSettlements(pendingData.pending)
       setPendingTotal(pendingData.totalAmount)
       setPaymentMode(modeData)
+      setSettlementConfig(configData)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load financial data')
@@ -128,6 +142,25 @@ export default function FinancialPage() {
       alert(err instanceof Error ? err.message : 'Failed to process payment')
     } finally {
       setProcessingPayment(null)
+    }
+  }
+
+  async function handleSaveConfig() {
+    setSavingConfig(true)
+    try {
+      await api.settlements.updateConfig({
+        period: configForm.period as 'daily' | 'weekly' | 'monthly',
+        minimumPayout: configForm.minimumPayout || 10,
+        dayOfWeek: configForm.period === 'weekly' ? configForm.dayOfWeek : null,
+        dayOfMonth: configForm.period === 'monthly' ? configForm.dayOfMonth : null,
+      })
+      setEditingConfig(false)
+      setConfigForm({})
+      loadData()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to save configuration')
+    } finally {
+      setSavingConfig(false)
     }
   }
 
@@ -413,11 +446,11 @@ export default function FinancialPage() {
                 </thead>
                 <tbody>
                   {settlements.map((s) => (
-                    <tr key={s.id} className="border-b border-border/50 last:border-0">
+                    <tr key={s.id} className="border-b border-border/50 last:border-0 hover:bg-surface-hover/50 cursor-pointer transition-colors">
                       <td className="py-3">
-                        <span className="text-sm text-text-primary font-mono">
+                        <Link href={`/settlements/${s.id}`} className="text-sm text-text-primary font-mono hover:text-accent">
                           {shortenAddress(s.walletAddress)}
-                        </span>
+                        </Link>
                       </td>
                       <td className="py-3">
                         <span className="text-sm font-medium text-text-primary">
@@ -448,21 +481,37 @@ export default function FinancialPage() {
                         </span>
                       </td>
                       <td className="py-3">
-                        {s.status === 'PENDING' ? (
-                          <button
-                            onClick={() => handleProcessPayment(s.id)}
-                            disabled={processingPayment === s.id}
-                            className="px-3 py-1 bg-accent hover:bg-accent/80 disabled:bg-accent/50 text-white text-xs font-medium rounded transition-colors"
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/settlements/${s.id}`}
+                            className="px-2 py-1 text-xs bg-surface-hover hover:bg-border text-text-secondary rounded transition-colors"
                           >
-                            {processingPayment === s.id ? 'Paying...' : 'Pay'}
-                          </button>
-                        ) : s.status === 'COMPLETED' && s.txHash ? (
-                          <span className="text-xs text-text-muted font-mono">
-                            {s.txHash.substring(0, 12)}...
-                          </span>
-                        ) : (
-                          <span className="text-xs text-text-muted">-</span>
-                        )}
+                            View
+                          </Link>
+                          {s.status === 'PENDING' && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleProcessPayment(s.id)
+                              }}
+                              disabled={processingPayment === s.id}
+                              className="px-3 py-1 bg-accent hover:bg-accent/80 disabled:bg-accent/50 text-white text-xs font-medium rounded transition-colors"
+                            >
+                              {processingPayment === s.id ? 'Paying...' : 'Pay'}
+                            </button>
+                          )}
+                          {s.status === 'COMPLETED' && s.txHash && (
+                            <a
+                              href={`https://solscan.io/tx/${s.txHash}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-xs text-accent hover:underline font-mono"
+                            >
+                              {s.txHash.substring(0, 12)}...
+                            </a>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -474,6 +523,152 @@ export default function FinancialPage() {
           </div>
         </Card>
       </div>
+
+      {/* Settlement Configuration */}
+      <Card title="Settlement Configuration">
+        <div className="mt-4">
+          {!editingConfig ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="p-3 bg-surface-hover rounded-lg">
+                  <p className="text-xs text-text-muted uppercase mb-1">Settlement Period</p>
+                  <p className="text-sm font-medium text-text-primary capitalize">
+                    {settlementConfig?.period || 'Weekly'}
+                  </p>
+                </div>
+                <div className="p-3 bg-surface-hover rounded-lg">
+                  <p className="text-xs text-text-muted uppercase mb-1">Minimum Payout</p>
+                  <p className="text-sm font-medium text-text-primary">
+                    {formatCurrency(settlementConfig?.minimumPayout || 10)}
+                  </p>
+                </div>
+                {settlementConfig?.period === 'weekly' && settlementConfig.dayOfWeek !== null && (
+                  <div className="p-3 bg-surface-hover rounded-lg">
+                    <p className="text-xs text-text-muted uppercase mb-1">Settlement Day</p>
+                    <p className="text-sm font-medium text-text-primary">
+                      {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][settlementConfig.dayOfWeek]}
+                    </p>
+                  </div>
+                )}
+                {settlementConfig?.period === 'monthly' && settlementConfig.dayOfMonth !== null && (
+                  <div className="p-3 bg-surface-hover rounded-lg">
+                    <p className="text-xs text-text-muted uppercase mb-1">Settlement Day</p>
+                    <p className="text-sm font-medium text-text-primary">
+                      Day {settlementConfig.dayOfMonth}
+                    </p>
+                  </div>
+                )}
+              </div>
+              <Button
+                onClick={() => {
+                  setConfigForm({
+                    period: settlementConfig?.period || 'weekly',
+                    minimumPayout: settlementConfig?.minimumPayout || 10,
+                    dayOfWeek: settlementConfig?.dayOfWeek ?? 1,
+                    dayOfMonth: settlementConfig?.dayOfMonth ?? 1,
+                  })
+                  setEditingConfig(true)
+                }}
+                variant="outline"
+                size="sm"
+              >
+                Edit Configuration
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-2">
+                    Settlement Period
+                  </label>
+                  <select
+                    value={configForm.period || 'weekly'}
+                    onChange={(e) => setConfigForm({ ...configForm, period: e.target.value })}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent"
+                  >
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-2">
+                    Minimum Payout (USD)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={configForm.minimumPayout || 10}
+                    onChange={(e) => setConfigForm({ ...configForm, minimumPayout: Number(e.target.value) })}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent"
+                  />
+                </div>
+                {configForm.period === 'weekly' && (
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-2">
+                      Day of Week
+                    </label>
+                    <select
+                      value={configForm.dayOfWeek ?? 1}
+                      onChange={(e) => setConfigForm({ ...configForm, dayOfWeek: Number(e.target.value) })}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent"
+                    >
+                      <option value={0}>Sunday</option>
+                      <option value={1}>Monday</option>
+                      <option value={2}>Tuesday</option>
+                      <option value={3}>Wednesday</option>
+                      <option value={4}>Thursday</option>
+                      <option value={5}>Friday</option>
+                      <option value={6}>Saturday</option>
+                    </select>
+                  </div>
+                )}
+                {configForm.period === 'monthly' && (
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-2">
+                      Day of Month
+                    </label>
+                    <select
+                      value={configForm.dayOfMonth ?? 1}
+                      onChange={(e) => setConfigForm({ ...configForm, dayOfMonth: Number(e.target.value) })}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent"
+                    >
+                      {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                        <option key={day} value={day}>
+                          {day}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  onClick={handleSaveConfig}
+                  variant="primary"
+                  size="sm"
+                  disabled={savingConfig}
+                >
+                  {savingConfig ? 'Saving...' : 'Save Changes'}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setEditingConfig(false)
+                    setConfigForm({})
+                  }}
+                  variant="outline"
+                  size="sm"
+                  disabled={savingConfig}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
 
       {/* Activity Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
