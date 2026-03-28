@@ -127,7 +127,9 @@ model Job {
 
   // Duration and earnings
   durationSeconds Int?
-  earnings        Float?
+  earnings        Float?    // Revenue from this job
+  cost            Float?    // Cost to execute (market rate or external fees)
+  profit          Float?    // earnings - cost
 
   // Error tracking
   errorMessage  String?
@@ -283,6 +285,13 @@ model Settlement {
   txHash        String?
   txConfirmed   Boolean          @default(false)
   errorMessage  String?
+
+  // Retry handling
+  retryCount    Int              @default(0)
+  maxRetries    Int              @default(3)
+  lastRetryAt   DateTime?
+  nextRetryAt   DateTime?
+
   createdAt     DateTime         @default(now())
   processedAt   DateTime?
 
@@ -307,10 +316,17 @@ model SettlementItem {
 
 model SettlementConfig {
   id              String   @id @default("default")
-  period          String   @default("WEEKLY")
+  period          String   @default("WEEKLY")   // DAILY, WEEKLY, MONTHLY
   minimumPayout   Float    @default(10)
-  dayOfWeek       Int?     @default(1)
-  dayOfMonth      Int?
+  dayOfWeek       Int?     @default(1)          // 0=Sunday, 1=Monday, etc.
+  dayOfMonth      Int?                          // 1-28 for monthly
+  hour            Int      @default(9)          // Hour of day to run (0-23)
+
+  // Auto-scheduling
+  autoSchedule    Boolean  @default(false)      // Enable automatic settlements
+  lastScheduledAt DateTime?                     // Last time scheduler ran
+
+  // Solana config
   solanaRpcUrl    String?
   payerPrivateKey String?
   usdcMint        String?

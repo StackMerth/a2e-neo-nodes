@@ -122,6 +122,9 @@ export const api = {
           status: string
           market: string | null
           ratePerHour: number | null
+          earnings: number | null
+          cost: number | null
+          profit: number | null
           requestedAt: string
         }>
         pagination: { page: number; limit: number; total: number; totalPages: number }
@@ -503,6 +506,9 @@ export const api = {
         minimumPayout: number
         dayOfWeek: number | null
         dayOfMonth: number | null
+        hour: number
+        autoSchedule: boolean
+        lastScheduledAt: string | null
         solanaRpcUrl: string | null
         usdcMint: string | null
       }>('/v1/settlements/config'),
@@ -512,6 +518,8 @@ export const api = {
       minimumPayout?: number
       dayOfWeek?: number | null
       dayOfMonth?: number | null
+      hour?: number
+      autoSchedule?: boolean
       solanaRpcUrl?: string
       payerPrivateKey?: string
       usdcMint?: string
@@ -521,10 +529,38 @@ export const api = {
         minimumPayout: number
         dayOfWeek: number | null
         dayOfMonth: number | null
+        hour: number
+        autoSchedule: boolean
       }>('/v1/settlements/config', {
         method: 'PATCH',
         body: JSON.stringify(data),
       }),
+
+    failed: () =>
+      apiFetch<{
+        retriable: Array<{
+          id: string
+          nodeId: string
+          walletAddress: string
+          amount: number
+          status: string
+          retryCount: number
+          maxRetries: number
+          nextRetryAt: string | null
+          createdAt: string
+        }>
+        exhausted: Array<{
+          id: string
+          nodeId: string
+          walletAddress: string
+          amount: number
+          status: string
+          retryCount: number
+          maxRetries: number
+          nextRetryAt: string | null
+          createdAt: string
+        }>
+      }>('/v1/settlements/failed'),
 
     trigger: (nodeId?: string) =>
       apiFetch<{ message: string; settlementIds: string[] }>('/v1/settlements/trigger', {

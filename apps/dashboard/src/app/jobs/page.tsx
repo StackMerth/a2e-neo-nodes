@@ -16,6 +16,9 @@ interface Job {
   status: string
   market: string | null
   ratePerHour: number | null
+  earnings: number | null
+  cost: number | null
+  profit: number | null
   requestedAt: string
 }
 
@@ -436,6 +439,8 @@ export default function JobsPage() {
                   <th className="text-left py-4 px-4 text-xs text-text-muted uppercase font-medium">Market</th>
                   <th className="text-left py-4 px-4 text-xs text-text-muted uppercase font-medium">Status</th>
                   <th className="text-right py-4 px-4 text-xs text-text-muted uppercase font-medium">Rate</th>
+                  <th className="text-right py-4 px-4 text-xs text-text-muted uppercase font-medium">Earnings</th>
+                  <th className="text-right py-4 px-4 text-xs text-text-muted uppercase font-medium">Profit</th>
                   <th className="text-right py-4 px-4 text-xs text-text-muted uppercase font-medium">Requested</th>
                   <th className="text-right py-4 px-4 text-xs text-text-muted uppercase font-medium">Actions</th>
                 </tr>
@@ -476,6 +481,16 @@ export default function JobsPage() {
                     </td>
                     <td className="py-4 px-4 text-right text-sm text-text-primary font-medium">
                       {job.ratePerHour ? `$${(job.ratePerHour * 24).toFixed(2)}/day` : '-'}
+                    </td>
+                    <td className="py-4 px-4 text-right text-sm text-text-primary">
+                      {job.earnings != null ? `$${job.earnings.toFixed(4)}` : '-'}
+                    </td>
+                    <td className="py-4 px-4 text-right text-sm">
+                      {job.profit != null ? (
+                        <span className={job.profit >= 0 ? 'text-accent' : 'text-error'}>
+                          {job.profit >= 0 ? '+' : ''}${job.profit.toFixed(4)}
+                        </span>
+                      ) : '-'}
                     </td>
                     <td className="py-4 px-4 text-right text-sm text-text-muted">
                       {new Date(job.requestedAt).toLocaleString()}

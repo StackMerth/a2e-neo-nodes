@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { GpuTier, JobStatus, Market } from '@a2e/database'
 import { submitJobToQueue, requeueJob } from '../jobs/job-processor'
+import { calculateJobCost, calculateJobProfit } from '../services/cost/calculator'
 import '../types' // Type augmentations
 
 const submitJobSchema = z.object({
@@ -131,6 +132,8 @@ export async function jobRoutes(fastify: FastifyInstance) {
             completedAt: true,
             durationSeconds: true,
             earnings: true,
+            cost: true,
+            profit: true,
           },
         }),
         fastify.prisma.job.count({ where }),
@@ -199,7 +202,14 @@ export async function jobRoutes(fastify: FastifyInstance) {
           completedAt: job.completedAt?.toISOString() ?? null,
           durationSeconds: job.durationSeconds,
         },
-        earnings: job.earnings,
+        financials: {
+          earnings: job.earnings,
+          cost: job.cost,
+          profit: job.profit,
+          profitMargin: job.earnings && job.cost && job.earnings > 0
+            ? Math.round(((job.earnings - job.cost) / job.earnings) * 10000) / 100
+            : null,
+        },
         errorMessage: job.errorMessage,
         retryCount: job.retryCount,
         routingLog: job.routingLog
@@ -254,6 +264,8 @@ export async function jobRoutes(fastify: FastifyInstance) {
         startedAt?: Date
         completedAt?: Date
         earnings?: number
+        cost?: number
+        profit?: number
         nodeId?: string
       } = {}
 
@@ -276,8 +288,25 @@ export async function jobRoutes(fastify: FastifyInstance) {
       if (durationSeconds !== undefined) {
         updateData.durationSeconds = durationSeconds
 
+        // Calculate earnings based on rate
         if (job.ratePerHour) {
           updateData.earnings = (durationSeconds / 3600) * job.ratePerHour
+        }
+
+        // Calculate cost and profit if job is being completed
+        if (status === 'COMPLETED' && job.market) {
+          const costResult = await calculateJobCost(fastify.prisma, {
+            market: job.market,
+            gpuTier: job.gpuTier,
+            durationSeconds,
+            ratePerHour: job.ratePerHour ?? undefined,
+          })
+
+          updateData.cost = costResult.cost
+
+          if (updateData.earnings !== undefined) {
+            updateData.profit = calculateJobProfit(updateData.earnings, costResult.cost)
+          }
         }
       }
 
@@ -295,6 +324,8 @@ export async function jobRoutes(fastify: FastifyInstance) {
         status: updatedJob.status,
         durationSeconds: updatedJob.durationSeconds,
         earnings: updatedJob.earnings,
+        cost: updatedJob.cost,
+        profit: updatedJob.profit,
         updatedAt: updatedJob.updatedAt.toISOString(),
       })
     }
