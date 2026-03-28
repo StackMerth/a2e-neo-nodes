@@ -6,6 +6,7 @@ import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
 
 interface Payment {
@@ -48,6 +49,7 @@ interface Pagination {
 }
 
 export default function PaymentsPage() {
+  const { addToast } = useToast()
   const [payments, setPayments] = useState<Payment[]>([])
   const [stats, setStats] = useState<PaymentStats | null>(null)
   const [pendingSettlements, setPendingSettlements] = useState<PendingSettlement[]>([])
@@ -115,19 +117,19 @@ export default function PaymentsPage() {
       if (useOnchainBatch && selectedSettlements.length <= 15) {
         const result = await api.payments.batchOnchain(selectedSettlements, 'USDC')
         if (result.success) {
-          alert(`On-chain batch complete!\nTx: ${result.txHash?.substring(0, 20)}...\nRecipients: ${result.processed}\nTotal: $${result.totalAmount.toFixed(2)}`)
+          addToast({ type: 'success', title: 'On-chain Batch Complete', message: `Tx: ${result.txHash?.substring(0, 20)}... | ${result.processed} recipients | $${result.totalAmount.toFixed(2)}` })
         } else {
-          alert(`Batch failed: ${result.message}`)
+          addToast({ type: 'error', title: 'Batch Failed', message: result.message })
         }
       } else {
         const result = await api.payments.batch(selectedSettlements, 'USDC')
-        alert(`Batch complete:\nProcessed: ${result.processed}\nFailed: ${result.failed}`)
+        addToast({ type: 'success', title: 'Batch Complete', message: `Processed: ${result.processed}, Failed: ${result.failed}` })
       }
       setSelectedSettlements([])
       setShowBatchModal(false)
       loadData()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Batch processing failed')
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Batch processing failed' })
     } finally {
       setBatchProcessing(false)
     }
@@ -149,10 +151,10 @@ export default function PaymentsPage() {
     setVerifying(txHash)
     try {
       const result = await api.payments.verify(txHash)
-      alert(`Verification: ${result.status}\nConfirmations: ${result.confirmations}`)
+      addToast({ type: 'info', title: 'Verification Result', message: `Status: ${result.status} | Confirmations: ${result.confirmations}` })
       loadData()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Verification failed')
+      addToast({ type: 'error', title: 'Verification Failed', message: err instanceof Error ? err.message : 'Verification failed' })
     } finally {
       setVerifying(null)
     }

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Input'
 import { ConfirmModal, Modal } from '@/components/ui/Modal'
 import { DistributionBar } from '@/components/ui/ProgressBar'
+import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
 
 interface Job {
@@ -49,6 +50,7 @@ const MARKET_OPTIONS = [
 const GPU_TIERS = ['H100', 'H200', 'B200', 'B300', 'GB300']
 
 export default function JobsPage() {
+  const { addToast } = useToast()
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -155,7 +157,7 @@ export default function JobsPage() {
 
   async function handleCreateJob() {
     if (!createForm.deploymentId.trim()) {
-      alert('Deployment ID is required')
+      addToast({ type: 'warning', title: 'Validation Error', message: 'Deployment ID is required' })
       return
     }
     setCreating(true)
@@ -167,9 +169,10 @@ export default function JobsPage() {
       })
       setShowCreateModal(false)
       setCreateForm({ deploymentId: '', gpuTier: 'H100', autoRoute: true })
+      addToast({ type: 'success', title: 'Job Created', message: 'New job created successfully' })
       loadJobs()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to create job')
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed to create job' })
     } finally {
       setCreating(false)
     }
@@ -189,9 +192,10 @@ export default function JobsPage() {
           await api.jobs.requeue(jobId)
           break
       }
+      addToast({ type: 'success', title: 'Action Completed', message: `Job ${action} successful` })
       loadJobs()
     } catch (err) {
-      alert(err instanceof Error ? err.message : `Failed to ${action} job`)
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : `Failed to ${action} job` })
     } finally {
       setActionInProgress(null)
     }
@@ -201,12 +205,12 @@ export default function JobsPage() {
     setBulkProcessing(true)
     try {
       const result = await api.jobs.bulkCancel(selectedJobs)
-      alert(`Cancelled: ${result.cancelled}\nFailed: ${result.failed}`)
+      addToast({ type: 'success', title: 'Bulk Cancel Complete', message: `Cancelled: ${result.cancelled}, Failed: ${result.failed}` })
       setSelectedJobs([])
       setShowBulkCancelModal(false)
       loadJobs()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Bulk cancel failed')
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Bulk cancel failed' })
     } finally {
       setBulkProcessing(false)
     }

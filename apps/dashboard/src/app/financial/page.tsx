@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { DistributionBar } from '@/components/ui/ProgressBar'
+import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
 
 interface ReportSummary {
@@ -76,6 +77,7 @@ interface WalletBalance {
 }
 
 export default function FinancialPage() {
+  const { addToast } = useToast()
   const [summary, setSummary] = useState<ReportSummary | null>(null)
   const [earningsByMarket, setEarningsByMarket] = useState<EarningsByMarket | null>(null)
   const [costsSummary, setCostsSummary] = useState<CostsSummary | null>(null)
@@ -136,10 +138,10 @@ export default function FinancialPage() {
     setTriggering(true)
     try {
       const result = await api.settlements.trigger()
-      alert(`Created ${result.settlementIds.length} settlement(s)`)
+      addToast({ type: 'success', title: 'Settlements Created', message: `Created ${result.settlementIds.length} settlement(s)` })
       loadData()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to trigger settlements')
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed to trigger settlements' })
     } finally {
       setTriggering(false)
     }
@@ -155,12 +157,14 @@ export default function FinancialPage() {
     setProcessingPayment(settlementId)
     try {
       const result = await api.payments.process(settlementId, 'USDC')
-      alert(result.isDevMode
-        ? `DEV MODE: Payment simulated!\nTx: ${result.txHash.substring(0, 20)}...`
-        : `Payment sent!\nTx: ${result.txHash}`)
+      addToast({
+        type: 'success',
+        title: result.isDevMode ? 'DEV MODE: Payment Simulated' : 'Payment Sent',
+        message: `Tx: ${result.txHash.substring(0, 20)}...`
+      })
       loadData()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to process payment')
+      addToast({ type: 'error', title: 'Payment Failed', message: err instanceof Error ? err.message : 'Failed to process payment' })
     } finally {
       setProcessingPayment(null)
     }
@@ -177,9 +181,10 @@ export default function FinancialPage() {
       })
       setEditingConfig(false)
       setConfigForm({})
+      addToast({ type: 'success', title: 'Configuration Saved', message: 'Settlement configuration updated successfully' })
       loadData()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to save configuration')
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed to save configuration' })
     } finally {
       setSavingConfig(false)
     }
@@ -196,9 +201,9 @@ export default function FinancialPage() {
       setEditingSolanaConfig(false)
       setSolanaForm({ rpcUrl: '', privateKey: '', usdcMint: '' })
       loadData()
-      alert('Solana configuration updated. Set PAYMENT_MODE=live to enable live payments.')
+      addToast({ type: 'success', title: 'Solana Config Updated', message: 'Set PAYMENT_MODE=live to enable live payments.' })
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to save Solana configuration')
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed to save Solana configuration' })
     } finally {
       setSavingSolana(false)
     }
