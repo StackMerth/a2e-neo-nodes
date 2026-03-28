@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Card, StatCard } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
 import { DateRangePicker } from '@/components/ui/DateRangePicker'
 import { api } from '@/lib/api'
 
@@ -55,30 +56,34 @@ export default function ReportsPage() {
     }).format(value)
   }
 
-  const reportTypes: Array<{ value: ReportType; label: string; description: string; icon: React.ReactNode }> = [
+  const reportTypes: Array<{ value: ReportType; label: string; description: string; icon: React.ReactNode; color: string }> = [
     {
       value: 'earnings',
       label: 'Earnings Report',
       description: 'Revenue breakdown by market, node, and time period',
       icon: <DollarIcon className="w-5 h-5" />,
+      color: 'from-accent to-emerald-400',
     },
     {
       value: 'settlements',
       label: 'Settlements Report',
       description: 'All settlements with payment status and transaction details',
       icon: <BankIcon className="w-5 h-5" />,
+      color: 'from-purple-500 to-purple-400',
     },
     {
       value: 'jobs',
       label: 'Jobs Report',
       description: 'Complete job history with routing decisions and earnings',
       icon: <BriefcaseIcon className="w-5 h-5" />,
+      color: 'from-blue-500 to-blue-400',
     },
     {
       value: 'nodes',
       label: 'Nodes Report',
       description: 'Node registry with status, GPU tiers, and performance metrics',
       icon: <ServerIcon className="w-5 h-5" />,
+      color: 'from-orange-500 to-orange-400',
     },
   ]
 
@@ -108,66 +113,106 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Reports</h1>
-          <p className="text-text-muted mt-1">Generate and export financial reports</p>
+    <div className="space-y-8 animate-fadeIn">
+      {/* Hero Section */}
+      <div className="relative py-8 md:py-12">
+        {/* Background gradient */}
+        <div className="absolute inset-0 bg-gradient-to-b from-blue-500/5 via-transparent to-transparent rounded-3xl" />
+
+        <div className="relative text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500/5 border border-blue-500/20 rounded-full mb-6 animate-slideUp">
+            <DocumentIcon className="w-4 h-4 text-blue-400" />
+            <span className="text-xs text-blue-400 font-medium uppercase tracking-wider">Export & Analytics</span>
+          </div>
+
+          <h1 className="text-3xl md:text-5xl font-bold text-text-primary mb-3">
+            Reports
+          </h1>
+          <p className="text-text-muted max-w-xl mx-auto">
+            Generate comprehensive reports, export data in multiple formats,
+            and gain insights into your network&apos;s performance.
+          </p>
         </div>
       </div>
 
       {/* Date Range Filter */}
-      <Card className="p-4">
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-text-secondary">Report Period:</span>
-          <DateRangePicker
-            value={dateRange}
-            onChange={setDateRange}
-            className="w-64"
-          />
-          {(dateRange.start || dateRange.end) && (
-            <button
-              onClick={() => setDateRange({ start: null, end: null })}
-              className="text-xs text-text-muted hover:text-text-primary"
-            >
-              Clear
-            </button>
-          )}
+      <Card variant="glass" hover={false}>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
+              <CalendarIcon className="w-5 h-5 text-blue-400" />
+            </div>
+            <div>
+              <span className="text-sm font-medium text-text-primary">Report Period</span>
+              <p className="text-xs text-text-muted">Select a date range for your reports</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 ml-auto">
+            <DateRangePicker
+              value={dateRange}
+              onChange={setDateRange}
+              className="w-64"
+            />
+            {(dateRange.start || dateRange.end) && (
+              <button
+                onClick={() => setDateRange({ start: null, end: null })}
+                className="text-xs text-text-muted hover:text-text-primary px-3 py-2 bg-surface-hover rounded-lg"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
       </Card>
 
-      {/* Report Summary Preview */}
+      {/* Summary Stats */}
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <StatCard
             label="Total Revenue"
             value={formatCurrency(summary.revenue.total)}
+            variant="accent"
+            animate
+            icon={<DollarIcon />}
             className={loadingSummary ? 'animate-pulse' : ''}
           />
           <StatCard
             label="Total Costs"
             value={formatCurrency(summary.costs.total)}
+            variant="orange"
+            animate
+            icon={<ReceiptIcon />}
             className={loadingSummary ? 'animate-pulse' : ''}
           />
           <StatCard
             label="Gross Profit"
             value={formatCurrency(summary.profit.gross)}
+            variant="accent"
+            animate
+            icon={<TrendingUpIcon />}
             className={loadingSummary ? 'animate-pulse' : ''}
           />
           <StatCard
             label="Profit Margin"
             value={`${summary.profit.margin.toFixed(1)}%`}
+            variant="purple"
+            animate
+            icon={<ChartIcon />}
             className={loadingSummary ? 'animate-pulse' : ''}
           />
           <StatCard
             label="Total Jobs"
             value={summary.activity.totalJobs.toLocaleString()}
+            variant="blue"
+            animate
+            icon={<BriefcaseIcon />}
             className={loadingSummary ? 'animate-pulse' : ''}
           />
           <StatCard
             label="Settlements Paid"
             value={formatCurrency(summary.settlements.amount)}
+            animate
+            icon={<BankIcon />}
             className={loadingSummary ? 'animate-pulse' : ''}
           />
         </div>
@@ -179,111 +224,184 @@ export default function ReportsPage() {
           <div
             key={report.value}
             onClick={() => setReportType(report.value)}
-            className={`p-6 rounded-xl border cursor-pointer transition-all ${
+            className={`cursor-pointer p-6 rounded-2xl bg-surface/60 backdrop-blur-xl border transition-all ${
               reportType === report.value
-                ? 'ring-2 ring-accent bg-accent/5 border-accent/30'
-                : 'bg-surface border-border hover:bg-surface-hover'
+                ? 'ring-2 ring-accent border-accent/30 shadow-[0_0_20px_rgba(34,197,94,0.1)]'
+                : 'border-white/5 hover:border-accent/30'
             }`}
           >
             <div className="flex items-start gap-4">
-              <div className={`p-3 rounded-lg ${reportType === report.value ? 'bg-accent/20 text-accent' : 'bg-surface-hover text-text-muted'}`}>
+              <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${report.color} flex items-center justify-center shrink-0`}>
                 {report.icon}
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-text-primary">{report.label}</h3>
-                <p className="text-sm text-text-muted mt-1">{report.description}</p>
+                <h3 className="font-semibold text-text-primary mb-1">{report.label}</h3>
+                <p className="text-sm text-text-muted mb-4">{report.description}</p>
 
-                <div className="flex gap-2 mt-4">
-                  <button
+                <div className="flex gap-2">
+                  <Button
                     onClick={(e) => {
                       e.stopPropagation()
                       handleDownloadCSV(report.value)
                     }}
                     disabled={downloading === `${report.value}-csv`}
-                    className="px-3 py-1.5 text-xs font-medium bg-surface-hover hover:bg-accent/10 hover:text-accent rounded-lg transition-colors disabled:opacity-50"
+                    variant="outline"
+                    size="sm"
+                    icon={<DownloadIcon />}
                   >
-                    {downloading === `${report.value}-csv` ? 'Downloading...' : 'Download CSV'}
-                  </button>
+                    {downloading === `${report.value}-csv` ? 'Downloading...' : 'CSV'}
+                  </Button>
                   {(report.value === 'earnings' || report.value === 'settlements') && (
-                    <button
+                    <Button
                       onClick={(e) => {
                         e.stopPropagation()
                         handleDownloadPDF(report.value as 'earnings' | 'settlements')
                       }}
                       disabled={downloading === `${report.value}-pdf`}
-                      className="px-3 py-1.5 text-xs font-medium bg-accent text-white hover:bg-accent-hover rounded-lg transition-colors disabled:opacity-50"
+                      variant="primary"
+                      size="sm"
+                      icon={<FileIcon />}
                     >
-                      {downloading === `${report.value}-pdf` ? 'Generating...' : 'Download PDF'}
-                    </button>
+                      {downloading === `${report.value}-pdf` ? 'Generating...' : 'PDF'}
+                    </Button>
                   )}
                 </div>
               </div>
+              {reportType === report.value && (
+                <div className="w-6 h-6 rounded-full bg-accent flex items-center justify-center shrink-0">
+                  <CheckIcon className="w-4 h-4 text-white" />
+                </div>
+              )}
             </div>
           </div>
         ))}
       </div>
 
-      {/* Quick Actions */}
-      <Card className="p-6">
-        <h3 className="font-semibold text-text-primary mb-4">Quick Export</h3>
+      {/* Quick Export */}
+      <Card variant="glass" hover={false}>
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-400 flex items-center justify-center">
+            <DownloadIcon className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-text-primary">Quick Export</h3>
+            <p className="text-xs text-text-muted">Download all data in CSV format</p>
+          </div>
+        </div>
+
         <div className="flex flex-wrap gap-3">
-          <button
+          <Button
             onClick={() => handleDownloadCSV('earnings')}
             disabled={downloading !== null}
-            className="px-4 py-2 text-sm bg-surface-hover hover:bg-accent/10 hover:text-accent rounded-lg transition-colors disabled:opacity-50"
+            variant="outline"
+            icon={<DollarIcon />}
           >
-            All Earnings (CSV)
-          </button>
-          <button
+            All Earnings
+          </Button>
+          <Button
             onClick={() => handleDownloadCSV('settlements')}
             disabled={downloading !== null}
-            className="px-4 py-2 text-sm bg-surface-hover hover:bg-accent/10 hover:text-accent rounded-lg transition-colors disabled:opacity-50"
+            variant="outline"
+            icon={<BankIcon />}
           >
-            All Settlements (CSV)
-          </button>
-          <button
+            All Settlements
+          </Button>
+          <Button
             onClick={() => handleDownloadCSV('jobs')}
             disabled={downloading !== null}
-            className="px-4 py-2 text-sm bg-surface-hover hover:bg-accent/10 hover:text-accent rounded-lg transition-colors disabled:opacity-50"
+            variant="outline"
+            icon={<BriefcaseIcon />}
           >
-            All Jobs (CSV)
-          </button>
-          <button
+            All Jobs
+          </Button>
+          <Button
             onClick={() => handleDownloadCSV('nodes')}
             disabled={downloading !== null}
-            className="px-4 py-2 text-sm bg-surface-hover hover:bg-accent/10 hover:text-accent rounded-lg transition-colors disabled:opacity-50"
+            variant="outline"
+            icon={<ServerIcon />}
           >
-            All Nodes (CSV)
-          </button>
+            All Nodes
+          </Button>
         </div>
       </Card>
 
       {/* Generate Invoice */}
-      <Card className="p-6">
-        <h3 className="font-semibold text-text-primary mb-2">Generate Invoice</h3>
-        <p className="text-sm text-text-muted mb-4">Create a PDF invoice for a specific settlement period</p>
+      <Card variant="glass" hover={false}>
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-400 flex items-center justify-center">
+            <FileIcon className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-text-primary">Generate Invoice</h3>
+            <p className="text-xs text-text-muted">Create a PDF invoice for a specific settlement period</p>
+          </div>
+        </div>
+
         <div className="flex flex-wrap items-end gap-4">
           <div>
-            <label className="block text-xs text-text-muted mb-1">Invoice Period</label>
+            <label className="block text-xs text-text-muted mb-2">Invoice Period</label>
             <DateRangePicker
               value={dateRange}
               onChange={setDateRange}
               className="w-64"
             />
           </div>
-          <button
+          <Button
             onClick={() => handleDownloadPDF('settlements')}
             disabled={downloading === 'settlements-pdf' || !dateRange.start || !dateRange.end}
-            className="px-6 py-2.5 text-sm font-medium bg-accent text-white hover:bg-accent-hover rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            variant="primary"
+            icon={<FileIcon />}
           >
-            {downloading === 'settlements-pdf' ? 'Generating...' : 'Generate Invoice PDF'}
-          </button>
+            {downloading === 'settlements-pdf' ? 'Generating...' : 'Generate Invoice'}
+          </Button>
         </div>
+
         {(!dateRange.start || !dateRange.end) && (
-          <p className="text-xs text-warning mt-2">Select a date range to generate an invoice</p>
+          <div className="mt-4 p-3 bg-warning/5 border border-warning/20 rounded-xl flex items-center gap-2">
+            <AlertIcon className="w-4 h-4 text-warning shrink-0" />
+            <p className="text-xs text-warning">Select a date range to generate an invoice</p>
+          </div>
         )}
       </Card>
+
+      {/* Report Info */}
+      <Card variant="glass" hover={false}>
+        <div className="flex items-center gap-3 mb-4">
+          <InfoIcon className="w-5 h-5 text-accent" />
+          <h3 className="font-medium text-text-primary">About Reports</h3>
+        </div>
+        <div className="grid md:grid-cols-2 gap-6 text-sm text-text-secondary">
+          <div>
+            <h4 className="font-medium text-text-primary mb-2">CSV Exports</h4>
+            <p>CSV files contain raw data that can be imported into spreadsheet applications like Excel or Google Sheets for custom analysis.</p>
+          </div>
+          <div>
+            <h4 className="font-medium text-text-primary mb-2">PDF Reports</h4>
+            <p>PDF reports include formatted summaries, charts, and detailed breakdowns suitable for stakeholder presentations or record-keeping.</p>
+          </div>
+        </div>
+      </Card>
     </div>
+  )
+}
+
+// =============================================================================
+// ICONS
+// =============================================================================
+
+function DocumentIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </svg>
+  )
+}
+
+function CalendarIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
   )
 }
 
@@ -295,10 +413,26 @@ function DollarIcon({ className }: { className?: string }) {
   )
 }
 
-function BankIcon({ className }: { className?: string }) {
+function ReceiptIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
+    </svg>
+  )
+}
+
+function TrendingUpIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+    </svg>
+  )
+}
+
+function ChartIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
     </svg>
   )
 }
@@ -311,10 +445,58 @@ function BriefcaseIcon({ className }: { className?: string }) {
   )
 }
 
+function BankIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3" />
+    </svg>
+  )
+}
+
 function ServerIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+    </svg>
+  )
+}
+
+function DownloadIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+    </svg>
+  )
+}
+
+function FileIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+    </svg>
+  )
+}
+
+function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    </svg>
+  )
+}
+
+function AlertIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+  )
+}
+
+function InfoIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   )
 }

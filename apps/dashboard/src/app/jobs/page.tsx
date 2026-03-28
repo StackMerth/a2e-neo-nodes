@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
-import { Card } from '@/components/ui/Card'
+import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Input'
 import { ConfirmModal, Modal } from '@/components/ui/Modal'
+import { DistributionBar } from '@/components/ui/ProgressBar'
 import { api } from '@/lib/api'
 
 interface Job {
@@ -100,6 +101,17 @@ export default function JobsPage() {
         j.gpuTier.toLowerCase().includes(term)
     )
   }, [jobs, search])
+
+  // Calculate job stats
+  const jobStats = useMemo(() => {
+    const byStatus: Record<string, number> = {}
+    const byMarket: Record<string, number> = {}
+    jobs.forEach(j => {
+      byStatus[j.status] = (byStatus[j.status] || 0) + 1
+      if (j.market) byMarket[j.market] = (byMarket[j.market] || 0) + 1
+    })
+    return { byStatus, byMarket }
+  }, [jobs])
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -210,25 +222,84 @@ export default function JobsPage() {
     }
   }
 
+  // Market distribution for chart
+  const marketDistribution = [
+    { label: 'Internal', value: jobStats.byMarket.INTERNAL || 0, color: 'accent' as const },
+    { label: 'Akash', value: jobStats.byMarket.AKASH || 0, color: 'blue' as const },
+    { label: 'IO.net', value: jobStats.byMarket.IONET || 0, color: 'purple' as const },
+  ]
+
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Jobs</h1>
-          <p className="text-text-muted mt-1">
-            View and manage routing decisions and job status
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={loadJobs} variant="secondary" size="sm">
-            Refresh
-          </Button>
-          <Button onClick={() => setShowCreateModal(true)} variant="primary" size="sm">
-            Create Job
-          </Button>
+    <div className="space-y-8 animate-fadeIn">
+      {/* Hero Section */}
+      <div className="relative py-8 md:py-12">
+        <div className="absolute inset-0 bg-gradient-to-b from-accent-blue/5 via-transparent to-transparent rounded-3xl" />
+
+        <div className="relative">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent-blue/5 border border-accent-blue/20 rounded-full mb-4 animate-slideUp">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-blue opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-accent-blue" />
+                </span>
+                <span className="text-xs text-accent-blue font-medium uppercase tracking-wider">Job Management</span>
+              </div>
+              <h1 className="text-3xl md:text-4xl font-bold text-text-primary">
+                Job Queue
+              </h1>
+              <p className="text-text-muted mt-2 max-w-xl">
+                Monitor routing decisions and manage job lifecycle across all GPU tiers and markets.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <Button onClick={loadJobs} variant="secondary" size="sm" icon={<RefreshIcon />}>
+                Refresh
+              </Button>
+              <Button onClick={() => setShowCreateModal(true)} variant="gradient" size="sm" icon={<PlusIcon />}>
+                Create Job
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          label="Total Jobs"
+          value={pagination?.total ?? jobs.length}
+          variant="default"
+          icon={<BriefcaseIcon />}
+        />
+        <StatCard
+          label="Running"
+          value={jobStats.byStatus.RUNNING || 0}
+          variant="blue"
+          icon={<PlayIcon />}
+        />
+        <StatCard
+          label="Pending"
+          value={(jobStats.byStatus.PENDING || 0) + (jobStats.byStatus.ROUTING || 0)}
+          variant="orange"
+          icon={<ClockIcon />}
+        />
+        <StatCard
+          label="Completed"
+          value={jobStats.byStatus.COMPLETED || 0}
+          variant="accent"
+          icon={<CheckIcon />}
+        />
+      </div>
+
+      {/* Market Distribution */}
+      {(pagination?.total ?? jobs.length) > 0 && (
+        <Card variant="glass" title="Market Distribution" description="Jobs routed by market">
+          <div className="mt-4">
+            <DistributionBar segments={marketDistribution} size="lg" showLegend />
+          </div>
+        </Card>
+      )}
 
       {/* Filters and Search */}
       <div className="flex items-center gap-4 flex-wrap">
@@ -253,13 +324,16 @@ export default function JobsPage() {
           />
         </div>
         <div className="flex-1 max-w-md">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by deployment ID or job ID..."
-            className="w-full px-4 py-2 bg-background border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
-          />
+          <div className="relative">
+            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by deployment ID or job ID..."
+              className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all"
+            />
+          </div>
         </div>
         {(statusFilter || marketFilter || search) && (
           <Button
@@ -281,52 +355,75 @@ export default function JobsPage() {
 
       {/* Bulk Actions Bar */}
       {selectedJobs.length > 0 && (
-        <div className="flex items-center gap-4 p-3 bg-accent/10 border border-accent/30 rounded-lg">
+        <div className="flex items-center gap-4 p-4 bg-accent/5 border border-accent/20 rounded-xl animate-slideUp">
+          <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
+            <CheckIcon className="w-5 h-5 text-accent" />
+          </div>
           <span className="text-sm text-accent font-medium">
             {selectedJobs.length} job{selectedJobs.length !== 1 ? 's' : ''} selected
           </span>
-          <div className="flex gap-2">
-            <button
+          <div className="flex gap-2 ml-auto">
+            <Button
               onClick={() => setShowBulkCancelModal(true)}
-              className="px-3 py-1.5 text-xs bg-error/10 text-error rounded-lg hover:bg-error/20 transition-colors"
+              variant="outline"
+              size="sm"
+              className="border-error/30 text-error hover:bg-error/10"
             >
               Cancel Selected
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={clearSelection}
-              className="px-3 py-1.5 text-xs bg-surface-hover text-text-secondary rounded-lg hover:bg-border transition-colors"
+              variant="ghost"
+              size="sm"
             >
               Clear Selection
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       {error && (
-        <div className="p-4 bg-error/10 border border-error/20 rounded-lg">
+        <div className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-error/10 flex items-center justify-center flex-shrink-0">
+            <AlertIcon className="w-5 h-5 text-error" />
+          </div>
           <p className="text-error text-sm">{error}</p>
         </div>
       )}
 
-      <Card>
+      {/* Jobs Table */}
+      <Card variant="glass">
         {loading ? (
-          <div className="flex items-center justify-center h-32">
-            <p className="text-text-muted">Loading...</p>
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="w-12 h-12 rounded-xl bg-surface-hover flex items-center justify-center mb-4">
+              <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+            </div>
+            <p className="text-text-muted">Loading jobs...</p>
           </div>
         ) : filteredJobs.length === 0 ? (
-          <div className="flex items-center justify-center h-32">
-            <p className="text-text-muted">
-              {search ? 'No jobs match your search' : 'No jobs yet. '}
-              {!search && <a href="/routing" className="text-accent hover:underline">Test routing</a>}
-              {!search && ' to create one.'}
-            </p>
-          </div>
+          <EmptyState
+            icon={<BriefcaseIcon className="w-8 h-8" />}
+            title={search ? 'No jobs match your search' : 'No jobs yet'}
+            description={search ? 'Try adjusting your search or filters' : 'Create your first job or test routing to get started'}
+            action={
+              !search && (
+                <div className="flex gap-3">
+                  <Link href="/routing">
+                    <Button variant="outline" size="sm">Test Routing</Button>
+                  </Link>
+                  <Button variant="gradient" size="sm" onClick={() => setShowCreateModal(true)}>
+                    Create Job
+                  </Button>
+                </div>
+              )
+            }
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
-                  <th className="text-left py-3 px-4 text-xs text-text-muted uppercase">
+                  <th className="text-left py-4 px-4 text-xs text-text-muted uppercase font-medium">
                     <input
                       type="checkbox"
                       checked={selectedJobs.length > 0 && selectedJobs.length === filteredJobs.filter(j => !['COMPLETED', 'FAILED'].includes(j.status)).length}
@@ -334,19 +431,19 @@ export default function JobsPage() {
                       className="w-4 h-4 rounded border-border accent-accent"
                     />
                   </th>
-                  <th className="text-left py-3 px-4 text-xs text-text-muted uppercase">Deployment</th>
-                  <th className="text-left py-3 px-4 text-xs text-text-muted uppercase">GPU</th>
-                  <th className="text-left py-3 px-4 text-xs text-text-muted uppercase">Market</th>
-                  <th className="text-left py-3 px-4 text-xs text-text-muted uppercase">Status</th>
-                  <th className="text-right py-3 px-4 text-xs text-text-muted uppercase">Rate</th>
-                  <th className="text-right py-3 px-4 text-xs text-text-muted uppercase">Requested</th>
-                  <th className="text-right py-3 px-4 text-xs text-text-muted uppercase">Actions</th>
+                  <th className="text-left py-4 px-4 text-xs text-text-muted uppercase font-medium">Deployment</th>
+                  <th className="text-left py-4 px-4 text-xs text-text-muted uppercase font-medium">GPU</th>
+                  <th className="text-left py-4 px-4 text-xs text-text-muted uppercase font-medium">Market</th>
+                  <th className="text-left py-4 px-4 text-xs text-text-muted uppercase font-medium">Status</th>
+                  <th className="text-right py-4 px-4 text-xs text-text-muted uppercase font-medium">Rate</th>
+                  <th className="text-right py-4 px-4 text-xs text-text-muted uppercase font-medium">Requested</th>
+                  <th className="text-right py-4 px-4 text-xs text-text-muted uppercase font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredJobs.map((job) => (
-                  <tr key={job.id} className="border-b border-border/50 hover:bg-surface-hover">
-                    <td className="py-3 px-4">
+                  <tr key={job.id} className="border-b border-border/50 hover:bg-surface-hover/50 transition-colors">
+                    <td className="py-4 px-4">
                       {!['COMPLETED', 'FAILED'].includes(job.status) && (
                         <input
                           type="checkbox"
@@ -356,38 +453,38 @@ export default function JobsPage() {
                         />
                       )}
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-4">
                       <Link href={`/jobs/${job.id}`} className="text-sm text-accent hover:underline font-medium">
                         {job.deploymentId}
                       </Link>
                     </td>
-                    <td className="py-3 px-4">
-                      <span className="px-2 py-1 bg-accent/10 text-accent text-xs rounded">
+                    <td className="py-4 px-4">
+                      <span className="px-2.5 py-1 bg-accent/10 text-accent text-xs rounded-lg font-medium">
                         {job.gpuTier}
                       </span>
                     </td>
-                    <td className="py-3 px-4">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${getMarketColor(job.market)}`}>
+                    <td className="py-4 px-4">
+                      <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${getMarketColor(job.market)}`}>
                         {job.market || 'PENDING'}
                       </span>
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-4">
                       <div className="flex items-center gap-2">
                         <span className={`w-2 h-2 rounded-full ${getStatusColor(job.status).split(' ')[0]}`} />
                         <span className="text-sm text-text-secondary">{job.status}</span>
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-right text-sm text-text-primary">
+                    <td className="py-4 px-4 text-right text-sm text-text-primary font-medium">
                       {job.ratePerHour ? `$${(job.ratePerHour * 24).toFixed(2)}/day` : '-'}
                     </td>
-                    <td className="py-3 px-4 text-right text-sm text-text-muted">
+                    <td className="py-4 px-4 text-right text-sm text-text-muted">
                       {new Date(job.requestedAt).toLocaleString()}
                     </td>
-                    <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
+                    <td className="py-4 px-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
                         <Link
                           href={`/jobs/${job.id}`}
-                          className="px-2 py-1 text-xs bg-surface-hover text-text-secondary rounded hover:bg-border transition-colors"
+                          className="px-3 py-1.5 text-xs bg-surface-hover text-text-secondary rounded-lg hover:bg-border transition-colors font-medium"
                         >
                           View
                         </Link>
@@ -395,7 +492,7 @@ export default function JobsPage() {
                           <button
                             onClick={() => handleJobAction(job.id, 'cancel')}
                             disabled={actionInProgress === job.id}
-                            className="px-2 py-1 text-xs bg-error/10 text-error rounded hover:bg-error/20 disabled:opacity-50 transition-colors"
+                            className="px-3 py-1.5 text-xs bg-error/10 text-error rounded-lg hover:bg-error/20 disabled:opacity-50 transition-colors font-medium"
                           >
                             Cancel
                           </button>
@@ -404,7 +501,7 @@ export default function JobsPage() {
                           <button
                             onClick={() => handleJobAction(job.id, 'retry')}
                             disabled={actionInProgress === job.id}
-                            className="px-2 py-1 text-xs bg-warning/10 text-warning rounded hover:bg-warning/20 disabled:opacity-50 transition-colors"
+                            className="px-3 py-1.5 text-xs bg-warning/10 text-warning rounded-lg hover:bg-warning/20 disabled:opacity-50 transition-colors font-medium"
                           >
                             Retry
                           </button>
@@ -425,23 +522,25 @@ export default function JobsPage() {
               Showing {((page - 1) * pagination.limit) + 1} to {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} jobs
             </p>
             <div className="flex gap-2">
-              <button
+              <Button
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="px-3 py-1.5 text-sm bg-surface-hover hover:bg-border disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+                variant="secondary"
+                size="sm"
               >
                 Previous
-              </button>
-              <span className="px-3 py-1.5 text-sm text-text-muted">
+              </Button>
+              <span className="px-4 py-2 text-sm text-text-muted bg-surface rounded-lg">
                 Page {page} of {pagination.totalPages}
               </span>
-              <button
+              <Button
                 onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
                 disabled={page === pagination.totalPages}
-                className="px-3 py-1.5 text-sm bg-surface-hover hover:bg-border disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+                variant="secondary"
+                size="sm"
               >
                 Next
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -454,7 +553,7 @@ export default function JobsPage() {
         title="Create New Job"
         size="md"
       >
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-text-primary mb-2">
               Deployment ID
@@ -464,7 +563,7 @@ export default function JobsPage() {
               value={createForm.deploymentId}
               onChange={(e) => setCreateForm({ ...createForm, deploymentId: e.target.value })}
               placeholder="e.g., #104"
-              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent"
+              className="w-full px-4 py-3 bg-background border border-border rounded-xl text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all"
             />
           </div>
           <div>
@@ -474,26 +573,26 @@ export default function JobsPage() {
             <select
               value={createForm.gpuTier}
               onChange={(e) => setCreateForm({ ...createForm, gpuTier: e.target.value })}
-              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent"
+              className="w-full px-4 py-3 bg-background border border-border rounded-xl text-text-primary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all"
             >
               {GPU_TIERS.map((tier) => (
                 <option key={tier} value={tier}>{tier}</option>
               ))}
             </select>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 p-4 bg-surface rounded-xl">
             <input
               type="checkbox"
               id="autoRoute"
               checked={createForm.autoRoute}
               onChange={(e) => setCreateForm({ ...createForm, autoRoute: e.target.checked })}
-              className="w-4 h-4 rounded border-border accent-accent"
+              className="w-5 h-5 rounded border-border accent-accent"
             />
             <label htmlFor="autoRoute" className="text-sm text-text-secondary">
               Auto-route to best market
             </label>
           </div>
-          <div className="flex gap-3 pt-4">
+          <div className="flex gap-3 pt-2">
             <Button
               onClick={() => setShowCreateModal(false)}
               variant="outline"
@@ -504,7 +603,7 @@ export default function JobsPage() {
             </Button>
             <Button
               onClick={handleCreateJob}
-              variant="primary"
+              variant="gradient"
               className="flex-1"
               disabled={creating}
             >
@@ -526,5 +625,95 @@ export default function JobsPage() {
         loading={bulkProcessing}
       />
     </div>
+  )
+}
+
+// Empty State Component
+function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  action?: React.ReactNode
+}) {
+  return (
+    <div className="py-16 text-center">
+      <div className="w-16 h-16 rounded-2xl bg-surface-hover flex items-center justify-center mx-auto mb-4 text-text-muted">
+        {icon}
+      </div>
+      <h3 className="text-lg font-medium text-text-primary mb-2">{title}</h3>
+      <p className="text-sm text-text-muted mb-6 max-w-sm mx-auto">{description}</p>
+      {action}
+    </div>
+  )
+}
+
+// Icons
+function BriefcaseIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </svg>
+  )
+}
+
+function PlayIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function ClockIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function CheckIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function RefreshIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
+  )
+}
+
+function PlusIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+    </svg>
+  )
+}
+
+function SearchIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+    </svg>
+  )
+}
+
+function AlertIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
   )
 }
