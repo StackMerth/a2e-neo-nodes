@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { DateRangePicker } from '@/components/ui/DateRangePicker'
+import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
 
 type ReportType = 'earnings' | 'settlements' | 'jobs' | 'nodes'
@@ -23,6 +24,7 @@ interface ReportSummary {
 }
 
 export default function ReportsPage() {
+  const { addToast } = useToast()
   const [reportType, setReportType] = useState<ReportType>('earnings')
   const [dateRange, setDateRange] = useState<DateRange>({ start: null, end: null })
   const [downloading, setDownloading] = useState<string | null>(null)
@@ -91,8 +93,9 @@ export default function ReportsPage() {
     setDownloading(`${type}-csv`)
     try {
       await api.reports.downloadCSV(type)
+      addToast({ type: 'success', title: 'Download Started', message: `${type} CSV download started` })
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Download failed')
+      addToast({ type: 'error', title: 'Download Failed', message: err instanceof Error ? err.message : 'Download failed' })
     } finally {
       setDownloading(null)
     }
@@ -105,8 +108,9 @@ export default function ReportsPage() {
         startDate: dateRange.start?.toISOString().split('T')[0],
         endDate: dateRange.end?.toISOString().split('T')[0],
       })
+      addToast({ type: 'success', title: 'Download Started', message: `${type} PDF download started` })
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Download failed')
+      addToast({ type: 'error', title: 'Download Failed', message: err instanceof Error ? err.message : 'Download failed' })
     } finally {
       setDownloading(null)
     }

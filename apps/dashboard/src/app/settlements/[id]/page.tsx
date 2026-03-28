@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Card } from '@/components/ui/Card'
 import { ConfirmModal } from '@/components/ui/Modal'
+import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
 
 interface Settlement {
@@ -40,6 +41,7 @@ interface Settlement {
 export default function SettlementDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const { addToast } = useToast()
   const settlementId = params.id as string
 
   const [settlement, setSettlement] = useState<Settlement | null>(null)
@@ -71,9 +73,10 @@ export default function SettlementDetailPage() {
     setProcessing(true)
     try {
       await api.payments.process(settlement.id, 'USDC')
+      addToast({ type: 'success', title: 'Payment Processed', message: 'Settlement payment processed successfully' })
       await loadSettlement()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to process payment')
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed to process payment' })
     } finally {
       setProcessing(false)
     }
@@ -81,7 +84,7 @@ export default function SettlementDetailPage() {
 
   async function handleComplete() {
     if (!txHashInput.trim()) {
-      alert('Please enter a transaction hash')
+      addToast({ type: 'warning', title: 'Validation Error', message: 'Please enter a transaction hash' })
       return
     }
     setProcessing(true)
@@ -89,9 +92,10 @@ export default function SettlementDetailPage() {
       await api.settlements.complete(settlementId, txHashInput.trim())
       setShowCompleteModal(false)
       setTxHashInput('')
+      addToast({ type: 'success', title: 'Settlement Completed', message: 'Settlement marked as completed' })
       await loadSettlement()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to complete settlement')
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed to complete settlement' })
     } finally {
       setProcessing(false)
     }
@@ -99,7 +103,7 @@ export default function SettlementDetailPage() {
 
   async function handleFail() {
     if (!failReason.trim()) {
-      alert('Please enter a reason')
+      addToast({ type: 'warning', title: 'Validation Error', message: 'Please enter a reason' })
       return
     }
     setProcessing(true)
@@ -107,9 +111,10 @@ export default function SettlementDetailPage() {
       await api.settlements.fail(settlementId, failReason.trim())
       setShowFailModal(false)
       setFailReason('')
+      addToast({ type: 'success', title: 'Settlement Failed', message: 'Settlement marked as failed' })
       await loadSettlement()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to mark settlement as failed')
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed to mark settlement as failed' })
     } finally {
       setProcessing(false)
     }
@@ -119,9 +124,10 @@ export default function SettlementDetailPage() {
     setProcessing(true)
     try {
       await api.settlements.retry(settlementId)
+      addToast({ type: 'success', title: 'Retry Queued', message: 'Settlement queued for retry' })
       await loadSettlement()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to retry settlement')
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed to retry settlement' })
     } finally {
       setProcessing(false)
     }

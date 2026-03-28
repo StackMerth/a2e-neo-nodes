@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
 
 interface JobDetail {
@@ -58,6 +59,7 @@ interface NodeOption {
 export default function JobDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const { addToast } = useToast()
   const jobId = params.id as string
 
   const [job, setJob] = useState<JobDetail | null>(null)
@@ -116,8 +118,9 @@ export default function JobDetailPage() {
       await api.jobs.update(jobId, { nodeId: selectedNodeId })
       await loadJob()
       setSelectedNodeId('')
+      addToast({ type: 'success', title: 'Node Assigned', message: 'Node successfully assigned to job' })
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to assign node')
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed to assign node' })
     } finally {
       setAssigning(false)
     }
@@ -126,7 +129,7 @@ export default function JobDetailPage() {
   async function handleCompleteJob() {
     const hours = parseFloat(durationHours)
     if (isNaN(hours) || hours <= 0) {
-      alert('Please enter a valid duration in hours')
+      addToast({ type: 'warning', title: 'Validation Error', message: 'Please enter a valid duration in hours' })
       return
     }
 
@@ -139,8 +142,9 @@ export default function JobDetailPage() {
       const durationSeconds = Math.round(hours * 3600)
       await api.jobs.update(jobId, { status: 'COMPLETED', durationSeconds })
       await loadJob()
+      addToast({ type: 'success', title: 'Job Completed', message: 'Job marked as completed' })
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to complete job')
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed to complete job' })
     } finally {
       setCompleting(false)
     }
@@ -167,9 +171,10 @@ export default function JobDetailPage() {
           await api.jobs.requeue(jobId)
           break
       }
+      addToast({ type: 'success', title: 'Action Completed', message: `Job ${action} successful` })
       loadJob()
     } catch (err) {
-      alert(err instanceof Error ? err.message : `Failed to ${action} job`)
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : `Failed to ${action} job` })
     } finally {
       setActionInProgress(null)
     }

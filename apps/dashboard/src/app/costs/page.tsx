@@ -7,6 +7,7 @@ import { Input, Select } from '@/components/ui/Input'
 import { Modal, ConfirmModal } from '@/components/ui/Modal'
 import { DistributionBar } from '@/components/ui/ProgressBar'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
 
 interface Cost {
@@ -37,6 +38,7 @@ const COST_CATEGORIES = [
 ]
 
 export default function CostsPage() {
+  const { addToast } = useToast()
   const [costs, setCosts] = useState<Cost[]>([])
   const [summary, setSummary] = useState<CostSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -124,7 +126,7 @@ export default function CostsPage() {
 
   async function handleCreateCost() {
     if (!createForm.amount || parseFloat(createForm.amount) <= 0) {
-      alert('Please enter a valid amount')
+      addToast({ type: 'warning', title: 'Validation Error', message: 'Please enter a valid amount' })
       return
     }
 
@@ -147,11 +149,10 @@ export default function CostsPage() {
         periodEnd: new Date().toISOString().split('T')[0],
         nodeId: '',
       })
-      setSuccess('Cost entry created successfully')
-      setTimeout(() => setSuccess(null), 3000)
+      addToast({ type: 'success', title: 'Cost Created', message: 'Cost entry created successfully' })
       loadCosts()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to create cost entry')
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed to create cost entry' })
     } finally {
       setProcessing(false)
     }
@@ -165,11 +166,10 @@ export default function CostsPage() {
       await api.costs.delete(deletingId)
       setShowDeleteModal(false)
       setDeletingId(null)
-      setSuccess('Cost entry deleted successfully')
-      setTimeout(() => setSuccess(null), 3000)
+      addToast({ type: 'success', title: 'Cost Deleted', message: 'Cost entry deleted successfully' })
       loadCosts()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete cost entry')
+      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed to delete cost entry' })
     } finally {
       setProcessing(false)
     }
