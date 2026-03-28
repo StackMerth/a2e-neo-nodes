@@ -15,6 +15,8 @@ const updateConfigSchema = z.object({
   minimumPayout: z.number().min(0).optional(),
   dayOfWeek: z.number().min(0).max(6).optional(),
   dayOfMonth: z.number().min(1).max(28).optional(),
+  hour: z.number().min(0).max(23).optional(),
+  autoSchedule: z.boolean().optional(),
   solanaRpcUrl: z.string().url().optional(),
   usdcMint: z.string().optional(),
 })
@@ -197,6 +199,9 @@ export async function settlementsRoutes(fastify: FastifyInstance) {
         minimumPayout: config.minimumPayout,
         dayOfWeek: config.dayOfWeek,
         dayOfMonth: config.dayOfMonth,
+        hour: config.hour,
+        autoSchedule: config.autoSchedule,
+        lastScheduledAt: config.lastScheduledAt?.toISOString() ?? null,
         solanaRpcUrl: config.solanaRpcUrl ? '***configured***' : null,
         usdcMint: config.usdcMint,
         updatedAt: config.updatedAt.toISOString(),
@@ -228,6 +233,9 @@ export async function settlementsRoutes(fastify: FastifyInstance) {
         minimumPayout: config.minimumPayout,
         dayOfWeek: config.dayOfWeek,
         dayOfMonth: config.dayOfMonth,
+        hour: config.hour,
+        autoSchedule: config.autoSchedule,
+        lastScheduledAt: config.lastScheduledAt?.toISOString() ?? null,
         solanaRpcUrl: config.solanaRpcUrl ? '***configured***' : null,
         usdcMint: config.usdcMint,
         updatedAt: config.updatedAt.toISOString(),
@@ -337,6 +345,109 @@ export async function settlementsRoutes(fastify: FastifyInstance) {
         message: 'Settlement marked as failed',
         id: settlement.id,
         status: 'FAILED',
+      })
+    }
+  )
+
+  // POST /v1/settlements/:id/retry - Retry a failed settlement
+  fastify.post(
+    '/v1/settlements/:id/retry',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+
+      const settlement = await fastify.prisma.settlement.findUnique({
+        where: { id },
+      })
+
+      if (!settlement) {
+        return reply.code(404).send({ error: 'Settlement not found' })
+      }
+
+      if (settlement.status !== 'FAILED') {
+        return reply.code(400).send({
+          error: 'Invalid Status',
+          message: `Settlement is ${settlement.status}, can only retry FAILED settlements`,
+        })
+      }
+
+      if (settlement.retryCount >= settlement.maxRetries) {
+        return reply.code(400).send({
+          error: 'Max Retries Exceeded',
+          message: `Settlement has exceeded maximum retry attempts (${settlement.maxRetries})`,
+        })
+      }
+
+      // Reset to PENDING for retry
+      await fastify.prisma.settlement.update({
+        where: { id },
+        data: {
+          status: 'PENDING',
+          errorMessage: null,
+          nextRetryAt: null,
+        },
+      })
+
+      reply.send({
+        message: 'Settlement queued for retry',
+        id: settlement.id,
+        status: 'PENDING',
+        retryCount: settlement.retryCount,
+        maxRetries: settlement.maxRetries,
+      })
+    }
+  )
+
+  // GET /v1/settlements/failed - List failed settlements that can be retried
+  fastify.get(
+    '/v1/settlements/failed',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const failedSettlements = await fastify.prisma.settlement.findMany({
+        where: {
+          status: 'FAILED',
+        },
+        include: {
+          node: { select: { walletAddress: true, gpuTier: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+
+      const retriable = failedSettlements.filter(s => s.retryCount < s.maxRetries)
+      const exhausted = failedSettlements.filter(s => s.retryCount >= s.maxRetries)
+
+      reply.send({
+        total: failedSettlements.length,
+        retriable: {
+          count: retriable.length,
+          settlements: retriable.map(s => ({
+            id: s.id,
+            nodeId: s.nodeId,
+            walletAddress: s.walletAddress,
+            amount: s.amount,
+            retryCount: s.retryCount,
+            maxRetries: s.maxRetries,
+            errorMessage: s.errorMessage,
+            lastRetryAt: s.lastRetryAt?.toISOString() ?? null,
+            nextRetryAt: s.nextRetryAt?.toISOString() ?? null,
+          })),
+        },
+        exhausted: {
+          count: exhausted.length,
+          settlements: exhausted.map(s => ({
+            id: s.id,
+            nodeId: s.nodeId,
+            walletAddress: s.walletAddress,
+            amount: s.amount,
+            retryCount: s.retryCount,
+            maxRetries: s.maxRetries,
+            errorMessage: s.errorMessage,
+          })),
+        },
       })
     }
   )

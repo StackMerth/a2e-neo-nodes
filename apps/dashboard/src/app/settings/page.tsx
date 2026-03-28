@@ -43,15 +43,40 @@ interface PaymentModeInfo {
   payerConfigured: boolean
 }
 
+interface SettlementConfig {
+  period: string
+  minimumPayout: number
+  dayOfWeek: number | null
+  dayOfMonth: number | null
+  hour: number
+  autoSchedule: boolean
+  lastScheduledAt: string | null
+}
+
+interface FailedSettlement {
+  id: string
+  nodeId: string
+  walletAddress: string
+  amount: number
+  status: string
+  retryCount: number
+  maxRetries: number
+  nextRetryAt: string | null
+  createdAt: string
+}
+
 export default function SettingsPage() {
   const [floors, setFloors] = useState<YieldFloor[]>([])
   const [markets, setMarkets] = useState<MarketConfig[]>([])
   const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null)
   const [paymentMode, setPaymentMode] = useState<PaymentModeInfo | null>(null)
+  const [settlementConfig, setSettlementConfig] = useState<SettlementConfig | null>(null)
+  const [failedSettlements, setFailedSettlements] = useState<{ retriable: FailedSettlement[]; exhausted: FailedSettlement[] }>({ retriable: [], exhausted: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [updating, setUpdating] = useState<string | null>(null)
+  const [retrying, setRetrying] = useState<string | null>(null)
 
   // Edit state
   const [editFloor, setEditFloor] = useState<{ tier: string; value: string } | null>(null)
@@ -62,16 +87,20 @@ export default function SettingsPage() {
 
   async function loadSettings() {
     try {
-      const [floorsData, marketsData, healthData, paymentModeData] = await Promise.all([
+      const [floorsData, marketsData, healthData, paymentModeData, settlementConfigData, failedData] = await Promise.all([
         api.config.yieldFloors(),
         api.config.markets(),
         api.system.health().catch(() => null),
         api.payments.mode().catch(() => null),
+        api.settlements.config().catch(() => null),
+        api.settlements.failed().catch(() => ({ retriable: [], exhausted: [] })),
       ])
       setFloors(floorsData?.floors ?? [])
       setMarkets(marketsData?.markets ?? [])
       setSystemHealth(healthData)
       setPaymentMode(paymentModeData)
+      setSettlementConfig(settlementConfigData)
+      setFailedSettlements(failedData)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings')
@@ -159,6 +188,57 @@ export default function SettingsPage() {
       setError(err instanceof Error ? err.message : 'Failed to update market')
     } finally {
       setUpdating(null)
+    }
+  }
+
+  async function handleToggleAutoSchedule(enabled: boolean) {
+    setUpdating('autoSchedule')
+    setError(null)
+    setSuccess(null)
+
+    try {
+      await api.settlements.updateConfig({ autoSchedule: enabled })
+      await loadSettings()
+      setSuccess(`Auto-scheduling ${enabled ? 'enabled' : 'disabled'}`)
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update auto-schedule')
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  async function handleUpdateScheduleHour(hour: number) {
+    setUpdating('hour')
+    setError(null)
+    setSuccess(null)
+
+    try {
+      await api.settlements.updateConfig({ hour })
+      await loadSettings()
+      setSuccess(`Schedule hour updated to ${hour}:00`)
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update schedule hour')
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  async function handleRetrySettlement(id: string) {
+    setRetrying(id)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      await api.settlements.retry(id)
+      await loadSettings()
+      setSuccess('Settlement queued for retry')
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to retry settlement')
+    } finally {
+      setRetrying(null)
     }
   }
 
@@ -255,6 +335,7 @@ export default function SettingsPage() {
         <Tabs defaultTab="routing">
           <TabList>
             <Tab value="routing">Routing Config</Tab>
+            <Tab value="settlements">Settlements</Tab>
             <Tab value="health">System Health</Tab>
             <Tab value="payment">Payment Config</Tab>
             <Tab value="audit">Audit Log</Tab>
@@ -424,6 +505,209 @@ export default function SettingsPage() {
                   <p className="text-sm text-text-secondary">
                     <strong className="text-accent">Note:</strong> Disabling an external market means jobs won&apos;t be routed there even if it offers the best rate.
                   </p>
+                </div>
+              </Card>
+            </div>
+          </TabPanel>
+
+          {/* Settlements Tab */}
+          <TabPanel value="settlements">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-6">
+              {/* Auto-Schedule Config */}
+              <Card variant="glass" hover={false}>
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-400 flex items-center justify-center">
+                    <CalendarIcon className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-text-primary">Auto-Schedule</h3>
+                    <p className="text-xs text-text-muted">Automatic settlement scheduling</p>
+                  </div>
+                </div>
+
+                {settlementConfig ? (
+                  <div className="space-y-4">
+                    {/* Auto-Schedule Toggle */}
+                    <div className="p-4 bg-background/50 rounded-xl border border-border/50">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="font-medium text-text-primary">Enable Auto-Scheduling</span>
+                          <p className="text-xs text-text-muted mt-1">
+                            Automatically run settlements based on period
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={settlementConfig.autoSchedule}
+                            onChange={(e) => handleToggleAutoSchedule(e.target.checked)}
+                            disabled={updating === 'autoSchedule'}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-text-muted after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent peer-checked:after:bg-background"></div>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Schedule Details */}
+                    <div className="p-4 bg-background/50 rounded-xl border border-border/50 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-text-muted">Period</span>
+                        <span className="px-3 py-1 bg-accent/10 text-accent text-sm rounded-full font-medium">
+                          {settlementConfig.period.toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-text-muted">Schedule Hour</span>
+                        <select
+                          value={settlementConfig.hour}
+                          onChange={(e) => handleUpdateScheduleHour(parseInt(e.target.value))}
+                          disabled={updating === 'hour'}
+                          className="px-3 py-1.5 bg-surface border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-accent"
+                        >
+                          {Array.from({ length: 24 }, (_, i) => (
+                            <option key={i} value={i}>
+                              {i.toString().padStart(2, '0')}:00
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {settlementConfig.period === 'weekly' && settlementConfig.dayOfWeek !== null && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-text-muted">Day of Week</span>
+                          <span className="text-text-primary font-medium">
+                            {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][settlementConfig.dayOfWeek]}
+                          </span>
+                        </div>
+                      )}
+                      {settlementConfig.period === 'monthly' && settlementConfig.dayOfMonth !== null && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-text-muted">Day of Month</span>
+                          <span className="text-text-primary font-medium">{settlementConfig.dayOfMonth}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-text-muted">Last Scheduled</span>
+                        <span className="text-text-primary text-sm">
+                          {settlementConfig.lastScheduledAt
+                            ? new Date(settlementConfig.lastScheduledAt).toLocaleString()
+                            : 'Never'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {settlementConfig.autoSchedule && (
+                      <div className="p-4 bg-accent/5 border border-accent/20 rounded-xl flex items-center gap-3">
+                        <CheckIcon className="w-5 h-5 text-accent shrink-0" />
+                        <p className="text-sm text-text-secondary">
+                          Settlements will automatically run {settlementConfig.period.toLowerCase()} at {settlementConfig.hour.toString().padStart(2, '0')}:00
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="py-8 text-center">
+                    <div className="w-12 h-12 rounded-xl bg-surface-hover flex items-center justify-center mx-auto mb-3">
+                      <CalendarIcon className="w-6 h-6 text-text-muted" />
+                    </div>
+                    <p className="text-text-muted text-sm">Unable to load settlement config</p>
+                    <Button onClick={loadSettings} variant="outline" size="sm" className="mt-3">
+                      Retry
+                    </Button>
+                  </div>
+                )}
+              </Card>
+
+              {/* Failed Settlements */}
+              <Card variant="glass" hover={false}>
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-error to-red-400 flex items-center justify-center">
+                    <AlertIcon className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-text-primary">Failed Settlements</h3>
+                    <p className="text-xs text-text-muted">Settlements that need attention</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Retriable */}
+                  {failedSettlements.retriable.length > 0 ? (
+                    <div className="space-y-3">
+                      <p className="text-sm text-text-muted">Retriable ({failedSettlements.retriable.length})</p>
+                      {failedSettlements.retriable.map((s) => (
+                        <div
+                          key={s.id}
+                          className="p-4 bg-background/50 rounded-xl border border-warning/30"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-text-primary font-medium font-mono text-sm">
+                              {s.walletAddress.slice(0, 8)}...{s.walletAddress.slice(-4)}
+                            </span>
+                            <span className="text-accent font-bold">${s.amount.toFixed(2)}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-text-muted mb-3">
+                            <span>Retry {s.retryCount}/{s.maxRetries}</span>
+                            {s.nextRetryAt && (
+                              <span>Next: {new Date(s.nextRetryAt).toLocaleTimeString()}</span>
+                            )}
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full"
+                            loading={retrying === s.id}
+                            onClick={() => handleRetrySettlement(s.id)}
+                          >
+                            Retry Now
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {/* Exhausted */}
+                  {failedSettlements.exhausted.length > 0 && (
+                    <div className="space-y-3">
+                      <p className="text-sm text-text-muted">Exhausted Retries ({failedSettlements.exhausted.length})</p>
+                      {failedSettlements.exhausted.map((s) => (
+                        <div
+                          key={s.id}
+                          className="p-4 bg-background/50 rounded-xl border border-error/30"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-text-primary font-medium font-mono text-sm">
+                              {s.walletAddress.slice(0, 8)}...{s.walletAddress.slice(-4)}
+                            </span>
+                            <span className="text-error font-bold">${s.amount.toFixed(2)}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-text-muted mb-3">
+                            <span>Retried {s.retryCount} times</span>
+                            <span className="text-error">Max retries exhausted</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full border-error/30 text-error hover:bg-error/10"
+                            loading={retrying === s.id}
+                            onClick={() => handleRetrySettlement(s.id)}
+                          >
+                            Force Retry
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {failedSettlements.retriable.length === 0 && failedSettlements.exhausted.length === 0 && (
+                    <div className="py-8 text-center">
+                      <div className="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-3">
+                        <CheckIcon className="w-6 h-6 text-accent" />
+                      </div>
+                      <p className="text-accent text-sm font-medium">All settlements healthy</p>
+                      <p className="text-text-muted text-xs mt-1">No failed settlements</p>
+                    </div>
+                  )}
                 </div>
               </Card>
             </div>
@@ -811,6 +1095,14 @@ function CurrencyIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+    </svg>
+  )
+}
+
+function CalendarIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
     </svg>
   )
 }

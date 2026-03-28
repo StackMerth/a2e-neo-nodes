@@ -28,6 +28,8 @@ interface JobDetail {
     durationSeconds: number | null
   }
   earnings: number | null
+  cost: number | null
+  profit: number | null
   errorMessage: string | null
   retryCount: number
   routingLog: {
@@ -394,6 +396,48 @@ export default function JobDetailPage() {
           value={job.retryCount}
         />
       </div>
+
+      {/* Financials */}
+      {(job.cost != null || job.profit != null) && (
+        <Card title="Job Financials" description="Cost, profit, and margin analysis">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+            <div className="p-4 bg-background rounded-lg">
+              <p className="text-xs text-text-muted mb-1">Earnings</p>
+              <p className="text-xl font-bold text-accent">${job.earnings?.toFixed(4) || '0'}</p>
+            </div>
+            <div className="p-4 bg-background rounded-lg">
+              <p className="text-xs text-text-muted mb-1">Cost</p>
+              <p className="text-xl font-bold text-text-primary">${job.cost?.toFixed(4) || '0'}</p>
+            </div>
+            <div className="p-4 bg-background rounded-lg">
+              <p className="text-xs text-text-muted mb-1">Profit</p>
+              <p className={`text-xl font-bold ${(job.profit ?? 0) >= 0 ? 'text-accent' : 'text-error'}`}>
+                {(job.profit ?? 0) >= 0 ? '+' : ''}${job.profit?.toFixed(4) || '0'}
+              </p>
+            </div>
+            <div className="p-4 bg-background rounded-lg">
+              <p className="text-xs text-text-muted mb-1">Profit Margin</p>
+              <p className={`text-xl font-bold ${
+                job.earnings && job.earnings > 0
+                  ? ((job.profit ?? 0) / job.earnings) >= 0 ? 'text-accent' : 'text-error'
+                  : 'text-text-muted'
+              }`}>
+                {job.earnings && job.earnings > 0
+                  ? `${(((job.profit ?? 0) / job.earnings) * 100).toFixed(1)}%`
+                  : 'N/A'}
+              </p>
+            </div>
+          </div>
+
+          {job.market && job.market !== 'INTERNAL' && (
+            <div className="mt-4 p-4 bg-accent/5 border border-accent/20 rounded-xl">
+              <p className="text-sm text-text-secondary">
+                <strong className="text-accent">Note:</strong> Cost is calculated based on the {job.market} market rate at the time of job completion.
+              </p>
+            </div>
+          )}
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Routing Decision */}

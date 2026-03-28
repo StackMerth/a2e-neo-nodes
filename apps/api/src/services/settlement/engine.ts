@@ -166,6 +166,8 @@ export async function updateSettlementConfig(
     minimumPayout?: number
     dayOfWeek?: number
     dayOfMonth?: number
+    hour?: number
+    autoSchedule?: boolean
     solanaRpcUrl?: string
     payerPrivateKey?: string
     usdcMint?: string

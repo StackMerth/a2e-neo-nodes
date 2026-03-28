@@ -31,6 +31,13 @@ import {
   createJobProcessorQueue,
   createJobProcessorWorker,
 } from './jobs/job-processor'
+import {
+  createSettlementSchedulerQueue,
+  createSettlementRetryQueue,
+  createSettlementSchedulerWorker,
+  createSettlementRetryWorker,
+  scheduleSettlementChecker,
+} from './jobs/settlement-scheduler'
 
 const server = Fastify({
   logger: {
@@ -72,6 +79,8 @@ async function start() {
     const rateFetcherQueue = createRateFetcherQueue(redisConnection)
     const nodeHealthQueue = createNodeHealthQueue(redisConnection)
     const jobProcessorQueue = createJobProcessorQueue(redisConnection)
+    const settlementSchedulerQueue = createSettlementSchedulerQueue(redisConnection)
+    const settlementRetryQueue = createSettlementRetryQueue(redisConnection)
 
     // Decorate server with job queue for routes to access
     server.decorate('jobQueue', jobProcessorQueue)
@@ -94,9 +103,15 @@ async function start() {
       io: server.io,
     })
 
+    // Settlement scheduler and retry workers
+    createSettlementSchedulerWorker(redisConnection, server.prisma)
+    createSettlementRetryWorker(redisConnection, server.prisma)
+
     await scheduleRateFetcher(rateFetcherQueue)
     await scheduleNodeHealthChecker(nodeHealthQueue)
+    await scheduleSettlementChecker(60) // Check every hour
     server.log.info('Job processor queue initialized')
+    server.log.info('Settlement scheduler initialized (checks hourly when enabled)')
 
     const port = parseInt(process.env.PORT ?? '3001', 10)
     const host = process.env.HOST ?? '0.0.0.0'
