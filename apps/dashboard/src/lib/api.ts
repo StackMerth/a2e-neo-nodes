@@ -176,6 +176,12 @@ export const api = {
         method: 'POST',
       }),
 
+    complete: (id: string, data: { durationSeconds: number; earnings?: number }) =>
+      apiFetch<{ id: string; status: string; earnings: number }>(`/v1/jobs/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'COMPLETED', ...data }),
+      }),
+
     bulk: (jobs: Array<{ deploymentId: string; gpuTier: string; nodeId?: string }>) =>
       apiFetch<{
         success: boolean
@@ -288,6 +294,22 @@ export const api = {
           total: number
         }>
       }>('/v1/stats/earnings/trend', { params: { days } }),
+
+    nodes: () =>
+      apiFetch<{
+        total: number
+        byStatus: Record<string, number>
+        byTier: Record<string, number>
+        averageUptime: number
+      }>('/v1/stats/nodes'),
+
+    routing: () =>
+      apiFetch<{
+        total: number
+        byMarket: Record<string, number>
+        avgDecisionTimeMs: number
+        yieldFloorHitRate: number
+      }>('/v1/stats/routing'),
   },
 
   // Auth
@@ -327,6 +349,24 @@ export const api = {
 
   // Financial - Earnings
   earnings: {
+    list: (params?: { nodeId?: string; market?: string; startDate?: string; endDate?: string; limit?: number; offset?: number }) =>
+      apiFetch<{
+        earnings: Array<{
+          id: string
+          nodeId: string
+          walletAddress: string
+          gpuTier: string
+          date: string
+          market: string
+          earnings: number
+          gpuSeconds: number
+          jobCount: number
+        }>
+        total: number
+        limit: number
+        offset: number
+      }>('/v1/earnings', { params }),
+
     summary: (params?: { startDate?: string; endDate?: string }) =>
       apiFetch<{
         totalEarnings: number
@@ -336,12 +376,32 @@ export const api = {
         byNode: Record<string, { earnings: number; jobs: number }>
       }>('/v1/earnings/summary', { params }),
 
+    byNode: (nodeId: string, params?: { days?: number; startDate?: string; endDate?: string }) =>
+      apiFetch<{
+        node: { id: string; walletAddress: string; gpuTier: string }
+        period: { start: string; end: string }
+        totals: { earnings: number; gpuHours: number; jobCount: number }
+        daily: Array<{
+          date: string
+          market: string
+          earnings: number
+          gpuSeconds: number
+          jobCount: number
+        }>
+      }>(`/v1/earnings/by-node/${nodeId}`, { params }),
+
     byMarket: (params?: { days?: number }) =>
       apiFetch<{
         period: { start: string; end: string }
         total: { earnings: number; gpuHours: number; jobCount: number }
         byMarket: Record<string, { earnings: number; gpuHours: number; jobCount: number }>
       }>('/v1/earnings/by-market', { params }),
+
+    byTier: (params?: { days?: number; startDate?: string; endDate?: string }) =>
+      apiFetch<{
+        period: { start: string; end: string }
+        byTier: Record<string, { earnings: number; gpuHours: number; jobCount: number }>
+      }>('/v1/earnings/by-tier', { params }),
 
     trends: (params?: { days?: number; groupBy?: string }) =>
       apiFetch<{
@@ -452,6 +512,9 @@ export const api = {
       minimumPayout?: number
       dayOfWeek?: number | null
       dayOfMonth?: number | null
+      solanaRpcUrl?: string
+      payerPrivateKey?: string
+      usdcMint?: string
     }) =>
       apiFetch<{
         period: string
@@ -622,6 +685,34 @@ export const api = {
           totalAmountPaid: number
         }
       }>('/v1/payments/stats'),
+
+    balance: () =>
+      apiFetch<{
+        isDevMode: boolean
+        balances: {
+          sol: number
+          usdc: number
+        }
+        error?: string
+        message: string
+      }>('/v1/payments/balance'),
+
+    batchOnchain: (settlementIds: string[], currency: 'SOL' | 'USDC' = 'USDC') =>
+      apiFetch<{
+        success: boolean
+        txHash?: string
+        processed: number
+        totalAmount: number
+        currency: string
+        isDevMode: boolean
+        isBatched: boolean
+        paymentIds?: string[]
+        errors?: Array<{ settlementId: string; error: string }>
+        message: string
+      }>('/v1/payments/batch-onchain', {
+        method: 'POST',
+        body: JSON.stringify({ settlementIds, currency }),
+      }),
   },
 
   // Financial - Reports
@@ -673,6 +764,29 @@ export const api = {
       a.click()
       window.URL.revokeObjectURL(blobUrl)
       document.body.removeChild(a)
+    },
+
+    nodeStatement: async (nodeId: string, params?: { days?: number; startDate?: string; endDate?: string }) => {
+      const queryParams = new URLSearchParams()
+      if (params?.days) queryParams.append('days', String(params.days))
+      if (params?.startDate) queryParams.append('startDate', params.startDate)
+      if (params?.endDate) queryParams.append('endDate', params.endDate)
+      const queryString = queryParams.toString()
+      const url = `${API_BASE}/v1/reports/statement/${nodeId}${queryString ? `?${queryString}` : ''}`
+
+      const response = await fetch(url, {
+        headers: { 'X-API-Key': API_KEY },
+      })
+      if (!response.ok) throw new Error('Failed to generate statement')
+      const html = await response.text()
+
+      // Open in new window for printing
+      const printWindow = window.open('', '_blank')
+      if (printWindow) {
+        printWindow.document.write(html)
+        printWindow.document.close()
+      }
+      return html
     },
   },
 

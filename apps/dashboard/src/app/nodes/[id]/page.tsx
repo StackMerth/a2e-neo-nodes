@@ -99,6 +99,7 @@ export default function NodeDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [statementDays, setStatementDays] = useState(30)
 
   useEffect(() => {
     loadNode()
@@ -153,6 +154,17 @@ export default function NodeDetailPage() {
       router.push('/nodes')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed')
+      setActionLoading(null)
+    }
+  }
+
+  async function handleGenerateStatement() {
+    setActionLoading('statement')
+    try {
+      await api.reports.nodeStatement(nodeId, { days: statementDays })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate statement')
+    } finally {
       setActionLoading(null)
     }
   }
@@ -326,6 +338,27 @@ export default function NodeDetailPage() {
                   Resume
                 </Button>
               )}
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={statementDays}
+                  onChange={(e) => setStatementDays(Number(e.target.value))}
+                  className="px-2 py-2 bg-background border border-border rounded-lg text-xs text-text-primary"
+                >
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={90}>90 days</option>
+                </select>
+                <Button
+                  variant="secondary"
+                  onClick={handleGenerateStatement}
+                  loading={actionLoading === 'statement'}
+                  icon={<DocumentIcon className="w-4 h-4" />}
+                >
+                  Statement
+                </Button>
+              </div>
 
               <Button
                 variant="ghost"
@@ -843,6 +876,14 @@ function DollarIcon({ className = 'w-5 h-5' }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function DocumentIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
     </svg>
   )
 }

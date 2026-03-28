@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
-import { Card } from '@/components/ui/Card'
+import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/Modal'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { api } from '@/lib/api'
 
 interface Payment {
@@ -59,6 +60,8 @@ export default function PaymentsPage() {
   const [selectedSettlements, setSelectedSettlements] = useState<string[]>([])
   const [batchProcessing, setBatchProcessing] = useState(false)
   const [showBatchModal, setShowBatchModal] = useState(false)
+  const [useOnchainBatch, setUseOnchainBatch] = useState(true)
+  const [walletBalance, setWalletBalance] = useState<{ sol: number; usdc: number; isDevMode: boolean } | null>(null)
 
   useEffect(() => {
     loadData()
@@ -67,7 +70,7 @@ export default function PaymentsPage() {
   async function loadData() {
     setLoading(true)
     try {
-      const [paymentsRes, statsRes, pendingRes] = await Promise.all([
+      const [paymentsRes, statsRes, pendingRes, balanceRes] = await Promise.all([
         api.payments.list({
           status: filter !== 'all' ? filter : undefined,
           limit: 20,
@@ -75,11 +78,13 @@ export default function PaymentsPage() {
         }),
         api.payments.stats(),
         api.settlements.pending(),
+        api.payments.balance(),
       ])
       setPayments(paymentsRes.payments)
       setPagination(paymentsRes.pagination)
       setStats(statsRes)
       setPendingSettlements(pendingRes.pending)
+      setWalletBalance(balanceRes.balances ? { ...balanceRes.balances, isDevMode: balanceRes.isDevMode } : null)
     } catch (err) {
       console.error('Failed to load payments:', err)
     } finally {
@@ -87,7 +92,6 @@ export default function PaymentsPage() {
     }
   }
 
-  // Filter payments by search term
   const filteredPayments = useMemo(() => {
     if (!search.trim()) return payments
     const term = search.toLowerCase()
@@ -108,8 +112,17 @@ export default function PaymentsPage() {
     if (selectedSettlements.length === 0) return
     setBatchProcessing(true)
     try {
-      const result = await api.payments.batch(selectedSettlements, 'USDC')
-      alert(`Batch complete:\nProcessed: ${result.processed}\nFailed: ${result.failed}`)
+      if (useOnchainBatch && selectedSettlements.length <= 15) {
+        const result = await api.payments.batchOnchain(selectedSettlements, 'USDC')
+        if (result.success) {
+          alert(`On-chain batch complete!\nTx: ${result.txHash?.substring(0, 20)}...\nRecipients: ${result.processed}\nTotal: $${result.totalAmount.toFixed(2)}`)
+        } else {
+          alert(`Batch failed: ${result.message}`)
+        }
+      } else {
+        const result = await api.payments.batch(selectedSettlements, 'USDC')
+        alert(`Batch complete:\nProcessed: ${result.processed}\nFailed: ${result.failed}`)
+      }
       setSelectedSettlements([])
       setShowBatchModal(false)
       loadData()
@@ -147,94 +160,171 @@ export default function PaymentsPage() {
 
   const getStatusBadge = (status: string, isDevMode: boolean) => {
     if (isDevMode) {
-      return <span className="px-2 py-0.5 text-xs font-medium bg-warning/20 text-warning rounded">DEV</span>
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-warning/10 text-warning border border-warning/20 rounded-lg">
+          <span className="w-1.5 h-1.5 rounded-full bg-warning" />
+          DEV
+        </span>
+      )
     }
-    const colors: Record<string, string> = {
-      PENDING: 'bg-yellow-500/20 text-yellow-400',
-      CONFIRMED: 'bg-accent/20 text-accent',
-      FAILED: 'bg-error/20 text-error',
+    const styles: Record<string, string> = {
+      PENDING: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+      CONFIRMED: 'bg-accent/10 text-accent border-accent/20',
+      FAILED: 'bg-error/10 text-error border-error/20',
     }
-    return <span className={`px-2 py-0.5 text-xs font-medium rounded ${colors[status] || 'bg-gray-500/20 text-gray-400'}`}>{status}</span>
+    const dotColors: Record<string, string> = {
+      PENDING: 'bg-yellow-400',
+      CONFIRMED: 'bg-accent',
+      FAILED: 'bg-error',
+    }
+    return (
+      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium border rounded-lg ${styles[status] || 'bg-gray-500/10 text-gray-400 border-gray-500/20'}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${dotColors[status] || 'bg-gray-400'}`} />
+        {status}
+      </span>
+    )
   }
 
+  const totalPendingAmount = pendingSettlements.reduce((sum, s) => sum + s.amount, 0)
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Payments</h1>
-          <p className="text-text-muted mt-1">Track and verify payment transactions</p>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={loadData} variant="outline" size="sm">
-            Refresh
-          </Button>
-          <Button onClick={handleExportCSV} variant="outline" size="sm">
-            Export CSV
-          </Button>
+    <div className="space-y-8 animate-fadeIn">
+      {/* Hero Section */}
+      <div className="relative py-8 md:py-12">
+        {/* Background gradient */}
+        <div className="absolute inset-0 bg-gradient-to-b from-purple-500/5 via-transparent to-transparent rounded-3xl" />
+
+        <div className="relative text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500/5 border border-purple-500/20 rounded-full mb-6 animate-slideUp">
+            <CreditCardIcon className="w-4 h-4 text-purple-400" />
+            <span className="text-xs text-purple-400 font-medium uppercase tracking-wider">Payment Processing</span>
+          </div>
+
+          <h1 className="text-3xl md:text-5xl font-bold text-text-primary mb-3">
+            Payments
+          </h1>
+          <p className="text-text-muted max-w-xl mx-auto">
+            Track payment transactions, process settlements, and verify on-chain payments.
+          </p>
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Actions Bar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <Button onClick={loadData} variant="outline" size="sm" icon={<RefreshIcon />}>
+          Refresh
+        </Button>
+        <Button onClick={handleExportCSV} variant="outline" size="sm" icon={<DownloadIcon />}>
+          Export CSV
+        </Button>
+      </div>
+
+      {/* Stats Grid */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <Card className="p-4">
-            <p className="text-xs text-text-muted uppercase">Total Payments</p>
-            <p className="text-2xl font-bold text-text-primary mt-1">{stats.stats.total}</p>
-          </Card>
-          <Card className="p-4">
-            <p className="text-xs text-text-muted uppercase">Confirmed</p>
-            <p className="text-2xl font-bold text-accent mt-1">{stats.stats.confirmed}</p>
-          </Card>
-          <Card className="p-4">
-            <p className="text-xs text-text-muted uppercase">Failed</p>
-            <p className="text-2xl font-bold text-error mt-1">{stats.stats.failed}</p>
-          </Card>
-          <Card className="p-4">
-            <p className="text-xs text-text-muted uppercase">Dev Mode</p>
-            <p className="text-2xl font-bold text-warning mt-1">{stats.stats.devModePayments}</p>
-          </Card>
-          <Card className="p-4">
-            <p className="text-xs text-text-muted uppercase">Total Paid</p>
-            <p className="text-2xl font-bold text-text-primary mt-1">${stats.stats.totalAmountPaid.toFixed(2)}</p>
-          </Card>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <StatCard
+            label="Total Payments"
+            value={stats.stats.total}
+            variant="purple"
+            animate
+            icon={<ReceiptIcon />}
+          />
+          <StatCard
+            label="Confirmed"
+            value={stats.stats.confirmed}
+            variant="accent"
+            animate
+            icon={<CheckCircleIcon />}
+          />
+          <StatCard
+            label="Failed"
+            value={stats.stats.failed}
+            variant="orange"
+            animate
+            icon={<XCircleIcon />}
+          />
+          <StatCard
+            label="Dev Mode"
+            value={stats.stats.devModePayments}
+            animate
+            icon={<CodeIcon />}
+          />
+          <StatCard
+            label="Total Paid"
+            value={`$${stats.stats.totalAmountPaid.toFixed(2)}`}
+            variant="accent"
+            animate
+            icon={<DollarIcon />}
+          />
+          {walletBalance && (
+            <StatCard
+              label="Wallet Balance"
+              value={`$${walletBalance.usdc.toFixed(2)}`}
+              variant="blue"
+              animate
+              icon={<WalletIcon />}
+              trend={{ value: walletBalance.sol, isPositive: true }}
+            />
+          )}
         </div>
       )}
 
       {/* Mode Banner */}
       {stats && (
-        <div className={`p-4 rounded-lg border ${stats.currentMode === 'dev' ? 'bg-warning/10 border-warning/30' : 'bg-accent/10 border-accent/30'}`}>
-          <div className="flex items-center gap-3">
-            <span className={`px-3 py-1 rounded-full text-sm font-bold ${stats.currentMode === 'dev' ? 'bg-warning/20 text-warning' : 'bg-accent/20 text-accent'}`}>
-              {stats.currentMode.toUpperCase()} MODE
-            </span>
-            <span className="text-sm text-text-secondary">{stats.modeDescription}</span>
+        <div className={`p-4 rounded-2xl border flex items-center gap-4 ${
+          stats.currentMode === 'dev'
+            ? 'bg-gradient-to-r from-warning/10 to-orange-500/5 border-warning/30'
+            : 'bg-gradient-to-r from-accent/10 to-emerald-500/5 border-accent/30'
+        }`}>
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+            stats.currentMode === 'dev' ? 'bg-warning/20' : 'bg-accent/20'
+          }`}>
+            {stats.currentMode === 'dev' ? (
+              <CodeIcon className="w-6 h-6 text-warning" />
+            ) : (
+              <CheckShieldIcon className="w-6 h-6 text-accent" />
+            )}
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-3">
+              <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                stats.currentMode === 'dev'
+                  ? 'bg-warning/20 text-warning'
+                  : 'bg-accent/20 text-accent'
+              }`}>
+                {stats.currentMode.toUpperCase()} MODE
+              </span>
+            </div>
+            <p className="text-sm text-text-secondary mt-1">{stats.modeDescription}</p>
           </div>
         </div>
       )}
 
-      {/* Pending Settlements - Batch Processing */}
+      {/* Pending Settlements */}
       {pendingSettlements.length > 0 && (
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="font-semibold text-text-primary">Pending Settlements</h3>
-              <p className="text-sm text-text-muted">{pendingSettlements.length} settlements awaiting payment</p>
+        <Card variant="glass" hover={false}>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-warning to-orange-400 flex items-center justify-center">
+                <ClockIcon className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-text-primary">Pending Settlements</h3>
+                <p className="text-xs text-text-muted">{pendingSettlements.length} settlements • ${totalPendingAmount.toFixed(2)} total</p>
+              </div>
             </div>
             <div className="flex gap-2">
-              <button
-                onClick={selectAllPending}
-                className="px-3 py-1.5 text-xs bg-surface-hover hover:bg-accent/10 rounded-lg transition-colors"
-              >
+              <Button onClick={selectAllPending} variant="ghost" size="sm">
                 Select All
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => setShowBatchModal(true)}
                 disabled={selectedSettlements.length === 0}
-                className="px-4 py-1.5 text-xs bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
+                variant="primary"
+                size="sm"
               >
-                Process Selected ({selectedSettlements.length})
-              </button>
+                Process ({selectedSettlements.length})
+              </Button>
             </div>
           </div>
 
@@ -242,12 +332,12 @@ export default function PaymentsPage() {
             {pendingSettlements.map((settlement) => (
               <div
                 key={settlement.nodeId}
-                className={`flex items-center gap-4 p-3 rounded-lg border transition-colors cursor-pointer ${
-                  selectedSettlements.includes(settlement.nodeId)
-                    ? 'bg-accent/10 border-accent/30'
-                    : 'bg-surface-hover border-border hover:border-accent/30'
-                }`}
                 onClick={() => toggleSettlementSelection(settlement.nodeId)}
+                className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${
+                  selectedSettlements.includes(settlement.nodeId)
+                    ? 'bg-accent/5 border-accent/30 shadow-[0_0_0_1px_rgba(34,197,94,0.2)]'
+                    : 'bg-background/50 border-border/50 hover:border-accent/30'
+                }`}
               >
                 <input
                   type="checkbox"
@@ -264,7 +354,7 @@ export default function PaymentsPage() {
                   <p className="text-xs text-text-muted font-mono">{settlement.walletAddress.substring(0, 20)}...</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-medium text-accent">${settlement.amount.toFixed(2)}</p>
+                  <p className="font-semibold text-accent">${settlement.amount.toFixed(2)}</p>
                   <p className="text-xs text-text-muted">{settlement.jobCount} jobs</p>
                 </div>
               </div>
@@ -275,7 +365,7 @@ export default function PaymentsPage() {
 
       {/* Filter and Search */}
       <div className="flex flex-col sm:flex-row gap-4">
-        <div className="flex gap-2">
+        <div className="flex gap-1 p-1 bg-surface rounded-xl">
           {['all', 'PENDING', 'CONFIRMED', 'FAILED'].map((status) => (
             <button
               key={status}
@@ -283,93 +373,114 @@ export default function PaymentsPage() {
                 setFilter(status)
                 setPage(1)
               }}
-              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
                 filter === status
-                  ? 'bg-accent text-white'
-                  : 'bg-surface-hover text-text-secondary hover:text-text-primary'
+                  ? 'bg-accent text-white shadow-lg shadow-accent/20'
+                  : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
               }`}
             >
               {status === 'all' ? 'All' : status}
             </button>
           ))}
         </div>
-        <div className="flex-1 max-w-md">
+        <div className="flex-1 max-w-md relative">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by address, tx hash, or ID..."
-            className="w-full px-4 py-2 bg-background border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+            className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border rounded-xl text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
           />
         </div>
       </div>
 
       {/* Payments Table */}
-      <Card>
+      <Card variant="glass" hover={false}>
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-400 flex items-center justify-center">
+            <ListIcon className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-text-primary">Payment History</h3>
+            <p className="text-xs text-text-muted">{pagination?.total ?? 0} total payments</p>
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase">ID</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase">Amount</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase">Recipient</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase">Tx Hash</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase">Status</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase">Created</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase">Actions</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">ID</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Amount</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Recipient</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Tx Hash</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Status</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Created</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-text-muted">Loading...</td>
+                  <td colSpan={7} className="py-12 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                      <p className="text-text-muted">Loading payments...</p>
+                    </div>
+                  </td>
                 </tr>
               ) : filteredPayments.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-text-muted">
-                    {search ? 'No payments match your search' : 'No payments found'}
+                  <td colSpan={7} className="py-12">
+                    <EmptyState
+                      icon={<ReceiptIcon className="w-8 h-8" />}
+                      title={search ? 'No payments match your search' : 'No payments found'}
+                      description={search ? 'Try adjusting your search terms' : 'Payment records will appear here once settlements are processed'}
+                    />
                   </td>
                 </tr>
               ) : (
                 filteredPayments.map((payment) => (
-                  <tr key={payment.id} className="border-b border-border/50 hover:bg-surface-hover/50">
-                    <td className="py-3 px-4">
-                      <span className="text-xs font-mono text-text-secondary">{payment.id.substring(0, 12)}...</span>
+                  <tr key={payment.id} className="border-b border-border/50 hover:bg-surface-hover/50 transition-colors">
+                    <td className="py-4 px-4">
+                      <span className="text-xs font-mono text-text-secondary bg-surface-hover px-2 py-1 rounded">{payment.id.substring(0, 12)}...</span>
                     </td>
-                    <td className="py-3 px-4">
-                      <span className="font-medium text-text-primary">${payment.amount.toFixed(2)}</span>
+                    <td className="py-4 px-4">
+                      <span className="font-semibold text-text-primary">${payment.amount.toFixed(2)}</span>
                       <span className="text-xs text-text-muted ml-1">{payment.currency}</span>
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-4">
                       <span className="text-xs font-mono text-text-secondary">
-                        {payment.recipientAddress.substring(0, 8)}...{payment.recipientAddress.substring(-4)}
+                        {payment.recipientAddress.substring(0, 8)}...{payment.recipientAddress.slice(-4)}
                       </span>
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-4">
                       {payment.txHash ? (
                         <a
                           href={`https://solscan.io/tx/${payment.txHash}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs font-mono text-accent hover:underline"
+                          className="text-xs font-mono text-accent hover:underline flex items-center gap-1"
                         >
                           {payment.txHash.substring(0, 12)}...
+                          <ExternalLinkIcon className="w-3 h-3" />
                         </a>
                       ) : (
                         <span className="text-xs text-text-muted">-</span>
                       )}
                     </td>
-                    <td className="py-3 px-4">{getStatusBadge(payment.status, payment.isDevMode)}</td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-4">{getStatusBadge(payment.status, payment.isDevMode)}</td>
+                    <td className="py-4 px-4">
                       <span className="text-xs text-text-muted">
                         {new Date(payment.createdAt).toLocaleDateString()}
                       </span>
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-4 px-4">
                       <div className="flex items-center gap-2">
                         <Link
                           href={`/settlements/${payment.settlementId}`}
-                          className="px-2 py-1 text-xs bg-surface-hover text-text-secondary rounded hover:bg-border transition-colors"
+                          className="px-3 py-1.5 text-xs bg-surface-hover text-text-secondary rounded-lg hover:bg-border transition-colors"
                         >
                           View
                         </Link>
@@ -377,7 +488,7 @@ export default function PaymentsPage() {
                           <button
                             onClick={() => handleVerify(payment.txHash!)}
                             disabled={verifying === payment.txHash}
-                            className="px-2 py-1 text-xs bg-accent/10 text-accent rounded hover:bg-accent/20 disabled:opacity-50"
+                            className="px-3 py-1.5 text-xs bg-accent/10 text-accent rounded-lg hover:bg-accent/20 disabled:opacity-50"
                           >
                             {verifying === payment.txHash ? 'Verifying...' : 'Verify'}
                           </button>
@@ -395,26 +506,28 @@ export default function PaymentsPage() {
         {pagination && pagination.totalPages > 1 && (
           <div className="flex items-center justify-between p-4 border-t border-border">
             <p className="text-sm text-text-muted">
-              Showing {((page - 1) * pagination.limit) + 1} to {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} payments
+              Showing {((page - 1) * pagination.limit) + 1} to {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}
             </p>
             <div className="flex gap-2">
-              <button
+              <Button
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="px-3 py-1.5 text-sm bg-surface-hover hover:bg-border disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+                variant="outline"
+                size="sm"
               >
                 Previous
-              </button>
-              <span className="px-3 py-1.5 text-sm text-text-muted">
-                Page {page} of {pagination.totalPages}
+              </Button>
+              <span className="px-4 py-2 text-sm text-text-muted">
+                {page} / {pagination.totalPages}
               </span>
-              <button
+              <Button
                 onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
                 disabled={page === pagination.totalPages}
-                className="px-3 py-1.5 text-sm bg-surface-hover hover:bg-border disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+                variant="outline"
+                size="sm"
               >
                 Next
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -426,11 +539,147 @@ export default function PaymentsPage() {
         onClose={() => setShowBatchModal(false)}
         onConfirm={handleBatchProcess}
         title="Batch Process Payments"
-        message={`You are about to process ${selectedSettlements.length} settlements. ${stats?.currentMode === 'dev' ? 'Payments will be simulated in DEV mode.' : 'Real funds will be transferred.'}`}
+        message={`Process ${selectedSettlements.length} settlement(s)${selectedSettlements.length <= 15 && useOnchainBatch ? ' in a single on-chain transaction' : ' sequentially'}. ${stats?.currentMode === 'dev' ? 'Payments will be simulated in DEV mode.' : 'Real funds will be transferred.'}`}
         confirmText={batchProcessing ? 'Processing...' : `Process ${selectedSettlements.length} Payments`}
         variant={stats?.currentMode === 'dev' ? 'warning' : 'default'}
         loading={batchProcessing}
       />
+
+      {/* On-chain Batch Toggle */}
+      {showBatchModal && selectedSettlements.length <= 15 && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center pointer-events-none">
+          <div className="absolute bottom-32 bg-surface border border-border rounded-xl p-4 shadow-xl pointer-events-auto">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useOnchainBatch}
+                onChange={(e) => setUseOnchainBatch(e.target.checked)}
+                className="w-4 h-4 rounded border-border accent-accent"
+              />
+              <div>
+                <span className="text-sm font-medium text-text-primary">Single on-chain transaction</span>
+                <p className="text-xs text-text-muted">Saves gas fees by batching payments</p>
+              </div>
+            </label>
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+// =============================================================================
+// ICONS
+// =============================================================================
+
+function CreditCardIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+    </svg>
+  )
+}
+
+function RefreshIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
+  )
+}
+
+function DownloadIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+    </svg>
+  )
+}
+
+function ReceiptIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
+    </svg>
+  )
+}
+
+function CheckCircleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function XCircleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function CodeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+    </svg>
+  )
+}
+
+function DollarIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function WalletIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+    </svg>
+  )
+}
+
+function CheckShieldIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+    </svg>
+  )
+}
+
+function ClockIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function SearchIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+    </svg>
+  )
+}
+
+function ListIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+    </svg>
+  )
+}
+
+function ExternalLinkIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+    </svg>
   )
 }

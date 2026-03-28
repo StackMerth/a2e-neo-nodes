@@ -2,9 +2,11 @@ import type { FastifyInstance } from 'fastify'
 import {
   getSolanaConfig,
   processPayment,
+  processBatchPayment,
   verifyTransaction,
   isValidSolanaAddress,
   getPaymentModeInfo,
+  getPayerBalance,
 } from '../services/payment/solana'
 import {
   markSettlementProcessing,
@@ -472,6 +474,178 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
           totalAmountPaid: totalAmount._sum.amount ?? 0,
         },
       })
+    }
+  )
+
+  // GET /v1/payments/balance - Get payer wallet balance
+  fastify.get(
+    '/v1/payments/balance',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const config = await getSolanaConfig(fastify.prisma)
+      const balance = await getPayerBalance(config)
+
+      reply.send({
+        isDevMode: balance.isDevMode,
+        balances: {
+          sol: balance.sol,
+          usdc: balance.usdc,
+        },
+        error: balance.error,
+        message: balance.isDevMode
+          ? 'DEV MODE: Showing simulated balances'
+          : balance.error
+            ? `Error fetching balance: ${balance.error}`
+            : 'Live wallet balances',
+      })
+    }
+  )
+
+  // POST /v1/payments/batch-onchain - Process multiple settlements in a single on-chain transaction
+  fastify.post(
+    '/v1/payments/batch-onchain',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { settlementIds, currency = 'USDC' } = request.body as {
+        settlementIds: string[]
+        currency?: 'SOL' | 'USDC'
+      }
+
+      if (!settlementIds || !Array.isArray(settlementIds) || settlementIds.length === 0) {
+        return reply.code(400).send({
+          error: 'Validation Error',
+          message: 'settlementIds must be a non-empty array',
+        })
+      }
+
+      // Solana transaction size limits mean we can batch ~10-15 transfers per tx
+      if (settlementIds.length > 15) {
+        return reply.code(400).send({
+          error: 'Batch Too Large',
+          message: 'Maximum 15 settlements per on-chain batch (Solana tx size limit)',
+        })
+      }
+
+      // Collect valid settlements
+      const recipients: Array<{ address: string; amount: number; settlementId: string }> = []
+      const errors: Array<{ settlementId: string; error: string }> = []
+
+      for (const settlementId of settlementIds) {
+        const settlement = await fastify.prisma.settlement.findUnique({
+          where: { id: settlementId },
+        })
+
+        if (!settlement) {
+          errors.push({ settlementId, error: 'Settlement not found' })
+          continue
+        }
+
+        if (settlement.status !== 'PENDING') {
+          errors.push({ settlementId, error: `Settlement is ${settlement.status}` })
+          continue
+        }
+
+        if (!isValidSolanaAddress(settlement.walletAddress)) {
+          errors.push({ settlementId, error: 'Invalid Solana address' })
+          continue
+        }
+
+        recipients.push({
+          address: settlement.walletAddress,
+          amount: settlement.amount,
+          settlementId,
+        })
+      }
+
+      if (recipients.length === 0) {
+        return reply.code(400).send({
+          error: 'No Valid Settlements',
+          message: 'No settlements could be processed',
+          errors,
+        })
+      }
+
+      // Mark all as processing
+      for (const r of recipients) {
+        await markSettlementProcessing(fastify.prisma, r.settlementId)
+      }
+
+      // Process batch payment (single on-chain transaction)
+      const config = await getSolanaConfig(fastify.prisma)
+      const result = await processBatchPayment(
+        config,
+        recipients.map((r) => ({ address: r.address, amount: r.amount })),
+        currency
+      )
+
+      const paymentIds: string[] = []
+
+      if (result.success && result.txHash) {
+        // Create payment records and mark settlements as completed
+        for (const r of recipients) {
+          const payment = await fastify.prisma.payment.create({
+            data: {
+              settlementId: r.settlementId,
+              amount: r.amount,
+              currency,
+              recipientAddress: r.address,
+              status: result.isDevMode ? 'CONFIRMED' : 'SENT',
+              txHash: result.txHash,
+              isDevMode: result.isDevMode,
+              processedAt: new Date(),
+              txConfirmed: result.isDevMode,
+              confirmations: result.isDevMode ? 32 : 0,
+              confirmedAt: result.isDevMode ? new Date() : undefined,
+            },
+          })
+          paymentIds.push(payment.id)
+          await markSettlementCompleted(fastify.prisma, r.settlementId, result.txHash)
+        }
+
+        reply.send({
+          success: true,
+          txHash: result.txHash,
+          processed: recipients.length,
+          totalAmount: recipients.reduce((sum, r) => sum + r.amount, 0),
+          currency,
+          isDevMode: result.isDevMode,
+          isBatched: true,
+          paymentIds,
+          errors: errors.length > 0 ? errors : undefined,
+          message: result.isDevMode
+            ? `DEV MODE: Batch payment of ${recipients.length} recipients simulated`
+            : `Batch payment sent: ${recipients.length} recipients in single transaction`,
+        })
+      } else {
+        // Batch failed - mark all as failed
+        for (const r of recipients) {
+          await fastify.prisma.payment.create({
+            data: {
+              settlementId: r.settlementId,
+              amount: r.amount,
+              currency,
+              recipientAddress: r.address,
+              status: 'FAILED',
+              errorMessage: result.error,
+              isDevMode: result.isDevMode,
+            },
+          })
+          await markSettlementFailed(fastify.prisma, r.settlementId, result.error ?? 'Batch payment failed')
+        }
+
+        reply.code(500).send({
+          success: false,
+          error: result.error,
+          processed: 0,
+          attempted: recipients.length,
+          isDevMode: result.isDevMode,
+          errors: errors.length > 0 ? errors : undefined,
+        })
+      }
     }
   )
 }

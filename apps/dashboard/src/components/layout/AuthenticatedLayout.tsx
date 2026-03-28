@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/hooks/useAuth'
 import { usePathname } from 'next/navigation'
-import { Header } from './Header'
+import { Sidebar } from './Sidebar'
 import { WebSocketNotifier } from '@/components/WebSocketNotifier'
 
 export function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
@@ -34,38 +34,48 @@ export function AuthenticatedLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-    <>
+    <div className="min-h-screen bg-background">
       <WebSocketNotifier />
-      <Header />
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        {children}
-      </main>
-      <footer className="border-t border-border mt-16 py-8">
-        <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-text-muted">A²E Engine</p>
-            <p className="text-xs text-text-muted mt-1">Arbitrage & Orchestration for TokenOS</p>
+      <Sidebar />
+
+      {/* Main content area - offset by collapsed sidebar width (16 = w-16) */}
+      <div className="pl-16 transition-all duration-300">
+        {/* Page content */}
+        <main className="p-6">
+          <div className="max-w-[1800px] mx-auto">
+            {children}
           </div>
-          <div className="flex items-center gap-4 text-text-muted">
-            <a
-              href="https://compute.tokenos.ai"
-              target="_blank"
-              rel="noopener"
-              className="text-sm hover:text-accent transition-colors"
-            >
-              TokenOS
-            </a>
-            <a
-              href="https://a2e.byredstone.com/health"
-              target="_blank"
-              rel="noopener"
-              className="text-sm hover:text-accent transition-colors"
-            >
-              API Status
-            </a>
+        </main>
+
+        {/* Footer */}
+        <footer className="border-t border-border mt-8 py-6 px-6">
+          <div className="max-w-[1800px] mx-auto flex items-center justify-between text-sm text-text-muted">
+            <div>
+              <span>A²E Engine</span>
+              <span className="mx-2">·</span>
+              <span>TokenOS Arbitrage & Orchestration</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <a
+                href="https://compute.tokenos.ai"
+                target="_blank"
+                rel="noopener"
+                className="hover:text-accent transition-colors"
+              >
+                TokenOS
+              </a>
+              <a
+                href="https://a2e.byredstone.com/health"
+                target="_blank"
+                rel="noopener"
+                className="hover:text-accent transition-colors"
+              >
+                API Status
+              </a>
+            </div>
           </div>
-        </div>
-      </footer>
-    </>
+        </footer>
+      </div>
+    </div>
   )
 }
