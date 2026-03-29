@@ -1,0 +1,90 @@
+# A²E Node Agent Configuration
+# Copy this file to /etc/a2e-agent/config.yaml and customize
+
+# A²E Server Connection
+server:
+  # API endpoint URL
+  apiUrl: https://a2e.example.com
+  # API key for authentication (use env var for security)
+  apiKey: ${A2E_API_KEY}
+  # WebSocket URL for real-time updates
+  wsUrl: wss://a2e.example.com/ws
+
+# Agent Settings
+agent:
+  # Node ID (auto-generated on first run, stored in state file)
+  nodeId: null
+  # Human-readable name for this node
+  name: "GPU Node 1"
+  # Heartbeat interval in seconds
+  heartbeatInterval: 30
+  # Job polling interval in seconds
+  jobPollInterval: 10
+
+# GPU Configuration
+gpu:
+  # Auto-detect GPU model and tier
+  autoDetect: true
+  # Manual tier override (H100, H200, B200, B300, GB300)
+  tier: null
+  # GPU indices to use (null = all available)
+  devices: null
+
+# Docker Configuration
+docker:
+  # Docker socket path
+  socketPath: /var/run/docker.sock
+  # GPU runtime (nvidia)
+  gpuRuntime: nvidia
+  # Default job timeout in seconds (1 hour)
+  defaultTimeout: 3600
+  # Maximum concurrent jobs (usually 1 for GPU jobs)
+  maxConcurrentJobs: 1
+  # Pull timeout in seconds
+  pullTimeout: 600
+  # Trusted registries (empty = allow all)
+  trustedRegistries: []
+
+# Resource Limits
+resources:
+  # Maximum memory per job (null = no limit)
+  maxMemory: null
+  # Maximum CPUs per job (null = no limit)
+  maxCpus: null
+  # Maximum disk space for job data in GB
+  maxDiskSpace: 100
+
+# Logging Configuration
+logging:
+  # Log level: trace, debug, info, warn, error, fatal
+  level: info
+  # Log file path (null = stdout only)
+  file: /var/log/a2e-agent/agent.log
+  # Pretty print logs (disable for production)
+  pretty: false
+  # Maximum log file size before rotation (MB)
+  maxSize: 100
+  # Number of rotated files to keep
+  maxFiles: 7
+
+# Recovery Settings
+recovery:
+  # State file path for persistence
+  stateFile: /var/lib/a2e-agent/state.json
+  # Enable job checkpointing
+  enableCheckpoints: true
+  # Maximum reconnection attempts
+  maxReconnectAttempts: 10
+  # Base reconnection delay in ms
+  reconnectDelay: 1000
+
+# Security Settings
+security:
+  # Run containers with restricted capabilities
+  restrictCapabilities: true
+  # Use read-only root filesystem in containers
+  readOnlyRootfs: true
+  # Drop all capabilities except required ones
+  dropCapabilities: true
+  # Enable user namespace remapping
+  userNamespace: false

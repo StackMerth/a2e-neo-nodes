@@ -1,0 +1,60 @@
+[Unit]
+Description=A²E Node Agent - GPU Compute Orchestration
+Documentation=https://a2e.byredstone.com/docs
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# Main executable
+ExecStart=/opt/a2e-agent/bin/a2e-agent --config /etc/a2e-agent/agent.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=a2e-agent
+
+# Environment
+Environment=NODE_ENV=production
+Environment=A2E_DATA_DIR=/var/lib/a2e-agent
+Environment=A2E_LOG_DIR=/var/log/a2e-agent
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+# Required write paths
+ReadWritePaths=/var/lib/a2e-agent
+ReadWritePaths=/var/log/a2e-agent
+ReadWritePaths=/var/run/docker.sock
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+LimitCORE=0
+
+# OOM handling
+OOMScoreAdjust=-500
+
+# Watchdog
+WatchdogSec=60
+NotifyAccess=main
+
+[Install]
+WantedBy=multi-user.target
