@@ -63,6 +63,11 @@ model Node {
   status        NodeStatus @default(ONLINE)
   region        String?
 
+  // Agent information
+  agentVersion  String?
+  currentJobId  String?
+  lastCommandAt DateTime?
+
   // Health tracking
   lastHeartbeat DateTime   @default(now())
   missedBeats   Int        @default(0)
