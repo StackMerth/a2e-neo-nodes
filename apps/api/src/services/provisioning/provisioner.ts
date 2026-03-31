@@ -185,19 +185,25 @@ export class NodeProvisioner extends EventEmitter {
       throw new Error('Failed to detect operating system')
     }
     const isDebian = osResult.stdout.includes('debian') || osResult.stdout.includes('ubuntu')
-    if (!isDebian) {
-      await this.log('warn', 'Non-Debian based OS detected, some features may not work')
-    } else {
+    const isRHEL = osResult.stdout.includes('rhel') || osResult.stdout.includes('centos') || osResult.stdout.includes('fedora') || osResult.stdout.includes('rocky') || osResult.stdout.includes('alma')
+
+    if (isDebian) {
       await this.log('info', 'Detected Debian/Ubuntu based system')
+    } else if (isRHEL) {
+      await this.log('info', 'Detected RHEL/CentOS based system')
+    } else {
+      await this.log('warn', 'Unknown OS detected, will attempt Debian-style installation')
     }
 
-    // Check Docker
+    // Check Docker - install if missing
     await this.log('info', 'Checking Docker installation...')
     const dockerResult = await this.sshClient.exec('docker --version')
     if (dockerResult.code !== 0) {
-      throw new Error('Docker is not installed. Please install Docker 24.0+ first.')
+      await this.log('info', 'Docker not found, installing automatically...')
+      await this.installDocker(isDebian, isRHEL)
+    } else {
+      await this.log('info', `Docker found: ${dockerResult.stdout.trim()}`)
     }
-    await this.log('info', `Docker found: ${dockerResult.stdout.trim()}`)
 
     // Skip GPU verification in test mode
     if (testMode) {
@@ -230,13 +236,15 @@ export class NodeProvisioner extends EventEmitter {
       await this.log('warn', `Expected GPU tier ${expectedGpuTier} but detected ${detectedTier}`)
     }
 
-    // Check NVIDIA Container Toolkit
+    // Check NVIDIA Container Toolkit - install if missing
     await this.log('info', 'Checking NVIDIA Container Toolkit...')
     const nctResult = await this.sshClient.exec('nvidia-container-cli --version')
     if (nctResult.code !== 0) {
-      throw new Error('NVIDIA Container Toolkit not found. Please install nvidia-container-toolkit first.')
+      await this.log('info', 'NVIDIA Container Toolkit not found, installing automatically...')
+      await this.installNvidiaContainerToolkit(isDebian, isRHEL)
+    } else {
+      await this.log('info', 'NVIDIA Container Toolkit found')
     }
-    await this.log('info', 'NVIDIA Container Toolkit found')
 
     // Check Docker can access GPU
     await this.log('info', 'Verifying Docker GPU access...')
@@ -255,6 +263,156 @@ export class NodeProvisioner extends EventEmitter {
     if (model.includes('B300')) return 'B300'
     if (model.includes('GB300')) return 'GB300'
     return 'H100' // Default fallback
+  }
+
+  private async installDocker(isDebian: boolean, isRHEL: boolean): Promise<void> {
+    if (!this.sshClient) throw new Error('SSH client not connected')
+
+    if (isDebian) {
+      // Install Docker on Debian/Ubuntu
+      await this.log('info', 'Installing Docker on Debian/Ubuntu...')
+
+      // Install prerequisites
+      const prepResult = await this.sshClient.exec(
+        'sudo apt-get update && sudo apt-get install -y ca-certificates curl gnupg',
+        120000
+      )
+      if (prepResult.code !== 0) {
+        throw new Error(`Failed to install Docker prerequisites: ${prepResult.stderr}`)
+      }
+
+      // Add Docker GPG key
+      await this.log('info', 'Adding Docker repository...')
+      const gpgResult = await this.sshClient.exec(`
+        sudo install -m 0755 -d /etc/apt/keyrings &&
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes &&
+        sudo chmod a+r /etc/apt/keyrings/docker.gpg
+      `, 60000)
+      if (gpgResult.code !== 0) {
+        // Try Debian-style if Ubuntu fails
+        await this.sshClient.exec(`
+          curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes &&
+          sudo chmod a+r /etc/apt/keyrings/docker.gpg
+        `, 60000)
+      }
+
+      // Add Docker repository
+      const repoResult = await this.sshClient.exec(`
+        . /etc/os-release &&
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/\${ID} \${VERSION_CODENAME} stable" |
+        sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+      `, 30000)
+      if (repoResult.code !== 0) {
+        await this.log('warn', 'Failed to add Docker repo, trying alternative method...')
+      }
+
+      // Install Docker
+      await this.log('info', 'Installing Docker packages...')
+      const installResult = await this.sshClient.exec(
+        'sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin',
+        300000 // 5 minutes for install
+      )
+      if (installResult.code !== 0) {
+        throw new Error(`Failed to install Docker: ${installResult.stderr}`)
+      }
+
+    } else if (isRHEL) {
+      // Install Docker on RHEL/CentOS/Fedora
+      await this.log('info', 'Installing Docker on RHEL-based system...')
+
+      const installResult = await this.sshClient.exec(`
+        sudo yum install -y yum-utils &&
+        sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo &&
+        sudo yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      `, 300000)
+      if (installResult.code !== 0) {
+        throw new Error(`Failed to install Docker: ${installResult.stderr}`)
+      }
+
+    } else {
+      throw new Error('Unsupported OS for automatic Docker installation. Please install Docker manually.')
+    }
+
+    // Start and enable Docker
+    await this.log('info', 'Starting Docker service...')
+    const startResult = await this.sshClient.exec('sudo systemctl start docker && sudo systemctl enable docker')
+    if (startResult.code !== 0) {
+      throw new Error(`Failed to start Docker: ${startResult.stderr}`)
+    }
+
+    // Verify installation
+    const verifyResult = await this.sshClient.exec('docker --version')
+    if (verifyResult.code !== 0) {
+      throw new Error('Docker installation verification failed')
+    }
+    await this.log('info', `Docker installed successfully: ${verifyResult.stdout.trim()}`)
+  }
+
+  private async installNvidiaContainerToolkit(isDebian: boolean, isRHEL: boolean): Promise<void> {
+    if (!this.sshClient) throw new Error('SSH client not connected')
+
+    if (isDebian) {
+      // Install NVIDIA Container Toolkit on Debian/Ubuntu
+      await this.log('info', 'Installing NVIDIA Container Toolkit on Debian/Ubuntu...')
+
+      // Add NVIDIA GPG key and repository
+      const repoResult = await this.sshClient.exec(`
+        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg --yes &&
+        curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list |
+          sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' |
+          sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+      `, 60000)
+      if (repoResult.code !== 0) {
+        throw new Error(`Failed to add NVIDIA Container Toolkit repository: ${repoResult.stderr}`)
+      }
+
+      // Install the toolkit
+      await this.log('info', 'Installing nvidia-container-toolkit package...')
+      const installResult = await this.sshClient.exec(
+        'sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit',
+        180000
+      )
+      if (installResult.code !== 0) {
+        throw new Error(`Failed to install NVIDIA Container Toolkit: ${installResult.stderr}`)
+      }
+
+    } else if (isRHEL) {
+      // Install NVIDIA Container Toolkit on RHEL/CentOS
+      await this.log('info', 'Installing NVIDIA Container Toolkit on RHEL-based system...')
+
+      const installResult = await this.sshClient.exec(`
+        curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo |
+          sudo tee /etc/yum.repos.d/nvidia-container-toolkit.repo &&
+        sudo yum install -y nvidia-container-toolkit
+      `, 180000)
+      if (installResult.code !== 0) {
+        throw new Error(`Failed to install NVIDIA Container Toolkit: ${installResult.stderr}`)
+      }
+
+    } else {
+      throw new Error('Unsupported OS for automatic NVIDIA Container Toolkit installation.')
+    }
+
+    // Configure Docker to use NVIDIA runtime
+    await this.log('info', 'Configuring Docker to use NVIDIA runtime...')
+    const configResult = await this.sshClient.exec('sudo nvidia-ctk runtime configure --runtime=docker')
+    if (configResult.code !== 0) {
+      await this.log('warn', `nvidia-ctk configure warning: ${configResult.stderr}`)
+    }
+
+    // Restart Docker to apply changes
+    await this.log('info', 'Restarting Docker to apply NVIDIA runtime configuration...')
+    const restartResult = await this.sshClient.exec('sudo systemctl restart docker')
+    if (restartResult.code !== 0) {
+      throw new Error(`Failed to restart Docker: ${restartResult.stderr}`)
+    }
+
+    // Verify installation
+    const verifyResult = await this.sshClient.exec('nvidia-container-cli --version')
+    if (verifyResult.code !== 0) {
+      throw new Error('NVIDIA Container Toolkit installation verification failed')
+    }
+    await this.log('info', `NVIDIA Container Toolkit installed successfully: ${verifyResult.stdout.trim()}`)
   }
 
   private async downloadAgent(): Promise<void> {
