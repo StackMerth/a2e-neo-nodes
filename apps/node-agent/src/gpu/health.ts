@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { execSync } from 'child_process';
 import { gpuLogger } from '../utils/logger.js';
 import type { GpuMetrics } from '../api/types.js';
+import type { GpuConfig } from '../config.js';
 
 const log = gpuLogger();
 
@@ -64,10 +65,31 @@ export class GpuHealthMonitor extends EventEmitter {
   private checkInterval: NodeJS.Timeout | null = null;
   private readonly intervalMs: number;
   private running: boolean = false;
+  private readonly config?: GpuConfig;
 
-  constructor(intervalSeconds: number = 30) {
+  constructor(intervalSeconds: number = 30, config?: GpuConfig) {
     super();
     this.intervalMs = intervalSeconds * 1000;
+    this.config = config;
+  }
+
+  /**
+   * Generate mock metrics for testing
+   */
+  private generateMockMetrics(): GpuMetrics {
+    const baseTemp = 45 + Math.random() * 15;
+    const baseUtil = Math.random() * 10;
+    const baseMem = 2000 + Math.random() * 1000;
+
+    return {
+      temperature: Math.round(baseTemp),
+      utilizationGpu: Math.round(baseUtil),
+      utilizationMemory: Math.round(baseUtil * 0.5),
+      memoryUsed: Math.round(baseMem),
+      memoryTotal: this.config?.mockVram ?? 81920,
+      powerDraw: Math.round(80 + Math.random() * 20),
+      fanSpeed: Math.round(30 + Math.random() * 10),
+    };
   }
 
   /**
@@ -241,6 +263,11 @@ export class GpuHealthMonitor extends EventEmitter {
    * Collect GPU metrics
    */
   private async collectMetrics(): Promise<GpuMetrics> {
+    // Return mock metrics if in mock mode
+    if (this.config?.mockGpu) {
+      return this.generateMockMetrics();
+    }
+
     const output = execSync(
       'nvidia-smi --query-gpu=temperature.gpu,utilization.gpu,utilization.memory,memory.used,memory.total,power.draw,fan.speed --format=csv,noheader,nounits',
       { encoding: 'utf-8' }
@@ -271,6 +298,11 @@ export class GpuHealthMonitor extends EventEmitter {
    * Detect thermal throttling
    */
   private async detectThrottling(metrics: GpuMetrics): Promise<GpuHealthIssue | null> {
+    // Skip throttle detection in mock mode
+    if (this.config?.mockGpu) {
+      return null;
+    }
+
     try {
       // Check for performance state (P-state)
       const pStateOutput = execSync(
@@ -322,6 +354,11 @@ export class GpuHealthMonitor extends EventEmitter {
    * Check for XID errors in system log
    */
   private async checkXidErrors(): Promise<string[]> {
+    // Skip XID error check in mock mode
+    if (this.config?.mockGpu) {
+      return [];
+    }
+
     const errors: string[] = [];
 
     try {

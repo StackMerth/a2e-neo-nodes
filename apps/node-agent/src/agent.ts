@@ -132,8 +132,8 @@ export class Agent extends EventEmitter {
     this.gpuDetector = new GpuDetector(this.config.gpu);
     await this.gpuDetector.detect();
 
-    // Initialize GPU metrics collector
-    this.gpuMetrics = new GpuMetricsCollector();
+    // Initialize GPU metrics collector (pass config for mock mode support)
+    this.gpuMetrics = new GpuMetricsCollector(this.config.gpu);
 
     log.info('Agent initialized');
   }

@@ -22,8 +22,12 @@ const AgentConfigSchema = z.object({
 
 const GpuConfigSchema = z.object({
   autoDetect: z.boolean().default(true),
-  tier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300']).nullable().default(null),
+  tier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER']).nullable().default(null),
   devices: z.array(z.number()).nullable().default(null),
+  // Mock mode for testing without real GPU
+  mockGpu: z.boolean().default(false),
+  mockModel: z.string().default('NVIDIA H100 80GB HBM3 (Mock)'),
+  mockVram: z.number().default(81920), // 80GB in MB
 });
 
 const DockerConfigSchema = z.object({
@@ -159,6 +163,7 @@ function mergeEnvConfig(config: Record<string, unknown>): Record<string, unknown
     A2E_HEARTBEAT_INTERVAL: ['agent', 'heartbeatInterval'],
     A2E_JOB_POLL_INTERVAL: ['agent', 'jobPollInterval'],
     A2E_GPU_TIER: ['gpu', 'tier'],
+    A2E_MOCK_GPU: ['gpu', 'mockGpu'],
     A2E_DOCKER_SOCKET: ['docker', 'socketPath'],
     A2E_LOG_LEVEL: ['logging', 'level'],
     A2E_LOG_FILE: ['logging', 'file'],
@@ -184,6 +189,9 @@ function mergeEnvConfig(config: Record<string, unknown>): Record<string, unknown
         // Convert numeric values
         if (['heartbeatInterval', 'jobPollInterval'].includes(lastKey)) {
           current[lastKey] = parseInt(value, 10);
+        } else if (['mockGpu'].includes(lastKey)) {
+          // Convert boolean values
+          current[lastKey] = value === 'true' || value === '1';
         } else {
           current[lastKey] = value;
         }
@@ -289,8 +297,12 @@ export function loadConfig(args: CliArgs = {}): Config {
 
   const config = result.data;
 
-  // Additional runtime validations
-  validateDockerSocket(config.docker.socketPath);
+  // Additional runtime validations (skip Docker check in mock mode)
+  if (!config.gpu.mockGpu) {
+    validateDockerSocket(config.docker.socketPath);
+  } else {
+    logger.warn('Mock GPU mode enabled - Docker validation skipped');
+  }
 
   return config;
 }

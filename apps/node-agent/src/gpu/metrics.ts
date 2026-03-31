@@ -1,5 +1,6 @@
 import { execSync } from 'child_process';
 import type { GpuMetrics } from '../api/types.js';
+import type { GpuConfig } from '../config.js';
 import { gpuLogger } from '../utils/logger.js';
 
 const log = gpuLogger();
@@ -18,6 +19,31 @@ interface CachedMetrics {
 export class GpuMetricsCollector {
   private cache: CachedMetrics | null = null;
   private readonly cacheTimeout: number = 5000; // 5 seconds
+  private readonly config?: GpuConfig;
+
+  constructor(config?: GpuConfig) {
+    this.config = config;
+  }
+
+  /**
+   * Generate mock metrics with realistic variation
+   */
+  private generateMockMetrics(): GpuMetrics {
+    // Simulate realistic GPU metrics with some variation
+    const baseTemp = 45 + Math.random() * 15; // 45-60°C idle range
+    const baseUtil = Math.random() * 10; // 0-10% idle utilization
+    const baseMem = 2000 + Math.random() * 1000; // 2-3GB base usage
+
+    return {
+      temperature: Math.round(baseTemp),
+      utilizationGpu: Math.round(baseUtil),
+      utilizationMemory: Math.round(baseUtil * 0.5),
+      memoryUsed: Math.round(baseMem),
+      memoryTotal: this.config?.mockVram ?? 81920,
+      powerDraw: Math.round(80 + Math.random() * 20), // 80-100W idle
+      fanSpeed: Math.round(30 + Math.random() * 10), // 30-40% fan
+    };
+  }
 
   /**
    * Collect GPU metrics
@@ -26,6 +52,14 @@ export class GpuMetricsCollector {
     // Check cache
     if (this.cache && Date.now() - this.cache.timestamp < this.cacheTimeout) {
       return this.cache.metrics;
+    }
+
+    // Return mock metrics if in mock mode
+    if (this.config?.mockGpu) {
+      const metrics = this.generateMockMetrics();
+      this.cache = { metrics, timestamp: Date.now() };
+      log.debug({ temperature: metrics.temperature, gpuUtil: metrics.utilizationGpu }, 'Mock GPU metrics');
+      return metrics;
     }
 
     try {

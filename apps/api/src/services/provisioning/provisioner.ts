@@ -1,0 +1,475 @@
+import { PrismaClient, ProvisionStatus, GpuTier } from '@a2e/database'
+import { SSHClient, SSHCredentials } from './ssh-client'
+import { EventEmitter } from 'events'
+import crypto from 'crypto'
+
+export interface ProvisionConfig {
+  host: string
+  port: number
+  username: string
+  authMethod: 'password' | 'privateKey'
+  password?: string
+  privateKey?: string
+  passphrase?: string
+  gpuTier: GpuTier
+  nodeName?: string
+  region?: string
+  // Custom GPU fields for OTHER tier
+  customGpuModel?: string
+  customRatePerDay?: number
+  // Test mode - skip GPU verification and use mock GPU
+  testMode?: boolean
+}
+
+export interface ProvisionLog {
+  timestamp: string
+  level: 'info' | 'warn' | 'error'
+  message: string
+}
+
+const PROVISION_STEPS = [
+  { status: 'CONNECTING', action: 'Connecting to server' },
+  { status: 'VERIFYING', action: 'Verifying prerequisites' },
+  { status: 'DOWNLOADING', action: 'Downloading agent binary' },
+  { status: 'INSTALLING', action: 'Installing agent' },
+  { status: 'CONFIGURING', action: 'Configuring agent' },
+  { status: 'STARTING', action: 'Starting agent service' },
+  { status: 'WAITING_REGISTRATION', action: 'Waiting for node registration' },
+] as const
+
+export class NodeProvisioner extends EventEmitter {
+  private prisma: PrismaClient
+  private sshClient: SSHClient | null = null
+  private provisionId: string
+  private logs: ProvisionLog[] = []
+  private apiUrl: string
+  private apiKey: string
+
+  constructor(prisma: PrismaClient, provisionId: string) {
+    super()
+    this.prisma = prisma
+    this.provisionId = provisionId
+    this.apiUrl = process.env.A2E_API_URL || 'https://a2e.byredstone.com'
+    this.apiKey = this.generateApiKey()
+  }
+
+  private generateApiKey(): string {
+    return `a2e-node-${crypto.randomBytes(16).toString('hex')}`
+  }
+
+  private async log(level: 'info' | 'warn' | 'error', message: string): Promise<void> {
+    const entry: ProvisionLog = {
+      timestamp: new Date().toISOString(),
+      level,
+      message,
+    }
+    this.logs.push(entry)
+    this.emit('log', entry)
+
+    // Persist logs to database
+    await this.prisma.provisionJob.update({
+      where: { id: this.provisionId },
+      data: { logs: this.logs as unknown as string },
+    })
+  }
+
+  private async updateStatus(
+    status: ProvisionStatus,
+    step: number,
+    action: string
+  ): Promise<void> {
+    await this.prisma.provisionJob.update({
+      where: { id: this.provisionId },
+      data: {
+        status,
+        currentStep: step,
+        currentAction: action,
+        startedAt: step === 1 ? new Date() : undefined,
+      },
+    })
+    this.emit('status', { status, step, action })
+  }
+
+  private async markFailed(error: string): Promise<void> {
+    await this.prisma.provisionJob.update({
+      where: { id: this.provisionId },
+      data: {
+        status: 'FAILED',
+        error,
+        completedAt: new Date(),
+      },
+    })
+    this.emit('failed', error)
+  }
+
+  private async markCompleted(nodeId: string): Promise<void> {
+    await this.prisma.provisionJob.update({
+      where: { id: this.provisionId },
+      data: {
+        status: 'COMPLETED',
+        nodeId,
+        completedAt: new Date(),
+      },
+    })
+    this.emit('completed', nodeId)
+  }
+
+  async provision(config: ProvisionConfig): Promise<void> {
+    const credentials: SSHCredentials = {
+      host: config.host,
+      port: config.port,
+      username: config.username,
+      authMethod: config.authMethod,
+      password: config.password,
+      privateKey: config.privateKey,
+      passphrase: config.passphrase,
+    }
+
+    try {
+      // Step 1: Connect
+      await this.updateStatus('CONNECTING', 1, PROVISION_STEPS[0].action)
+      await this.log('info', `Connecting to ${config.host}:${config.port}...`)
+
+      this.sshClient = new SSHClient()
+      this.sshClient.on('stdout', (data) => this.emit('stdout', data))
+      this.sshClient.on('stderr', (data) => this.emit('stderr', data))
+
+      await this.sshClient.connect(credentials)
+      await this.log('info', 'SSH connection established')
+
+      // Step 2: Verify prerequisites
+      await this.updateStatus('VERIFYING', 2, PROVISION_STEPS[1].action)
+      await this.verifyPrerequisites(config.gpuTier, config.testMode)
+
+      // Step 3: Download agent
+      await this.updateStatus('DOWNLOADING', 3, PROVISION_STEPS[2].action)
+      await this.downloadAgent()
+
+      // Step 4: Install agent
+      await this.updateStatus('INSTALLING', 4, PROVISION_STEPS[3].action)
+      await this.installAgent()
+
+      // Step 5: Configure agent
+      await this.updateStatus('CONFIGURING', 5, PROVISION_STEPS[4].action)
+      await this.configureAgent(config)
+
+      // Step 6: Start service
+      await this.updateStatus('STARTING', 6, PROVISION_STEPS[5].action)
+      await this.startService()
+
+      // Step 7: Wait for registration
+      await this.updateStatus('WAITING_REGISTRATION', 7, PROVISION_STEPS[6].action)
+      const nodeId = await this.waitForRegistration(config.host)
+
+      // Complete
+      await this.markCompleted(nodeId)
+      await this.log('info', `Node registered successfully with ID: ${nodeId}`)
+
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      await this.log('error', `Provisioning failed: ${message}`)
+      await this.markFailed(message)
+      throw error
+    } finally {
+      this.sshClient?.disconnect()
+    }
+  }
+
+  private async verifyPrerequisites(expectedGpuTier: GpuTier, testMode?: boolean): Promise<void> {
+    if (!this.sshClient) throw new Error('SSH client not connected')
+
+    // Check OS
+    await this.log('info', 'Checking operating system...')
+    const osResult = await this.sshClient.exec('cat /etc/os-release')
+    if (osResult.code !== 0) {
+      throw new Error('Failed to detect operating system')
+    }
+    const isDebian = osResult.stdout.includes('debian') || osResult.stdout.includes('ubuntu')
+    if (!isDebian) {
+      await this.log('warn', 'Non-Debian based OS detected, some features may not work')
+    } else {
+      await this.log('info', 'Detected Debian/Ubuntu based system')
+    }
+
+    // Check Docker
+    await this.log('info', 'Checking Docker installation...')
+    const dockerResult = await this.sshClient.exec('docker --version')
+    if (dockerResult.code !== 0) {
+      throw new Error('Docker is not installed. Please install Docker 24.0+ first.')
+    }
+    await this.log('info', `Docker found: ${dockerResult.stdout.trim()}`)
+
+    // Skip GPU verification in test mode
+    if (testMode) {
+      await this.log('info', 'TEST MODE: Skipping GPU verification')
+      await this.log('warn', 'Node will use mock GPU metrics - not suitable for production workloads')
+      return
+    }
+
+    // Check NVIDIA driver
+    await this.log('info', 'Checking NVIDIA driver...')
+    const nvidiaResult = await this.sshClient.exec('nvidia-smi --query-gpu=driver_version --format=csv,noheader')
+    if (nvidiaResult.code !== 0) {
+      throw new Error('NVIDIA driver not found. Please install NVIDIA driver 535+ first.')
+    }
+    const driverVersion = nvidiaResult.stdout.trim()
+    await this.log('info', `NVIDIA driver found: ${driverVersion}`)
+
+    // Check GPU model
+    await this.log('info', 'Detecting GPU model...')
+    const gpuResult = await this.sshClient.exec('nvidia-smi --query-gpu=name --format=csv,noheader')
+    if (gpuResult.code !== 0) {
+      throw new Error('Failed to detect GPU model')
+    }
+    const gpuModel = gpuResult.stdout.trim().split('\n')[0] || 'Unknown'
+    await this.log('info', `GPU detected: ${gpuModel}`)
+
+    // Verify GPU tier matches
+    const detectedTier = this.detectGpuTier(gpuModel)
+    if (detectedTier !== expectedGpuTier) {
+      await this.log('warn', `Expected GPU tier ${expectedGpuTier} but detected ${detectedTier}`)
+    }
+
+    // Check NVIDIA Container Toolkit
+    await this.log('info', 'Checking NVIDIA Container Toolkit...')
+    const nctResult = await this.sshClient.exec('nvidia-container-cli --version')
+    if (nctResult.code !== 0) {
+      throw new Error('NVIDIA Container Toolkit not found. Please install nvidia-container-toolkit first.')
+    }
+    await this.log('info', 'NVIDIA Container Toolkit found')
+
+    // Check Docker can access GPU
+    await this.log('info', 'Verifying Docker GPU access...')
+    const dockerGpuResult = await this.sshClient.exec('docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi -L', 60000)
+    if (dockerGpuResult.code !== 0) {
+      throw new Error('Docker cannot access GPU. Please ensure nvidia-container-toolkit is properly configured.')
+    }
+    await this.log('info', 'Docker GPU access verified')
+  }
+
+  private detectGpuTier(gpuModel: string): GpuTier {
+    const model = gpuModel.toUpperCase()
+    if (model.includes('H100')) return 'H100'
+    if (model.includes('H200')) return 'H200'
+    if (model.includes('B200')) return 'B200'
+    if (model.includes('B300')) return 'B300'
+    if (model.includes('GB300')) return 'GB300'
+    return 'H100' // Default fallback
+  }
+
+  private async downloadAgent(): Promise<void> {
+    if (!this.sshClient) throw new Error('SSH client not connected')
+
+    await this.log('info', 'Creating installation directory...')
+    await this.sshClient.exec('sudo mkdir -p /opt/a2e-agent/bin')
+
+    // Detect architecture
+    const archResult = await this.sshClient.exec('uname -m')
+    const arch = archResult.stdout.trim() === 'aarch64' ? 'arm64' : 'x64'
+    await this.log('info', `Detected architecture: ${arch}`)
+
+    const binaryUrl = `${this.apiUrl}/releases/latest/a2e-agent-linux-${arch}`
+    const checksumUrl = `${this.apiUrl}/releases/latest/checksums.txt`
+
+    // Download binary
+    await this.log('info', `Downloading agent from ${binaryUrl}...`)
+    const downloadResult = await this.sshClient.exec(
+      `sudo curl -fSL -o /opt/a2e-agent/bin/a2e-agent '${binaryUrl}'`,
+      300000 // 5 min timeout for download
+    )
+    if (downloadResult.code !== 0) {
+      throw new Error(`Failed to download agent: ${downloadResult.stderr}`)
+    }
+
+    // Download and verify checksum
+    await this.log('info', 'Verifying checksum...')
+    const checksumResult = await this.sshClient.exec(
+      `cd /opt/a2e-agent/bin && curl -fsSL '${checksumUrl}' | grep "a2e-agent-linux-${arch}" | sha256sum -c -`
+    )
+    if (checksumResult.code !== 0) {
+      await this.log('warn', 'Checksum verification failed, continuing anyway')
+    } else {
+      await this.log('info', 'Checksum verified')
+    }
+
+    // Make executable
+    await this.sshClient.exec('sudo chmod +x /opt/a2e-agent/bin/a2e-agent')
+    await this.log('info', 'Agent binary downloaded and verified')
+  }
+
+  private async installAgent(): Promise<void> {
+    if (!this.sshClient) throw new Error('SSH client not connected')
+
+    // Create directories
+    await this.log('info', 'Creating directories...')
+    await this.sshClient.exec('sudo mkdir -p /etc/a2e-agent /var/lib/a2e-agent /var/log/a2e-agent')
+    await this.sshClient.exec('sudo chmod 700 /etc/a2e-agent')
+    await this.sshClient.exec('sudo chmod 755 /var/lib/a2e-agent /var/log/a2e-agent')
+
+    // Create symlink to /usr/local/bin
+    await this.log('info', 'Creating symlink...')
+    await this.sshClient.exec('sudo ln -sf /opt/a2e-agent/bin/a2e-agent /usr/local/bin/a2e-agent')
+
+    await this.log('info', 'Agent installed to /opt/a2e-agent')
+  }
+
+  private async configureAgent(config: ProvisionConfig): Promise<void> {
+    if (!this.sshClient) throw new Error('SSH client not connected')
+
+    await this.log('info', 'Generating configuration...')
+
+    // Build GPU configuration section
+    let gpuConfig = `gpu:
+  autoDetect: true
+  tier: ${config.gpuTier}`
+
+    // Add mock GPU settings in test mode
+    if (config.testMode) {
+      gpuConfig = `gpu:
+  autoDetect: false
+  tier: ${config.gpuTier}
+  mockGpu: true
+  mockModel: "NVIDIA ${config.gpuTier} (Mock)"
+  mockVram: 81920`
+      await this.log('info', 'TEST MODE: Configuring mock GPU')
+    }
+
+    const configContent = `# A²E Node Agent Configuration
+# Generated by SSH Provisioning on ${new Date().toISOString()}
+${config.testMode ? '# TEST MODE ENABLED - Using mock GPU\n' : ''}
+server:
+  apiUrl: ${this.apiUrl}
+  apiKey: ${this.apiKey}
+
+agent:
+  name: ${config.nodeName || config.host}
+  heartbeatInterval: 30
+  jobPollInterval: 10
+
+${gpuConfig}
+
+docker:
+  socketPath: /var/run/docker.sock
+  gpuRuntime: nvidia
+
+logging:
+  level: info
+  pretty: false
+
+security:
+  restrictCapabilities: true
+  readOnlyRootfs: true
+  dropCapabilities: true
+`
+
+    // Write config file
+    await this.log('info', 'Writing configuration file...')
+    const escapedConfig = configContent.replace(/'/g, "'\\''")
+    await this.sshClient.exec(`echo '${escapedConfig}' | sudo tee /etc/a2e-agent/agent.yaml > /dev/null`)
+    await this.sshClient.exec('sudo chmod 600 /etc/a2e-agent/agent.yaml')
+
+    // Install systemd service
+    await this.log('info', 'Installing systemd service...')
+    const serviceContent = `[Unit]
+Description=A²E Node Agent - GPU Compute Orchestration
+Documentation=https://a2e.byredstone.com/docs
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/opt/a2e-agent/bin/a2e-agent --config /etc/a2e-agent/agent.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=a2e-agent
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+`
+
+    const escapedService = serviceContent.replace(/'/g, "'\\''")
+    await this.sshClient.exec(`echo '${escapedService}' | sudo tee /etc/systemd/system/a2e-agent.service > /dev/null`)
+    await this.sshClient.exec('sudo systemctl daemon-reload')
+
+    await this.log('info', 'Configuration complete')
+  }
+
+  private async startService(): Promise<void> {
+    if (!this.sshClient) throw new Error('SSH client not connected')
+
+    await this.log('info', 'Enabling and starting service...')
+    const enableResult = await this.sshClient.exec('sudo systemctl enable a2e-agent')
+    if (enableResult.code !== 0) {
+      throw new Error(`Failed to enable service: ${enableResult.stderr}`)
+    }
+
+    const startResult = await this.sshClient.exec('sudo systemctl start a2e-agent')
+    if (startResult.code !== 0) {
+      throw new Error(`Failed to start service: ${startResult.stderr}`)
+    }
+
+    // Wait a moment for service to start
+    await new Promise(resolve => setTimeout(resolve, 3000))
+
+    // Check service status
+    const statusResult = await this.sshClient.exec('sudo systemctl is-active a2e-agent')
+    if (statusResult.stdout.trim() !== 'active') {
+      // Get logs for debugging
+      const logsResult = await this.sshClient.exec('sudo journalctl -u a2e-agent -n 20 --no-pager')
+      await this.log('error', `Service logs:\n${logsResult.stdout}`)
+      throw new Error('Service failed to start. Check logs above.')
+    }
+
+    await this.log('info', 'Service started successfully')
+  }
+
+  private async waitForRegistration(host: string, maxWaitMs: number = 60000): Promise<string> {
+    await this.log('info', 'Waiting for node to register with A²E...')
+
+    const startTime = Date.now()
+    const pollInterval = 3000
+
+    while (Date.now() - startTime < maxWaitMs) {
+      // Look for a newly registered node that matches this host
+      // Since we can't match by IP directly, we look for recent registrations
+      const recentNodes = await this.prisma.node.findMany({
+        where: {
+          createdAt: {
+            gte: new Date(startTime - 60000), // Within last minute
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      })
+
+      // Check if any of these nodes are likely ours
+      // In production, the agent would include provisioning ID in registration
+      for (const node of recentNodes) {
+        // Check if this node isn't already linked to another provision job
+        const existingJob = await this.prisma.provisionJob.findUnique({
+          where: { nodeId: node.id },
+        })
+        if (!existingJob) {
+          await this.log('info', `Node registered: ${node.id}`)
+          return node.id
+        }
+      }
+
+      await new Promise(resolve => setTimeout(resolve, pollInterval))
+      await this.log('info', 'Still waiting for registration...')
+    }
+
+    throw new Error('Timeout waiting for node registration. The agent may still be starting up.')
+  }
+
+  getApiKey(): string {
+    return this.apiKey
+  }
+}

@@ -343,16 +343,29 @@ export default function NodesPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Register Form */}
+        {/* Add Node Card */}
         <Card variant="glass" hover={false} className="h-fit">
-          <div className="flex items-center gap-3 mb-6">
+          {/* SSH Provisioning - Primary Option */}
+          <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-emerald-400 flex items-center justify-center">
               <PlusIcon className="w-5 h-5 text-background" />
             </div>
             <div>
-              <h3 className="font-semibold text-text-primary">Register Node</h3>
-              <p className="text-xs text-text-muted">Add a new GPU node to the network</p>
+              <h3 className="font-semibold text-text-primary">Add Node</h3>
+              <p className="text-xs text-text-muted">Connect a GPU server to the network</p>
             </div>
+          </div>
+
+          <Link href="/nodes/add">
+            <Button variant="gradient" className="w-full mb-6">
+              <ServerIcon className="w-4 h-4 mr-2" />
+              Add Node via SSH
+            </Button>
+          </Link>
+
+          {/* Manual Registration - Secondary Option */}
+          <div className="pt-4 border-t border-border/50">
+            <p className="text-xs text-text-muted mb-4">Or register manually (for testing):</p>
           </div>
 
           <form onSubmit={handleRegister} className="space-y-4">
