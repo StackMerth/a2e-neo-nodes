@@ -20,6 +20,7 @@ enum GpuTier {
   B200
   B300
   GB300
+  OTHER
 }
 
 enum NodeType {
@@ -63,6 +64,11 @@ model Node {
   status        NodeStatus @default(ONLINE)
   region        String?
 
+  // Custom GPU info (used when gpuTier = OTHER)
+  customGpuModel    String?   // e.g. "A100", "RTX 4090", "L40S"
+  customRatePerHour Float?    // Custom hourly rate for OTHER tier
+  customRatePerDay  Float?    // Custom daily rate for OTHER tier
+
   // Agent information
   agentVersion  String?
   currentJobId  String?
@@ -82,6 +88,7 @@ model Node {
   heartbeats         Heartbeat[]
   settlements        Settlement[]
   infrastructureCosts InfrastructureCost[]
+  provisionJob       ProvisionJob?
 
   @@index([status])
   @@index([gpuTier])
@@ -408,4 +415,61 @@ enum PaymentStatus {
   SENT
   CONFIRMED
   FAILED
+}
+
+// ============================================================================
+// NODE PROVISIONING (M5)
+// ============================================================================
+
+model ProvisionJob {
+  id            String          @id @default(cuid())
+  status        ProvisionStatus @default(PENDING)
+
+  // Connection details (credentials NOT stored - only in memory during job)
+  host          String
+  port          Int             @default(22)
+  username      String
+
+  // Node configuration
+  gpuTier       GpuTier
+  nodeName      String?
+  region        String?
+
+  // Custom GPU info (used when gpuTier = OTHER)
+  customGpuModel    String?
+  customRatePerHour Float?
+  customRatePerDay  Float?
+
+  // Progress tracking
+  currentStep   Int             @default(0)
+  totalSteps    Int             @default(7)
+  currentAction String?
+  logs          Json            @default("[]")
+
+  // Result
+  nodeId        String?         @unique
+  node          Node?           @relation(fields: [nodeId], references: [id])
+  error         String?
+
+  // Timestamps
+  createdAt     DateTime        @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum ProvisionStatus {
+  PENDING
+  CONNECTING
+  VERIFYING
+  DOWNLOADING
+  INSTALLING
+  CONFIGURING
+  STARTING
+  WAITING_REGISTRATION
+  COMPLETED
+  FAILED
+  CANCELLED
 }

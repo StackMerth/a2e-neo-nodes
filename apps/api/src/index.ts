@@ -16,6 +16,7 @@ import {
   paymentsRoutes,
   reportsRoutes,
   agentRoutes,
+  provisionRoutes,
 } from './routes'
 import { setupWebSocket } from './websocket'
 import {
@@ -39,6 +40,10 @@ import {
   createSettlementRetryWorker,
   scheduleSettlementChecker,
 } from './jobs/settlement-scheduler'
+import {
+  createProvisionQueue,
+  createProvisionWorker,
+} from './jobs/provision-processor'
 
 const server = Fastify({
   logger: {
@@ -76,6 +81,7 @@ async function start() {
     await server.register(paymentsRoutes)
     await server.register(reportsRoutes)
     await server.register(agentRoutes)
+    await server.register(provisionRoutes)
 
     const redisConnection = server.redis as unknown as import('bullmq').ConnectionOptions
     const rateFetcherQueue = createRateFetcherQueue(redisConnection)
@@ -84,8 +90,11 @@ async function start() {
     const settlementSchedulerQueue = createSettlementSchedulerQueue(redisConnection)
     const settlementRetryQueue = createSettlementRetryQueue(redisConnection)
 
-    // Decorate server with job queue for routes to access
+    const provisionQueue = createProvisionQueue(redisConnection)
+
+    // Decorate server with queues for routes to access
     server.decorate('jobQueue', jobProcessorQueue)
+    server.decorate('provisionQueue', provisionQueue)
 
     createRateFetcherWorker({
       redis: redisConnection,
@@ -109,11 +118,19 @@ async function start() {
     createSettlementSchedulerWorker(redisConnection, server.prisma)
     createSettlementRetryWorker(redisConnection, server.prisma)
 
+    // Provision worker
+    createProvisionWorker({
+      redis: redisConnection,
+      prisma: server.prisma,
+      io: server.io,
+    })
+
     await scheduleRateFetcher(rateFetcherQueue)
     await scheduleNodeHealthChecker(nodeHealthQueue)
     await scheduleSettlementChecker(60) // Check every hour
     server.log.info('Job processor queue initialized')
     server.log.info('Settlement scheduler initialized (checks hourly when enabled)')
+    server.log.info('Provision worker initialized')
 
     const port = parseInt(process.env.PORT ?? '3001', 10)
     const host = process.env.HOST ?? '0.0.0.0'

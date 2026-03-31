@@ -35,6 +35,7 @@ describe('DefaultRateProvider', () => {
         B200: 321.1,
         B300: 431.75,
         GB300: 499.35,
+        OTHER: 0, // Custom tier - rate from node config
       }
 
       for (const [tier, expectedRate] of Object.entries(expectedRates)) {

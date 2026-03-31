@@ -70,6 +70,7 @@ export async function calculateJobCost(
     B200: 7.08,
     B300: 10.0,
     GB300: 15.0,
+    OTHER: 5.0, // Custom tier uses fallback or node-specific rate
   }
 
   const defaultRate = defaultRates[gpuTier] ?? 5.0
