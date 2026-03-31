@@ -44,6 +44,7 @@ export class NodeProvisioner extends EventEmitter {
   private logs: ProvisionLog[] = []
   private apiUrl: string
   private apiKey: string
+  private sudo: string = 'sudo ' // Will be empty string if running as root
 
   constructor(prisma: PrismaClient, provisionId: string) {
     super()
@@ -51,6 +52,18 @@ export class NodeProvisioner extends EventEmitter {
     this.provisionId = provisionId
     this.apiUrl = process.env.A2E_API_URL || 'https://a2e.byredstone.com'
     this.apiKey = this.generateApiKey()
+  }
+
+  private async detectRootUser(): Promise<void> {
+    if (!this.sshClient) return
+    const result = await this.sshClient.exec('id -u')
+    if (result.code === 0 && result.stdout.trim() === '0') {
+      this.sudo = '' // Running as root, no sudo needed
+      await this.log('info', 'Running as root user, sudo not required')
+    } else {
+      this.sudo = 'sudo '
+      await this.log('info', 'Running as non-root user, will use sudo')
+    }
   }
 
   private generateApiKey(): string {
@@ -136,6 +149,9 @@ export class NodeProvisioner extends EventEmitter {
 
       await this.sshClient.connect(credentials)
       await this.log('info', 'SSH connection established')
+
+      // Detect if running as root (to skip sudo)
+      await this.detectRootUser()
 
       // Step 2: Verify prerequisites
       await this.updateStatus('VERIFYING', 2, PROVISION_STEPS[1].action)
@@ -274,7 +290,7 @@ export class NodeProvisioner extends EventEmitter {
 
       // Install prerequisites
       const prepResult = await this.sshClient.exec(
-        'sudo apt-get update && sudo apt-get install -y ca-certificates curl gnupg',
+        `${this.sudo}apt-get update && ${this.sudo}apt-get install -y ca-certificates curl gnupg`,
         120000
       )
       if (prepResult.code !== 0) {
@@ -284,15 +300,15 @@ export class NodeProvisioner extends EventEmitter {
       // Add Docker GPG key
       await this.log('info', 'Adding Docker repository...')
       const gpgResult = await this.sshClient.exec(`
-        sudo install -m 0755 -d /etc/apt/keyrings &&
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes &&
-        sudo chmod a+r /etc/apt/keyrings/docker.gpg
+        ${this.sudo}install -m 0755 -d /etc/apt/keyrings &&
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | ${this.sudo}gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes &&
+        ${this.sudo}chmod a+r /etc/apt/keyrings/docker.gpg
       `, 60000)
       if (gpgResult.code !== 0) {
         // Try Debian-style if Ubuntu fails
         await this.sshClient.exec(`
-          curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes &&
-          sudo chmod a+r /etc/apt/keyrings/docker.gpg
+          curl -fsSL https://download.docker.com/linux/debian/gpg | ${this.sudo}gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes &&
+          ${this.sudo}chmod a+r /etc/apt/keyrings/docker.gpg
         `, 60000)
       }
 
@@ -300,7 +316,7 @@ export class NodeProvisioner extends EventEmitter {
       const repoResult = await this.sshClient.exec(`
         . /etc/os-release &&
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/\${ID} \${VERSION_CODENAME} stable" |
-        sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+        ${this.sudo}tee /etc/apt/sources.list.d/docker.list > /dev/null
       `, 30000)
       if (repoResult.code !== 0) {
         await this.log('warn', 'Failed to add Docker repo, trying alternative method...')
@@ -309,7 +325,7 @@ export class NodeProvisioner extends EventEmitter {
       // Install Docker
       await this.log('info', 'Installing Docker packages...')
       const installResult = await this.sshClient.exec(
-        'sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin',
+        `${this.sudo}apt-get update && ${this.sudo}apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`,
         300000 // 5 minutes for install
       )
       if (installResult.code !== 0) {
@@ -321,9 +337,9 @@ export class NodeProvisioner extends EventEmitter {
       await this.log('info', 'Installing Docker on RHEL-based system...')
 
       const installResult = await this.sshClient.exec(`
-        sudo yum install -y yum-utils &&
-        sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo &&
-        sudo yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        ${this.sudo}yum install -y yum-utils &&
+        ${this.sudo}yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo &&
+        ${this.sudo}yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
       `, 300000)
       if (installResult.code !== 0) {
         throw new Error(`Failed to install Docker: ${installResult.stderr}`)
@@ -335,7 +351,7 @@ export class NodeProvisioner extends EventEmitter {
 
     // Start and enable Docker
     await this.log('info', 'Starting Docker service...')
-    const startResult = await this.sshClient.exec('sudo systemctl start docker && sudo systemctl enable docker')
+    const startResult = await this.sshClient.exec(`${this.sudo}systemctl start docker && ${this.sudo}systemctl enable docker`)
     if (startResult.code !== 0) {
       throw new Error(`Failed to start Docker: ${startResult.stderr}`)
     }
@@ -357,10 +373,10 @@ export class NodeProvisioner extends EventEmitter {
 
       // Add NVIDIA GPG key and repository
       const repoResult = await this.sshClient.exec(`
-        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg --yes &&
+        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | ${this.sudo}gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg --yes &&
         curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list |
           sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' |
-          sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+          ${this.sudo}tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
       `, 60000)
       if (repoResult.code !== 0) {
         throw new Error(`Failed to add NVIDIA Container Toolkit repository: ${repoResult.stderr}`)
@@ -369,7 +385,7 @@ export class NodeProvisioner extends EventEmitter {
       // Install the toolkit
       await this.log('info', 'Installing nvidia-container-toolkit package...')
       const installResult = await this.sshClient.exec(
-        'sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit',
+        `${this.sudo}apt-get update && ${this.sudo}apt-get install -y nvidia-container-toolkit`,
         180000
       )
       if (installResult.code !== 0) {
@@ -382,8 +398,8 @@ export class NodeProvisioner extends EventEmitter {
 
       const installResult = await this.sshClient.exec(`
         curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo |
-          sudo tee /etc/yum.repos.d/nvidia-container-toolkit.repo &&
-        sudo yum install -y nvidia-container-toolkit
+          ${this.sudo}tee /etc/yum.repos.d/nvidia-container-toolkit.repo &&
+        ${this.sudo}yum install -y nvidia-container-toolkit
       `, 180000)
       if (installResult.code !== 0) {
         throw new Error(`Failed to install NVIDIA Container Toolkit: ${installResult.stderr}`)
@@ -395,14 +411,14 @@ export class NodeProvisioner extends EventEmitter {
 
     // Configure Docker to use NVIDIA runtime
     await this.log('info', 'Configuring Docker to use NVIDIA runtime...')
-    const configResult = await this.sshClient.exec('sudo nvidia-ctk runtime configure --runtime=docker')
+    const configResult = await this.sshClient.exec(`${this.sudo}nvidia-ctk runtime configure --runtime=docker`)
     if (configResult.code !== 0) {
       await this.log('warn', `nvidia-ctk configure warning: ${configResult.stderr}`)
     }
 
     // Restart Docker to apply changes
     await this.log('info', 'Restarting Docker to apply NVIDIA runtime configuration...')
-    const restartResult = await this.sshClient.exec('sudo systemctl restart docker')
+    const restartResult = await this.sshClient.exec(`${this.sudo}systemctl restart docker`)
     if (restartResult.code !== 0) {
       throw new Error(`Failed to restart Docker: ${restartResult.stderr}`)
     }
@@ -419,7 +435,7 @@ export class NodeProvisioner extends EventEmitter {
     if (!this.sshClient) throw new Error('SSH client not connected')
 
     await this.log('info', 'Creating installation directory...')
-    await this.sshClient.exec('sudo mkdir -p /opt/a2e-agent/bin')
+    await this.sshClient.exec(`${this.sudo}mkdir -p /opt/a2e-agent/bin`)
 
     // Detect architecture
     const archResult = await this.sshClient.exec('uname -m')
@@ -432,7 +448,7 @@ export class NodeProvisioner extends EventEmitter {
     // Download binary
     await this.log('info', `Downloading agent from ${binaryUrl}...`)
     const downloadResult = await this.sshClient.exec(
-      `sudo curl -fSL -o /opt/a2e-agent/bin/a2e-agent '${binaryUrl}'`,
+      `${this.sudo}curl -fSL -o /opt/a2e-agent/bin/a2e-agent '${binaryUrl}'`,
       300000 // 5 min timeout for download
     )
     if (downloadResult.code !== 0) {
@@ -451,7 +467,7 @@ export class NodeProvisioner extends EventEmitter {
     }
 
     // Make executable
-    await this.sshClient.exec('sudo chmod +x /opt/a2e-agent/bin/a2e-agent')
+    await this.sshClient.exec(`${this.sudo}chmod +x /opt/a2e-agent/bin/a2e-agent`)
     await this.log('info', 'Agent binary downloaded and verified')
   }
 
@@ -460,13 +476,13 @@ export class NodeProvisioner extends EventEmitter {
 
     // Create directories
     await this.log('info', 'Creating directories...')
-    await this.sshClient.exec('sudo mkdir -p /etc/a2e-agent /var/lib/a2e-agent /var/log/a2e-agent')
-    await this.sshClient.exec('sudo chmod 700 /etc/a2e-agent')
-    await this.sshClient.exec('sudo chmod 755 /var/lib/a2e-agent /var/log/a2e-agent')
+    await this.sshClient.exec(`${this.sudo}mkdir -p /etc/a2e-agent /var/lib/a2e-agent /var/log/a2e-agent`)
+    await this.sshClient.exec(`${this.sudo}chmod 700 /etc/a2e-agent`)
+    await this.sshClient.exec(`${this.sudo}chmod 755 /var/lib/a2e-agent /var/log/a2e-agent`)
 
     // Create symlink to /usr/local/bin
     await this.log('info', 'Creating symlink...')
-    await this.sshClient.exec('sudo ln -sf /opt/a2e-agent/bin/a2e-agent /usr/local/bin/a2e-agent')
+    await this.sshClient.exec(`${this.sudo}ln -sf /opt/a2e-agent/bin/a2e-agent /usr/local/bin/a2e-agent`)
 
     await this.log('info', 'Agent installed to /opt/a2e-agent')
   }
@@ -523,8 +539,8 @@ security:
     // Write config file
     await this.log('info', 'Writing configuration file...')
     const escapedConfig = configContent.replace(/'/g, "'\\''")
-    await this.sshClient.exec(`echo '${escapedConfig}' | sudo tee /etc/a2e-agent/agent.yaml > /dev/null`)
-    await this.sshClient.exec('sudo chmod 600 /etc/a2e-agent/agent.yaml')
+    await this.sshClient.exec(`echo '${escapedConfig}' | ${this.sudo}tee /etc/a2e-agent/agent.yaml > /dev/null`)
+    await this.sshClient.exec(`${this.sudo}chmod 600 /etc/a2e-agent/agent.yaml`)
 
     // Install systemd service
     await this.log('info', 'Installing systemd service...')
@@ -553,8 +569,8 @@ WantedBy=multi-user.target
 `
 
     const escapedService = serviceContent.replace(/'/g, "'\\''")
-    await this.sshClient.exec(`echo '${escapedService}' | sudo tee /etc/systemd/system/a2e-agent.service > /dev/null`)
-    await this.sshClient.exec('sudo systemctl daemon-reload')
+    await this.sshClient.exec(`echo '${escapedService}' | ${this.sudo}tee /etc/systemd/system/a2e-agent.service > /dev/null`)
+    await this.sshClient.exec(`${this.sudo}systemctl daemon-reload`)
 
     await this.log('info', 'Configuration complete')
   }
@@ -563,12 +579,12 @@ WantedBy=multi-user.target
     if (!this.sshClient) throw new Error('SSH client not connected')
 
     await this.log('info', 'Enabling and starting service...')
-    const enableResult = await this.sshClient.exec('sudo systemctl enable a2e-agent')
+    const enableResult = await this.sshClient.exec(`${this.sudo}systemctl enable a2e-agent`)
     if (enableResult.code !== 0) {
       throw new Error(`Failed to enable service: ${enableResult.stderr}`)
     }
 
-    const startResult = await this.sshClient.exec('sudo systemctl start a2e-agent')
+    const startResult = await this.sshClient.exec(`${this.sudo}systemctl start a2e-agent`)
     if (startResult.code !== 0) {
       throw new Error(`Failed to start service: ${startResult.stderr}`)
     }
@@ -577,10 +593,10 @@ WantedBy=multi-user.target
     await new Promise(resolve => setTimeout(resolve, 3000))
 
     // Check service status
-    const statusResult = await this.sshClient.exec('sudo systemctl is-active a2e-agent')
+    const statusResult = await this.sshClient.exec(`${this.sudo}systemctl is-active a2e-agent`)
     if (statusResult.stdout.trim() !== 'active') {
       // Get logs for debugging
-      const logsResult = await this.sshClient.exec('sudo journalctl -u a2e-agent -n 20 --no-pager')
+      const logsResult = await this.sshClient.exec(`${this.sudo}journalctl -u a2e-agent -n 20 --no-pager`)
       await this.log('error', `Service logs:\n${logsResult.stdout}`)
       throw new Error('Service failed to start. Check logs above.')
     }
