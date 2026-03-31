@@ -339,6 +339,105 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
     }
   )
 
+  // PATCH /v1/node-runners/:id - Update node runner
+  fastify.patch(
+    '/v1/node-runners/:id',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const { name, email, walletAddress } = request.body as {
+        name?: string
+        email?: string
+        walletAddress?: string
+      }
+
+      const existing = await fastify.prisma.nodeRunner.findUnique({
+        where: { id },
+      })
+
+      if (!existing) {
+        return reply.code(404).send({ error: 'Node runner not found' })
+      }
+
+      // Check wallet address uniqueness if changing
+      if (walletAddress && walletAddress !== existing.walletAddress) {
+        const walletExists = await fastify.prisma.nodeRunner.findUnique({
+          where: { walletAddress },
+        })
+        if (walletExists) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: 'Another node runner with this wallet address already exists',
+          })
+        }
+      }
+
+      const updated = await fastify.prisma.nodeRunner.update({
+        where: { id },
+        data: {
+          ...(name && { name }),
+          ...(email !== undefined && { email: email || null }),
+          ...(walletAddress && { walletAddress }),
+        },
+      })
+
+      reply.send({
+        id: updated.id,
+        name: updated.name,
+        email: updated.email,
+        walletAddress: updated.walletAddress,
+        updatedAt: updated.updatedAt.toISOString(),
+      })
+    }
+  )
+
+  // DELETE /v1/node-runners/:id - Delete node runner
+  fastify.delete(
+    '/v1/node-runners/:id',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+
+      const existing = await fastify.prisma.nodeRunner.findUnique({
+        where: { id },
+        include: {
+          nodes: { select: { id: true } },
+          investments: { where: { status: { not: 'CANCELLED' } }, select: { id: true } },
+        },
+      })
+
+      if (!existing) {
+        return reply.code(404).send({ error: 'Node runner not found' })
+      }
+
+      // Prevent deletion if they have active nodes
+      if (existing.nodes.length > 0) {
+        return reply.code(400).send({
+          error: 'Cannot Delete',
+          message: `Node runner has ${existing.nodes.length} active node(s). Remove nodes first.`,
+        })
+      }
+
+      // Prevent deletion if they have non-cancelled investments
+      if (existing.investments.length > 0) {
+        return reply.code(400).send({
+          error: 'Cannot Delete',
+          message: `Node runner has ${existing.investments.length} active investment(s). Cancel investments first.`,
+        })
+      }
+
+      await fastify.prisma.nodeRunner.delete({
+        where: { id },
+      })
+
+      reply.code(204).send()
+    }
+  )
+
   // ==================== INVESTMENTS ====================
 
   // POST /v1/investments - Record a new investment
@@ -513,6 +612,43 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
         nodeRunnerId: investment.nodeRunnerId,
         status: 'PROVISIONED',
         message: 'Node linked to investment successfully',
+      })
+    }
+  )
+
+  // POST /v1/investments/:id/cancel - Cancel a pending investment
+  fastify.post(
+    '/v1/investments/:id/cancel',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+
+      const investment = await fastify.prisma.investment.findUnique({
+        where: { id },
+      })
+
+      if (!investment) {
+        return reply.code(404).send({ error: 'Investment not found' })
+      }
+
+      if (investment.status !== 'PENDING') {
+        return reply.code(400).send({
+          error: 'Invalid Status',
+          message: `Cannot cancel investment with status ${investment.status}. Only PENDING investments can be cancelled.`,
+        })
+      }
+
+      const updated = await fastify.prisma.investment.update({
+        where: { id },
+        data: { status: 'CANCELLED' },
+      })
+
+      reply.send({
+        id: updated.id,
+        status: updated.status,
+        message: 'Investment cancelled successfully',
       })
     }
   )

@@ -23,6 +23,17 @@ export default function NodeRunnersPage() {
   const [creating, setCreating] = useState(false)
   const [newRunner, setNewRunner] = useState({ name: '', email: '', walletAddress: '' })
 
+  // Edit modal state
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editRunner, setEditRunner] = useState<NodeRunner | null>(null)
+  const [editData, setEditData] = useState({ name: '', email: '', walletAddress: '' })
+  const [updating, setUpdating] = useState(false)
+
+  // Delete confirmation state
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteRunner, setDeleteRunner] = useState<NodeRunner | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
   useEffect(() => {
     loadNodeRunners()
   }, [])
@@ -56,6 +67,53 @@ export default function NodeRunnersPage() {
       setError(err instanceof Error ? err.message : 'Failed to create node runner')
     } finally {
       setCreating(false)
+    }
+  }
+
+  function openEditModal(runner: NodeRunner) {
+    setEditRunner(runner)
+    setEditData({
+      name: runner.name,
+      email: runner.email || '',
+      walletAddress: runner.walletAddress,
+    })
+    setShowEditModal(true)
+  }
+
+  async function handleUpdate(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editRunner) return
+
+    try {
+      setUpdating(true)
+      await api.nodeRunners.update(editRunner.id, {
+        name: editData.name,
+        email: editData.email || undefined,
+        walletAddress: editData.walletAddress,
+      })
+      setShowEditModal(false)
+      setEditRunner(null)
+      await loadNodeRunners()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update node runner')
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteRunner) return
+
+    try {
+      setDeleting(true)
+      await api.nodeRunners.delete(deleteRunner.id)
+      setShowDeleteModal(false)
+      setDeleteRunner(null)
+      await loadNodeRunners()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete node runner')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -182,12 +240,29 @@ export default function NodeRunnersPage() {
                     {new Date(runner.createdAt).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <Link
-                      href={`/node-runners/${runner.id}`}
-                      className="text-accent hover:text-accent-hover font-medium text-sm"
-                    >
-                      View Details
-                    </Link>
+                    <div className="flex items-center justify-end gap-2">
+                      <Link
+                        href={`/node-runners/${runner.id}`}
+                        className="text-accent hover:text-accent-hover font-medium text-sm"
+                      >
+                        View
+                      </Link>
+                      <button
+                        onClick={() => openEditModal(runner)}
+                        className="text-text-muted hover:text-text-primary text-sm"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDeleteRunner(runner)
+                          setShowDeleteModal(true)
+                        }}
+                        className="text-error/70 hover:text-error text-sm"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -261,6 +336,99 @@ export default function NodeRunnersPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Edit Modal */}
+      <Modal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        title="Edit Node Runner"
+      >
+        <form onSubmit={handleUpdate} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Name *
+            </label>
+            <input
+              type="text"
+              value={editData.name}
+              onChange={(e) => setEditData({ ...editData, name: e.target.value })}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Email
+            </label>
+            <input
+              type="email"
+              value={editData.email}
+              onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Solana Wallet Address *
+            </label>
+            <input
+              type="text"
+              value={editData.walletAddress}
+              onChange={(e) => setEditData({ ...editData, walletAddress: e.target.value })}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent font-mono text-sm"
+              required
+            />
+          </div>
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              onClick={() => setShowEditModal(false)}
+              className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={updating}
+              className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+            >
+              {updating ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        title="Delete Node Runner"
+      >
+        <div className="space-y-4">
+          <p className="text-text-secondary">
+            Are you sure you want to delete{' '}
+            <span className="text-text-primary font-medium">{deleteRunner?.name}</span>?
+          </p>
+          <p className="text-sm text-text-muted">
+            This action cannot be undone. The node runner must have no active nodes or investments.
+          </p>
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              onClick={() => setShowDeleteModal(false)}
+              className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="px-4 py-2 bg-error hover:bg-error/80 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   )

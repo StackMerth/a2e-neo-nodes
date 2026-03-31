@@ -39,9 +39,33 @@ export default function InvestmentsPage() {
   const [nodeId, setNodeId] = useState('')
   const [linking, setLinking] = useState(false)
 
+  // Create investment modal
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [nodeRunners, setNodeRunners] = useState<Array<{ id: string; name: string; walletAddress: string }>>([])
+  const [newInvestment, setNewInvestment] = useState({
+    nodeRunnerId: '',
+    amount: '',
+    gpuTier: 'H100',
+    txHash: '',
+  })
+  const [creatingInvestment, setCreatingInvestment] = useState(false)
+
+  // Cancel state
+  const [cancelling, setCancelling] = useState<string | null>(null)
+
   useEffect(() => {
     loadInvestments()
+    loadNodeRunners()
   }, [filter])
+
+  async function loadNodeRunners() {
+    try {
+      const data = await api.nodeRunners.list()
+      setNodeRunners(data.nodeRunners.map(nr => ({ id: nr.id, name: nr.name, walletAddress: nr.walletAddress })))
+    } catch (err) {
+      // Silently fail - node runners are optional for this page
+    }
+  }
 
   async function loadInvestments() {
     try {
@@ -95,6 +119,38 @@ export default function InvestmentsPage() {
     }
   }
 
+  async function handleCreateInvestment(e: React.FormEvent) {
+    e.preventDefault()
+    try {
+      setCreatingInvestment(true)
+      await api.investments.create({
+        nodeRunnerId: newInvestment.nodeRunnerId,
+        amount: parseFloat(newInvestment.amount),
+        gpuTier: newInvestment.gpuTier,
+        txHash: newInvestment.txHash || undefined,
+      })
+      setCreateModalOpen(false)
+      setNewInvestment({ nodeRunnerId: '', amount: '', gpuTier: 'H100', txHash: '' })
+      await loadInvestments()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create investment')
+    } finally {
+      setCreatingInvestment(false)
+    }
+  }
+
+  async function handleCancelInvestment(id: string) {
+    try {
+      setCancelling(id)
+      await api.investments.cancel(id)
+      await loadInvestments()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to cancel investment')
+    } finally {
+      setCancelling(null)
+    }
+  }
+
   const pendingPayments = investments.filter(i => i.status === 'PENDING')
   const pendingProvisioning = investments.filter(i => i.status === 'PAID')
   const provisioned = investments.filter(i => i.status === 'PROVISIONED')
@@ -110,9 +166,18 @@ export default function InvestmentsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Investments</h1>
-        <p className="text-text-muted mt-1">Track investments and manage provisioning requests</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">Investments</h1>
+          <p className="text-text-muted mt-1">Track investments and manage provisioning requests</p>
+        </div>
+        <button
+          onClick={() => setCreateModalOpen(true)}
+          className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+        >
+          <PlusIcon className="w-5 h-5" />
+          Add Investment
+        </button>
       </div>
 
       {error && (
@@ -298,15 +363,24 @@ export default function InvestmentsPage() {
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
                       {inv.status === 'PENDING' && (
-                        <button
-                          onClick={() => {
-                            setSelectedInvestment(inv)
-                            setConfirmModalOpen(true)
-                          }}
-                          className="px-3 py-1.5 text-sm bg-warning/10 text-warning hover:bg-warning/20 rounded-lg transition-colors"
-                        >
-                          Confirm Payment
-                        </button>
+                        <>
+                          <button
+                            onClick={() => {
+                              setSelectedInvestment(inv)
+                              setConfirmModalOpen(true)
+                            }}
+                            className="px-3 py-1.5 text-sm bg-warning/10 text-warning hover:bg-warning/20 rounded-lg transition-colors"
+                          >
+                            Confirm Payment
+                          </button>
+                          <button
+                            onClick={() => handleCancelInvestment(inv.id)}
+                            disabled={cancelling === inv.id}
+                            className="px-3 py-1.5 text-sm text-error/70 hover:text-error transition-colors disabled:opacity-50"
+                          >
+                            {cancelling === inv.id ? 'Cancelling...' : 'Cancel'}
+                          </button>
+                        </>
                       )}
                       {inv.status === 'PAID' && (
                         <Link
@@ -450,6 +524,100 @@ export default function InvestmentsPage() {
           </div>
         </form>
       </Modal>
+
+      {/* Create Investment Modal */}
+      <Modal
+        isOpen={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        title="Add Investment"
+      >
+        <form onSubmit={handleCreateInvestment} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Node Runner *
+            </label>
+            <select
+              value={newInvestment.nodeRunnerId}
+              onChange={(e) => setNewInvestment({ ...newInvestment, nodeRunnerId: e.target.value })}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
+              required
+            >
+              <option value="">Select a node runner...</option>
+              {nodeRunners.map((nr) => (
+                <option key={nr.id} value={nr.id}>
+                  {nr.name} ({nr.walletAddress.slice(0, 8)}...)
+                </option>
+              ))}
+            </select>
+            {nodeRunners.length === 0 && (
+              <p className="text-xs text-warning mt-1">
+                No node runners found. <Link href="/node-runners" className="text-accent hover:underline">Create one first</Link>.
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Amount (USD) *
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={newInvestment.amount}
+              onChange={(e) => setNewInvestment({ ...newInvestment, amount: e.target.value })}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
+              placeholder="2500"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              GPU Tier *
+            </label>
+            <select
+              value={newInvestment.gpuTier}
+              onChange={(e) => setNewInvestment({ ...newInvestment, gpuTier: e.target.value })}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
+            >
+              <option value="H100">H100</option>
+              <option value="H200">H200</option>
+              <option value="B200">B200</option>
+              <option value="B300">B300</option>
+              <option value="GB300">GB300</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Transaction Hash (optional)
+            </label>
+            <input
+              type="text"
+              value={newInvestment.txHash}
+              onChange={(e) => setNewInvestment({ ...newInvestment, txHash: e.target.value })}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+              placeholder="Leave empty for pending payment"
+            />
+            <p className="text-xs text-text-muted mt-1">
+              If provided, investment will be marked as PAID immediately
+            </p>
+          </div>
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              onClick={() => setCreateModalOpen(false)}
+              className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={creatingInvestment || !newInvestment.nodeRunnerId}
+              className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+            >
+              {creatingInvestment ? 'Creating...' : 'Create Investment'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }
@@ -490,6 +658,14 @@ function AlertIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+  )
+}
+
+function PlusIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
     </svg>
   )
 }

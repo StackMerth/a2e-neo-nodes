@@ -1007,6 +1007,32 @@ export const api = {
         email: string | null
         walletAddress: string
       }>(`/v1/node-runners/wallet/${walletAddress}`),
+
+    update: (id: string, data: { name?: string; email?: string; walletAddress?: string }) =>
+      apiFetch<{
+        id: string
+        name: string
+        email: string | null
+        walletAddress: string
+        updatedAt: string
+      }>(`/v1/node-runners/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+
+    delete: async (id: string) => {
+      const response = await fetch(`${API_BASE}/v1/node-runners/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': API_KEY,
+        },
+      })
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Request failed' }))
+        throw new Error(error.message || `HTTP ${response.status}`)
+      }
+    },
   },
 
   // Investments
@@ -1074,6 +1100,15 @@ export const api = {
       }>(`/v1/investments/${id}/link-node`, {
         method: 'POST',
         body: JSON.stringify({ nodeId }),
+      }),
+
+    cancel: (id: string) =>
+      apiFetch<{
+        id: string
+        status: string
+        message: string
+      }>(`/v1/investments/${id}/cancel`, {
+        method: 'POST',
       }),
   },
 

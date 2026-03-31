@@ -3,6 +3,7 @@
 import { useState, useEffect, use } from 'react'
 import Link from 'next/link'
 import { api } from '@/lib/api'
+import { Modal } from '@/components/ui/Modal'
 
 interface NodeRunnerDetail {
   id: string
@@ -70,6 +71,11 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
   const [error, setError] = useState<string | null>(null)
   const [roiDays, setRoiDays] = useState(30)
 
+  // Add investment modal
+  const [showInvestmentModal, setShowInvestmentModal] = useState(false)
+  const [newInvestment, setNewInvestment] = useState({ amount: '', gpuTier: 'H100', txHash: '' })
+  const [creatingInvestment, setCreatingInvestment] = useState(false)
+
   useEffect(() => {
     loadData()
   }, [resolvedParams.id, roiDays])
@@ -88,6 +94,28 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
       setError(err instanceof Error ? err.message : 'Failed to load data')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleCreateInvestment(e: React.FormEvent) {
+    e.preventDefault()
+    if (!runner) return
+
+    try {
+      setCreatingInvestment(true)
+      await api.investments.create({
+        nodeRunnerId: runner.id,
+        amount: parseFloat(newInvestment.amount),
+        gpuTier: newInvestment.gpuTier,
+        txHash: newInvestment.txHash || undefined,
+      })
+      setShowInvestmentModal(false)
+      setNewInvestment({ amount: '', gpuTier: 'H100', txHash: '' })
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create investment')
+    } finally {
+      setCreatingInvestment(false)
     }
   }
 
@@ -127,10 +155,17 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <code className="text-sm text-text-secondary bg-surface px-3 py-1.5 rounded-lg border border-border">
             {runner.walletAddress.slice(0, 12)}...{runner.walletAddress.slice(-8)}
           </code>
+          <button
+            onClick={() => setShowInvestmentModal(true)}
+            className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors flex items-center gap-2 text-sm"
+          >
+            <PlusIcon className="w-4 h-4" />
+            Add Investment
+          </button>
         </div>
       </div>
 
@@ -317,8 +352,14 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
 
       {/* Investment History */}
       <div className="bg-surface border border-border rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-border">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
           <h2 className="text-lg font-semibold text-text-primary">Investment History</h2>
+          <button
+            onClick={() => setShowInvestmentModal(true)}
+            className="text-sm text-accent hover:text-accent-hover"
+          >
+            + Add Investment
+          </button>
         </div>
         <table className="w-full">
           <thead className="bg-surface-hover">
@@ -391,7 +432,90 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
           </tbody>
         </table>
       </div>
+
+      {/* Add Investment Modal */}
+      <Modal
+        isOpen={showInvestmentModal}
+        onClose={() => setShowInvestmentModal(false)}
+        title="Add Investment"
+      >
+        <form onSubmit={handleCreateInvestment} className="space-y-4">
+          <p className="text-text-muted">
+            Add a new investment for{' '}
+            <span className="text-text-primary font-medium">{runner.name}</span>
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Amount (USD) *
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={newInvestment.amount}
+              onChange={(e) => setNewInvestment({ ...newInvestment, amount: e.target.value })}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
+              placeholder="2500"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              GPU Tier *
+            </label>
+            <select
+              value={newInvestment.gpuTier}
+              onChange={(e) => setNewInvestment({ ...newInvestment, gpuTier: e.target.value })}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
+            >
+              <option value="H100">H100</option>
+              <option value="H200">H200</option>
+              <option value="B200">B200</option>
+              <option value="B300">B300</option>
+              <option value="GB300">GB300</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">
+              Transaction Hash (optional)
+            </label>
+            <input
+              type="text"
+              value={newInvestment.txHash}
+              onChange={(e) => setNewInvestment({ ...newInvestment, txHash: e.target.value })}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+              placeholder="Leave empty for pending payment"
+            />
+            <p className="text-xs text-text-muted mt-1">
+              If provided, investment will be marked as PAID immediately
+            </p>
+          </div>
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              onClick={() => setShowInvestmentModal(false)}
+              className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={creatingInvestment}
+              className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+            >
+              {creatingInvestment ? 'Creating...' : 'Create Investment'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
+  )
+}
+
+function PlusIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+    </svg>
   )
 }
 
