@@ -25,17 +25,11 @@ export function createChildLogger(context: LogContext): pino.Logger {
 
 /**
  * Default logger instance (before config is loaded)
+ * Uses plain JSON logging - pino-pretty transport doesn't work in bundled builds
  */
 let loggerInstance: pino.Logger = pino({
   level: 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-      translateTime: 'SYS:standard',
-      ignore: 'pid,hostname',
-    },
-  },
+  timestamp: pino.stdTimeFunctions.isoTime,
 });
 
 /**
@@ -57,40 +51,11 @@ export function initLogger(config: LoggingConfig, nodeId?: string): pino.Logger 
     timestamp: pino.stdTimeFunctions.isoTime,
   };
 
-  if (config.file && !config.pretty) {
-    // File logging in production
-    const transport = pino.transport({
-      targets: [
-        {
-          target: 'pino/file',
-          options: { destination: config.file },
-          level: config.level,
-        },
-        {
-          target: 'pino/file',
-          options: { destination: 1 }, // stdout
-          level: config.level,
-        },
-      ],
-    });
-    loggerInstance = pino(baseOptions, transport);
-  } else if (config.pretty) {
-    // Pretty printing for development
-    loggerInstance = pino({
-      ...baseOptions,
-      transport: {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'SYS:standard',
-          ignore: 'pid,hostname',
-        },
-      },
-    });
-  } else {
-    // JSON logging for production (stdout only)
-    loggerInstance = pino(baseOptions);
-  }
+  // Note: pino transports (pino-pretty, pino/file) don't work in bundled builds
+  // because they use worker threads and dynamic requires.
+  // We use plain JSON logging to stdout for all cases in the bundled agent.
+  // File logging can be handled by systemd/journald redirecting stdout.
+  loggerInstance = pino(baseOptions);
 
   return loggerInstance;
 }
