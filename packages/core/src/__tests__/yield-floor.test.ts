@@ -21,6 +21,7 @@ describe('DefaultYieldFloorConfig', () => {
         B200: 170,
         B300: 250,
         GB300: 300,
+        OTHER: 0, // Custom tier - floor from node config
       }
 
       for (const [tier, expectedFloor] of Object.entries(expectedFloors)) {

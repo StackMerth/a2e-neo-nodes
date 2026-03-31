@@ -248,6 +248,7 @@ export async function earningsRoutes(fastify: FastifyInstance) {
         B200: { earnings: 0, gpuHours: 0, jobCount: 0 },
         B300: { earnings: 0, gpuHours: 0, jobCount: 0 },
         GB300: { earnings: 0, gpuHours: 0, jobCount: 0 },
+        OTHER: { earnings: 0, gpuHours: 0, jobCount: 0 },
       }
 
       for (const e of earnings) {

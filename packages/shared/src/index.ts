@@ -1,7 +1,7 @@
 // A²E Shared Types and Utilities
 
 // GPU Tiers supported by TokenOS
-export type GpuTier = 'H100' | 'H200' | 'B200' | 'B300' | 'GB300'
+export type GpuTier = 'H100' | 'H200' | 'B200' | 'B300' | 'GB300' | 'OTHER'
 
 // Node types
 export type NodeType = 'PROVISIONED' | 'BYOG'
@@ -22,7 +22,7 @@ export const GPU_TIER_CONFIG: Record<
     retailRate: number // Internal premium rate ($/day)
     costFloor: number // Minimum rate to break even ($/day)
     vram: number // GB
-    tier: number // T1-T5
+    tier: number // T1-T6 (OTHER is tier 6)
   }
 > = {
   H100: { retailRate: 140.15, costFloor: 83, vram: 80, tier: 1 },
@@ -30,6 +30,7 @@ export const GPU_TIER_CONFIG: Record<
   B200: { retailRate: 321.1, costFloor: 170, vram: 192, tier: 3 },
   B300: { retailRate: 431.75, costFloor: 250, vram: 288, tier: 4 },
   GB300: { retailRate: 499.35, costFloor: 300, vram: 288, tier: 5 },
+  OTHER: { retailRate: 0, costFloor: 0, vram: 0, tier: 6 }, // Custom rates from node config
 }
 
 // Convert daily rate to hourly

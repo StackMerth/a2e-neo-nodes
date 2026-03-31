@@ -68,6 +68,9 @@ importers:
       socket.io:
         specifier: ^4.7.0
         version: 4.8.3
+      ssh2:
+        specifier: ^1.17.0
+        version: 1.17.0
       zod:
         specifier: ^3.22.0
         version: 3.25.76
@@ -75,6 +78,9 @@ importers:
       '@types/node':
         specifier: ^20.11.0
         version: 20.19.37
+      '@types/ssh2':
+        specifier: ^1.15.5
+        version: 1.15.5
       pino-pretty:
         specifier: ^10.3.0
         version: 10.3.1
