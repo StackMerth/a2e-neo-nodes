@@ -434,6 +434,16 @@ export class NodeProvisioner extends EventEmitter {
   private async downloadAgent(): Promise<void> {
     if (!this.sshClient) throw new Error('SSH client not connected')
 
+    // Check for Node.js - required to run the agent
+    await this.log('info', 'Checking Node.js installation...')
+    const nodeResult = await this.sshClient.exec('node --version')
+    if (nodeResult.code !== 0) {
+      await this.log('info', 'Node.js not found, installing...')
+      await this.installNodeJs()
+    } else {
+      await this.log('info', `Node.js found: ${nodeResult.stdout.trim()}`)
+    }
+
     await this.log('info', 'Creating installation directory...')
     await this.sshClient.exec(`${this.sudo}mkdir -p /opt/a2e-agent/bin`)
 
@@ -445,7 +455,7 @@ export class NodeProvisioner extends EventEmitter {
     const binaryUrl = `${this.apiUrl}/releases/latest/a2e-agent-linux-${arch}`
     const checksumUrl = `${this.apiUrl}/releases/latest/checksums.txt`
 
-    // Download binary
+    // Download agent bundle
     await this.log('info', `Downloading agent from ${binaryUrl}...`)
     const downloadResult = await this.sshClient.exec(
       `${this.sudo}curl -fSL -o /opt/a2e-agent/bin/a2e-agent '${binaryUrl}'`,
@@ -468,7 +478,54 @@ export class NodeProvisioner extends EventEmitter {
 
     // Make executable
     await this.sshClient.exec(`${this.sudo}chmod +x /opt/a2e-agent/bin/a2e-agent`)
-    await this.log('info', 'Agent binary downloaded and verified')
+    await this.log('info', 'Agent downloaded and verified')
+  }
+
+  private async installNodeJs(): Promise<void> {
+    if (!this.sshClient) throw new Error('SSH client not connected')
+
+    // Install Node.js via NodeSource (v20 LTS)
+    await this.log('info', 'Installing Node.js 20 LTS via NodeSource...')
+
+    // Check OS type for the right installation method
+    const osResult = await this.sshClient.exec('cat /etc/os-release')
+    const isDebian = osResult.stdout.includes('debian') || osResult.stdout.includes('ubuntu')
+    const isRHEL = osResult.stdout.includes('rhel') || osResult.stdout.includes('centos') || osResult.stdout.includes('fedora')
+
+    if (isDebian) {
+      // Install via NodeSource for Debian/Ubuntu
+      const installResult = await this.sshClient.exec(`
+        ${this.sudo}apt-get update &&
+        ${this.sudo}apt-get install -y ca-certificates curl gnupg &&
+        ${this.sudo}mkdir -p /etc/apt/keyrings &&
+        curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | ${this.sudo}gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg --yes &&
+        echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | ${this.sudo}tee /etc/apt/sources.list.d/nodesource.list &&
+        ${this.sudo}apt-get update &&
+        ${this.sudo}apt-get install -y nodejs
+      `, 300000)
+      if (installResult.code !== 0) {
+        throw new Error(`Failed to install Node.js: ${installResult.stderr}`)
+      }
+    } else if (isRHEL) {
+      // Install via NodeSource for RHEL/CentOS
+      const installResult = await this.sshClient.exec(`
+        ${this.sudo}yum install -y curl &&
+        curl -fsSL https://rpm.nodesource.com/setup_20.x | ${this.sudo}bash - &&
+        ${this.sudo}yum install -y nodejs
+      `, 300000)
+      if (installResult.code !== 0) {
+        throw new Error(`Failed to install Node.js: ${installResult.stderr}`)
+      }
+    } else {
+      throw new Error('Unsupported OS for automatic Node.js installation')
+    }
+
+    // Verify installation
+    const verifyResult = await this.sshClient.exec('node --version')
+    if (verifyResult.code !== 0) {
+      throw new Error('Node.js installation verification failed')
+    }
+    await this.log('info', `Node.js installed successfully: ${verifyResult.stdout.trim()}`)
   }
 
   private async installAgent(): Promise<void> {
