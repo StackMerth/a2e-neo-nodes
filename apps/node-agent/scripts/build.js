@@ -59,10 +59,8 @@ async function bundle() {
     target: 'node18',
     outfile: path.join(DIST_DIR, 'bundle.js'),
     external: [
-      // Native modules that can't be bundled
-      'dockerode',
-      'pino',
-      'pino-pretty',
+      // Only truly native modules that can't be bundled
+      // pino and pino-pretty are pure JS, so they can be bundled
     ],
     minify: process.env.NODE_ENV === 'production',
     sourcemap: false,
