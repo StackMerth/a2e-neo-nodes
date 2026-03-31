@@ -336,6 +336,78 @@ export class Agent extends EventEmitter {
   }
 
   /**
+   * Uninstall the agent completely
+   * Removes all files created during provisioning and stops the service
+   *
+   * Strategy: Create a cleanup script and run it detached, then exit.
+   * The cleanup script will wait for this process to exit, then remove everything.
+   */
+  async uninstall(): Promise<void> {
+    log.info('Uninstalling agent...');
+    this.setState('STOPPING');
+
+    // Stop heartbeat first
+    if (this.heartbeat) {
+      this.heartbeat.stop();
+    }
+
+    const { spawn } = await import('child_process');
+
+    try {
+      // Create a cleanup script that will run after this process exits
+      const cleanupScript = `#!/bin/bash
+# Wait for the agent process to exit
+sleep 2
+
+# Disable the service first (prevent restart)
+systemctl disable a2e-agent 2>/dev/null || true
+
+# Stop the service
+systemctl stop a2e-agent 2>/dev/null || true
+
+# Remove systemd service file
+rm -f /etc/systemd/system/a2e-agent.service
+systemctl daemon-reload 2>/dev/null || true
+
+# Remove agent directories
+rm -rf /opt/a2e-agent
+rm -rf /etc/a2e-agent
+rm -rf /var/lib/a2e-agent
+rm -rf /var/log/a2e-agent
+
+# Remove symlink
+rm -f /usr/local/bin/a2e-agent
+
+# Remove this cleanup script
+rm -f /tmp/a2e-uninstall.sh
+
+echo "A2E Agent uninstalled successfully"
+`;
+
+      // Write the cleanup script
+      fs.writeFileSync('/tmp/a2e-uninstall.sh', cleanupScript, { mode: 0o755 });
+      log.info('Created cleanup script at /tmp/a2e-uninstall.sh');
+
+      // Spawn the cleanup script as a detached process
+      const child = spawn('/bin/bash', ['/tmp/a2e-uninstall.sh'], {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.unref();
+
+      log.info('Spawned cleanup process, exiting agent...');
+
+      // Give the script a moment to start, then exit
+      setTimeout(() => {
+        process.exit(0);
+      }, 500);
+    } catch (error) {
+      log.error({ error }, 'Failed to initiate uninstall');
+      throw error;
+    }
+  }
+
+  /**
    * Get agent status for display
    */
   getStatus(): {

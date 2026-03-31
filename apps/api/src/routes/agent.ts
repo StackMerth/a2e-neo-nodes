@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { JobStatus, NodeStatus } from '@a2e/database'
+import { recordJobEarnings } from '../services/earnings/calculator'
 
 /**
  * Agent Communication Endpoints
@@ -489,6 +490,11 @@ export async function agentRoutes(fastify: FastifyInstance) {
           },
         }),
       ])
+
+      // Record earnings to daily aggregation table if job completed successfully
+      if (exitCode === 0 && updatedJob.nodeId && updatedJob.market) {
+        await recordJobEarnings(fastify.prisma, updatedJob)
+      }
 
       // Emit WebSocket event
       fastify.io?.emit('job:completed', {

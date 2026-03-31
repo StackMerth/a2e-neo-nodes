@@ -2,11 +2,45 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { GpuTier, NodeType, NodeStatus } from '@a2e/database'
 
+// Schema for agent registration (from node-agent)
+const agentSpecsSchema = z.object({
+  gpuModel: z.string().optional(),
+  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER']),
+  gpuCount: z.number().optional(),
+  gpuVram: z.number().optional(),
+  gpuDriver: z.string().optional(),
+  cudaVersion: z.string().optional(),
+  hostname: z.string().optional(),
+  os: z.string().optional(),
+  osVersion: z.string().optional(),
+  totalMemory: z.number().optional(),
+  totalCpus: z.number().optional(),
+  dockerVersion: z.string().optional(),
+  agentVersion: z.string().optional(),
+})
+
 const registerNodeSchema = z.object({
-  walletAddress: z.string().min(10).max(128),
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300']),
-  nodeType: z.enum(['PROVISIONED', 'BYOG']).default('BYOG'),
+  // Support both formats: direct walletAddress or specs.hostname as fallback
+  walletAddress: z.string().min(1).max(128).optional(),
+  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER']).optional(),
+  nodeType: z.enum(['PROVISIONED', 'BYOG']).default('PROVISIONED'),
   region: z.string().max(64).optional(),
+  name: z.string().max(128).optional(),
+  // Agent sends specs object
+  specs: agentSpecsSchema.optional(),
+}).transform((data) => {
+  // Extract gpuTier from specs if not provided at top level
+  const gpuTier = data.gpuTier || data.specs?.gpuTier || 'H100'
+  // Use walletAddress, or name, or hostname from specs as identifier
+  const walletAddress = data.walletAddress || data.name || data.specs?.hostname || `node-${Date.now()}`
+  return {
+    walletAddress,
+    gpuTier,
+    nodeType: data.nodeType,
+    region: data.region,
+    name: data.name,
+    agentVersion: data.specs?.agentVersion,
+  }
 })
 
 const listNodesQuerySchema = z.object({
@@ -40,7 +74,7 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         })
       }
 
-      const { walletAddress, gpuTier, nodeType, region } = parseResult.data
+      const { walletAddress, gpuTier, nodeType, region, agentVersion } = parseResult.data
 
       const existing = await fastify.prisma.node.findUnique({
         where: { walletAddress },
@@ -54,16 +88,35 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         })
       }
 
+      // Get the API key from the request header - will be stored on the node
+      const apiKey = request.headers['x-api-key'] as string
+
+      // If registering via provision job API key, look up the provision job
+      let provisionJobId: string | undefined
+      if (request.authType === 'provision' && request.authProvisionId) {
+        provisionJobId = request.authProvisionId
+      }
+
       const node = await fastify.prisma.node.create({
         data: {
           walletAddress,
           gpuTier: gpuTier as GpuTier,
           nodeType: nodeType as NodeType,
           region,
+          agentVersion,
+          apiKey: apiKey.startsWith('a2e-node-') ? apiKey : undefined, // Only store node-specific keys
           status: 'ONLINE' as NodeStatus,
           lastHeartbeat: new Date(),
         },
       })
+
+      // If this was a provision job registration, link the node to the provision job
+      if (provisionJobId) {
+        await fastify.prisma.provisionJob.update({
+          where: { id: provisionJobId },
+          data: { nodeId: node.id },
+        })
+      }
 
       fastify.io?.emit('node:registered', {
         id: node.id,
@@ -74,6 +127,7 @@ export async function nodeRoutes(fastify: FastifyInstance) {
       })
 
       reply.code(201).send({
+        nodeId: node.id, // Agent expects 'nodeId'
         id: node.id,
         walletAddress: node.walletAddress,
         gpuTier: node.gpuTier,
@@ -205,6 +259,7 @@ export async function nodeRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       const { id } = request.params as { id: string }
+      const { force } = request.query as { force?: string }
 
       const node = await fastify.prisma.node.findUnique({ where: { id } })
 
@@ -215,6 +270,29 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         })
       }
 
+      // If node has an API key (provisioned agent), mark for deletion
+      // The agent will receive UNINSTALL command on next heartbeat
+      if (node.apiKey && force !== 'true') {
+        await fastify.prisma.node.update({
+          where: { id },
+          data: { pendingDeletion: true },
+        })
+
+        fastify.io?.emit('node:pending_deletion', {
+          id: node.id,
+          walletAddress: node.walletAddress,
+          timestamp: new Date().toISOString(),
+        })
+
+        reply.send({
+          message: 'Node marked for deletion. Agent will uninstall on next heartbeat.',
+          nodeId: node.id,
+          pendingDeletion: true,
+        })
+        return
+      }
+
+      // Immediate deletion (no agent or force=true)
       await fastify.prisma.node.delete({ where: { id } })
 
       fastify.io?.emit('node:offline', {
@@ -277,6 +355,63 @@ export async function nodeRoutes(fastify: FastifyInstance) {
     }
   )
 
+  // Update node details (wallet address, region, etc.)
+  fastify.patch(
+    '/v1/nodes/:id',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const updateSchema = z.object({
+        walletAddress: z.string().min(1).max(128).optional(),
+        region: z.string().max(64).optional(),
+      })
+
+      const parseResult = updateSchema.safeParse(request.body)
+
+      if (!parseResult.success) {
+        return reply.code(400).send({
+          error: 'Validation Error',
+          message: parseResult.error.errors[0]?.message ?? 'Invalid input',
+        })
+      }
+
+      const node = await fastify.prisma.node.findUnique({ where: { id } })
+
+      if (!node) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Node not found',
+        })
+      }
+
+      // Check if new wallet address is already taken by another node
+      if (parseResult.data.walletAddress && parseResult.data.walletAddress !== node.walletAddress) {
+        const existing = await fastify.prisma.node.findUnique({
+          where: { walletAddress: parseResult.data.walletAddress },
+        })
+        if (existing) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: 'Wallet address already in use by another node',
+          })
+        }
+      }
+
+      const updatedNode = await fastify.prisma.node.update({
+        where: { id },
+        data: parseResult.data,
+      })
+
+      reply.send({
+        id: updatedNode.id,
+        walletAddress: updatedNode.walletAddress,
+        region: updatedNode.region,
+      })
+    }
+  )
+
   fastify.post(
     '/v1/nodes/:id/heartbeat',
     {
@@ -333,10 +468,33 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         timestamp: heartbeat.timestamp.toISOString(),
       })
 
+      // Check if node is marked for deletion
+      const commands: Array<{ id: string; type: string; payload?: Record<string, unknown> }> = []
+      if (updatedNode.pendingDeletion) {
+        commands.push({
+          id: `uninstall-${Date.now()}`,
+          type: 'UNINSTALL',
+          payload: { reason: 'Node deleted from dashboard' },
+        })
+
+        // After sending UNINSTALL command, delete the node record
+        // (agent will uninstall itself, so we can clean up the DB)
+        await fastify.prisma.node.delete({ where: { id } })
+
+        fastify.io?.emit('node:offline', {
+          id: node.id,
+          walletAddress: node.walletAddress,
+          reason: 'uninstalled',
+          timestamp: new Date().toISOString(),
+        })
+      }
+
       reply.send({
+        acknowledged: true,
         status: updatedNode.status,
         lastHeartbeat: updatedNode.lastHeartbeat.toISOString(),
         recorded: true,
+        commands: commands.length > 0 ? commands : undefined,
       })
     }
   )

@@ -84,8 +84,26 @@ export const api = {
         body: JSON.stringify(data || {}),
       }),
 
-    delete: (id: string) =>
-      apiFetch<void>(`/v1/nodes/${id}`, { method: 'DELETE' }),
+    delete: async (id: string) => {
+      const response = await fetch(`${API_BASE}/v1/nodes/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': API_KEY,
+        },
+      })
+      // 404 is acceptable for delete - node may have been deleted via heartbeat
+      if (!response.ok && response.status !== 404) {
+        const error = await response.json().catch(() => ({ message: 'Request failed' }))
+        throw new Error(error.message || `HTTP ${response.status}`)
+      }
+    },
+
+    update: (id: string, data: { walletAddress?: string; region?: string }) =>
+      apiFetch<{ id: string; walletAddress: string; region: string | null }>(`/v1/nodes/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
 
     updateStatus: (id: string, status: 'ONLINE' | 'PAUSED' | 'MAINTENANCE') =>
       apiFetch<{ id: string; status: string }>(`/v1/nodes/${id}/status`, {
@@ -889,6 +907,173 @@ export const api = {
     cancel: (id: string) =>
       apiFetch<{ success: boolean; message: string }>(`/v1/nodes/provision/${id}`, {
         method: 'DELETE',
+      }),
+  },
+
+  // Node Runners
+  nodeRunners: {
+    list: () =>
+      apiFetch<{
+        nodeRunners: Array<{
+          id: string
+          name: string
+          email: string | null
+          walletAddress: string
+          nodeCount: number
+          totalInvested: number
+          createdAt: string
+        }>
+        total: number
+      }>('/v1/node-runners'),
+
+    get: (id: string) =>
+      apiFetch<{
+        id: string
+        name: string
+        email: string | null
+        walletAddress: string
+        createdAt: string
+        financials: {
+          totalInvested: number
+          totalEarnings: number
+          totalPayouts: number
+          pendingPayout: number
+          netPosition: number
+          roiPercentage: number
+        }
+        nodes: Array<{
+          id: string
+          gpuTier: string
+          status: string
+          createdAt: string
+        }>
+        nodeEarnings: Array<{
+          nodeId: string
+          gpuTier: string
+          uptimeHours: number
+          earnings: number
+        }>
+        investments: Array<{
+          id: string
+          amount: number
+          currency: string
+          cryptoAmount: number | null
+          cryptoCurrency: string | null
+          txHash: string | null
+          gpuTier: string
+          status: string
+          createdAt: string
+          confirmedAt: string | null
+          provisionedAt: string | null
+        }>
+      }>(`/v1/node-runners/${id}`),
+
+    create: (data: { name: string; email?: string; walletAddress: string }) =>
+      apiFetch<{
+        id: string
+        name: string
+        email: string | null
+        walletAddress: string
+        createdAt: string
+      }>('/v1/node-runners', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    roi: (id: string, params?: { days?: number }) =>
+      apiFetch<{
+        nodeRunnerId: string
+        period: { days: number; start: string | null; end: string | null }
+        summary: {
+          totalInvested: number
+          totalEarnings: number
+          totalUptimeHours: number
+          avgDailyEarnings: number
+          roiPercentage: number
+        }
+        projections: {
+          daysToBreakeven: number | null
+          projectedMonthlyEarnings: number
+          projectedYearlyEarnings: number
+        }
+        daily: Array<{ date: string; uptimeHours: number; earnings: number }>
+      }>(`/v1/node-runners/${id}/roi`, { params }),
+
+    // Get node runner by wallet address (for portal login)
+    getByWallet: (walletAddress: string) =>
+      apiFetch<{
+        id: string
+        name: string
+        email: string | null
+        walletAddress: string
+      }>(`/v1/node-runners/wallet/${walletAddress}`),
+  },
+
+  // Investments
+  investments: {
+    list: (params?: { status?: string; nodeRunnerId?: string }) =>
+      apiFetch<{
+        investments: Array<{
+          id: string
+          nodeRunnerName: string
+          walletAddress: string
+          amount: number
+          currency: string
+          cryptoAmount: number | null
+          cryptoCurrency: string | null
+          txHash: string | null
+          gpuTier: string
+          status: string
+          nodeId: string | null
+          createdAt: string
+          confirmedAt: string | null
+          provisionedAt: string | null
+        }>
+        total: number
+      }>('/v1/investments', { params }),
+
+    create: (data: {
+      nodeRunnerId: string
+      amount: number
+      currency?: string
+      cryptoAmount?: number
+      cryptoCurrency?: string
+      txHash?: string
+      gpuTier: string
+    }) =>
+      apiFetch<{
+        id: string
+        nodeRunnerId: string
+        amount: number
+        gpuTier: string
+        status: string
+        createdAt: string
+      }>('/v1/investments', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    confirm: (id: string, data: { txHash: string; cryptoAmount?: number; cryptoCurrency?: string }) =>
+      apiFetch<{
+        id: string
+        status: string
+        txHash: string
+        confirmedAt: string
+      }>(`/v1/investments/${id}/confirm`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    linkNode: (id: string, nodeId: string) =>
+      apiFetch<{
+        investmentId: string
+        nodeId: string
+        nodeRunnerId: string
+        status: string
+        message: string
+      }>(`/v1/investments/${id}/link-node`, {
+        method: 'POST',
+        body: JSON.stringify({ nodeId }),
       }),
   },
 

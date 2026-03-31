@@ -1,15 +1,19 @@
 import type { PrismaClient, Node } from '@a2e/database'
+import { calculateUptimeEarnings } from '../earnings/uptime-calculator'
 
 export interface SettlementCalculation {
   nodeId: string
   walletAddress: string
   amount: number
-  jobCount: number
+  uptimeHours: number
   periodStart: Date
   periodEnd: Date
-  jobIds: string[]
 }
 
+/**
+ * Calculate pending settlements based on UPTIME (not jobs).
+ * Earnings = uptime hours × hourly rate for GPU tier
+ */
 export async function calculatePendingSettlements(
   prisma: PrismaClient,
   periodEnd: Date
@@ -27,37 +31,42 @@ export async function calculatePendingSettlements(
   const settlements: SettlementCalculation[] = []
 
   for (const node of nodes) {
+    // Find last completed or processing settlement to determine period start
     const lastSettlement = await prisma.settlement.findFirst({
-      where: { nodeId: node.id, status: { in: ['COMPLETED', 'PROCESSING'] } },
+      where: { nodeId: node.id, status: { in: ['COMPLETED', 'PROCESSING', 'PENDING'] } },
       orderBy: { periodEnd: 'desc' },
     })
 
-    const periodStart = lastSettlement?.periodEnd ?? new Date(0)
+    // Period starts from last settlement end, or node creation, or 30 days ago
+    let periodStart: Date
+    if (lastSettlement?.periodEnd) {
+      periodStart = lastSettlement.periodEnd
+    } else {
+      // For new nodes, start from 30 days ago or node creation
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+      periodStart = thirtyDaysAgo
+    }
 
-    const jobs = await prisma.job.findMany({
-      where: {
-        nodeId: node.id,
-        status: 'COMPLETED',
-        completedAt: { gt: periodStart, lte: periodEnd },
-        earnings: { gt: 0 },
-      },
-      select: { id: true, earnings: true },
-    })
+    // Skip if period is too short (less than 1 hour)
+    if (periodEnd.getTime() - periodStart.getTime() < 3600000) {
+      continue
+    }
 
-    if (jobs.length === 0) continue
+    // Calculate uptime-based earnings
+    const uptimeEarnings = await calculateUptimeEarnings(prisma, node.id, periodStart, periodEnd)
 
-    const totalEarnings = jobs.reduce((sum, job) => sum + (job.earnings ?? 0), 0)
-
-    if (totalEarnings < minimumPayout) continue
+    if (!uptimeEarnings || uptimeEarnings.earnings < minimumPayout) {
+      continue
+    }
 
     settlements.push({
       nodeId: node.id,
       walletAddress: node.walletAddress,
-      amount: Math.round(totalEarnings * 100) / 100,
-      jobCount: jobs.length,
+      amount: uptimeEarnings.earnings,
+      uptimeHours: uptimeEarnings.uptimeHours,
       periodStart,
       periodEnd,
-      jobIds: jobs.map((j) => j.id),
     })
   }
 
@@ -73,16 +82,10 @@ export async function createSettlement(
       nodeId: calculation.nodeId,
       walletAddress: calculation.walletAddress,
       amount: calculation.amount,
-      jobCount: calculation.jobCount,
+      jobCount: 0, // Uptime-based, not job-based
       periodStart: calculation.periodStart,
       periodEnd: calculation.periodEnd,
       status: 'PENDING',
-      items: {
-        create: calculation.jobIds.map((jobId) => ({
-          jobId,
-          amount: 0,
-        })),
-      },
     },
   })
 

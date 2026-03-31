@@ -3,12 +3,14 @@ import type { ConnectionOptions } from 'bullmq'
 import type { PrismaClient, GpuTier } from '@a2e/database'
 import { NodeProvisioner, ProvisionConfig } from '../services/provisioning'
 import type { Server as SocketServer } from 'socket.io'
+import crypto from 'crypto'
 
 const QUEUE_NAME = 'a2e-provision'
 
 export interface ProvisionJobData {
   provisionId: string
   config: ProvisionConfig
+  apiKey: string // Pre-generated API key for the node
 }
 
 export function createProvisionQueue(connection: ConnectionOptions): Queue<ProvisionJobData> {
@@ -32,11 +34,11 @@ export function createProvisionWorker(options: {
   const worker = new Worker<ProvisionJobData>(
     QUEUE_NAME,
     async (job: Job<ProvisionJobData>) => {
-      const { provisionId, config } = job.data
+      const { provisionId, config, apiKey } = job.data
 
       console.log(`[Provision] Starting job ${provisionId} for ${config.host}`)
 
-      const provisioner = new NodeProvisioner(prisma, provisionId)
+      const provisioner = new NodeProvisioner(prisma, provisionId, apiKey)
 
       // Forward events to WebSocket
       provisioner.on('status', (data) => {
@@ -80,12 +82,19 @@ export function createProvisionWorker(options: {
   return worker
 }
 
+function generateNodeApiKey(): string {
+  return `a2e-node-${crypto.randomBytes(16).toString('hex')}`
+}
+
 export async function submitProvisionJob(
   queue: Queue<ProvisionJobData>,
   prisma: PrismaClient,
   config: ProvisionConfig
 ): Promise<string> {
-  // Create provision job record
+  // Generate unique API key for this node
+  const apiKey = generateNodeApiKey()
+
+  // Create provision job record with the API key
   const provisionJob = await prisma.provisionJob.create({
     data: {
       host: config.host,
@@ -97,15 +106,17 @@ export async function submitProvisionJob(
       customGpuModel: config.customGpuModel,
       customRatePerHour: config.customRatePerDay ? config.customRatePerDay / 24 : undefined,
       customRatePerDay: config.customRatePerDay,
+      apiKey, // Store the API key for auth validation
       status: 'PENDING',
       totalSteps: 7,
     },
   })
 
-  // Queue the job
+  // Queue the job with the API key
   await queue.add('provision', {
     provisionId: provisionJob.id,
     config,
+    apiKey,
   }, {
     jobId: provisionJob.id,
   })

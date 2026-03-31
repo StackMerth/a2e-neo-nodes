@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { GpuTier, JobStatus, Market } from '@a2e/database'
 import { submitJobToQueue, requeueJob } from '../jobs/job-processor'
 import { calculateJobCost, calculateJobProfit } from '../services/cost/calculator'
+import { recordJobEarnings } from '../services/earnings/calculator'
 import '../types' // Type augmentations
 
 const submitJobSchema = z.object({
@@ -318,6 +319,11 @@ export async function jobRoutes(fastify: FastifyInstance) {
         where: { id },
         data: updateData,
       })
+
+      // Record earnings to daily aggregation table if job completed successfully
+      if (status === 'COMPLETED' && updatedJob.nodeId && updatedJob.market) {
+        await recordJobEarnings(fastify.prisma, updatedJob)
+      }
 
       reply.send({
         id: updatedJob.id,

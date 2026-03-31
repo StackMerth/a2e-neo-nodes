@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
 import { DistributionBar } from '@/components/ui/ProgressBar'
 import { Skeleton, SkeletonStatCard } from '@/components/ui/Skeleton'
+import { ConfirmModal } from '@/components/ui/Modal'
 import { api } from '@/lib/api'
 
 const GPU_TIERS = [
@@ -84,6 +85,10 @@ export default function NodesPage() {
 
   // Action state
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+
+  // Delete confirmation modal
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [nodeToDelete, setNodeToDelete] = useState<string | null>(null)
 
   useEffect(() => {
     loadNodes()
@@ -183,12 +188,18 @@ export default function NodesPage() {
     }
   }
 
-  async function handleDelete(nodeId: string) {
-    if (!confirm('Are you sure you want to delete this node?')) return
+  function handleDelete(nodeId: string) {
+    setNodeToDelete(nodeId)
+    setDeleteModalOpen(true)
+  }
 
-    setActionLoading(nodeId)
+  async function confirmDelete() {
+    if (!nodeToDelete) return
+
+    setActionLoading(nodeToDelete)
+    setDeleteModalOpen(false)
     try {
-      await api.nodes.delete(nodeId)
+      await api.nodes.delete(nodeToDelete)
       await loadNodes()
       setSuccess('Node deleted')
       setTimeout(() => setSuccess(null), 2000)
@@ -196,6 +207,7 @@ export default function NodesPage() {
       setError(err instanceof Error ? err.message : 'Delete failed')
     } finally {
       setActionLoading(null)
+      setNodeToDelete(null)
     }
   }
 
@@ -588,6 +600,22 @@ export default function NodesPage() {
           </Card>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false)
+          setNodeToDelete(null)
+        }}
+        onConfirm={confirmDelete}
+        title="Delete Node"
+        message="Are you sure you want to delete this node? If this is a provisioned node, the agent will be uninstalled on the next heartbeat."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+        loading={actionLoading === nodeToDelete}
+      />
     </div>
   )
 }

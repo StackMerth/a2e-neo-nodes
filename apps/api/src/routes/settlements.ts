@@ -154,7 +154,7 @@ export async function settlementsRoutes(fastify: FastifyInstance) {
           nodeId: c.nodeId,
           walletAddress: c.walletAddress,
           amount: c.amount,
-          jobCount: c.jobCount,
+          uptimeHours: c.uptimeHours,
         })),
       })
     }
@@ -177,7 +177,7 @@ export async function settlementsRoutes(fastify: FastifyInstance) {
           nodeId: c.nodeId,
           walletAddress: c.walletAddress,
           amount: c.amount,
-          jobCount: c.jobCount,
+          uptimeHours: c.uptimeHours,
           periodStart: c.periodStart.toISOString(),
           periodEnd: c.periodEnd.toISOString(),
         })),

@@ -53,6 +53,66 @@ enum Market {
 }
 
 // ============================================================================
+// NODE RUNNERS (Investors)
+// ============================================================================
+
+model NodeRunner {
+  id            String   @id @default(cuid())
+  name          String               // Display name
+  email         String?  @unique     // Contact email
+  walletAddress String   @unique     // Solana wallet for payouts
+
+  // Timestamps
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  nodes         Node[]
+  investments   Investment[]
+
+  @@index([walletAddress])
+}
+
+model Investment {
+  id            String           @id @default(cuid())
+  nodeRunnerId  String
+  nodeRunner    NodeRunner       @relation(fields: [nodeRunnerId], references: [id])
+
+  // Investment details
+  amount        Float            // Amount paid (e.g., 2500)
+  currency      String           @default("USD")
+
+  // Crypto payment details
+  cryptoAmount  Float?           // Amount in crypto (e.g., SOL)
+  cryptoCurrency String?         // e.g., "SOL", "USDC"
+  txHash        String?          // Solana transaction hash
+  txConfirmed   Boolean          @default(false)
+
+  // What was purchased
+  nodeId        String?          // Linked to node once provisioned
+  gpuTier       GpuTier          // GPU tier purchased
+
+  // Status
+  status        InvestmentStatus @default(PENDING)
+
+  // Timestamps
+  createdAt     DateTime         @default(now())
+  confirmedAt   DateTime?        // When payment was confirmed
+  provisionedAt DateTime?        // When node was provisioned
+
+  @@index([nodeRunnerId])
+  @@index([status])
+  @@index([txHash])
+}
+
+enum InvestmentStatus {
+  PENDING      // Waiting for payment
+  PAID         // Payment received, waiting for provisioning
+  PROVISIONED  // Node is set up and running
+  CANCELLED    // Investment cancelled/refunded
+}
+
+// ============================================================================
 // NODES
 // ============================================================================
 
@@ -64,10 +124,20 @@ model Node {
   status        NodeStatus @default(ONLINE)
   region        String?
 
+  // Node Runner (owner/investor)
+  nodeRunnerId  String?
+  nodeRunner    NodeRunner? @relation(fields: [nodeRunnerId], references: [id])
+
   // Custom GPU info (used when gpuTier = OTHER)
   customGpuModel    String?   // e.g. "A100", "RTX 4090", "L40S"
   customRatePerHour Float?    // Custom hourly rate for OTHER tier
   customRatePerDay  Float?    // Custom daily rate for OTHER tier
+
+  // Agent authentication
+  apiKey        String?    @unique  // Node-specific API key for agent auth
+
+  // Deletion flag - when true, agent will receive UNINSTALL command on next heartbeat
+  pendingDeletion Boolean  @default(false)
 
   // Agent information
   agentVersion  String?
@@ -93,6 +163,7 @@ model Node {
   @@index([status])
   @@index([gpuTier])
   @@index([lastHeartbeat])
+  @@index([nodeRunnerId])
 }
 
 model Heartbeat {
@@ -439,6 +510,9 @@ model ProvisionJob {
   customGpuModel    String?
   customRatePerHour Float?
   customRatePerDay  Float?
+
+  // API key for the provisioned agent
+  apiKey        String?         @unique
 
   // Progress tracking
   currentStep   Int             @default(0)
