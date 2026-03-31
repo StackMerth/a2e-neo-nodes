@@ -3,8 +3,13 @@ import path from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
 
-// Agent bundle path - in production this would be in a releases directory
-const RELEASES_DIR = process.env.RELEASES_DIR || path.join(process.cwd(), '..', 'node-agent', 'dist')
+// Agent bundle path - uses absolute path for reliability
+// In production: /opt/a2e/apps/node-agent/dist
+// In development: relative from api directory
+const RELEASES_DIR = process.env.RELEASES_DIR ||
+  (process.env.NODE_ENV === 'production'
+    ? '/opt/a2e/apps/node-agent/dist'
+    : path.join(process.cwd(), '..', 'node-agent', 'dist'))
 
 export async function releasesRoutes(fastify: FastifyInstance) {
   /**
