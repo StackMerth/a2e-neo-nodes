@@ -3,7 +3,7 @@
  */
 
 // GPU Tiers
-export type GpuTier = 'H100' | 'H200' | 'B200' | 'B300' | 'GB300';
+export type GpuTier = 'H100' | 'H200' | 'B200' | 'B300' | 'GB300' | 'OTHER';
 
 // Node Status
 export type NodeStatus = 'ONLINE' | 'OFFLINE' | 'DEGRADED' | 'MAINTENANCE';

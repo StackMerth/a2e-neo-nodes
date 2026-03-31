@@ -25,10 +25,17 @@ agent:
 gpu:
   # Auto-detect GPU model and tier
   autoDetect: true
-  # Manual tier override (H100, H200, B200, B300, GB300)
+  # Manual tier override (H100, H200, B200, B300, GB300, OTHER)
   tier: null
   # GPU indices to use (null = all available)
   devices: null
+  # MOCK GPU MODE - For testing without real NVIDIA hardware
+  # Set to true to simulate a GPU for testing agent connectivity
+  mockGpu: false
+  # Mock GPU model name (used when mockGpu: true)
+  mockModel: "NVIDIA H100 80GB HBM3 (Mock)"
+  # Mock GPU VRAM in MB (used when mockGpu: true)
+  mockVram: 81920
 
 # Docker Configuration
 docker:

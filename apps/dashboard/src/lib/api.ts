@@ -826,6 +826,72 @@ export const api = {
     },
   },
 
+  // Node Provisioning
+  provision: {
+    start: (data: {
+      host: string
+      port: number
+      username: string
+      authMethod: 'password' | 'privateKey'
+      password?: string
+      privateKey?: string
+      passphrase?: string
+      gpuTier: string
+      nodeName?: string
+      region?: string
+      customGpuModel?: string
+      customRatePerDay?: number
+      testMode?: boolean
+    }) =>
+      apiFetch<{
+        provisionId: string
+        status: string
+        message: string
+      }>('/v1/nodes/provision', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    getStatus: (id: string) =>
+      apiFetch<{
+        provisionId: string
+        status: string
+        currentStep: number
+        totalSteps: number
+        currentAction: string
+        logs: Array<{ timestamp: string; level: 'info' | 'warn' | 'error'; message: string }>
+        node?: { id: string }
+        error?: string
+        startedAt?: string
+        completedAt?: string
+      }>(`/v1/nodes/provision/${id}`),
+
+    list: (params?: { status?: string; limit?: number }) =>
+      apiFetch<{
+        jobs: Array<{
+          id: string
+          status: string
+          host: string
+          gpuTier: string
+          nodeName: string | null
+          currentStep: number
+          totalSteps: number
+          currentAction: string | null
+          nodeId: string | null
+          error: string | null
+          createdAt: string
+          startedAt: string | null
+          completedAt: string | null
+        }>
+        total: number
+      }>('/v1/nodes/provision', { params }),
+
+    cancel: (id: string) =>
+      apiFetch<{ success: boolean; message: string }>(`/v1/nodes/provision/${id}`, {
+        method: 'DELETE',
+      }),
+  },
+
   // System
   system: {
     health: () =>

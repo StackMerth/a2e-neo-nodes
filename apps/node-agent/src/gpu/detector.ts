@@ -93,6 +93,30 @@ export class GpuDetector {
    * Detect GPUs using nvidia-smi
    */
   async detect(): Promise<GpuInfo | null> {
+    // Mock GPU mode for testing without real hardware
+    if (this.config.mockGpu) {
+      log.warn('Mock GPU mode enabled - using simulated GPU');
+      const mockTier = this.config.tier ?? 'H100';
+      this.gpuInfo = {
+        model: this.config.mockModel ?? 'NVIDIA H100 80GB HBM3 (Mock)',
+        tier: mockTier,
+        count: 1,
+        vram: this.config.mockVram ?? 81920,
+        driver: '535.154.05 (Mock)',
+        cudaVersion: '12.2 (Mock)',
+        uuid: `MOCK-GPU-${Date.now().toString(36).toUpperCase()}`,
+      };
+      log.info(
+        {
+          model: this.gpuInfo.model,
+          tier: this.gpuInfo.tier,
+          vram: this.gpuInfo.vram,
+        },
+        'Mock GPU initialized'
+      );
+      return this.gpuInfo;
+    }
+
     if (!this.config.autoDetect) {
       log.info('GPU auto-detection disabled');
       if (this.config.tier) {
