@@ -17,6 +17,7 @@ import {
   reportsRoutes,
   agentRoutes,
   provisionRoutes,
+  releasesRoutes,
 } from './routes'
 import { setupWebSocket } from './websocket'
 import {
@@ -82,6 +83,7 @@ async function start() {
     await server.register(reportsRoutes)
     await server.register(agentRoutes)
     await server.register(provisionRoutes)
+    await server.register(releasesRoutes)
 
     const redisConnection = server.redis as unknown as import('bullmq').ConnectionOptions
     const rateFetcherQueue = createRateFetcherQueue(redisConnection)
