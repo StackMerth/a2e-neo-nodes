@@ -1,6 +1,6 @@
 import type { Agent } from '../agent.js';
 import { getApiClient } from '../api/client.js';
-import type { HeartbeatRequest, NodeStatus } from '../api/types.js';
+import type { HeartbeatRequest, NodeStatus, NodeCommand } from '../api/types.js';
 import { heartbeatLogger } from '../utils/logger.js';
 
 const log = heartbeatLogger();
@@ -110,7 +110,7 @@ export class HeartbeatService {
       if (response.commands && response.commands.length > 0) {
         for (const command of response.commands) {
           log.info({ command }, 'Received command from server');
-          // TODO: Process commands
+          await this.handleCommand(command);
         }
       }
 
@@ -155,5 +155,46 @@ export class HeartbeatService {
    */
   getFailureCount(): number {
     return this.consecutiveFailures;
+  }
+
+  /**
+   * Handle a command from the server
+   */
+  private async handleCommand(command: NodeCommand): Promise<void> {
+    switch (command.type) {
+      case 'UNINSTALL':
+        log.info('Received UNINSTALL command, initiating self-removal...');
+        this.stop(); // Stop heartbeats
+        await this.agent.uninstall();
+        break;
+
+      case 'RESTART':
+        log.info('Received RESTART command');
+        await this.agent.restart();
+        break;
+
+      case 'PAUSE':
+        log.info('Received PAUSE command');
+        // TODO: Implement pause logic
+        break;
+
+      case 'RESUME':
+        log.info('Received RESUME command');
+        // TODO: Implement resume logic
+        break;
+
+      case 'DRAIN':
+        log.info('Received DRAIN command');
+        // TODO: Implement drain logic (stop accepting new jobs)
+        break;
+
+      case 'UPDATE':
+        log.info('Received UPDATE command');
+        // TODO: Implement self-update logic
+        break;
+
+      default:
+        log.warn({ command }, 'Unknown command type');
+    }
   }
 }

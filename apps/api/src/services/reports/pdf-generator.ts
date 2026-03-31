@@ -75,33 +75,154 @@ export function generateStatementHTML(data: StatementData): string {
   <meta charset="UTF-8">
   <title>Earnings Statement - ${data.nodeId}</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px; color: #333; }
-    h1 { color: #1a1a2e; border-bottom: 2px solid #6366f1; padding-bottom: 10px; }
-    h2 { color: #4f46e5; margin-top: 30px; }
-    .header { display: flex; justify-content: space-between; margin-bottom: 30px; }
-    .summary { background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0; }
-    .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-    .summary-item { text-align: center; }
-    .summary-value { font-size: 24px; font-weight: bold; color: #6366f1; }
-    .summary-label { color: #64748b; font-size: 14px; }
-    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
-    th { background: #f1f5f9; font-weight: 600; }
-    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 12px; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 40px;
+      color: #e4e4e7;
+      background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%);
+      min-height: 100vh;
+    }
+    h1 {
+      color: #ffffff;
+      font-size: 28px;
+      font-weight: 700;
+      margin: 0 0 8px 0;
+    }
+    h2 {
+      color: #22c55e;
+      font-size: 18px;
+      font-weight: 600;
+      margin: 32px 0 16px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    h2::before {
+      content: '';
+      width: 4px;
+      height: 20px;
+      background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+      border-radius: 2px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 32px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .header p { margin: 4px 0; font-size: 14px; color: #a1a1aa; }
+    .header strong { color: #e4e4e7; }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      color: #0a0a0f;
+      font-size: 18px;
+    }
+    .summary {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 24px;
+      border-radius: 16px;
+      margin: 24px 0;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+    .summary-item {
+      text-align: center;
+      padding: 16px;
+      background: rgba(255,255,255,0.02);
+      border-radius: 12px;
+    }
+    .summary-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: #22c55e;
+      margin-bottom: 4px;
+    }
+    .summary-label { color: #71717a; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      background: rgba(255,255,255,0.02);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 14px 16px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 14px;
+    }
+    th {
+      background: rgba(255,255,255,0.04);
+      font-weight: 600;
+      color: #a1a1aa;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.5px;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: rgba(255,255,255,0.02); }
+    .status-completed { color: #22c55e; }
+    .status-pending { color: #f59e0b; }
+    .status-failed { color: #ef4444; }
+    .footer {
+      margin-top: 48px;
+      padding-top: 24px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      color: #52525b;
+      font-size: 12px;
+    }
+    .footer p { margin: 4px 0; }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .badge-gpu {
+      background: rgba(34,197,94,0.15);
+      color: #22c55e;
+      border: 1px solid rgba(34,197,94,0.3);
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <div>
-      <h1>Earnings Statement</h1>
+      <div class="logo">
+        <div class="logo-icon">A²</div>
+        <h1>Earnings Statement</h1>
+      </div>
       <p><strong>Node:</strong> ${data.nodeId}</p>
       <p><strong>Wallet:</strong> ${data.walletAddress}</p>
-      <p><strong>GPU Tier:</strong> ${data.gpuTier}</p>
+      <p><strong>GPU Tier:</strong> <span class="badge badge-gpu">${data.gpuTier}</span></p>
     </div>
     <div style="text-align: right;">
-      <p><strong>Period:</strong></p>
-      <p>${data.periodStart} - ${data.periodEnd}</p>
-      <p><strong>Generated:</strong> ${new Date().toISOString().split('T')[0]}</p>
+      <p><strong>Period</strong></p>
+      <p style="color: #e4e4e7; font-size: 16px;">${data.periodStart} - ${data.periodEnd}</p>
+      <p style="margin-top: 12px;"><strong>Generated</strong></p>
+      <p style="color: #e4e4e7;">${new Date().toISOString().split('T')[0]}</p>
     </div>
   </div>
 
@@ -134,7 +255,7 @@ export function generateStatementHTML(data: StatementData): string {
       </tr>
     </thead>
     <tbody>
-      ${settlementsHtml || '<tr><td colspan="5">No settlements in this period</td></tr>'}
+      ${settlementsHtml || '<tr><td colspan="5" style="color: #52525b; text-align: center; padding: 32px;">No settlements in this period</td></tr>'}
     </tbody>
   </table>
 
@@ -149,7 +270,7 @@ export function generateStatementHTML(data: StatementData): string {
       </tr>
     </thead>
     <tbody>
-      ${earningsHtml || '<tr><td colspan="4">No earnings in this period</td></tr>'}
+      ${earningsHtml || '<tr><td colspan="4" style="color: #52525b; text-align: center; padding: 32px;">No earnings in this period</td></tr>'}
     </tbody>
   </table>
 

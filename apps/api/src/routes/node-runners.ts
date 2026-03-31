@@ -1,0 +1,565 @@
+import type { FastifyInstance } from 'fastify'
+import { z } from 'zod'
+import type { GpuTier, InvestmentStatus } from '@a2e/database'
+import { calculateUptimeEarnings, getDailyUptimeBreakdown, getGpuTierRate } from '../services/earnings/uptime-calculator'
+
+// Schemas
+const createNodeRunnerSchema = z.object({
+  name: z.string().min(1).max(128),
+  email: z.string().email().optional(),
+  walletAddress: z.string().min(1).max(128),
+})
+
+const createInvestmentSchema = z.object({
+  nodeRunnerId: z.string().min(1),
+  amount: z.number().positive(),
+  currency: z.string().default('USD'),
+  cryptoAmount: z.number().positive().optional(),
+  cryptoCurrency: z.string().optional(),
+  txHash: z.string().optional(),
+  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER']),
+})
+
+const confirmInvestmentSchema = z.object({
+  txHash: z.string().min(1),
+  cryptoAmount: z.number().positive().optional(),
+  cryptoCurrency: z.string().optional(),
+})
+
+export async function nodeRunnerRoutes(fastify: FastifyInstance) {
+  // ==================== NODE RUNNERS ====================
+
+  // GET /v1/node-runners - List all node runners
+  fastify.get(
+    '/v1/node-runners',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const nodeRunners = await fastify.prisma.nodeRunner.findMany({
+        include: {
+          nodes: {
+            select: { id: true, gpuTier: true, status: true },
+          },
+          investments: {
+            select: { id: true, amount: true, status: true, gpuTier: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+
+      reply.send({
+        nodeRunners: nodeRunners.map((nr) => ({
+          id: nr.id,
+          name: nr.name,
+          email: nr.email,
+          walletAddress: nr.walletAddress,
+          nodeCount: nr.nodes.length,
+          totalInvested: nr.investments.reduce((sum, inv) => sum + inv.amount, 0),
+          createdAt: nr.createdAt.toISOString(),
+        })),
+        total: nodeRunners.length,
+      })
+    }
+  )
+
+  // POST /v1/node-runners - Create a node runner
+  fastify.post(
+    '/v1/node-runners',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const parseResult = createNodeRunnerSchema.safeParse(request.body)
+
+      if (!parseResult.success) {
+        return reply.code(400).send({
+          error: 'Validation Error',
+          message: parseResult.error.errors[0]?.message ?? 'Invalid input',
+        })
+      }
+
+      const { name, email, walletAddress } = parseResult.data
+
+      // Check for existing wallet address
+      const existing = await fastify.prisma.nodeRunner.findUnique({
+        where: { walletAddress },
+      })
+
+      if (existing) {
+        return reply.code(409).send({
+          error: 'Conflict',
+          message: 'Node runner with this wallet address already exists',
+        })
+      }
+
+      const nodeRunner = await fastify.prisma.nodeRunner.create({
+        data: { name, email, walletAddress },
+      })
+
+      reply.code(201).send({
+        id: nodeRunner.id,
+        name: nodeRunner.name,
+        email: nodeRunner.email,
+        walletAddress: nodeRunner.walletAddress,
+        createdAt: nodeRunner.createdAt.toISOString(),
+      })
+    }
+  )
+
+  // GET /v1/node-runners/:id - Get node runner details with ROI
+  fastify.get(
+    '/v1/node-runners/:id',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+
+      const nodeRunner = await fastify.prisma.nodeRunner.findUnique({
+        where: { id },
+        include: {
+          nodes: {
+            select: {
+              id: true,
+              walletAddress: true,
+              gpuTier: true,
+              status: true,
+              createdAt: true,
+            },
+          },
+          investments: true,
+        },
+      })
+
+      if (!nodeRunner) {
+        return reply.code(404).send({ error: 'Node runner not found' })
+      }
+
+      // Calculate total invested
+      const totalInvested = nodeRunner.investments.reduce((sum, inv) => sum + inv.amount, 0)
+
+      // Calculate total earnings from all nodes
+      let totalEarnings = 0
+      const nodeEarnings: {
+        nodeId: string
+        gpuTier: string
+        uptimeHours: number
+        earnings: number
+      }[] = []
+
+      for (const node of nodeRunner.nodes) {
+        const earnings = await calculateUptimeEarnings(
+          fastify.prisma,
+          node.id,
+          node.createdAt,
+          new Date()
+        )
+
+        if (earnings) {
+          totalEarnings += earnings.earnings
+          nodeEarnings.push({
+            nodeId: node.id,
+            gpuTier: node.gpuTier,
+            uptimeHours: earnings.uptimeHours,
+            earnings: earnings.earnings,
+          })
+        }
+      }
+
+      // Get total payouts (completed settlements)
+      const completedSettlements = await fastify.prisma.settlement.findMany({
+        where: {
+          nodeId: { in: nodeRunner.nodes.map((n) => n.id) },
+          status: 'COMPLETED',
+        },
+        select: { amount: true },
+      })
+
+      const totalPayouts = completedSettlements.reduce((sum, s) => sum + s.amount, 0)
+
+      // Calculate ROI
+      const netEarnings = totalEarnings - totalInvested
+      const roiPercentage = totalInvested > 0 ? (netEarnings / totalInvested) * 100 : 0
+      const pendingPayout = totalEarnings - totalPayouts
+
+      reply.send({
+        id: nodeRunner.id,
+        name: nodeRunner.name,
+        email: nodeRunner.email,
+        walletAddress: nodeRunner.walletAddress,
+        createdAt: nodeRunner.createdAt.toISOString(),
+
+        // Financial summary
+        financials: {
+          totalInvested: Math.round(totalInvested * 100) / 100,
+          totalEarnings: Math.round(totalEarnings * 100) / 100,
+          totalPayouts: Math.round(totalPayouts * 100) / 100,
+          pendingPayout: Math.round(pendingPayout * 100) / 100,
+          netPosition: Math.round(netEarnings * 100) / 100,
+          roiPercentage: Math.round(roiPercentage * 100) / 100,
+        },
+
+        // Nodes owned
+        nodes: nodeRunner.nodes.map((n) => ({
+          id: n.id,
+          gpuTier: n.gpuTier,
+          status: n.status,
+          createdAt: n.createdAt.toISOString(),
+        })),
+
+        // Node earnings breakdown
+        nodeEarnings,
+
+        // Investment history
+        investments: nodeRunner.investments.map((inv) => ({
+          id: inv.id,
+          amount: inv.amount,
+          currency: inv.currency,
+          cryptoAmount: inv.cryptoAmount,
+          cryptoCurrency: inv.cryptoCurrency,
+          txHash: inv.txHash,
+          gpuTier: inv.gpuTier,
+          status: inv.status,
+          createdAt: inv.createdAt.toISOString(),
+          confirmedAt: inv.confirmedAt?.toISOString() ?? null,
+          provisionedAt: inv.provisionedAt?.toISOString() ?? null,
+        })),
+      })
+    }
+  )
+
+  // GET /v1/node-runners/:id/roi - Detailed ROI breakdown
+  fastify.get(
+    '/v1/node-runners/:id/roi',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const { days = '30' } = request.query as { days?: string }
+
+      const nodeRunner = await fastify.prisma.nodeRunner.findUnique({
+        where: { id },
+        include: {
+          nodes: { select: { id: true, gpuTier: true, createdAt: true } },
+          investments: { select: { amount: true, createdAt: true, status: true } },
+        },
+      })
+
+      if (!nodeRunner) {
+        return reply.code(404).send({ error: 'Node runner not found' })
+      }
+
+      // Get daily breakdown for all nodes
+      const dailyBreakdown: Map<string, { uptimeHours: number; earnings: number }> = new Map()
+
+      for (const node of nodeRunner.nodes) {
+        const daily = await getDailyUptimeBreakdown(fastify.prisma, node.id, parseInt(days, 10))
+
+        for (const day of daily) {
+          const existing = dailyBreakdown.get(day.date) ?? { uptimeHours: 0, earnings: 0 }
+          existing.uptimeHours += day.uptimeHours
+          existing.earnings += day.earnings
+          dailyBreakdown.set(day.date, existing)
+        }
+      }
+
+      // Convert to array
+      const dailyData = Array.from(dailyBreakdown.entries())
+        .map(([date, data]) => ({
+          date,
+          uptimeHours: Math.round(data.uptimeHours * 100) / 100,
+          earnings: Math.round(data.earnings * 100) / 100,
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date))
+
+      // Calculate cumulative totals
+      const totalInvested = nodeRunner.investments.reduce((sum, inv) => sum + inv.amount, 0)
+      const totalEarnings = dailyData.reduce((sum, d) => sum + d.earnings, 0)
+      const totalUptimeHours = dailyData.reduce((sum, d) => sum + d.uptimeHours, 0)
+
+      // Project future earnings (based on average daily)
+      const avgDailyEarnings = dailyData.length > 0 ? totalEarnings / dailyData.length : 0
+      const daysToBreakeven = avgDailyEarnings > 0 ? Math.ceil((totalInvested - totalEarnings) / avgDailyEarnings) : null
+      const projectedMonthlyEarnings = avgDailyEarnings * 30
+      const projectedYearlyEarnings = avgDailyEarnings * 365
+
+      reply.send({
+        nodeRunnerId: nodeRunner.id,
+        period: {
+          days: parseInt(days, 10),
+          start: dailyData[0]?.date ?? null,
+          end: dailyData[dailyData.length - 1]?.date ?? null,
+        },
+
+        summary: {
+          totalInvested: Math.round(totalInvested * 100) / 100,
+          totalEarnings: Math.round(totalEarnings * 100) / 100,
+          totalUptimeHours: Math.round(totalUptimeHours * 100) / 100,
+          avgDailyEarnings: Math.round(avgDailyEarnings * 100) / 100,
+          roiPercentage: totalInvested > 0 ? Math.round(((totalEarnings - totalInvested) / totalInvested) * 10000) / 100 : 0,
+        },
+
+        projections: {
+          daysToBreakeven: daysToBreakeven && daysToBreakeven > 0 ? daysToBreakeven : null,
+          projectedMonthlyEarnings: Math.round(projectedMonthlyEarnings * 100) / 100,
+          projectedYearlyEarnings: Math.round(projectedYearlyEarnings * 100) / 100,
+        },
+
+        daily: dailyData,
+      })
+    }
+  )
+
+  // GET /v1/node-runners/wallet/:walletAddress - Get node runner by wallet (for portal login)
+  fastify.get(
+    '/v1/node-runners/wallet/:walletAddress',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { walletAddress } = request.params as { walletAddress: string }
+
+      const nodeRunner = await fastify.prisma.nodeRunner.findUnique({
+        where: { walletAddress },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          walletAddress: true,
+        },
+      })
+
+      if (!nodeRunner) {
+        return reply.code(404).send({ error: 'Node runner not found' })
+      }
+
+      reply.send(nodeRunner)
+    }
+  )
+
+  // ==================== INVESTMENTS ====================
+
+  // POST /v1/investments - Record a new investment
+  fastify.post(
+    '/v1/investments',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const parseResult = createInvestmentSchema.safeParse(request.body)
+
+      if (!parseResult.success) {
+        return reply.code(400).send({
+          error: 'Validation Error',
+          message: parseResult.error.errors[0]?.message ?? 'Invalid input',
+        })
+      }
+
+      const { nodeRunnerId, amount, currency, cryptoAmount, cryptoCurrency, txHash, gpuTier } = parseResult.data
+
+      // Verify node runner exists
+      const nodeRunner = await fastify.prisma.nodeRunner.findUnique({
+        where: { id: nodeRunnerId },
+      })
+
+      if (!nodeRunner) {
+        return reply.code(404).send({ error: 'Node runner not found' })
+      }
+
+      const investment = await fastify.prisma.investment.create({
+        data: {
+          nodeRunnerId,
+          amount,
+          currency,
+          cryptoAmount,
+          cryptoCurrency,
+          txHash,
+          gpuTier: gpuTier as GpuTier,
+          status: txHash ? 'PAID' : 'PENDING',
+          confirmedAt: txHash ? new Date() : null,
+        },
+      })
+
+      reply.code(201).send({
+        id: investment.id,
+        nodeRunnerId: investment.nodeRunnerId,
+        amount: investment.amount,
+        currency: investment.currency,
+        gpuTier: investment.gpuTier,
+        status: investment.status,
+        txHash: investment.txHash,
+        createdAt: investment.createdAt.toISOString(),
+      })
+    }
+  )
+
+  // POST /v1/investments/:id/confirm - Confirm payment received
+  fastify.post(
+    '/v1/investments/:id/confirm',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const parseResult = confirmInvestmentSchema.safeParse(request.body)
+
+      if (!parseResult.success) {
+        return reply.code(400).send({
+          error: 'Validation Error',
+          message: parseResult.error.errors[0]?.message ?? 'Invalid input',
+        })
+      }
+
+      const { txHash, cryptoAmount, cryptoCurrency } = parseResult.data
+
+      const investment = await fastify.prisma.investment.findUnique({
+        where: { id },
+      })
+
+      if (!investment) {
+        return reply.code(404).send({ error: 'Investment not found' })
+      }
+
+      if (investment.status !== 'PENDING') {
+        return reply.code(400).send({
+          error: 'Invalid Status',
+          message: `Investment is ${investment.status}, cannot confirm`,
+        })
+      }
+
+      const updated = await fastify.prisma.investment.update({
+        where: { id },
+        data: {
+          status: 'PAID',
+          txHash,
+          txConfirmed: true,
+          cryptoAmount,
+          cryptoCurrency,
+          confirmedAt: new Date(),
+        },
+      })
+
+      reply.send({
+        id: updated.id,
+        status: updated.status,
+        txHash: updated.txHash,
+        confirmedAt: updated.confirmedAt?.toISOString(),
+      })
+    }
+  )
+
+  // POST /v1/investments/:id/link-node - Link investment to a provisioned node
+  fastify.post(
+    '/v1/investments/:id/link-node',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const { nodeId } = request.body as { nodeId: string }
+
+      if (!nodeId) {
+        return reply.code(400).send({
+          error: 'Validation Error',
+          message: 'nodeId is required',
+        })
+      }
+
+      const investment = await fastify.prisma.investment.findUnique({
+        where: { id },
+        include: { nodeRunner: true },
+      })
+
+      if (!investment) {
+        return reply.code(404).send({ error: 'Investment not found' })
+      }
+
+      if (investment.status !== 'PAID') {
+        return reply.code(400).send({
+          error: 'Invalid Status',
+          message: 'Investment must be PAID before linking to a node',
+        })
+      }
+
+      const node = await fastify.prisma.node.findUnique({
+        where: { id: nodeId },
+      })
+
+      if (!node) {
+        return reply.code(404).send({ error: 'Node not found' })
+      }
+
+      // Link node to node runner and update investment
+      await fastify.prisma.$transaction([
+        fastify.prisma.node.update({
+          where: { id: nodeId },
+          data: { nodeRunnerId: investment.nodeRunnerId },
+        }),
+        fastify.prisma.investment.update({
+          where: { id },
+          data: {
+            status: 'PROVISIONED',
+            nodeId,
+            provisionedAt: new Date(),
+          },
+        }),
+      ])
+
+      reply.send({
+        investmentId: id,
+        nodeId,
+        nodeRunnerId: investment.nodeRunnerId,
+        status: 'PROVISIONED',
+        message: 'Node linked to investment successfully',
+      })
+    }
+  )
+
+  // GET /v1/investments - List all investments
+  fastify.get(
+    '/v1/investments',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { status, nodeRunnerId } = request.query as {
+        status?: InvestmentStatus
+        nodeRunnerId?: string
+      }
+
+      const where: Record<string, unknown> = {}
+      if (status) where.status = status
+      if (nodeRunnerId) where.nodeRunnerId = nodeRunnerId
+
+      const investments = await fastify.prisma.investment.findMany({
+        where,
+        include: {
+          nodeRunner: { select: { name: true, walletAddress: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+
+      reply.send({
+        investments: investments.map((inv) => ({
+          id: inv.id,
+          nodeRunnerName: inv.nodeRunner.name,
+          walletAddress: inv.nodeRunner.walletAddress,
+          amount: inv.amount,
+          currency: inv.currency,
+          cryptoAmount: inv.cryptoAmount,
+          cryptoCurrency: inv.cryptoCurrency,
+          txHash: inv.txHash,
+          gpuTier: inv.gpuTier,
+          status: inv.status,
+          nodeId: inv.nodeId,
+          createdAt: inv.createdAt.toISOString(),
+          confirmedAt: inv.confirmedAt?.toISOString() ?? null,
+          provisionedAt: inv.provisionedAt?.toISOString() ?? null,
+        })),
+        total: investments.length,
+      })
+    }
+  )
+}

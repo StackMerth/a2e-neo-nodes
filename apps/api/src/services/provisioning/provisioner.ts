@@ -46,12 +46,12 @@ export class NodeProvisioner extends EventEmitter {
   private apiKey: string
   private sudo: string = 'sudo ' // Will be empty string if running as root
 
-  constructor(prisma: PrismaClient, provisionId: string) {
+  constructor(prisma: PrismaClient, provisionId: string, apiKey: string) {
     super()
     this.prisma = prisma
     this.provisionId = provisionId
     this.apiUrl = process.env.A2E_API_URL || 'https://a2e.byredstone.com'
-    this.apiKey = this.generateApiKey()
+    this.apiKey = apiKey
   }
 
   private async detectRootUser(): Promise<void> {
@@ -64,10 +64,6 @@ export class NodeProvisioner extends EventEmitter {
       this.sudo = 'sudo '
       await this.log('info', 'Running as non-root user, will use sudo')
     }
-  }
-
-  private generateApiKey(): string {
-    return `a2e-node-${crypto.randomBytes(16).toString('hex')}`
   }
 
   private async log(level: 'info' | 'warn' | 'error', message: string): Promise<void> {
@@ -668,29 +664,32 @@ WantedBy=multi-user.target
     const pollInterval = 3000
 
     while (Date.now() - startTime < maxWaitMs) {
-      // Look for a newly registered node that matches this host
-      // Since we can't match by IP directly, we look for recent registrations
-      const recentNodes = await this.prisma.node.findMany({
-        where: {
-          createdAt: {
-            gte: new Date(startTime - 60000), // Within last minute
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
+      // Check if our provision job now has a linked nodeId
+      // This happens when the agent registers using our API key
+      const provisionJob = await this.prisma.provisionJob.findUnique({
+        where: { id: this.provisionId },
+        select: { nodeId: true },
       })
 
-      // Check if any of these nodes are likely ours
-      // In production, the agent would include provisioning ID in registration
-      for (const node of recentNodes) {
-        // Check if this node isn't already linked to another provision job
-        const existingJob = await this.prisma.provisionJob.findUnique({
-          where: { nodeId: node.id },
+      if (provisionJob?.nodeId) {
+        await this.log('info', `Node registered: ${provisionJob.nodeId}`)
+        return provisionJob.nodeId
+      }
+
+      // Also check for nodes that registered with our API key
+      const node = await this.prisma.node.findUnique({
+        where: { apiKey: this.apiKey },
+        select: { id: true },
+      })
+
+      if (node) {
+        // Link the node to our provision job if not already linked
+        await this.prisma.provisionJob.update({
+          where: { id: this.provisionId },
+          data: { nodeId: node.id },
         })
-        if (!existingJob) {
-          await this.log('info', `Node registered: ${node.id}`)
-          return node.id
-        }
+        await this.log('info', `Node registered: ${node.id}`)
+        return node.id
       }
 
       await new Promise(resolve => setTimeout(resolve, pollInterval))

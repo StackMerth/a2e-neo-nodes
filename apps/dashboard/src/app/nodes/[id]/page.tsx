@@ -7,6 +7,8 @@ import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ProgressBar, CircularProgress } from '@/components/ui/ProgressBar'
 import { Skeleton, SkeletonStatCard, SkeletonCard } from '@/components/ui/Skeleton'
+import { ConfirmModal, Modal } from '@/components/ui/Modal'
+import { Input } from '@/components/ui/Input'
 import { api } from '@/lib/api'
 
 interface NodeDetail {
@@ -100,6 +102,9 @@ export default function NodeDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [statementDays, setStatementDays] = useState(30)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [editWalletOpen, setEditWalletOpen] = useState(false)
+  const [newWalletAddress, setNewWalletAddress] = useState('')
 
   useEffect(() => {
     loadNode()
@@ -144,16 +149,37 @@ export default function NodeDetailPage() {
     }
   }
 
-  async function handleDelete() {
-    if (!confirm('Are you sure you want to delete this node? This action cannot be undone.')) {
-      return
-    }
+  function handleDelete() {
+    setDeleteModalOpen(true)
+  }
+
+  async function confirmDelete() {
+    setDeleteModalOpen(false)
     setActionLoading('delete')
     try {
       await api.nodes.delete(nodeId)
       router.push('/nodes')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed')
+      setActionLoading(null)
+    }
+  }
+
+  function openEditWallet() {
+    setNewWalletAddress(node?.walletAddress || '')
+    setEditWalletOpen(true)
+  }
+
+  async function handleUpdateWallet() {
+    if (!newWalletAddress.trim()) return
+    setActionLoading('wallet')
+    try {
+      await api.nodes.update(nodeId, { walletAddress: newWalletAddress.trim() })
+      await loadNode()
+      setEditWalletOpen(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update wallet address')
+    } finally {
       setActionLoading(null)
     }
   }
@@ -288,7 +314,16 @@ export default function NodeDetailPage() {
                   {node.status}
                 </span>
               </div>
-              <p className="text-text-muted font-mono text-sm mb-2">{node.walletAddress}</p>
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-text-muted font-mono text-sm">{node.walletAddress}</p>
+                <button
+                  onClick={openEditWallet}
+                  className="p-1 text-text-muted hover:text-accent hover:bg-accent/10 rounded transition-colors"
+                  title="Edit wallet address"
+                >
+                  <PencilIcon className="w-4 h-4" />
+                </button>
+              </div>
               <div className="flex flex-wrap items-center gap-4 text-sm text-text-muted">
                 <span className="flex items-center gap-1.5">
                   <CalendarIcon className="w-4 h-4" />
@@ -701,6 +736,56 @@ export default function NodeDetailPage() {
           </div>
         )}
       </Card>
+
+      {/* Delete Confirmation Modal */}
+      {/* Edit Wallet Address Modal */}
+      <Modal
+        isOpen={editWalletOpen}
+        onClose={() => setEditWalletOpen(false)}
+        title="Edit Wallet Address"
+        size="md"
+      >
+        <p className="text-text-muted text-sm mb-4">
+          Enter the Solana wallet address where earnings should be paid.
+        </p>
+        <Input
+          label="Wallet Address"
+          value={newWalletAddress}
+          onChange={(e) => setNewWalletAddress(e.target.value)}
+          placeholder="Enter Solana wallet address..."
+          className="mb-4"
+        />
+        <div className="flex gap-3">
+          <Button
+            variant="secondary"
+            onClick={() => setEditWalletOpen(false)}
+            className="flex-1"
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="gradient"
+            onClick={handleUpdateWallet}
+            loading={actionLoading === 'wallet'}
+            className="flex-1"
+          >
+            Save
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        onConfirm={confirmDelete}
+        title="Delete Node"
+        message="Are you sure you want to delete this node? If this is a provisioned node, the agent will be uninstalled on the next heartbeat. This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+        loading={actionLoading === 'delete'}
+      />
     </div>
   )
 }
@@ -844,6 +929,14 @@ function TrashIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    </svg>
+  )
+}
+
+function PencilIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
     </svg>
   )
 }

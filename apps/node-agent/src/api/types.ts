@@ -110,7 +110,7 @@ export interface HeartbeatResponse {
  */
 export interface NodeCommand {
   id: string;
-  type: 'PAUSE' | 'RESUME' | 'RESTART' | 'UPDATE' | 'DRAIN';
+  type: 'PAUSE' | 'RESUME' | 'RESTART' | 'UPDATE' | 'DRAIN' | 'UNINSTALL';
   payload?: Record<string, unknown>;
 }
 

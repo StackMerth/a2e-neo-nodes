@@ -90,21 +90,14 @@ export function WebSocketNotifier() {
       })
     })
 
-    // Rate updated
-    on<RateUpdatedEvent>('rate:updated', (data) => {
-      addToast({
-        type: 'info',
-        title: 'Rate Updated',
-        message: `${data.market} ${data.gpuTier}: $${data.ratePerDay.toFixed(2)}/day`,
-      })
-    })
+    // Rate updates are silent - they happen frequently and would be noisy
+    // The rates page will show current values
 
     return () => {
       off('node:registered')
       off('node:offline')
       off('job:routed')
       off('job:failed')
-      off('rate:updated')
     }
   }, [on, off, addToast])
 
