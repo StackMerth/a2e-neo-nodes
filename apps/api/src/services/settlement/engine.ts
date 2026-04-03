@@ -31,9 +31,10 @@ export async function calculatePendingSettlements(
   const settlements: SettlementCalculation[] = []
 
   for (const node of nodes) {
-    // Find last completed or processing settlement to determine period start
+    // Find last COMPLETED settlement to determine period start
+    // NOTE: Only use COMPLETED to prevent stuck PENDING settlements from blocking new ones
     const lastSettlement = await prisma.settlement.findFirst({
-      where: { nodeId: node.id, status: { in: ['COMPLETED', 'PROCESSING', 'PENDING'] } },
+      where: { nodeId: node.id, status: 'COMPLETED' },
       orderBy: { periodEnd: 'desc' },
     })
 

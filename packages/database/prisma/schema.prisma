@@ -547,3 +547,75 @@ enum ProvisionStatus {
   FAILED
   CANCELLED
 }
+
+// ============================================================================
+// AUDIT LOGGING (M6)
+// ============================================================================
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  entityType    String   // e.g., "Investment", "Settlement", "Payment"
+  entityId      String   // ID of the entity being audited
+  action        String   // e.g., "CREATE", "UPDATE", "DELETE", "STATUS_CHANGE"
+  previousValue String?  @db.Text  // JSON of previous state
+  newValue      String?  @db.Text  // JSON of new state
+  actor         String?  // Who made the change (userId, system, etc.)
+  actorType     String   @default("SYSTEM") // "USER", "SYSTEM", "API"
+  ipAddress     String?  // IP address of the actor
+  reason        String?  // Optional reason for the change
+  metadata      Json?    // Additional context
+  createdAt     DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([actor])
+}
+
+// ============================================================================
+// IDEMPOTENCY KEYS (M6)
+// ============================================================================
+
+model IdempotencyKey {
+  id           String   @id  // The idempotency key from request header (IS the primary key)
+  endpoint     String   // The endpoint this key was used for
+  requestHash  String   // Hash of the request body for verification
+  statusCode   Int?     // HTTP status code of the response
+  responseBody String?  @db.Text  // Cached response JSON
+  expiresAt    DateTime // When this key expires (24 hours)
+  createdAt    DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+// ============================================================================
+// RECONCILIATION (M6)
+// ============================================================================
+
+model PendingReconciliation {
+  id               String              @id @default(cuid())
+  txHash           String              @unique  // Solana transaction hash
+  settlementId     String?
+  paymentId        String?
+  expectedAmount   Float
+  recipientAddress String
+  status           ReconciliationStatus @default(PENDING)
+  attempts         Int                 @default(0)
+  maxAttempts      Int                 @default(10)
+  lastAttemptAt    DateTime?
+  nextAttemptAt    DateTime?
+  errorMessage     String?
+  createdAt        DateTime            @default(now())
+  resolvedAt       DateTime?
+
+  @@index([status])
+  @@index([txHash])
+  @@index([nextAttemptAt])
+}
+
+enum ReconciliationStatus {
+  PENDING    // Waiting to be verified
+  VERIFIED   // Transaction confirmed on-chain, DB updated
+  FAILED     // Transaction failed or not found
+  NOT_FOUND  // Transaction not found after max attempts
+  MANUAL     // Requires manual intervention
+}

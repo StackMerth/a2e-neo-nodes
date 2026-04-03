@@ -1139,4 +1139,108 @@ export const api = {
         }>
       }>('/v1/system/logs', { params }),
   },
+
+  // Audit & Reconciliation
+  audit: {
+    list: (params?: { entityType?: string; action?: string; limit?: number; offset?: number }) =>
+      apiFetch<{
+        logs: Array<{
+          id: string
+          entityType: string
+          entityId: string
+          action: string
+          previousValue: Record<string, unknown> | null
+          newValue: Record<string, unknown> | null
+          actor: string | null
+          actorType: string
+          reason: string | null
+          createdAt: string
+        }>
+        total: number
+        limit: number
+        offset: number
+      }>('/v1/audit', { params }),
+
+    getByEntity: (entityType: string, entityId: string, params?: { limit?: number }) =>
+      apiFetch<{
+        entityType: string
+        entityId: string
+        logs: Array<{
+          id: string
+          action: string
+          previousValue: Record<string, unknown> | null
+          newValue: Record<string, unknown> | null
+          actor: string | null
+          actorType: string
+          reason: string | null
+          createdAt: string
+        }>
+        total: number
+      }>(`/v1/audit/${entityType}/${entityId}`, { params }),
+  },
+
+  reconciliation: {
+    status: () =>
+      apiFetch<{
+        pending: number
+        verified: number
+        failed: number
+        notFound: number
+        manual: number
+        lastRunAt: string | null
+        totalProcessed: number
+      }>('/v1/reconciliation/status'),
+
+    run: () =>
+      apiFetch<{
+        message: string
+        result: {
+          processed: number
+          verified: number
+          failed: number
+          notFound: number
+        }
+        status: {
+          pending: number
+          verified: number
+          failed: number
+          notFound: number
+          manual: number
+        }
+      }>('/v1/reconciliation/run', { method: 'POST' }),
+
+    orphaned: (params?: { staleMinutes?: number }) =>
+      apiFetch<{
+        count: number
+        staleMinutes: number
+        payments: Array<{
+          id: string
+          settlementId: string
+          txHash: string | null
+          amount: number
+          recipientAddress: string
+          createdAt: string
+        }>
+      }>('/v1/reconciliation/orphaned', { params }),
+
+    pending: (params?: { status?: string; limit?: number }) =>
+      apiFetch<{
+        count: number
+        status: string
+        records: Array<{
+          id: string
+          txHash: string
+          settlementId: string | null
+          paymentId: string | null
+          expectedAmount: number
+          recipientAddress: string
+          status: string
+          attempts: number
+          lastAttemptAt: string | null
+          errorMessage: string | null
+          createdAt: string
+          resolvedAt: string | null
+        }>
+      }>('/v1/reconciliation/pending', { params }),
+  },
 }

@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import './types' // Type augmentations
 import { prismaPlugin, redisPlugin, authPlugin, corsPlugin } from './plugins'
+import errorHandlerPlugin from './plugins/error-handler'
 import {
   healthRoutes,
   nodeRoutes,
@@ -19,6 +20,7 @@ import {
   provisionRoutes,
   releasesRoutes,
   nodeRunnerRoutes,
+  auditRoutes,
 } from './routes'
 import { setupWebSocket } from './websocket'
 import {
@@ -46,6 +48,11 @@ import {
   createProvisionQueue,
   createProvisionWorker,
 } from './jobs/provision-processor'
+import {
+  createReconciliationQueue,
+  createReconciliationWorker,
+  scheduleReconciliation,
+} from './jobs/reconciliation-scheduler'
 
 const server = Fastify({
   logger: {
@@ -62,6 +69,9 @@ const server = Fastify({
 
 async function start() {
   try {
+    // Register error handler first for consistent error responses
+    await server.register(errorHandlerPlugin)
+
     await server.register(corsPlugin)
     await server.register(prismaPlugin)
     await server.register(redisPlugin)
@@ -86,6 +96,7 @@ async function start() {
     await server.register(provisionRoutes)
     await server.register(releasesRoutes)
     await server.register(nodeRunnerRoutes)
+    await server.register(auditRoutes)
 
     const redisConnection = server.redis as unknown as import('bullmq').ConnectionOptions
     const rateFetcherQueue = createRateFetcherQueue(redisConnection)
@@ -95,6 +106,7 @@ async function start() {
     const settlementRetryQueue = createSettlementRetryQueue(redisConnection)
 
     const provisionQueue = createProvisionQueue(redisConnection)
+    const reconciliationQueue = createReconciliationQueue(redisConnection)
 
     // Decorate server with queues for routes to access
     server.decorate('jobQueue', jobProcessorQueue)
@@ -129,12 +141,17 @@ async function start() {
       io: server.io,
     })
 
+    // Reconciliation worker
+    createReconciliationWorker(redisConnection, server.prisma)
+
     await scheduleRateFetcher(rateFetcherQueue)
+    await scheduleReconciliation(reconciliationQueue, 5) // Run every 5 minutes
     await scheduleNodeHealthChecker(nodeHealthQueue)
     await scheduleSettlementChecker(60) // Check every hour
     server.log.info('Job processor queue initialized')
     server.log.info('Settlement scheduler initialized (checks hourly when enabled)')
     server.log.info('Provision worker initialized')
+    server.log.info('Reconciliation scheduler initialized (runs every 5 minutes)')
 
     const port = parseInt(process.env.PORT ?? '3001', 10)
     const host = process.env.HOST ?? '0.0.0.0'
