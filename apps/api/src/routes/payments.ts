@@ -13,6 +13,9 @@ import {
   markSettlementCompleted,
   markSettlementFailed,
 } from '../services/settlement/engine'
+import { checkIdempotencyKey, storeIdempotencyResponse } from '../services/idempotency/keys'
+import { logPaymentChange, logSettlementChange } from '../services/audit/logger'
+import { createPendingReconciliation } from '../services/reconciliation/reconciler'
 
 export async function paymentsRoutes(fastify: FastifyInstance) {
   // GET /v1/payments/mode - Get current payment mode (dev/live)
@@ -43,6 +46,25 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const { settlementId } = request.params as { settlementId: string }
       const { currency = 'USDC' } = request.body as { currency?: 'SOL' | 'USDC' }
+
+      // Check idempotency key if provided
+      const idempotencyKey = request.headers['idempotency-key'] as string | undefined
+      if (idempotencyKey) {
+        const idempotencyResult = await checkIdempotencyKey(
+          fastify.prisma,
+          idempotencyKey,
+          `/v1/payments/process/${settlementId}`,
+          request.body
+        )
+
+        if (!idempotencyResult.isNew && idempotencyResult.cachedResponse) {
+          // Return cached response
+          return reply
+            .code(idempotencyResult.cachedResponse.statusCode)
+            .header('X-Idempotency-Replay', 'true')
+            .send(idempotencyResult.cachedResponse.body)
+        }
+      }
 
       // Get settlement
       const settlement = await fastify.prisma.settlement.findUnique({
@@ -77,8 +99,20 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
         })
       }
 
-      // Mark as processing
+      // Mark as processing with audit log
       await markSettlementProcessing(fastify.prisma, settlementId)
+      await logSettlementChange(
+        fastify.prisma,
+        settlementId,
+        'STATUS_CHANGED',
+        settlement.status,
+        'PROCESSING',
+        {
+          actor: request.headers['x-api-key'] as string,
+          actorType: 'API_KEY',
+          ipAddress: request.ip,
+        }
+      )
 
       // Create payment record
       const payment = await fastify.prisma.payment.create({
@@ -88,8 +122,15 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
           currency,
           recipientAddress: settlement.walletAddress,
           status: 'PROCESSING',
-          isDevMode: false, // Will be updated after processing
+          isDevMode: false,
         },
+      })
+
+      await logPaymentChange(fastify.prisma, payment.id, 'CREATED', null, 'PROCESSING', {
+        actor: request.headers['x-api-key'] as string,
+        actorType: 'API_KEY',
+        ipAddress: request.ip,
+        amount: Number(settlement.amount),
       })
 
       // Process payment
@@ -97,16 +138,32 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
       const result = await processPayment(
         config,
         settlement.walletAddress,
-        settlement.amount,
+        Number(settlement.amount),
         currency
       )
 
+      let responseBody: Record<string, unknown>
+      let statusCode: number
+
       if (result.success && result.txHash) {
+        // Create pending reconciliation record BEFORE updating DB (crash recovery)
+        if (!result.isDevMode) {
+          await createPendingReconciliation(
+            fastify.prisma,
+            result.txHash,
+            settlementId,
+            payment.id,
+            Number(settlement.amount),
+            settlement.walletAddress
+          )
+        }
+
         // Update payment record
+        const newStatus = result.isDevMode ? 'CONFIRMED' : 'SENT'
         await fastify.prisma.payment.update({
           where: { id: payment.id },
           data: {
-            status: result.isDevMode ? 'CONFIRMED' : 'SENT',
+            status: newStatus,
             txHash: result.txHash,
             isDevMode: result.isDevMode,
             processedAt: new Date(),
@@ -116,10 +173,29 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
           },
         })
 
+        await logPaymentChange(fastify.prisma, payment.id, 'PROCESSED', 'PROCESSING', newStatus, {
+          actorType: 'SYSTEM',
+          txHash: result.txHash,
+          amount: Number(settlement.amount),
+        })
+
         // Mark settlement as completed
         await markSettlementCompleted(fastify.prisma, settlementId, result.txHash)
+        await logSettlementChange(
+          fastify.prisma,
+          settlementId,
+          'COMPLETED',
+          'PROCESSING',
+          'COMPLETED',
+          {
+            actorType: 'SYSTEM',
+            txHash: result.txHash,
+            amount: Number(settlement.amount),
+          }
+        )
 
-        reply.send({
+        statusCode = 200
+        responseBody = {
           success: true,
           paymentId: payment.id,
           settlementId,
@@ -132,7 +208,7 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
           message: result.isDevMode
             ? 'DEV MODE: Payment simulated successfully - no real funds transferred'
             : 'Payment sent, awaiting confirmation',
-        })
+        }
       } else {
         // Payment failed
         const retryCount = payment.retryCount + 1
@@ -147,9 +223,25 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
           },
         })
 
+        await logPaymentChange(fastify.prisma, payment.id, 'FAILED', 'PROCESSING', 'FAILED', {
+          actorType: 'SYSTEM',
+          reason: result.error,
+        })
+
         // Mark settlement as failed if max retries exceeded
         if (retryCount >= payment.maxRetries) {
           await markSettlementFailed(fastify.prisma, settlementId, result.error ?? 'Payment failed')
+          await logSettlementChange(
+            fastify.prisma,
+            settlementId,
+            'FAILED',
+            'PROCESSING',
+            'FAILED',
+            {
+              actorType: 'SYSTEM',
+              reason: result.error ?? 'Max retries exceeded',
+            }
+          )
         } else {
           // Reset to pending for retry
           await fastify.prisma.settlement.update({
@@ -158,7 +250,8 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
           })
         }
 
-        reply.code(500).send({
+        statusCode = 500
+        responseBody = {
           success: false,
           paymentId: payment.id,
           settlementId,
@@ -166,8 +259,22 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
           retryCount,
           maxRetries: payment.maxRetries,
           canRetry: retryCount < payment.maxRetries,
-        })
+        }
       }
+
+      // Store idempotency response if key was provided
+      if (idempotencyKey) {
+        await storeIdempotencyResponse(
+          fastify.prisma,
+          idempotencyKey,
+          `/v1/payments/process/${settlementId}`,
+          request.body,
+          statusCode,
+          responseBody
+        )
+      }
+
+      return reply.code(statusCode).send(responseBody)
     }
   )
 
