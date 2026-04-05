@@ -319,7 +319,7 @@ export default function SettlementDetailPage() {
 
       {/* Jobs in Settlement */}
       <Card className="p-6">
-        <h3 className="font-semibold text-text-primary mb-4">Jobs Included ({settlement.jobs.length})</h3>
+        <h3 className="font-semibold text-text-primary mb-4">Jobs Included ({settlement.jobs?.length ?? 0})</h3>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -332,7 +332,7 @@ export default function SettlementDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {settlement.jobs.map((job) => (
+              {(settlement.jobs ?? []).map((job) => (
                 <tr key={job.id} className="border-b border-border/50 hover:bg-surface-hover/50">
                   <td className="py-2 px-3">
                     <Link href={`/jobs/${job.id}`} className="text-accent hover:underline font-mono text-sm">
