@@ -5,6 +5,8 @@ import type { JobReporter } from './reporter.js';
 import { ContainerExecutor, type ContainerStats } from '../docker/executor.js';
 import { ImageManager } from '../docker/image.js';
 import type { DockerConfig, SecurityConfig } from '../config.js';
+import { CheckpointManager, type JobCheckpoint } from '../recovery/checkpoint.js';
+import { ImageVerifier } from '../security/verification.js';
 import { jobLogger } from '../utils/logger.js';
 
 const log = jobLogger();
@@ -52,6 +54,8 @@ export class JobExecutor extends EventEmitter {
   private readonly reporter: JobReporter;
   private readonly containerExecutor: ContainerExecutor;
   private readonly imageManager: ImageManager;
+  private readonly imageVerifier: ImageVerifier;
+  private readonly checkpointManager: CheckpointManager;
   private readonly options: JobExecutorOptions;
   private activeJobs: Map<string, ActiveJob> = new Map();
   private running: boolean = false;
@@ -69,6 +73,8 @@ export class JobExecutor extends EventEmitter {
     this.reporter = reporter;
     this.containerExecutor = new ContainerExecutor(dockerConfig, securityConfig);
     this.imageManager = new ImageManager();
+    this.imageVerifier = new ImageVerifier({ allowUnknownRegistries: true });
+    this.checkpointManager = new CheckpointManager('/var/lib/a2e-agent/checkpoints');
     this.options = {
       maxConcurrentJobs: options.maxConcurrentJobs ?? 1,
       maxOutputLines: options.maxOutputLines ?? 1000,
@@ -129,6 +135,9 @@ export class JobExecutor extends EventEmitter {
 
     // Stop all active jobs
     await this.stopAllJobs();
+
+    // Clean up any remaining checkpoints
+    this.checkpointManager.cleanup();
   }
 
   /**
@@ -172,6 +181,17 @@ export class JobExecutor extends EventEmitter {
     try {
       // Report job started
       await this.reporter.reportStarted(job.id);
+
+      // Verify image before pulling
+      const verification = this.imageVerifier.verify(job.image);
+      if (!verification.allowed) {
+        log.error({ jobId: job.id, image: job.image, reason: verification.reason }, 'Image rejected by verifier');
+        throw new Error(`Image rejected: ${verification.reason}`);
+      }
+      if (verification.warnings.length > 0) {
+        log.warn({ jobId: job.id, warnings: verification.warnings }, 'Image verification warnings');
+      }
+
       activeJob.state = 'PULLING_IMAGE';
 
       // Pull image if needed
@@ -185,6 +205,21 @@ export class JobExecutor extends EventEmitter {
       // Execute container
       log.info({ jobId: job.id }, 'Starting container');
       activeJob.state = 'RUNNING';
+
+      // Start checkpointing for this job
+      this.checkpointManager.startCheckpointing(job.id, (): JobCheckpoint => ({
+        jobId: job.id,
+        containerId: activeJob.containerId ?? '',
+        timestamp: new Date().toISOString(),
+        progress: 0,
+        stage: activeJob.state,
+        outputLines: activeJob.output.length,
+        metrics: {
+          peakMemory: activeJob.lastStats?.memoryUsed,
+          avgCpu: activeJob.lastStats?.cpuPercent,
+          elapsedSeconds: Math.floor((Date.now() - activeJob.startTime.getTime()) / 1000),
+        },
+      }));
 
       const result = await this.containerExecutor.execute({
         job,
@@ -253,6 +288,7 @@ export class JobExecutor extends EventEmitter {
       this.emit('jobFailed', { job, error: errorMessage });
 
     } finally {
+      this.checkpointManager.stopCheckpointing(job.id);
       this.activeJobs.delete(job.id);
     }
   }

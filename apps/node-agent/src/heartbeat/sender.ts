@@ -1,6 +1,7 @@
 import type { Agent } from '../agent.js';
 import { getApiClient } from '../api/client.js';
 import type { HeartbeatRequest, NodeStatus, NodeCommand } from '../api/types.js';
+import { UpdateManager } from '../utils/updater.js';
 import { heartbeatLogger } from '../utils/logger.js';
 
 const log = heartbeatLogger();
@@ -10,15 +11,18 @@ const log = heartbeatLogger();
  */
 export class HeartbeatService {
   private readonly agent: Agent;
-  private readonly interval: number;
+  private readonly baseInterval: number;
+  private interval: number;
   private timer: NodeJS.Timeout | null = null;
   private running: boolean = false;
   private consecutiveFailures: number = 0;
   private readonly maxConsecutiveFailures: number = 5;
+  private readonly maxBackoffMultiplier: number = 8; // Max 8x the base interval
 
   constructor(agent: Agent, intervalSeconds: number) {
     this.agent = agent;
-    this.interval = intervalSeconds * 1000;
+    this.baseInterval = intervalSeconds * 1000;
+    this.interval = this.baseInterval;
   }
 
   /**
@@ -56,6 +60,20 @@ export class HeartbeatService {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
+    }
+  }
+
+  /**
+   * Reschedule the heartbeat timer with a new interval
+   */
+  private rescheduleWithInterval(newInterval: number): void {
+    this.interval = newInterval;
+
+    if (this.running && this.timer) {
+      clearInterval(this.timer);
+      this.timer = setInterval(() => {
+        void this.sendHeartbeat();
+      }, this.interval);
     }
   }
 
@@ -103,8 +121,11 @@ export class HeartbeatService {
 
       const response = await api.sendHeartbeat(request);
 
-      // Reset failure counter on success
-      this.consecutiveFailures = 0;
+      // Reset failure counter and restore base interval on success
+      if (this.consecutiveFailures > 0) {
+        this.consecutiveFailures = 0;
+        this.rescheduleWithInterval(this.baseInterval);
+      }
 
       // Handle any commands from server
       if (response.commands && response.commands.length > 0) {
@@ -114,10 +135,10 @@ export class HeartbeatService {
         }
       }
 
-      // Update config if server provides new values
+      // Apply config updates from server
       if (response.config) {
-        log.debug({ config: response.config }, 'Received config update from server');
-        // TODO: Apply config updates
+        log.info({ config: response.config }, 'Received config update from server');
+        this.applyConfigUpdate(response.config);
       }
 
       log.debug('Heartbeat sent successfully');
@@ -135,10 +156,23 @@ export class HeartbeatService {
 
       this.agent.emit('heartbeatFailed', error instanceof Error ? error : new Error(String(error)));
 
-      // If too many failures, increase interval temporarily
+      // Exponential backoff: double the interval on each failure, up to max
+      const backoffMultiplier = Math.min(
+        Math.pow(2, this.consecutiveFailures),
+        this.maxBackoffMultiplier
+      );
+      const newInterval = this.baseInterval * backoffMultiplier;
+
+      if (newInterval !== this.interval) {
+        log.warn(
+          { newIntervalMs: newInterval, failures: this.consecutiveFailures },
+          'Increasing heartbeat interval due to failures'
+        );
+        this.rescheduleWithInterval(newInterval);
+      }
+
       if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
-        log.error('Too many consecutive heartbeat failures');
-        // Don't stop, but the agent may want to handle this
+        log.error('Too many consecutive heartbeat failures, running at reduced frequency');
       }
     }
   }
@@ -155,6 +189,37 @@ export class HeartbeatService {
    */
   getFailureCount(): number {
     return this.consecutiveFailures;
+  }
+
+  /**
+   * Apply configuration updates received from the server
+   */
+  private applyConfigUpdate(config: Record<string, unknown>): void {
+    try {
+      // Update heartbeat interval if provided
+      if (typeof config.heartbeatInterval === 'number' && config.heartbeatInterval >= 10 && config.heartbeatInterval <= 300) {
+        const newInterval = config.heartbeatInterval * 1000;
+        if (newInterval !== this.interval) {
+          log.info({ oldInterval: this.interval / 1000, newInterval: config.heartbeatInterval }, 'Updating heartbeat interval');
+          this.rescheduleWithInterval(newInterval);
+        }
+      }
+
+      // Update sandbox profile if provided
+      if (typeof config.sandboxProfile === 'string') {
+        log.info({ profile: config.sandboxProfile }, 'Server requests sandbox profile change (applied on next job)');
+      }
+
+      // Log any unrecognized config keys for transparency
+      const knownKeys = new Set(['heartbeatInterval', 'sandboxProfile', 'jobPollInterval']);
+      for (const key of Object.keys(config)) {
+        if (!knownKeys.has(key)) {
+          log.debug({ key, value: config[key] }, 'Unhandled config update key');
+        }
+      }
+    } catch (err) {
+      log.warn({ error: (err as Error).message }, 'Failed to apply config update');
+    }
   }
 
   /**
@@ -190,11 +255,32 @@ export class HeartbeatService {
 
       case 'UPDATE':
         log.info('Received UPDATE command');
-        // TODO: Implement self-update logic
+        await this.performUpdate(command.payload as { updateUrl?: string } | undefined);
         break;
 
       default:
         log.warn({ command }, 'Unknown command type');
+    }
+  }
+
+  /**
+   * Perform a self-update: check, download, apply, and restart
+   */
+  private async performUpdate(payload?: { updateUrl?: string }): Promise<void> {
+    const updateUrl = payload?.updateUrl ?? 'https://a2e.byredstone.com/releases';
+    const updater = new UpdateManager('1.0.0', updateUrl);
+
+    const versionInfo = await updater.checkForUpdate();
+    if (!versionInfo) {
+      log.info('No update available');
+      return;
+    }
+
+    const applied = await updater.applyUpdate(versionInfo);
+    if (applied) {
+      log.info({ version: versionInfo.version }, 'Update applied, restarting');
+      this.stop();
+      updater.restartAfterUpdate();
     }
   }
 }

@@ -7,10 +7,18 @@ import { logger } from './utils/logger.js';
 /**
  * Configuration schema using Zod for validation
  */
+const TlsConfigSchema = z.object({
+  rejectUnauthorized: z.boolean().default(true),
+  caCertPath: z.string().nullable().default(null),
+  clientCertPath: z.string().nullable().default(null),
+  clientKeyPath: z.string().nullable().default(null),
+});
+
 const ServerConfigSchema = z.object({
   apiUrl: z.string().url('Invalid API URL'),
   apiKey: z.string().min(1, 'API key is required'),
   wsUrl: z.string().url('Invalid WebSocket URL').optional(),
+  tls: TlsConfigSchema.default({}),
 });
 
 const AgentConfigSchema = z.object({
@@ -80,6 +88,7 @@ const ConfigSchema = z.object({
 
 export type Config = z.infer<typeof ConfigSchema>;
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
+export type TlsConfig = z.infer<typeof TlsConfigSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 export type GpuConfig = z.infer<typeof GpuConfigSchema>;
 export type DockerConfig = z.infer<typeof DockerConfigSchema>;

@@ -6,8 +6,17 @@ import { getApiClient } from './api/client.js';
 import type { NodeSpecs, GpuMetrics, SystemMetrics } from './api/types.js';
 import { GpuDetector } from './gpu/detector.js';
 import { GpuMetricsCollector } from './gpu/metrics.js';
+import { GpuHealthMonitor } from './gpu/health.js';
 import { HeartbeatService } from './heartbeat/sender.js';
+import { HealthServer } from './health/server.js';
 import { StateManager } from './recovery/state.js';
+import { initDockerClient, type DockerClient } from './docker/client.js';
+import { JobRecoveryManager } from './recovery/job-recovery.js';
+import { ConnectionRecoveryManager } from './recovery/reconnect.js';
+import { JobReporter } from './jobs/reporter.js';
+import { JobQueue } from './jobs/queue.js';
+import { JobExecutor } from './jobs/executor.js';
+import { JobPoller } from './jobs/poller.js';
 import * as os from 'os';
 import * as fs from 'fs';
 
@@ -55,8 +64,16 @@ export class Agent extends EventEmitter {
   private nodeId: string | null = null;
   private gpuDetector: GpuDetector | null = null;
   private gpuMetrics: GpuMetricsCollector | null = null;
+  private gpuHealthMonitor: GpuHealthMonitor | null = null;
   private heartbeat: HeartbeatService | null = null;
+  private healthServer: HealthServer | null = null;
   private stateManager: StateManager | null = null;
+  private dockerClient: DockerClient | null = null;
+  private reporter: JobReporter | null = null;
+  private jobQueue: JobQueue | null = null;
+  private jobExecutor: JobExecutor | null = null;
+  private jobPoller: JobPoller | null = null;
+  private connectionRecovery: ConnectionRecoveryManager | null = null;
   private currentJobId: string | null = null;
   private startTime: number = 0;
 
@@ -84,6 +101,20 @@ export class Agent extends EventEmitter {
    */
   getCurrentJobId(): string | null {
     return this.currentJobId;
+  }
+
+  /**
+   * Get job queue size
+   */
+  getQueueSize(): number {
+    return this.jobQueue?.size() ?? 0;
+  }
+
+  /**
+   * Set current job ID (called by executor when a job starts)
+   */
+  setCurrentJobId(jobId: string | null): void {
+    this.currentJobId = jobId;
   }
 
   /**
@@ -135,6 +166,14 @@ export class Agent extends EventEmitter {
     // Initialize GPU metrics collector (pass config for mock mode support)
     this.gpuMetrics = new GpuMetricsCollector(this.config.gpu);
 
+    // Initialize Docker client (skip in mock GPU mode)
+    if (!this.config.gpu.mockGpu) {
+      this.dockerClient = await initDockerClient(this.config.docker);
+      log.info('Docker client initialized');
+    } else {
+      log.warn('Mock GPU mode — Docker client initialization skipped');
+    }
+
     log.info('Agent initialized');
   }
 
@@ -147,8 +186,10 @@ export class Agent extends EventEmitter {
 
     const api = getApiClient();
 
-    // Check if already registered
-    if (this.nodeId && this.config.agent.nodeId) {
+    // Check if already registered (from saved state or config)
+    const existingNodeId = this.nodeId || this.config.agent.nodeId;
+    if (existingNodeId) {
+      this.nodeId = existingNodeId;
       log.info({ nodeId: this.nodeId }, 'Using existing node ID');
       api.setNodeId(this.nodeId);
       return;
@@ -285,9 +326,149 @@ export class Agent extends EventEmitter {
       // Register with server
       await this.register();
 
+      // Start job reporter (retry queue for failed status reports)
+      this.reporter = new JobReporter(getApiClient());
+      this.reporter.start();
+      log.info('Job reporter started');
+
+      // Initialize job queue
+      this.jobQueue = new JobQueue(this.config.docker.maxConcurrentJobs * 2);
+      log.info('Job queue initialized');
+
+      // Run job recovery check (handle incomplete jobs from previous run)
+      if (!this.config.gpu.mockGpu && this.stateManager && this.reporter) {
+        const recoveryManager = new JobRecoveryManager(this.stateManager, this.reporter);
+        const recoveryResult = await recoveryManager.recover();
+        if (recoveryResult.incompleteJobFound) {
+          log.info(
+            { jobId: recoveryResult.jobId, action: recoveryResult.action },
+            'Recovery completed for incomplete job'
+          );
+        } else {
+          log.info('No incomplete jobs found during recovery');
+        }
+      }
+
+      // Start job executor (processes jobs from the queue)
+      if (this.jobQueue && this.reporter) {
+        this.jobExecutor = new JobExecutor(
+          this.jobQueue,
+          this.reporter,
+          this.config.docker,
+          this.config.security,
+        );
+
+        // Wire executor events to agent state transitions + state persistence
+        this.jobExecutor.on('jobStarted', (job: { id: string; image: string }) => {
+          this.setCurrentJobId(job.id);
+          this.setState('BUSY');
+          // Persist job state for crash recovery
+          if (this.stateManager) {
+            this.stateManager.setCurrentJob({
+              jobId: job.id,
+              containerId: '', // Updated when container is created
+              startedAt: new Date().toISOString(),
+              image: job.image,
+            });
+            void this.stateManager.save();
+          }
+          this.emit('jobStarted', job.id);
+          log.info({ jobId: job.id }, 'Job started — agent BUSY');
+        });
+
+        this.jobExecutor.on('containerCreated', ({ jobId, containerId }: { jobId: string; containerId: string }) => {
+          // Update state with actual container ID for recovery
+          if (this.stateManager) {
+            const currentJob = this.stateManager.getIncompleteJob();
+            if (currentJob && currentJob.jobId === jobId) {
+              this.stateManager.setCurrentJob({ ...currentJob, containerId });
+              void this.stateManager.save();
+            }
+          }
+        });
+
+        this.jobExecutor.on('jobCompleted', ({ job }: { job: { id: string } }) => {
+          this.setCurrentJobId(null);
+          if (this.stateManager) {
+            this.stateManager.clearCurrentJob();
+            void this.stateManager.save();
+          }
+          if (this.state !== 'STOPPING') {
+            this.setState('ONLINE');
+          }
+          this.emit('jobCompleted', job.id);
+          log.info({ jobId: job.id }, 'Job completed — agent ONLINE');
+        });
+
+        this.jobExecutor.on('jobFailed', ({ job }: { job: { id: string } }) => {
+          this.setCurrentJobId(null);
+          if (this.stateManager) {
+            this.stateManager.clearCurrentJob();
+            void this.stateManager.save();
+          }
+          if (this.state !== 'STOPPING') {
+            this.setState('ONLINE');
+          }
+          this.emit('jobFailed', job.id);
+          log.warn({ jobId: job.id }, 'Job failed — agent ONLINE');
+        });
+
+        this.jobExecutor.start();
+        log.info('Job executor started');
+      }
+
+      // Start job poller (polls server for assigned jobs)
+      if (this.nodeId && this.jobQueue) {
+        const gpuInfo = this.gpuDetector?.getGpuInfo();
+        this.jobPoller = new JobPoller(getApiClient(), this.jobQueue, {
+          pollIntervalMs: this.config.agent.jobPollInterval * 1000,
+          agentVersion: AGENT_VERSION,
+        });
+        this.jobPoller.start(this.nodeId, {
+          gpuTier: gpuInfo?.tier ?? 'OTHER',
+          gpuCount: gpuInfo?.count ?? 1,
+          availableVram: gpuInfo?.vram ?? 0,
+        });
+        log.info('Job poller started');
+      }
+
+      // Start connection recovery monitor
+      this.connectionRecovery = new ConnectionRecoveryManager(getApiClient(), {
+        maxRetries: this.config.recovery.maxReconnectAttempts,
+        initialDelayMs: this.config.recovery.reconnectDelay,
+      });
+      this.connectionRecovery.on('disconnected', () => {
+        log.warn('Connection to A²E server lost — queuing updates');
+      });
+      this.connectionRecovery.on('connected', () => {
+        log.info('Connection to A²E server restored');
+      });
+      this.connectionRecovery.on('maxRetriesReached', () => {
+        log.error('Max reconnection attempts reached');
+        this.setState('ERROR');
+      });
+      this.connectionRecovery.start();
+      log.info('Connection recovery monitor started');
+
+      // Start GPU health monitor
+      this.gpuHealthMonitor = new GpuHealthMonitor(30, this.config.gpu);
+      this.gpuHealthMonitor.on('issue', (issue: { type: string; severity: string; message: string }) => {
+        if (issue.severity === 'CRITICAL') {
+          log.error({ issue }, 'Critical GPU health issue detected');
+        } else {
+          log.warn({ issue }, 'GPU health warning');
+        }
+      });
+      this.gpuHealthMonitor.start();
+      log.info('GPU health monitor started');
+
       // Start heartbeat service
       this.heartbeat = new HeartbeatService(this, this.config.agent.heartbeatInterval);
       this.heartbeat.start();
+
+      // Start health check server
+      this.healthServer = new HealthServer(this);
+      this.healthServer.start();
 
       // Set state to online
       this.setState('ONLINE');
@@ -307,20 +488,67 @@ export class Agent extends EventEmitter {
     log.info('Stopping agent');
     this.setState('STOPPING');
 
-    // Stop heartbeat
+    // 1. Stop job poller first (no new jobs accepted)
+    if (this.jobPoller) {
+      this.jobPoller.stop();
+      log.info('Job poller stopped');
+    }
+
+    // 2. Wait for current job to complete, then stop executor
+    if (this.jobExecutor) {
+      if (this.currentJobId) {
+        const shutdownTimeout = 60000; // 60 seconds max wait
+        log.info({ jobId: this.currentJobId, timeoutMs: shutdownTimeout }, 'Waiting for current job to complete');
+
+        const waitStart = Date.now();
+        while (this.currentJobId && (Date.now() - waitStart) < shutdownTimeout) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        if (this.currentJobId) {
+          log.warn({ jobId: this.currentJobId }, 'Shutdown timeout reached, forcing job stop');
+        } else {
+          log.info('Current job completed before shutdown');
+        }
+      }
+      await this.jobExecutor.stop();
+      log.info('Job executor stopped');
+    }
+
+    // 3. Stop heartbeat
     if (this.heartbeat) {
       this.heartbeat.stop();
+      log.info('Heartbeat stopped');
     }
 
-    // Wait for current job to complete (with timeout)
-    if (this.currentJobId) {
-      log.info({ jobId: this.currentJobId }, 'Waiting for current job to complete');
-      // TODO: Implement job completion wait with timeout
+    // 4. Stop connection recovery monitor
+    if (this.connectionRecovery) {
+      this.connectionRecovery.stop();
+      log.info('Connection recovery monitor stopped');
     }
 
-    // Save state
+    // 5. Stop GPU health monitor
+    if (this.gpuHealthMonitor) {
+      this.gpuHealthMonitor.stop();
+      log.info('GPU health monitor stopped');
+    }
+
+    // 6. Stop job reporter (flush pending reports)
+    if (this.reporter) {
+      this.reporter.stop();
+      log.info('Job reporter stopped');
+    }
+
+    // 7. Stop health server
+    if (this.healthServer) {
+      await this.healthServer.stop();
+      log.info('Health server stopped');
+    }
+
+    // 8. Save final state
     if (this.stateManager) {
       await this.stateManager.save();
+      log.info('State saved');
     }
 
     log.info('Agent stopped');
@@ -416,6 +644,7 @@ echo "A2E Agent uninstalled successfully"
     uptime: number;
     currentJob: string | null;
     gpuTier: string | null;
+    dockerConnected: boolean;
   } {
     return {
       state: this.state,
@@ -423,6 +652,7 @@ echo "A2E Agent uninstalled successfully"
       uptime: this.getUptime(),
       currentJob: this.currentJobId,
       gpuTier: this.gpuDetector?.getGpuInfo()?.tier ?? null,
+      dockerConnected: this.dockerClient?.isConnected() ?? false,
     };
   }
 }

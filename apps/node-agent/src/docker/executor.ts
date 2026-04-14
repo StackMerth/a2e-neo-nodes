@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import { getDockerClient } from './client.js';
 import type { DockerConfig, SecurityConfig } from '../config.js';
 import type { Job } from '../api/types.js';
+import { ContainerSandbox } from '../security/sandbox.js';
 import { dockerLogger } from '../utils/logger.js';
 
 const log = dockerLogger();
@@ -51,13 +52,13 @@ export interface ContainerExecutionResult {
  */
 export class ContainerExecutor extends EventEmitter {
   private readonly dockerConfig: DockerConfig;
-  private readonly securityConfig: SecurityConfig;
+  private readonly sandbox: ContainerSandbox;
   private activeContainers: Map<string, Docker.Container> = new Map();
 
-  constructor(dockerConfig: DockerConfig, securityConfig: SecurityConfig) {
+  constructor(dockerConfig: DockerConfig, _securityConfig: SecurityConfig) {
     super();
     this.dockerConfig = dockerConfig;
-    this.securityConfig = securityConfig;
+    this.sandbox = new ContainerSandbox('standard');
   }
 
   /**
@@ -86,12 +87,11 @@ export class ContainerExecutor extends EventEmitter {
       }
     }
 
-    // Host config
-    const hostConfig: Docker.HostConfig = {
+    // Host config — base settings
+    let hostConfig: Docker.HostConfig = {
       Runtime: this.dockerConfig.gpuRuntime,
       AutoRemove: false, // We handle cleanup ourselves
       Binds: binds.length > 0 ? binds : undefined,
-      NetworkMode: 'bridge',
     };
 
     // Resource limits
@@ -105,31 +105,10 @@ export class ContainerExecutor extends EventEmitter {
       hostConfig.NanoCpus = job.resources.cpus * 1e9;
     }
 
-    // Security options
-    if (this.securityConfig.restrictCapabilities) {
-      hostConfig.CapDrop = ['ALL'];
-      hostConfig.CapAdd = ['SYS_PTRACE']; // Needed for some debuggers
-    }
+    // Apply sandbox security profile (capabilities, rootfs, tmpfs, ulimits, pids, network)
+    hostConfig = this.sandbox.applyToHostConfig(hostConfig);
 
-    if (this.securityConfig.readOnlyRootfs) {
-      hostConfig.ReadonlyRootfs = true;
-      // Add tmpfs for directories that need to be writable
-      hostConfig.Tmpfs = {
-        '/tmp': 'rw,noexec,nosuid,size=1g',
-        '/var/tmp': 'rw,noexec,nosuid,size=512m',
-      };
-    }
-
-    // PID limit to prevent fork bombs
-    hostConfig.PidsLimit = 4096;
-
-    // Ulimits
-    hostConfig.Ulimits = [
-      { Name: 'nofile', Soft: 65536, Hard: 65536 },
-      { Name: 'nproc', Soft: 4096, Hard: 4096 },
-    ];
-
-    const config: Docker.ContainerCreateOptions = {
+    let config: Docker.ContainerCreateOptions = {
       Image: job.image,
       Cmd: job.command,
       Entrypoint: job.entrypoint,
@@ -144,6 +123,15 @@ export class ContainerExecutor extends EventEmitter {
       AttachStderr: true,
       OpenStdin: false,
     };
+
+    // Apply sandbox user config (run as non-root if profile specifies)
+    config = this.sandbox.applyUserConfig(config);
+
+    // Validate the final config for security issues
+    const validation = this.sandbox.validateConfig(config);
+    if (!validation.valid) {
+      log.warn({ issues: validation.issues, jobId: job.id }, 'Container config has security issues');
+    }
 
     return config;
   }

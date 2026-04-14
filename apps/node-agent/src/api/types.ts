@@ -124,6 +124,7 @@ export interface JobPollRequest {
     gpuCount: number;
     availableVram: number;
   };
+  agentVersion: string;
 }
 
 /**
