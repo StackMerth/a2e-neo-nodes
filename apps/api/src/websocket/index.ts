@@ -3,6 +3,7 @@
 
 import type { FastifyInstance } from 'fastify'
 import { Server as SocketServer, Socket } from 'socket.io'
+import { verifyAccessToken } from '../services/auth/jwt.js'
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -50,6 +51,32 @@ export interface A2EEvents {
     ratePerDay: number
     timestamp: string
   }
+  'job:completed': {
+    jobId: string
+    nodeId: string
+    earnings: number | null
+    durationSeconds: number | null
+    timestamp: string
+  }
+  'job:failed': {
+    jobId: string
+    nodeId: string
+    error: string | null
+    timestamp: string
+  }
+  'node:statusChange': {
+    nodeId: string
+    oldStatus: string
+    newStatus: string
+    timestamp: string
+  }
+  'notification:new': {
+    userId: string
+    id: string
+    type: string
+    title: string
+    message: string
+  }
 }
 
 export function setupWebSocket(fastify: FastifyInstance): SocketServer {
@@ -60,6 +87,7 @@ export function setupWebSocket(fastify: FastifyInstance): SocketServer {
       origin: process.env.CORS_ORIGINS?.split(',') ?? [
         'http://localhost:3000',
         'http://localhost:3001',
+        'http://localhost:3002',
         'https://a2e.byredstone.com',
         'https://compute.tokenos.ai',
       ],
@@ -68,15 +96,26 @@ export function setupWebSocket(fastify: FastifyInstance): SocketServer {
     path: '/socket.io',
   })
 
-  // Authentication middleware
+  // Authentication middleware — supports API key or JWT Bearer token
   io.use((socket: Socket, next) => {
+    // Try API key first (dashboard)
     const apiKey = socket.handshake.auth?.apiKey ?? socket.handshake.headers['x-api-key']
-
-    if (!apiKey || apiKey !== validApiKey) {
-      return next(new Error('Authentication failed: Invalid API key'))
+    if (apiKey && apiKey === validApiKey) {
+      return next()
     }
 
-    next()
+    // Try JWT token (portal)
+    const token = socket.handshake.auth?.token
+    if (token) {
+      try {
+        verifyAccessToken(token)
+        return next()
+      } catch {
+        return next(new Error('Authentication failed: Invalid token'))
+      }
+    }
+
+    return next(new Error('Authentication failed: No credentials provided'))
   })
 
   io.on('connection', (socket: Socket) => {

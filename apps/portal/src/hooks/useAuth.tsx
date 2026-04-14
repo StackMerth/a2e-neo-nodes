@@ -1,0 +1,88 @@
+'use client'
+
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
+import { auth as authApi, setTokens, clearTokens } from '@/lib/api'
+
+interface User {
+  id: string
+  email: string | null
+  walletAddress: string | null
+  role: string
+  nodeRunnerId: string | null
+}
+
+interface AuthContextType {
+  user: User | null
+  loading: boolean
+  login: (email: string, password: string) => Promise<void>
+  register: (email: string, password: string) => Promise<void>
+  walletLogin: (address: string, signature: string, nonce: string) => Promise<void>
+  logout: () => Promise<void>
+}
+
+const AuthContext = createContext<AuthContextType | null>(null)
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const loadUser = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('a2e_access_token')
+      if (!token) {
+        setLoading(false)
+        return
+      }
+      const data = await authApi.me()
+      setUser(data as User)
+    } catch {
+      clearTokens()
+      setUser(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadUser()
+  }, [loadUser])
+
+  const login = async (email: string, password: string) => {
+    const data = await authApi.login(email, password)
+    setTokens(data.accessToken, data.refreshToken)
+    setUser(data.user as User)
+  }
+
+  const register = async (email: string, password: string) => {
+    const data = await authApi.register(email, password)
+    setTokens(data.accessToken, data.refreshToken)
+    setUser(data.user as User)
+  }
+
+  const walletLogin = async (address: string, signature: string, nonce: string) => {
+    const data = await authApi.walletAuth(address, signature, nonce)
+    setTokens(data.accessToken, data.refreshToken)
+    setUser(data.user as User)
+  }
+
+  const logout = async () => {
+    const refreshToken = localStorage.getItem('a2e_refresh_token')
+    if (refreshToken) {
+      try { await authApi.logout(refreshToken) } catch { /* ignore */ }
+    }
+    clearTokens()
+    setUser(null)
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, register, walletLogin, logout }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
+  return ctx
+}

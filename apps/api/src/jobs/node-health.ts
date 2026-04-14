@@ -1,6 +1,7 @@
 import { Queue, Worker, Job, type ConnectionOptions } from 'bullmq'
 import type { PrismaClient, NodeStatus } from '@a2e/database'
 import type { Server as SocketServer } from 'socket.io'
+import { notifyNodeOffline } from '../services/notification/service.js'
 
 const QUEUE_NAME = 'node-health'
 const DEGRADED_THRESHOLD_MS = 60_000 // 60 seconds
@@ -64,12 +65,21 @@ export function createNodeHealthWorker(deps: NodeHealthDeps): Worker {
         }
 
         if (newStatus) {
+          const oldStatus = node.status
           await prisma.node.update({
             where: { id: node.id },
             data: {
               status: newStatus,
               missedBeats: { increment: 1 },
             },
+          })
+
+          // Emit status change event for real-time dashboard updates
+          io?.emit('node:statusChange', {
+            nodeId: node.id,
+            oldStatus,
+            newStatus,
+            timestamp: now.toISOString(),
           })
 
           if (newStatus === 'OFFLINE') {
@@ -79,6 +89,8 @@ export function createNodeHealthWorker(deps: NodeHealthDeps): Worker {
               reason: 'heartbeat_timeout',
               timestamp: now.toISOString(),
             })
+            // Notify node runner via in-app notification
+            void notifyNodeOffline(node.id, node.walletAddress)
           }
         }
       }
