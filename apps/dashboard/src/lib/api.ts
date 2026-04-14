@@ -1179,6 +1179,90 @@ export const api = {
       }>(`/v1/audit/${entityType}/${entityId}`, { params }),
   },
 
+  // Deployments
+  deployments: {
+    list: (status?: string) =>
+      apiFetch<{
+        deployments: Array<{
+          id: string
+          nodeRunnerName: string
+          walletAddress: string
+          gpuTier: string
+          nodeCount: number
+          amount: number
+          currency: string
+          txHash: string | null
+          status: string
+          provisionId: string | null
+          nodeId: string | null
+          createdAt: string
+          updatedAt: string
+        }>
+        total: number
+      }>(`/v1/admin/deployments${status ? `?status=${status}` : ''}`),
+
+    get: (id: string) =>
+      apiFetch<{
+        id: string
+        nodeRunnerName: string
+        walletAddress: string
+        gpuTier: string
+        nodeCount: number
+        amount: number
+        currency: string
+        txHash: string | null
+        status: string
+        provisionId: string | null
+        nodeId: string | null
+        sshHost: string | null
+        sshPort: number | null
+        sshUsername: string | null
+        cancelReason: string | null
+        createdAt: string
+        updatedAt: string
+      }>(`/v1/admin/deployments/${id}`),
+
+    submitSsh: (id: string, data: {
+      host: string
+      port: number
+      username: string
+      authMethod: string
+      password?: string
+      privateKey?: string
+      testMode?: boolean
+    }) =>
+      apiFetch<{
+        id: string
+        status: string
+        provisionId: string
+        message: string
+      }>(`/v1/admin/deployments/${id}/ssh`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+
+    cancel: (id: string, reason?: string) =>
+      apiFetch<{
+        id: string
+        status: string
+        message: string
+      }>(`/v1/admin/deployments/${id}/cancel`, {
+        method: 'PATCH',
+        body: JSON.stringify({ reason }),
+      }),
+
+    complete: (id: string, nodeId: string) =>
+      apiFetch<{
+        id: string
+        status: string
+        nodeId: string
+        message: string
+      }>(`/v1/admin/deployments/${id}/complete`, {
+        method: 'POST',
+        body: JSON.stringify({ nodeId }),
+      }),
+  },
+
   reconciliation: {
     status: () =>
       apiFetch<{

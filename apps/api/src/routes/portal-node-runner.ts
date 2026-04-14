@@ -4,6 +4,7 @@ import {
   calculateUptimeEarnings,
   getDailyUptimeBreakdown,
 } from '../services/earnings/uptime-calculator.js'
+import { createNotification } from '../services/notification/service.js'
 
 /**
  * Helper: get the NodeRunner profile for the authenticated user, or 404
@@ -498,5 +499,133 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     })
 
     reply.send({ investments })
+  })
+
+  // ===================================================================
+  // DEPLOYMENT REQUESTS
+  // ===================================================================
+
+  const GPU_PRICING: Record<string, number> = {
+    H100: 2500, H200: 3125, B200: 5250, B300: 7500, GB300: 9000,
+  }
+
+  const deploySchema = z.object({
+    gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300']),
+    nodeCount: z.number().int().min(1).max(5).default(1),
+    txHash: z.string().min(1, 'Transaction hash is required'),
+    cryptoAmount: z.number().positive().optional(),
+    cryptoCurrency: z.string().default('SOL'),
+    deploymentNote: z.string().max(500).optional(),
+  })
+
+  /**
+   * POST /v1/portal/node-runner/deploy — Request a new node deployment
+   */
+  fastify.post('/v1/portal/node-runner/deploy', async (request, reply) => {
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found. Complete onboarding first.' })
+
+    const parsed = deploySchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
+    }
+
+    const { gpuTier, nodeCount, txHash, cryptoAmount, cryptoCurrency, deploymentNote } = parsed.data
+    const unitPrice = GPU_PRICING[gpuTier] ?? 2500
+    const totalAmount = unitPrice * nodeCount
+
+    const investment = await fastify.prisma.investment.create({
+      data: {
+        nodeRunnerId: nr.id,
+        amount: totalAmount,
+        currency: 'USD',
+        nodeCount,
+        gpuTier: gpuTier as import('@a2e/database').GpuTier,
+        txHash,
+        txConfirmed: true,
+        cryptoAmount,
+        cryptoCurrency,
+        deploymentNote,
+        status: 'DEPLOYMENT_REQUESTED',
+        confirmedAt: new Date(),
+        deploymentRequestedAt: new Date(),
+      },
+    })
+
+    // Notify all admin users about the new deployment request
+    const adminUsers = await fastify.prisma.user.findMany({
+      where: { role: 'ADMIN' },
+      select: { id: true },
+    })
+    for (const admin of adminUsers) {
+      void createNotification(
+        admin.id,
+        'DEPLOYMENT_REQUESTED',
+        'New Deployment Request',
+        `${nr.name} requested ${nodeCount}x ${gpuTier} node deployment ($${totalAmount}).`,
+      )
+    }
+
+    reply.code(201).send({
+      id: investment.id,
+      gpuTier: investment.gpuTier,
+      nodeCount: investment.nodeCount,
+      amount: investment.amount,
+      status: investment.status,
+      txHash: investment.txHash,
+      createdAt: investment.createdAt.toISOString(),
+    })
+  })
+
+  /**
+   * GET /v1/portal/node-runner/deployments — List deployment requests
+   */
+  fastify.get('/v1/portal/node-runner/deployments', async (request, reply) => {
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+    const deployments = await fastify.prisma.investment.findMany({
+      where: {
+        nodeRunnerId: nr.id,
+        status: { in: ['DEPLOYMENT_REQUESTED', 'DEPLOYING', 'PROVISIONED'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    reply.send({ deployments })
+  })
+
+  /**
+   * GET /v1/portal/node-runner/deployments/:id — Deployment detail
+   */
+  fastify.get('/v1/portal/node-runner/deployments/:id', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+    const deployment = await fastify.prisma.investment.findFirst({
+      where: { id, nodeRunnerId: nr.id },
+    })
+    if (!deployment) return reply.code(404).send({ error: 'Deployment not found' })
+
+    // If provisioning is in progress, get the ProvisionJob status
+    let provisionStatus = null
+    if (deployment.provisionJobId) {
+      provisionStatus = await fastify.prisma.provisionJob.findUnique({
+        where: { id: deployment.provisionJobId },
+        select: { status: true, currentStep: true, totalSteps: true, currentAction: true, error: true },
+      })
+    }
+
+    // If provisioned, get the node details
+    let node = null
+    if (deployment.nodeId) {
+      node = await fastify.prisma.node.findUnique({
+        where: { id: deployment.nodeId },
+        select: { id: true, status: true, gpuTier: true, lastHeartbeat: true, agentVersion: true },
+      })
+    }
+
+    reply.send({ deployment, provisionStatus, node })
   })
 }

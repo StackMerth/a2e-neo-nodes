@@ -77,6 +77,13 @@ export interface A2EEvents {
     title: string
     message: string
   }
+  'deployment:statusChange': {
+    investmentId: string
+    oldStatus: string
+    newStatus: string
+    nodeRunnerId: string
+    timestamp: string
+  }
 }
 
 export function setupWebSocket(fastify: FastifyInstance): SocketServer {
