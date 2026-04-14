@@ -9,6 +9,7 @@ import {
   markSettlementCompleted,
   markSettlementFailed,
 } from '../services/settlement/engine'
+import { notifyPayoutSent } from '../services/notification/service.js'
 
 const updateConfigSchema = z.object({
   period: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']).optional(),
@@ -311,6 +312,17 @@ export async function settlementsRoutes(fastify: FastifyInstance) {
       }
 
       await markSettlementCompleted(fastify.prisma, id, txHash)
+
+      // Notify node runner about the payout
+      if (settlement.nodeId) {
+        const node = await fastify.prisma.node.findUnique({
+          where: { id: settlement.nodeId },
+          select: { nodeRunnerId: true },
+        })
+        if (node?.nodeRunnerId) {
+          void notifyPayoutSent(node.nodeRunnerId, settlement.amount, txHash)
+        }
+      }
 
       reply.send({
         message: 'Settlement marked as completed',

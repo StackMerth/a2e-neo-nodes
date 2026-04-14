@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { JobStatus, NodeStatus } from '@a2e/database'
 import { recordJobEarnings } from '../services/earnings/calculator'
+import { notifyJobCompleted, notifyJobFailed } from '../services/notification/service.js'
 
 /**
  * Agent Communication Endpoints
@@ -508,6 +509,9 @@ export async function agentRoutes(fastify: FastifyInstance) {
         timestamp: new Date().toISOString(),
       })
 
+      // Notify node runner
+      void notifyJobCompleted(nodeId, updatedJob.id, earnings)
+
       reply.send({
         id: updatedJob.id,
         status: updatedJob.status,
@@ -592,6 +596,11 @@ export async function agentRoutes(fastify: FastifyInstance) {
         retryCount: updatedJob.retryCount,
         timestamp: new Date().toISOString(),
       })
+
+      // Notify node runner (only on final failure, not retries)
+      if (!shouldRetry) {
+        void notifyJobFailed(nodeId, updatedJob.id, errorMessage)
+      }
 
       reply.send({
         id: updatedJob.id,

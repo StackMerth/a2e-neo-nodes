@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { GpuTier, InvestmentStatus } from '@a2e/database'
 import { calculateUptimeEarnings, getDailyUptimeBreakdown, getGpuTierRate } from '../services/earnings/uptime-calculator'
+import { notifyInvestmentConfirmed, notifyInvestmentProvisioned } from '../services/notification/service.js'
 
 // Schemas
 const createNodeRunnerSchema = z.object({
@@ -540,6 +541,9 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
         },
       })
 
+      // Send notification to node runner
+      void notifyInvestmentConfirmed(id)
+
       reply.send({
         id: updated.id,
         status: updated.status,
@@ -605,6 +609,9 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
           },
         }),
       ])
+
+      // Send notification to node runner
+      void notifyInvestmentProvisioned(id)
 
       reply.send({
         investmentId: id,

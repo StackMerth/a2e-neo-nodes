@@ -21,8 +21,12 @@ import {
   releasesRoutes,
   nodeRunnerRoutes,
   auditRoutes,
+  portalAuthRoutes,
+  portalNodeRunnerRoutes,
+  portalNotificationRoutes,
 } from './routes'
 import { setupWebSocket } from './websocket'
+import { setNotificationSocket } from './services/notification/service.js'
 import {
   createRateFetcherQueue,
   createRateFetcherWorker,
@@ -77,7 +81,8 @@ async function start() {
     await server.register(redisPlugin)
     await server.register(authPlugin)
 
-    setupWebSocket(server)
+    const socketServer = setupWebSocket(server)
+    setNotificationSocket(socketServer)
 
     await server.register(healthRoutes)
     await server.register(authRoutes)
@@ -97,6 +102,9 @@ async function start() {
     await server.register(releasesRoutes)
     await server.register(nodeRunnerRoutes)
     await server.register(auditRoutes)
+    await server.register(portalAuthRoutes)
+    await server.register(portalNodeRunnerRoutes)
+    await server.register(portalNotificationRoutes)
 
     const redisConnection = server.redis as unknown as import('bullmq').ConnectionOptions
     const rateFetcherQueue = createRateFetcherQueue(redisConnection)

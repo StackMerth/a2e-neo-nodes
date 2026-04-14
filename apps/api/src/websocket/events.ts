@@ -38,3 +38,31 @@ export function emitRateUpdated(
 ): void {
   fastify.io?.emit('rate:updated', data)
 }
+
+export function emitJobCompleted(
+  fastify: FastifyInstance,
+  data: A2EEvents['job:completed']
+): void {
+  fastify.io?.emit('job:completed', data)
+}
+
+export function emitJobFailed(
+  fastify: FastifyInstance,
+  data: A2EEvents['job:failed']
+): void {
+  fastify.io?.emit('job:failed', data)
+}
+
+export function emitNodeStatusChange(
+  fastify: FastifyInstance,
+  data: A2EEvents['node:statusChange']
+): void {
+  fastify.io?.emit('node:statusChange', data)
+}
+
+export function emitNotificationNew(
+  fastify: FastifyInstance,
+  data: A2EEvents['notification:new']
+): void {
+  fastify.io?.emit('notification:new', data)
+}
