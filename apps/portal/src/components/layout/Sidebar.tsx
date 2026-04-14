@@ -5,7 +5,9 @@ import { usePathname } from 'next/navigation'
 
 const sidebarLinks = [
   { href: '/dashboard', label: 'Dashboard', icon: '\u{1F4CA}' },
+  { href: '/deploy', label: 'Deploy', icon: '\u{1F680}' },
   { href: '/nodes', label: 'Nodes', icon: '\u{1F5A5}\u{FE0F}' },
+  { href: '/deployments', label: 'Deployments', icon: '\u{1F4E6}' },
   { href: '/earnings', label: 'Earnings', icon: '\u{1F4B0}' },
   { href: '/payouts', label: 'Payouts', icon: '\u{1F4B8}' },
   { href: '/jobs', label: 'Jobs', icon: '\u{26A1}' },

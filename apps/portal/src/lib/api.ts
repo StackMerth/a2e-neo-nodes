@@ -133,6 +133,10 @@ export const nodeRunner = {
   },
   job: (id: string) => apiFetch(`/v1/portal/node-runner/jobs/${id}`),
   investments: () => apiFetch('/v1/portal/node-runner/investments'),
+  deploy: (data: { gpuTier: string; nodeCount: number; txHash: string; cryptoAmount?: number; cryptoCurrency?: string; deploymentNote?: string }) =>
+    apiFetch('/v1/portal/node-runner/deploy', { method: 'POST', body: data }),
+  deployments: () => apiFetch('/v1/portal/node-runner/deployments'),
+  deployment: (id: string) => apiFetch(`/v1/portal/node-runner/deployments/${id}`),
 }
 
 // Notifications API

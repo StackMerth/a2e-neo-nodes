@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { nodeRunner } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -188,12 +189,14 @@ export default function DashboardPage() {
               </svg>
               Resume All Nodes
             </Button>
-            <Button variant="secondary" className="w-full justify-start gap-3">
-              <svg className="w-4 h-4 text-info" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              Add New Node
-            </Button>
+            <Link href="/deploy" className="w-full">
+              <Button variant="secondary" className="w-full justify-start gap-3">
+                <svg className="w-4 h-4 text-info" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Deploy New Node
+              </Button>
+            </Link>
           </div>
         </Card>
       </div>
