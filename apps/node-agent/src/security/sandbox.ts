@@ -6,6 +6,17 @@ const log = securityLogger();
 /**
  * Sandbox Profile
  */
+/**
+ * Network policy for fine-grained container network control
+ */
+export interface NetworkPolicy {
+  allowDns: boolean;
+  allowedCidrs: string[];   // Allowed outbound CIDR ranges
+  blockedCidrs: string[];   // Blocked outbound CIDR ranges
+  allowedPorts: number[];   // Allowed outbound ports (empty = all)
+  blockedPorts: number[];   // Blocked outbound ports
+}
+
 export interface SandboxProfile {
   name: string;
   dropCapabilities: string[];
@@ -15,7 +26,9 @@ export interface SandboxProfile {
   noNewPrivileges: boolean;
   runAsUser?: number;
   runAsGroup?: number;
+  usernsMode?: string; // 'host' or empty for remapping
   networkMode: 'bridge' | 'none' | 'host';
+  networkPolicy?: NetworkPolicy;
   tmpfsMounts: Record<string, string>;
   ulimits: Array<{ name: string; soft: number; hard: number }>;
   pidsLimit: number;
@@ -36,7 +49,15 @@ export const SANDBOX_PROFILES: Record<string, SandboxProfile> = {
     noNewPrivileges: true,
     runAsUser: 1000,
     runAsGroup: 1000,
+    usernsMode: '', // Enable user namespace remapping
     networkMode: 'none',
+    networkPolicy: {
+      allowDns: false,
+      allowedCidrs: [],
+      blockedCidrs: ['0.0.0.0/0'], // Block all outbound
+      allowedPorts: [],
+      blockedPorts: [],
+    },
     tmpfsMounts: {
       '/tmp': 'rw,noexec,nosuid,size=1g',
       '/var/tmp': 'rw,noexec,nosuid,size=512m',
@@ -57,7 +78,20 @@ export const SANDBOX_PROFILES: Record<string, SandboxProfile> = {
     addCapabilities: ['SYS_PTRACE'], // Needed for some debuggers/profilers
     readOnlyRootfs: true,
     noNewPrivileges: true,
+    usernsMode: '', // Enable user namespace remapping
     networkMode: 'bridge',
+    networkPolicy: {
+      allowDns: true,
+      allowedCidrs: [],             // Empty = allow all (rely on blockedCidrs)
+      blockedCidrs: [
+        '169.254.169.254/32',       // Block cloud metadata endpoint
+        '10.0.0.0/8',               // Block internal network access
+        '172.16.0.0/12',            // Block internal network access
+        '192.168.0.0/16',           // Block internal network access
+      ],
+      allowedPorts: [80, 443, 8080, 8443], // HTTP/HTTPS only
+      blockedPorts: [22, 25, 3306, 5432, 6379, 27017], // Block SSH, SMTP, DB ports
+    },
     tmpfsMounts: {
       '/tmp': 'rw,noexec,nosuid,size=2g',
       '/var/tmp': 'rw,noexec,nosuid,size=1g',
@@ -88,7 +122,17 @@ export const SANDBOX_PROFILES: Record<string, SandboxProfile> = {
     addCapabilities: ['SYS_PTRACE'],
     readOnlyRootfs: false,
     noNewPrivileges: true,
+    usernsMode: 'host', // Share host user namespace (trusted workloads)
     networkMode: 'bridge',
+    networkPolicy: {
+      allowDns: true,
+      allowedCidrs: [],             // No restrictions
+      blockedCidrs: [
+        '169.254.169.254/32',       // Still block cloud metadata
+      ],
+      allowedPorts: [],             // All ports allowed
+      blockedPorts: [],
+    },
     tmpfsMounts: {},
     ulimits: [
       { name: 'nofile', soft: 65536, hard: 65536 },
@@ -166,6 +210,11 @@ export class ContainerSandbox {
       hostConfig.PidsLimit = this.profile.pidsLimit;
     }
 
+    // User namespace mode
+    if (this.profile.usernsMode !== undefined) {
+      hostConfig.UsernsMode = this.profile.usernsMode;
+    }
+
     // Network mode
     if (this.profile.networkMode !== 'bridge') {
       hostConfig.NetworkMode = this.profile.networkMode;
@@ -201,6 +250,71 @@ export class ContainerSandbox {
   }
 
   /**
+   * Get network policy for the current profile
+   */
+  getNetworkPolicy(): NetworkPolicy | undefined {
+    return this.profile.networkPolicy;
+  }
+
+  /**
+   * Generate iptables rules for the container's network policy.
+   * These should be applied to the container's network namespace after creation.
+   */
+  generateNetworkRules(containerId: string): string[] {
+    const policy = this.profile.networkPolicy;
+    if (!policy || this.profile.networkMode === 'none') {
+      return []; // No network = no rules needed
+    }
+
+    const rules: string[] = [];
+    const chain = `A2E-${containerId.substring(0, 12)}`;
+
+    // Create a custom chain
+    rules.push(`iptables -N ${chain} 2>/dev/null || true`);
+
+    // Allow established connections
+    rules.push(`iptables -A ${chain} -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT`);
+
+    // Allow loopback
+    rules.push(`iptables -A ${chain} -o lo -j ACCEPT`);
+
+    // Allow DNS if permitted
+    if (policy.allowDns) {
+      rules.push(`iptables -A ${chain} -p udp --dport 53 -j ACCEPT`);
+      rules.push(`iptables -A ${chain} -p tcp --dport 53 -j ACCEPT`);
+    }
+
+    // Block specific CIDRs
+    for (const cidr of policy.blockedCidrs) {
+      rules.push(`iptables -A ${chain} -d ${cidr} -j DROP`);
+    }
+
+    // Allow specific CIDRs (if specified, only these are allowed)
+    if (policy.allowedCidrs.length > 0) {
+      for (const cidr of policy.allowedCidrs) {
+        rules.push(`iptables -A ${chain} -d ${cidr} -j ACCEPT`);
+      }
+      rules.push(`iptables -A ${chain} -j DROP`); // Drop everything else
+    }
+
+    // Block specific ports
+    for (const port of policy.blockedPorts) {
+      rules.push(`iptables -A ${chain} -p tcp --dport ${port} -j DROP`);
+      rules.push(`iptables -A ${chain} -p udp --dport ${port} -j DROP`);
+    }
+
+    // Allow only specific ports (if specified)
+    if (policy.allowedPorts.length > 0) {
+      for (const port of policy.allowedPorts) {
+        rules.push(`iptables -A ${chain} -p tcp --dport ${port} -j ACCEPT`);
+      }
+      rules.push(`iptables -A ${chain} -p tcp -j DROP`); // Drop non-allowed TCP
+    }
+
+    return rules;
+  }
+
+  /**
    * Validate container configuration against security requirements
    */
   validateConfig(config: Docker.ContainerCreateOptions): { valid: boolean; issues: string[] } {
@@ -228,6 +342,11 @@ export class ContainerSandbox {
     // Check for host PID namespace
     if (config.HostConfig?.PidMode === 'host') {
       issues.push('Container is using host PID namespace');
+    }
+
+    // Check for host user namespace (less isolation)
+    if (config.HostConfig?.UsernsMode === 'host' && this.profile.usernsMode !== 'host') {
+      issues.push('Container is using host user namespace, reducing isolation');
     }
 
     // Check for dangerous mounts

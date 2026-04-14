@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import type { ServerConfig } from '../config.js';
 import { apiLogger } from '../utils/logger.js';
 import type {
@@ -66,6 +67,32 @@ export class ApiClient {
     this.apiKey = config.apiKey;
     this.timeout = 30000; // 30 seconds default
     this.retryConfig = { ...DEFAULT_RETRY_CONFIG, ...retryConfig };
+
+    // Configure TLS via Node.js environment variables
+    // This approach works with both native fetch and any HTTP library
+    if (config.tls) {
+      if (!config.tls.rejectUnauthorized) {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+        log.warn('TLS certificate validation disabled (rejectUnauthorized=false)');
+      }
+
+      if (config.tls.caCertPath) {
+        if (fs.existsSync(config.tls.caCertPath)) {
+          process.env.NODE_EXTRA_CA_CERTS = config.tls.caCertPath;
+          log.info({ path: config.tls.caCertPath }, 'Loaded custom CA certificate');
+        } else {
+          log.warn({ path: config.tls.caCertPath }, 'CA certificate file not found');
+        }
+      }
+
+      if (config.tls.clientCertPath && config.tls.clientKeyPath) {
+        if (fs.existsSync(config.tls.clientCertPath) && fs.existsSync(config.tls.clientKeyPath)) {
+          log.info('Client certificate and key configured for mTLS');
+        } else {
+          log.warn('Client certificate or key file not found');
+        }
+      }
+    }
   }
 
   /**
@@ -131,12 +158,15 @@ export class ApiClient {
 
         log.debug({ method, url, attempt }, 'Making API request');
 
-        const response = await fetch(url, {
+        // Build fetch options
+        const fetchOptions: RequestInit = {
           method,
           headers,
           body: body ? JSON.stringify(body) : undefined,
           signal: controller.signal,
-        });
+        };
+
+        const response = await fetch(url, fetchOptions);
 
         clearTimeout(timeoutId);
 

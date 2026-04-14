@@ -22,6 +22,7 @@ export interface JobPollerOptions {
   pollIntervalMs: number;
   maxConcurrentJobs: number;
   acceptTimeout: number;
+  agentVersion: string;
 }
 
 /**
@@ -48,6 +49,7 @@ export class JobPoller extends EventEmitter {
       pollIntervalMs: options.pollIntervalMs ?? 5000,
       maxConcurrentJobs: options.maxConcurrentJobs ?? 1,
       acceptTimeout: options.acceptTimeout ?? 30000,
+      agentVersion: options.agentVersion ?? '1.0.0',
     };
   }
 
@@ -115,6 +117,7 @@ export class JobPoller extends EventEmitter {
       const response = await this.apiClient.pollJobs({
         status: this.queue.isProcessing() ? 'busy' : 'idle',
         capabilities: this.capabilities,
+        agentVersion: this.options.agentVersion,
       });
       const jobs = response.job ? [response.job] : [];
 
