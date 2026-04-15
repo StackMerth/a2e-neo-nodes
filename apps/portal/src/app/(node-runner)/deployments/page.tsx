@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
+import { Package, Rocket } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -19,35 +21,56 @@ interface Deployment {
   createdAt: string
 }
 
-const STATUS_CONFIG: Record<string, { label: string; badge: string; dot: string }> = {
+const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string; border: string; dotColor: string; dotGlow: string }> = {
   DEPLOYMENT_REQUESTED: {
     label: 'Requested',
-    badge: 'bg-warning/10 text-warning border-warning/20',
-    dot: 'bg-warning shadow-[0_0_8px_theme(colors.warning)]',
+    bg: 'rgba(245,158,11,0.1)',
+    color: 'var(--warning)',
+    border: 'rgba(245,158,11,0.2)',
+    dotColor: 'var(--warning)',
+    dotGlow: '0 0 8px var(--warning)',
   },
   DEPLOYING: {
     label: 'Deploying',
-    badge: 'bg-info/10 text-info border-info/20',
-    dot: 'bg-info shadow-[0_0_8px_theme(colors.info)]',
+    bg: 'rgba(59,130,246,0.1)',
+    color: 'var(--info)',
+    border: 'rgba(59,130,246,0.2)',
+    dotColor: 'var(--info)',
+    dotGlow: '0 0 8px var(--info)',
   },
   PROVISIONED: {
     label: 'Provisioned',
-    badge: 'bg-accent/10 text-accent border-accent/20',
-    dot: 'bg-accent shadow-[0_0_8px_theme(colors.accent)]',
+    bg: 'rgba(34,197,94,0.1)',
+    color: 'var(--success)',
+    border: 'rgba(34,197,94,0.2)',
+    dotColor: 'var(--success)',
+    dotGlow: '0 0 8px var(--success)',
   },
   CANCELLED: {
     label: 'Cancelled',
-    badge: 'bg-surface-hover text-text-muted border-border',
-    dot: 'bg-text-muted',
+    bg: 'var(--bg-card-hover)',
+    color: 'var(--text-muted)',
+    border: 'var(--border-color)',
+    dotColor: 'var(--text-muted)',
+    dotGlow: 'none',
   },
 }
 
-const TIER_COLORS: Record<string, string> = {
-  H100: 'bg-accent/10 text-accent border-accent/20',
-  H200: 'bg-accent-blue/10 text-accent-blue border-accent-blue/20',
-  B200: 'bg-accent-purple/10 text-accent-purple border-accent-purple/20',
-  B300: 'bg-accent-orange/10 text-accent-orange border-accent-orange/20',
-  GB300: 'bg-error/10 text-error border-error/20',
+const TIER_STYLES: Record<string, { bg: string; color: string; border: string }> = {
+  H100: { bg: 'rgba(34,197,94,0.1)', color: 'var(--success)', border: 'rgba(34,197,94,0.2)' },
+  H200: { bg: 'rgba(59,130,246,0.1)', color: 'var(--info)', border: 'rgba(59,130,246,0.2)' },
+  B200: { bg: 'rgba(139,92,246,0.1)', color: '#8b5cf6', border: 'rgba(139,92,246,0.2)' },
+  B300: { bg: 'rgba(245,158,11,0.1)', color: 'var(--warning)', border: 'rgba(245,158,11,0.2)' },
+  GB300: { bg: 'rgba(239,68,68,0.1)', color: 'var(--danger)', border: 'rgba(239,68,68,0.2)' },
+}
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const itemAnim = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 }
 
 export default function DeploymentsPage() {
@@ -84,90 +107,115 @@ export default function DeploymentsPage() {
   }
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <motion.div
+      className="space-y-6"
+      variants={container}
+      initial="hidden"
+      animate="show"
+    >
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <motion.div variants={itemAnim} className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">My Deployments</h1>
-          <p className="text-sm text-text-muted mt-1">
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>My Deployments</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
             {deployments.length} deployment{deployments.length !== 1 ? 's' : ''}
           </p>
         </div>
         <Link href="/deploy">
-          <Button>Deploy New Node</Button>
+          <Button><Rocket size={16} className="mr-2" />Deploy New Node</Button>
         </Link>
-      </div>
+      </motion.div>
 
       {/* List */}
       {deployments.length === 0 ? (
-        <Card className="p-12 text-center">
-          <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-            </svg>
+        <motion.div variants={itemAnim}>
+          <div
+            className="rounded-xl p-12 text-center"
+            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+          >
+            <div
+              className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
+              style={{ background: 'rgba(34,197,94,0.1)' }}
+            >
+              <Package size={32} style={{ color: 'var(--primary)' }} />
+            </div>
+            <h2 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>No Deployments Yet</h2>
+            <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Deploy your first GPU node to start earning.</p>
+            <Link href="/deploy">
+              <Button>Deploy Your First Node</Button>
+            </Link>
           </div>
-          <h2 className="text-lg font-semibold text-text-primary mb-2">No Deployments Yet</h2>
-          <p className="text-text-muted text-sm mb-6">Deploy your first GPU node to start earning.</p>
-          <Link href="/deploy">
-            <Button>Deploy Your First Node</Button>
-          </Link>
-        </Card>
+        </motion.div>
       ) : (
         <div className="space-y-4">
           {deployments.map(dep => {
-            const status = STATUS_CONFIG[dep.status] ?? STATUS_CONFIG.DEPLOYMENT_REQUESTED
-            const tierColor = TIER_COLORS[dep.gpuTier] ?? 'bg-surface-hover text-text-secondary border-border'
+            const status = STATUS_CONFIG[dep.status] ?? STATUS_CONFIG.DEPLOYMENT_REQUESTED!
+            const tierStyle = TIER_STYLES[dep.gpuTier] ?? { bg: 'var(--bg-card-hover)', color: 'var(--text-secondary)', border: 'var(--border-color)' }
             const isActive = dep.status === 'DEPLOYING'
 
             return (
-              <Link key={dep.id} href={`/deployments/${dep.id}`}>
-                <div className="bg-surface border border-border rounded-xl p-5 hover:border-accent/30 hover:shadow-card transition-all duration-200">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-3">
-                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${tierColor}`}>
-                            {dep.gpuTier}
-                          </span>
-                          <span className="text-text-secondary text-sm">
-                            {dep.nodeCount} node{dep.nodeCount !== 1 ? 's' : ''}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-2">
-                            {isActive ? (
-                              <span className="relative flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-info opacity-75" />
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-info" />
-                              </span>
-                            ) : (
-                              <span className={`w-2 h-2 rounded-full ${status.dot}`} />
-                            )}
-                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${status.badge}`}>
-                              {status.label}
+              <motion.div key={dep.id} variants={itemAnim}>
+                <Link href={`/deployments/${dep.id}`}>
+                  <div
+                    className="rounded-xl p-5 transition-all duration-200 hover-lift"
+                    style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-4">
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center gap-3">
+                            <span
+                              className="px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                              style={{ background: tierStyle.bg, color: tierStyle.color, border: `1px solid ${tierStyle.border}` }}
+                            >
+                              {dep.gpuTier}
+                            </span>
+                            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                              {dep.nodeCount} node{dep.nodeCount !== 1 ? 's' : ''}
                             </span>
                           </div>
-                          <span className="text-xs text-text-muted">
-                            {new Date(dep.createdAt).toLocaleDateString()}
-                          </span>
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                              {isActive ? (
+                                <span className="relative flex h-2 w-2">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: 'var(--info)' }} />
+                                  <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: 'var(--info)' }} />
+                                </span>
+                              ) : (
+                                <span
+                                  className="w-2 h-2 rounded-full"
+                                  style={{ background: status.dotColor, boxShadow: status.dotGlow }}
+                                />
+                              )}
+                              <span
+                                className="text-xs font-medium px-2 py-0.5 rounded-full"
+                                style={{ background: status.bg, color: status.color, border: `1px solid ${status.border}` }}
+                              >
+                                {status.label}
+                              </span>
+                            </div>
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                              {new Date(dep.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-lg font-bold text-text-primary">
-                        ${dep.amount.toLocaleString()}
-                      </div>
-                      <div className="text-xs text-text-muted">
-                        TX: {dep.txHash.slice(0, 8)}...{dep.txHash.slice(-4)}
+                      <div className="text-right">
+                        <div className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+                          ${dep.amount.toLocaleString()}
+                        </div>
+                        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          TX: {dep.txHash.slice(0, 8)}...{dep.txHash.slice(-4)}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </Link>
+                </Link>
+              </motion.div>
             )
           })}
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }

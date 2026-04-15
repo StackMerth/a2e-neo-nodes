@@ -2,6 +2,8 @@
 
 import { useState, useEffect, use, useCallback } from 'react'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
+import { Check, Loader2, XCircle, ArrowRight, Info } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -29,17 +31,26 @@ const STEPS = [
   { key: 'PROVISIONED', label: 'Node Live' },
 ]
 
-const TIER_COLORS: Record<string, string> = {
-  H100: 'bg-accent/10 text-accent border-accent/20',
-  H200: 'bg-accent-blue/10 text-accent-blue border-accent-blue/20',
-  B200: 'bg-accent-purple/10 text-accent-purple border-accent-purple/20',
-  B300: 'bg-accent-orange/10 text-accent-orange border-accent-orange/20',
-  GB300: 'bg-error/10 text-error border-error/20',
+const TIER_STYLES: Record<string, { bg: string; color: string; border: string }> = {
+  H100: { bg: 'rgba(34,197,94,0.1)', color: 'var(--success)', border: 'rgba(34,197,94,0.2)' },
+  H200: { bg: 'rgba(59,130,246,0.1)', color: 'var(--info)', border: 'rgba(59,130,246,0.2)' },
+  B200: { bg: 'rgba(139,92,246,0.1)', color: '#8b5cf6', border: 'rgba(139,92,246,0.2)' },
+  B300: { bg: 'rgba(245,158,11,0.1)', color: 'var(--warning)', border: 'rgba(245,158,11,0.2)' },
+  GB300: { bg: 'rgba(239,68,68,0.1)', color: 'var(--danger)', border: 'rgba(239,68,68,0.2)' },
 }
 
 function getStepIndex(status: string): number {
   const idx = STATUS_ORDER.indexOf(status)
   return idx >= 0 ? idx : 1
+}
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.07 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 }
 
 export default function DeploymentDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -85,164 +96,197 @@ export default function DeploymentDetailPage({ params }: { params: Promise<{ id:
 
   if (!data) {
     return (
-      <div className="text-center py-20 text-text-muted">Deployment not found</div>
+      <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>Deployment not found</div>
     )
   }
 
   const isCancelled = data.status === 'CANCELLED'
   const currentStepIdx = getStepIndex(data.status)
-  const tierColor = TIER_COLORS[data.gpuTier] ?? 'bg-surface-hover text-text-secondary border-border'
+  const tierStyle = TIER_STYLES[data.gpuTier] ?? { bg: 'var(--bg-card-hover)', color: 'var(--text-secondary)', border: 'var(--border-color)' }
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <motion.div
+      className="space-y-6"
+      variants={container}
+      initial="hidden"
+      animate="show"
+    >
       {/* Header */}
-      <div>
-        <Link href="/deployments" className="text-sm text-text-muted hover:text-text-secondary mb-1 inline-block">
+      <motion.div variants={item}>
+        <Link href="/deployments" className="text-sm hover:opacity-80 mb-1 inline-block" style={{ color: 'var(--text-muted)' }}>
           &larr; Back to Deployments
         </Link>
-        <h1 className="text-2xl font-bold text-text-primary flex items-center gap-3">
+        <h1 className="text-2xl font-bold flex items-center gap-3" style={{ color: 'var(--text-primary)' }}>
           {data.gpuTier} Node Deployment
-          <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${tierColor}`}>
+          <span
+            className="px-2.5 py-0.5 rounded-full text-xs font-semibold"
+            style={{ background: tierStyle.bg, color: tierStyle.color, border: `1px solid ${tierStyle.border}` }}
+          >
             {data.gpuTier}
           </span>
         </h1>
-      </div>
+      </motion.div>
 
       {/* Cancelled Banner */}
       {isCancelled && (
-        <div className="flex items-center gap-3 p-4 bg-error/5 border border-error/20 rounded-xl">
-          <svg className="w-5 h-5 text-error shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-          <div>
-            <p className="text-sm font-medium text-error">Deployment Cancelled</p>
-            <p className="text-xs text-text-muted mt-0.5">This deployment has been cancelled and will not proceed.</p>
+        <motion.div variants={item}>
+          <div
+            className="flex items-center gap-3 p-4 rounded-xl"
+            style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.2)' }}
+          >
+            <XCircle size={20} className="shrink-0" style={{ color: 'var(--danger)' }} />
+            <div>
+              <p className="text-sm font-medium" style={{ color: 'var(--danger)' }}>Deployment Cancelled</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>This deployment has been cancelled and will not proceed.</p>
+            </div>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* Step Tracker */}
       {!isCancelled && (
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            {STEPS.map((step, idx) => {
-              const isComplete = idx <= currentStepIdx
-              const isCurrent = idx === currentStepIdx
-              const isDeploying = isCurrent && data.status === 'DEPLOYING'
+        <motion.div variants={item}>
+          <div
+            className="rounded-xl p-6"
+            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+          >
+            <div className="flex items-center justify-between">
+              {STEPS.map((step, idx) => {
+                const isComplete = idx <= currentStepIdx
+                const isCurrent = idx === currentStepIdx
+                const isDeploying = isCurrent && data.status === 'DEPLOYING'
 
-              return (
-                <div key={step.key} className="flex items-center flex-1 last:flex-initial">
-                  <div className="flex flex-col items-center">
-                    {/* Circle */}
-                    <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
-                        isComplete
-                          ? 'bg-accent border-accent text-white'
-                          : 'border-border bg-surface text-text-muted'
-                      }`}
-                    >
-                      {isDeploying ? (
-                        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                      ) : isComplete ? (
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <span className="text-sm font-medium">{idx + 1}</span>
-                      )}
-                    </div>
-                    {/* Label */}
-                    <span
-                      className={`text-xs mt-2 text-center font-medium whitespace-nowrap ${
-                        isComplete ? 'text-accent' : 'text-text-muted'
-                      }`}
-                    >
-                      {step.label}
-                    </span>
-                  </div>
-                  {/* Connecting Line */}
-                  {idx < STEPS.length - 1 && (
-                    <div className="flex-1 mx-3 mt-[-1.25rem]">
+                return (
+                  <div key={step.key} className="flex items-center flex-1 last:flex-initial">
+                    <div className="flex flex-col items-center">
+                      {/* Circle */}
                       <div
-                        className={`h-0.5 rounded-full transition-all duration-300 ${
-                          idx < currentStepIdx ? 'bg-accent' : 'bg-border'
-                        }`}
-                      />
+                        className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300"
+                        style={isComplete
+                          ? { background: 'var(--primary)', borderColor: 'var(--primary)', border: '2px solid var(--primary)', color: '#fff' }
+                          : { background: 'var(--bg-card)', border: '2px solid var(--border-color)', color: 'var(--text-muted)' }
+                        }
+                      >
+                        {isDeploying ? (
+                          <Loader2 size={20} className="animate-spin" />
+                        ) : isComplete ? (
+                          <Check size={20} strokeWidth={2.5} />
+                        ) : (
+                          <span className="text-sm font-medium">{idx + 1}</span>
+                        )}
+                      </div>
+                      {/* Label */}
+                      <span
+                        className="text-xs mt-2 text-center font-medium whitespace-nowrap"
+                        style={{ color: isComplete ? 'var(--primary)' : 'var(--text-muted)' }}
+                      >
+                        {step.label}
+                      </span>
                     </div>
-                  )}
-                </div>
-              )
-            })}
+                    {/* Connecting Line */}
+                    {idx < STEPS.length - 1 && (
+                      <div className="flex-1 mx-3 mt-[-1.25rem]">
+                        <div
+                          className="h-0.5 rounded-full transition-all duration-300"
+                          style={{ background: idx < currentStepIdx ? 'var(--primary)' : 'var(--border-color)' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
-        </Card>
+        </motion.div>
       )}
 
       {/* Deploying Animation */}
       {data.status === 'DEPLOYING' && (
-        <div className="flex items-center gap-3 p-4 bg-info/5 border border-info/20 rounded-xl">
-          <span className="relative flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-info opacity-75" />
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-info" />
-          </span>
-          <p className="text-sm text-info font-medium">Your node is being set up. This usually takes a few minutes...</p>
-        </div>
+        <motion.div variants={item}>
+          <div
+            className="flex items-center gap-3 p-4 rounded-xl"
+            style={{ background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.2)' }}
+          >
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: 'var(--info)' }} />
+              <span className="relative inline-flex rounded-full h-3 w-3" style={{ background: 'var(--info)' }} />
+            </span>
+            <p className="text-sm font-medium" style={{ color: 'var(--info)' }}>Your node is being set up. This usually takes a few minutes...</p>
+          </div>
+        </motion.div>
       )}
 
       {/* Deployment Info */}
-      <Card className="p-6">
-        <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-4">Deployment Details</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-          <InfoRow label="GPU Tier" value={data.gpuTier} />
-          <InfoRow label="Node Count" value={`${data.nodeCount}`} />
-          <InfoRow label="Amount" value={`$${data.amount.toLocaleString()}`} />
-          <InfoRow label="Date" value={new Date(data.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} />
-          <div className="sm:col-span-2">
-            <InfoRow
-              label="Transaction Hash"
-              value={data.txHash}
-              mono
-            />
-          </div>
-          {data.deploymentNote && (
+      <motion.div variants={item}>
+        <div
+          className="rounded-xl p-6"
+          style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+        >
+          <h3 className="text-xs font-medium uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>Deployment Details</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            <InfoRow label="GPU Tier" value={data.gpuTier} />
+            <InfoRow label="Node Count" value={`${data.nodeCount}`} />
+            <InfoRow label="Amount" value={`$${data.amount.toLocaleString()}`} />
+            <InfoRow label="Date" value={new Date(data.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} />
             <div className="sm:col-span-2">
-              <InfoRow label="Note" value={data.deploymentNote} />
+              <InfoRow
+                label="Transaction Hash"
+                value={data.txHash}
+                mono
+              />
             </div>
-          )}
+            {data.deploymentNote && (
+              <div className="sm:col-span-2">
+                <InfoRow label="Note" value={data.deploymentNote} />
+              </div>
+            )}
+          </div>
         </div>
-      </Card>
+      </motion.div>
 
       {/* Provisioned Node Link */}
       {data.status === 'PROVISIONED' && data.nodeId && (
-        <Card className="p-6 bg-gradient-to-r from-accent/5 via-surface to-surface border-accent/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-text-primary mb-1">Node Provisioned</h3>
-              <p className="text-xs text-text-muted">Your node is live and earning. View details and monitor performance.</p>
+        <motion.div variants={item}>
+          <div
+            className="rounded-xl p-6"
+            style={{
+              background: 'linear-gradient(to right, rgba(34,197,94,0.05), var(--glass-bg))',
+              border: '1px solid rgba(34,197,94,0.2)',
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Node Provisioned</h3>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Your node is live and earning. View details and monitor performance.</p>
+              </div>
+              <Link
+                href={`/nodes/${data.nodeId}`}
+                className="inline-flex items-center gap-2 px-4 py-2.5 font-medium text-sm rounded-lg transition-all duration-200"
+                style={{
+                  background: 'var(--primary)',
+                  color: '#fff',
+                  boxShadow: '0 0 10px rgba(34,197,94,0.2)',
+                }}
+              >
+                View Node
+                <ArrowRight size={16} />
+              </Link>
             </div>
-            <Link
-              href={`/nodes/${data.nodeId}`}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-accent hover:bg-accent-hover text-white font-medium text-sm rounded-lg transition-all duration-200 shadow-glow-sm hover:shadow-glow-accent"
-            >
-              View Node
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
           </div>
-        </Card>
+        </motion.div>
       )}
-    </div>
+    </motion.div>
   )
 }
 
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-text-muted text-xs">{label}</span>
-      <span className={`text-text-primary font-medium ${mono ? 'font-mono text-xs break-all' : ''}`}>
+      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</span>
+      <span
+        className={`font-medium ${mono ? 'font-mono text-xs break-all' : ''}`}
+        style={{ color: 'var(--text-primary)' }}
+      >
         {value}
       </span>
     </div>

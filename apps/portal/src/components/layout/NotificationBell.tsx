@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { Bell } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { notifications as notifApi } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -14,7 +16,12 @@ interface Notification {
   createdAt: string
 }
 
-export function NotificationBell() {
+const labelVariants = {
+  open: { opacity: 1, x: 0, display: 'block', transition: { delay: 0.1 } },
+  closed: { opacity: 0, x: -10, transitionEnd: { display: 'none' } },
+}
+
+export function NotificationBell({ collapsed = false }: { collapsed?: boolean }) {
   const { user } = useAuth()
   const [count, setCount] = useState(0)
   const [open, setOpen] = useState(false)
@@ -22,7 +29,6 @@ export function NotificationBell() {
   const [loading, setLoading] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  // Fetch unread count periodically
   useEffect(() => {
     if (!user) return
     const fetchCount = async () => {
@@ -36,7 +42,6 @@ export function NotificationBell() {
     return () => clearInterval(interval)
   }, [user])
 
-  // Fetch notifications when dropdown opens
   useEffect(() => {
     if (!open || !user) return
     const fetchItems = async () => {
@@ -50,7 +55,6 @@ export function NotificationBell() {
     fetchItems()
   }, [open, user])
 
-  // Real-time: refresh count when new notification arrives
   const handleNewNotification = useCallback(() => {
     setCount(prev => prev + 1)
     if (open) {
@@ -64,7 +68,6 @@ export function NotificationBell() {
     events: { 'notification:new': handleNewNotification },
   })
 
-  // Close on outside click
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
@@ -99,26 +102,36 @@ export function NotificationBell() {
 
   return (
     <div className="relative" ref={ref}>
-      <button
+      <motion.button
+        className="sidebar-notif-btn"
         onClick={() => setOpen(!open)}
-        className="relative p-2 text-text-secondary hover:text-text-primary transition-colors"
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        title={collapsed ? 'Notifications' : undefined}
       >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-        </svg>
+        <Bell size={20} />
+        <motion.span variants={labelVariants} animate={collapsed ? 'closed' : 'open'}>
+          Notifications
+        </motion.span>
         {count > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 bg-error text-white text-2xs font-bold rounded-full w-4 h-4 flex items-center justify-center animate-gentle-pulse">
+          <span className="sidebar-notif-badge">
             {count > 9 ? '9+' : count}
           </span>
         )}
-      </button>
+      </motion.button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 bg-surface-elevated border border-border rounded-xl shadow-xl animate-scaleIn overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <span className="text-sm font-semibold text-text-primary">Notifications</span>
+        <div className="absolute left-full bottom-0 ml-2 w-80 bg-surface-elevated border border-border rounded-xl shadow-xl animate-scaleIn overflow-hidden z-50"
+          style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Notifications</span>
             {count > 0 && (
-              <button onClick={handleMarkAllRead} className="text-xs text-accent hover:underline">
+              <button
+                onClick={handleMarkAllRead}
+                className="text-xs hover:underline"
+                style={{ color: 'var(--primary)' }}
+              >
                 Mark all read
               </button>
             )}
@@ -126,22 +139,31 @@ export function NotificationBell() {
 
           <div className="max-h-80 overflow-y-auto">
             {loading ? (
-              <div className="p-4 text-center text-text-muted text-sm">Loading...</div>
+              <div className="p-4 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Loading...</div>
             ) : items.length === 0 ? (
-              <div className="p-4 text-center text-text-muted text-sm">No notifications</div>
+              <div className="p-4 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No notifications</div>
             ) : (
               items.map(item => (
                 <button
                   key={item.id}
                   onClick={() => !item.read && handleMarkRead(item.id)}
-                  className={`w-full text-left px-4 py-3 border-b border-border/50 hover:bg-surface-hover transition-colors ${!item.read ? 'bg-accent/5' : ''}`}
+                  className="w-full text-left px-4 py-3 transition-colors"
+                  style={{
+                    borderBottom: '1px solid var(--border-color)',
+                    background: !item.read ? 'rgba(34, 197, 94, 0.05)' : 'transparent',
+                  }}
                 >
                   <div className="flex items-start gap-2">
-                    {!item.read && <span className="mt-1.5 w-2 h-2 rounded-full bg-accent shrink-0" />}
+                    {!item.read && (
+                      <span
+                        className="mt-1.5 w-2 h-2 rounded-full shrink-0"
+                        style={{ background: 'var(--primary)' }}
+                      />
+                    )}
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-text-primary truncate">{item.title}</p>
-                      <p className="text-xs text-text-secondary mt-0.5 line-clamp-2">{item.message}</p>
-                      <p className="text-2xs text-text-muted mt-1">{timeAgo(item.createdAt)}</p>
+                      <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{item.title}</p>
+                      <p className="text-xs mt-0.5 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{item.message}</p>
+                      <p className="text-xs mt-1" style={{ color: 'var(--text-muted)', fontSize: '0.625rem' }}>{timeAgo(item.createdAt)}</p>
                     </div>
                   </div>
                 </button>

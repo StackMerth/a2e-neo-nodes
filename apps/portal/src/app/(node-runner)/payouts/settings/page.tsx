@@ -2,11 +2,22 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
+import { ArrowLeft, Save } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useToast } from '@/components/ui/Toast'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.07 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 export default function PayoutSettingsPage() {
   const { toast } = useToast()
@@ -42,24 +53,39 @@ export default function PayoutSettingsPage() {
   if (loading) return <div className="animate-fadeIn"><div className="animate-shimmer h-64 rounded-xl" /></div>
 
   return (
-    <div className="space-y-6 animate-fadeIn max-w-2xl">
-      <div>
-        <Link href="/payouts" className="text-sm text-text-muted hover:text-text-secondary">&larr; Back to Payouts</Link>
-        <h1 className="text-2xl font-bold text-text-primary mt-1">Payout Settings</h1>
-        <p className="text-sm text-text-muted mt-1">Manage your payout wallet and preferences</p>
-      </div>
+    <motion.div
+      className="space-y-6 max-w-2xl"
+      variants={container}
+      initial="hidden"
+      animate="show"
+    >
+      <motion.div variants={item}>
+        <Link href="/payouts" className="text-sm inline-flex items-center gap-1 hover:opacity-80" style={{ color: 'var(--text-muted)' }}>
+          <ArrowLeft size={14} /> Back to Payouts
+        </Link>
+        <h1 className="text-2xl font-bold mt-1" style={{ color: 'var(--text-primary)' }}>Payout Settings</h1>
+        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Manage your payout wallet and preferences</p>
+      </motion.div>
 
-      <form onSubmit={handleSave}>
-        <Card className="p-6 space-y-5">
-          <Input label="Display Name" value={name} onChange={e => setName(e.target.value)} placeholder="Your name" />
-          <Input label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" />
-          <Input label="Payout Wallet (Solana)" value={wallet} onChange={e => setWallet(e.target.value)} placeholder="Solana wallet address" />
+      <motion.div variants={item}>
+        <form onSubmit={handleSave}>
+          <div
+            className="rounded-xl p-6 space-y-5"
+            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+          >
+            <Input label="Display Name" value={name} onChange={e => setName(e.target.value)} placeholder="Your name" />
+            <Input label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" />
+            <Input label="Payout Wallet (Solana)" value={wallet} onChange={e => setWallet(e.target.value)} placeholder="Solana wallet address" />
 
-          <div className="pt-2 flex justify-end">
-            <Button type="submit" loading={saving}>Save Changes</Button>
+            <div className="pt-2 flex justify-end">
+              <Button type="submit" loading={saving}>
+                <Save size={16} className="mr-2" />
+                Save Changes
+              </Button>
+            </div>
           </div>
-        </Card>
-      </form>
-    </div>
+        </form>
+      </motion.div>
+    </motion.div>
   )
 }

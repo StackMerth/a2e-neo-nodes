@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
+import { Server, Wifi, WifiOff, Pause, Wrench, Activity } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -19,6 +21,15 @@ interface NodeItem {
   lastHeartbeat: string
   customGpuModel: string | null
   createdAt: string
+}
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 }
 
 export default function NodesPage() {
@@ -48,21 +59,51 @@ export default function NodesPage() {
     return `${Math.floor(hrs / 24)}d ago`
   }
 
-  const statusConfig: Record<string, { label: string; dot: string; badge: string }> = {
-    ONLINE: { label: 'Online', dot: 'bg-accent shadow-[0_0_8px_theme(colors.accent)]', badge: 'bg-accent/10 text-accent' },
-    OFFLINE: { label: 'Offline', dot: 'bg-error shadow-[0_0_8px_theme(colors.error)]', badge: 'bg-error/10 text-error' },
-    DEGRADED: { label: 'Degraded', dot: 'bg-warning shadow-[0_0_8px_theme(colors.warning)]', badge: 'bg-warning/10 text-warning' },
-    PAUSED: { label: 'Paused', dot: 'bg-text-muted', badge: 'bg-surface-hover text-text-muted' },
-    MAINTENANCE: { label: 'Maintenance', dot: 'bg-info shadow-[0_0_8px_theme(colors.info)]', badge: 'bg-info/10 text-info' },
+  const statusConfig: Record<string, { label: string; icon: React.ReactNode; dotColor: string; badgeBg: string; badgeText: string }> = {
+    ONLINE: {
+      label: 'Online',
+      icon: <Wifi size={12} />,
+      dotColor: 'var(--success)',
+      badgeBg: 'rgba(34,197,94,0.1)',
+      badgeText: 'var(--success)',
+    },
+    OFFLINE: {
+      label: 'Offline',
+      icon: <WifiOff size={12} />,
+      dotColor: 'var(--danger)',
+      badgeBg: 'rgba(239,68,68,0.1)',
+      badgeText: 'var(--danger)',
+    },
+    DEGRADED: {
+      label: 'Degraded',
+      icon: <Activity size={12} />,
+      dotColor: 'var(--warning)',
+      badgeBg: 'rgba(245,158,11,0.1)',
+      badgeText: 'var(--warning)',
+    },
+    PAUSED: {
+      label: 'Paused',
+      icon: <Pause size={12} />,
+      dotColor: 'var(--text-muted)',
+      badgeBg: 'var(--bg-card-hover)',
+      badgeText: 'var(--text-muted)',
+    },
+    MAINTENANCE: {
+      label: 'Maintenance',
+      icon: <Wrench size={12} />,
+      dotColor: 'var(--info)',
+      badgeBg: 'rgba(59,130,246,0.1)',
+      badgeText: 'var(--info)',
+    },
   }
 
-  const tierColors: Record<string, string> = {
-    H100: 'bg-accent/10 text-accent border-accent/20',
-    H200: 'bg-accent-blue/10 text-accent-blue border-accent-blue/20',
-    B200: 'bg-accent-purple/10 text-accent-purple border-accent-purple/20',
-    B300: 'bg-accent-orange/10 text-accent-orange border-accent-orange/20',
-    GB300: 'bg-error/10 text-error border-error/20',
-    OTHER: 'bg-surface-hover text-text-secondary border-border',
+  const tierColors: Record<string, { bg: string; text: string; border: string }> = {
+    H100: { bg: 'rgba(34,197,94,0.1)', text: 'var(--success)', border: 'rgba(34,197,94,0.2)' },
+    H200: { bg: 'rgba(59,130,246,0.1)', text: 'var(--info)', border: 'rgba(59,130,246,0.2)' },
+    B200: { bg: 'rgba(139,92,246,0.1)', text: '#8b5cf6', border: 'rgba(139,92,246,0.2)' },
+    B300: { bg: 'rgba(245,158,11,0.1)', text: 'var(--warning)', border: 'rgba(245,158,11,0.2)' },
+    GB300: { bg: 'rgba(239,68,68,0.1)', text: 'var(--danger)', border: 'rgba(239,68,68,0.2)' },
+    OTHER: { bg: 'var(--bg-card-hover)', text: 'var(--text-secondary)', border: 'var(--border-color)' },
   }
 
   if (loading) {
@@ -77,65 +118,103 @@ export default function NodesPage() {
   }
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      <div className="flex items-center justify-between">
+    <motion.div
+      className="space-y-6"
+      variants={container}
+      initial="hidden"
+      animate="show"
+    >
+      <motion.div variants={item} className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">Your Nodes</h1>
-          <p className="text-sm text-text-muted mt-1">{nodes.length} node{nodes.length !== 1 ? 's' : ''} registered</p>
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Your Nodes</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>{nodes.length} node{nodes.length !== 1 ? 's' : ''} registered</p>
         </div>
         <Link href="/onboarding"><Button>Add Node</Button></Link>
-      </div>
+      </motion.div>
 
       {nodes.length === 0 ? (
-        <Card className="p-12 text-center">
-          <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" /></svg>
-          </div>
-          <h2 className="text-lg font-semibold text-text-primary mb-2">No Nodes Yet</h2>
-          <p className="text-text-muted text-sm mb-6">Get started by installing the A2E agent on your GPU server.</p>
-          <Link href="/onboarding"><Button>Set Up Your First Node</Button></Link>
-        </Card>
+        <motion.div variants={item}>
+          <Card className="p-12 text-center" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+            <div
+              className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
+              style={{ background: 'rgba(34,197,94,0.1)' }}
+            >
+              <Server size={32} style={{ color: 'var(--primary)' }} />
+            </div>
+            <h2 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>No Nodes Yet</h2>
+            <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Get started by installing the A2E agent on your GPU server.</p>
+            <Link href="/onboarding"><Button>Set Up Your First Node</Button></Link>
+          </Card>
+        </motion.div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {nodes.map(node => {
+          {nodes.map((node, idx) => {
             const status = statusConfig[node.status] ?? statusConfig.OFFLINE!
             const tier = tierColors[node.gpuTier] ?? tierColors.OTHER!
             return (
-              <Link key={node.id} href={`/nodes/${node.id}`}>
-                <div className="bg-surface border border-border rounded-xl p-5 hover:border-accent/30 hover:shadow-card transition-all duration-200 h-full">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${tier}`}>{node.customGpuModel || node.gpuTier}</span>
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${status.dot}`} />
-                      <span className={`text-xs font-medium ${status.badge} px-2 py-0.5 rounded-full`}>{status.label}</span>
-                    </div>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-text-muted">Wallet</span>
-                      <span className="text-text-secondary font-mono text-xs">{node.walletAddress.slice(0, 6)}...{node.walletAddress.slice(-4)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-text-muted">Last Heartbeat</span>
-                      <span className="text-text-secondary">{timeAgo(node.lastHeartbeat)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-text-muted">Agent</span>
-                      <span className="text-text-secondary">{node.agentVersion ?? 'Unknown'}</span>
-                    </div>
-                    {node.currentJobId && (
-                      <div className="flex items-center gap-2 mt-2 px-2 py-1.5 bg-accent/5 border border-accent/20 rounded-lg">
-                        <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75" /><span className="relative inline-flex rounded-full h-2 w-2 bg-accent" /></span>
-                        <span className="text-xs text-accent font-medium">Running job</span>
+              <motion.div key={node.id} variants={item}>
+                <Link href={`/nodes/${node.id}`}>
+                  <div
+                    className="rounded-xl p-5 transition-all duration-200 h-full hover-lift"
+                    style={{
+                      background: 'var(--glass-bg)',
+                      border: '1px solid var(--glass-border)',
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <span
+                        className="px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                        style={{ background: tier.bg, color: tier.text, border: `1px solid ${tier.border}` }}
+                      >
+                        {node.customGpuModel || node.gpuTier}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-2 h-2 rounded-full"
+                          style={{ background: status.dotColor, boxShadow: `0 0 8px ${status.dotColor}` }}
+                        />
+                        <span
+                          className="text-xs font-medium px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                          style={{ background: status.badgeBg, color: status.badgeText }}
+                        >
+                          {status.icon}
+                          {status.label}
+                        </span>
                       </div>
-                    )}
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span style={{ color: 'var(--text-muted)' }}>Wallet</span>
+                        <span className="font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{node.walletAddress.slice(0, 6)}...{node.walletAddress.slice(-4)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span style={{ color: 'var(--text-muted)' }}>Last Heartbeat</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{timeAgo(node.lastHeartbeat)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span style={{ color: 'var(--text-muted)' }}>Agent</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{node.agentVersion ?? 'Unknown'}</span>
+                      </div>
+                      {node.currentJobId && (
+                        <div
+                          className="flex items-center gap-2 mt-2 px-2 py-1.5 rounded-lg"
+                          style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)' }}
+                        >
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: 'var(--primary)' }} />
+                            <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: 'var(--primary)' }} />
+                          </span>
+                          <span className="text-xs font-medium" style={{ color: 'var(--primary)' }}>Running job</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </Link>
+                </Link>
+              </motion.div>
             )
           })}
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }

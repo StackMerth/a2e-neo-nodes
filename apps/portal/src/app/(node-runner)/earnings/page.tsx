@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
+import { TrendingUp, BarChart3, CalendarDays } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -15,6 +17,15 @@ interface EarningsData {
 }
 
 type Period = 'day' | 'week' | 'month' | 'all'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.07 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 export default function EarningsPage() {
   const [data, setData] = useState<EarningsData | null>(null)
@@ -33,87 +44,142 @@ export default function EarningsPage() {
   }
 
   const marketColors: Record<string, { bg: string; text: string; bar: string }> = {
-    INTERNAL: { bg: 'bg-accent/10', text: 'text-accent', bar: 'bg-accent' },
-    AKASH: { bg: 'bg-accent-blue/10', text: 'text-accent-blue', bar: 'bg-accent-blue' },
-    IONET: { bg: 'bg-accent-purple/10', text: 'text-accent-purple', bar: 'bg-accent-purple' },
+    INTERNAL: { bg: 'rgba(34,197,94,0.1)', text: 'var(--success)', bar: 'var(--success)' },
+    AKASH: { bg: 'rgba(59,130,246,0.1)', text: 'var(--info)', bar: 'var(--info)' },
+    IONET: { bg: 'rgba(139,92,246,0.1)', text: '#8b5cf6', bar: '#8b5cf6' },
   }
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      <div className="flex items-center justify-between">
+    <motion.div
+      className="space-y-6"
+      variants={container}
+      initial="hidden"
+      animate="show"
+    >
+      <motion.div variants={item} className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">Earnings</h1>
-          <p className="text-sm text-text-muted mt-1">Track your GPU compute earnings across all markets</p>
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Earnings</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Track your GPU compute earnings across all markets</p>
         </div>
         <Link href="/earnings/history"><Button variant="secondary" size="sm">View Full History</Button></Link>
-      </div>
+      </motion.div>
 
       {/* Period Selector */}
-      <div className="flex gap-1 bg-surface border border-border rounded-lg p-1 w-fit">
-        {([['day', 'Today'], ['week', 'Week'], ['month', 'Month'], ['all', 'All Time']] as [Period, string][]).map(([p, label]) => (
-          <button key={p} onClick={() => setPeriod(p)} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${period === p ? 'bg-accent text-white' : 'text-text-muted hover:text-text-secondary'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <motion.div variants={item}>
+        <div
+          className="flex gap-1 rounded-lg p-1 w-fit"
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
+        >
+          {([['day', 'Today'], ['week', 'Week'], ['month', 'Month'], ['all', 'All Time']] as [Period, string][]).map(([p, label]) => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className="px-4 py-2 rounded-md text-sm font-medium transition-all"
+              style={period === p
+                ? { background: 'var(--primary)', color: '#fff' }
+                : { color: 'var(--text-muted)' }
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </motion.div>
 
       {loading ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">{[1,2,3].map(i => <Skeleton key={i} className="h-32" />)}</div>
       ) : (
         <>
           {/* Total */}
-          <Card className="p-6 bg-gradient-to-r from-accent/5 via-surface to-surface border-accent/20">
-            <p className="text-sm text-text-muted mb-1">Total Earnings ({period === 'day' ? 'Today' : period === 'week' ? 'This Week' : period === 'month' ? 'This Month' : 'All Time'})</p>
-            <p className="text-4xl font-bold text-text-primary">${(data?.total ?? 0).toFixed(2)}</p>
-          </Card>
+          <motion.div variants={item}>
+            <div
+              className="rounded-xl p-6"
+              style={{
+                background: 'linear-gradient(to right, rgba(34,197,94,0.05), var(--glass-bg))',
+                border: '1px solid rgba(34,197,94,0.2)',
+              }}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <TrendingUp size={16} style={{ color: 'var(--primary)' }} />
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  Total Earnings ({period === 'day' ? 'Today' : period === 'week' ? 'This Week' : period === 'month' ? 'This Month' : 'All Time'})
+                </p>
+              </div>
+              <p className="text-4xl font-bold" style={{ color: 'var(--text-primary)' }}>${(data?.total ?? 0).toFixed(2)}</p>
+            </div>
+          </motion.div>
 
           {/* By Market */}
-          <Card className="p-6">
-            <h2 className="text-sm font-semibold text-text-primary mb-4">Earnings by Market</h2>
-            {Object.entries(data?.byMarket ?? {}).length === 0 ? (
-              <p className="text-sm text-text-muted text-center py-4">No earnings data for this period</p>
-            ) : (
-              <div className="space-y-3">
-                {Object.entries(data?.byMarket ?? {}).map(([market, amount]) => {
-                  const colors = marketColors[market] ?? { bg: 'bg-surface-hover', text: 'text-text-secondary', bar: 'bg-text-muted' }
-                  const pct = data?.total ? (amount / data.total) * 100 : 0
-                  return (
-                    <div key={market} className="flex items-center gap-4">
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${colors.bg} ${colors.text} w-24 text-center`}>{market}</span>
-                      <div className="flex-1 bg-surface-hover rounded-full h-2 overflow-hidden">
-                        <div className={`h-full rounded-full ${colors.bar} transition-all duration-500`} style={{ width: `${pct}%` }} />
-                      </div>
-                      <span className="text-sm font-medium text-text-primary w-24 text-right">${amount.toFixed(2)}</span>
-                    </div>
-                  )
-                })}
+          <motion.div variants={item}>
+            <div
+              className="rounded-xl p-6"
+              style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+            >
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 size={16} style={{ color: 'var(--text-secondary)' }} />
+                <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Earnings by Market</h2>
               </div>
-            )}
-          </Card>
+              {Object.entries(data?.byMarket ?? {}).length === 0 ? (
+                <p className="text-sm text-center py-4" style={{ color: 'var(--text-muted)' }}>No earnings data for this period</p>
+              ) : (
+                <div className="space-y-3">
+                  {Object.entries(data?.byMarket ?? {}).map(([market, amount]) => {
+                    const colors = marketColors[market] ?? { bg: 'var(--bg-card-hover)', text: 'var(--text-secondary)', bar: 'var(--text-muted)' }
+                    const pct = data?.total ? (amount / data.total) * 100 : 0
+                    return (
+                      <div key={market} className="flex items-center gap-4">
+                        <span
+                          className="text-xs font-semibold px-2.5 py-1 rounded-full w-24 text-center"
+                          style={{ background: colors.bg, color: colors.text }}
+                        >
+                          {market}
+                        </span>
+                        <div className="flex-1 rounded-full h-2 overflow-hidden" style={{ background: 'var(--bg-card-hover)' }}>
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%`, background: colors.bar }}
+                          />
+                        </div>
+                        <span className="text-sm font-medium w-24 text-right" style={{ color: 'var(--text-primary)' }}>${amount.toFixed(2)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </motion.div>
 
           {/* Projections */}
           {data && data.total > 0 && period === 'month' && (
-            <Card className="p-6">
-              <h2 className="text-sm font-semibold text-text-primary mb-4">Earnings Projections</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-4 bg-surface-hover rounded-lg">
-                  <p className="text-xs text-text-muted mb-1">Daily Average</p>
-                  <p className="text-xl font-bold text-text-primary">${(data.total / 30).toFixed(2)}</p>
+            <motion.div variants={item}>
+              <div
+                className="rounded-xl p-6"
+                style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <CalendarDays size={16} style={{ color: 'var(--text-secondary)' }} />
+                  <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Earnings Projections</h2>
                 </div>
-                <div className="p-4 bg-accent/5 border border-accent/20 rounded-lg">
-                  <p className="text-xs text-text-muted mb-1">Projected Monthly</p>
-                  <p className="text-xl font-bold text-accent">${data.total.toFixed(2)}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="p-4 rounded-lg" style={{ background: 'var(--bg-card-hover)' }}>
+                    <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Daily Average</p>
+                    <p className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>${(data.total / 30).toFixed(2)}</p>
+                  </div>
+                  <div className="p-4 rounded-lg" style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)' }}>
+                    <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Projected Monthly</p>
+                    <p className="text-xl font-bold" style={{ color: 'var(--primary)' }}>${data.total.toFixed(2)}</p>
+                  </div>
+                  <div className="p-4 rounded-lg" style={{ background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.2)' }}>
+                    <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Projected Yearly</p>
+                    <p className="text-xl font-bold" style={{ color: 'var(--info)' }}>${(data.total * 12).toFixed(2)}</p>
+                  </div>
                 </div>
-                <div className="p-4 bg-accent-blue/5 border border-accent-blue/20 rounded-lg">
-                  <p className="text-xs text-text-muted mb-1">Projected Yearly</p>
-                  <p className="text-xl font-bold text-accent-blue">${(data.total * 12).toFixed(2)}</p>
-                </div>
+                <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>Based on your last 30 days of earnings. Actual results may vary.</p>
               </div>
-              <p className="text-2xs text-text-muted mt-3">Based on your last 30 days of earnings. Actual results may vary.</p>
-            </Card>
+            </motion.div>
           )}
         </>
       )}
-    </div>
+    </motion.div>
   )
 }
