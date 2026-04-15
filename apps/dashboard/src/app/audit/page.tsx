@@ -141,25 +141,57 @@ export default function AuditPage() {
   }
 
   return (
-    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
-      {/* Hero Section */}
-      <motion.div variants={item} className="relative py-8 md:py-12">
-        <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/5 via-transparent to-transparent rounded-3xl" />
-        <div className="relative text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-500/5 border border-indigo-500/20 rounded-full mb-6 animate-slideUp">
-            <ClipboardCheck className="w-4 h-4 text-indigo-400" />
-            <span className="text-xs text-indigo-400 font-medium uppercase tracking-wider">System Integrity</span>
-          </div>
-          <h1 className="text-3xl md:text-5xl font-bold text-text-primary mb-3">
-            Audit & Reconciliation
-          </h1>
-          <p className="text-text-muted max-w-xl mx-auto">
-            Track financial state changes, monitor transaction integrity, and reconcile orphaned payments.
-          </p>
+    <motion.div variants={container} initial="hidden" animate="show" className="dashboard-modern">
+      {/* Header */}
+      <motion.div className="dash-header" variants={item}>
+        <div className="dash-header-left">
+          <h1><ClipboardCheck size={28} /> Audit &amp; Reconciliation</h1>
+        </div>
+        <div className="dash-header-right">
+          <Button
+            onClick={handleRunReconciliation}
+            disabled={runningReconciliation}
+            variant="primary"
+            size="sm"
+          >
+            {runningReconciliation ? 'Running...' : 'Run Reconciliation'}
+          </Button>
         </div>
       </motion.div>
 
-      {/* Actions Bar */}
+      {/* KPI Stats */}
+      <div className="stat-blocks">
+        <div className="stat-block purple">
+          <div className="stat-icon"><FileText size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{auditLogs.length}</span>
+            <span className="stat-label">Total Entries</span>
+          </div>
+        </div>
+        <div className="stat-block yellow">
+          <div className="stat-icon"><Clock size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{reconciliationStatus?.pending ?? 0}</span>
+            <span className="stat-label">Pending</span>
+          </div>
+        </div>
+        <div className="stat-block green">
+          <div className="stat-icon"><CircleCheck size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{reconciliationStatus?.verified ?? 0}</span>
+            <span className="stat-label">Verified</span>
+          </div>
+        </div>
+        <div className="stat-block orange">
+          <div className="stat-icon"><XCircle size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{reconciliationStatus?.failed ?? 0}</span>
+            <span className="stat-label">Failed</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex gap-1 p-1 bg-surface rounded-xl">
           <button
@@ -190,38 +222,6 @@ export default function AuditPage() {
 
       {activeTab === 'audit' ? (
         <>
-          {/* Audit Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard
-              label="Total Logs"
-              value={auditLogs.length}
-              variant="purple"
-              animate
-              icon={<FileText className="w-4 h-4" />}
-            />
-            <StatCard
-              label="Payments"
-              value={auditLogs.filter(l => l.entityType === 'Payment').length}
-              variant="accent"
-              animate
-              icon={<CreditCard className="w-4 h-4" />}
-            />
-            <StatCard
-              label="Settlements"
-              value={auditLogs.filter(l => l.entityType === 'Settlement').length}
-              variant="blue"
-              animate
-              icon={<Banknote className="w-4 h-4" />}
-            />
-            <StatCard
-              label="Investments"
-              value={auditLogs.filter(l => l.entityType === 'Investment').length}
-              variant="orange"
-              animate
-              icon={<Wallet className="w-4 h-4" />}
-            />
-          </div>
-
           {/* Filter */}
           <div className="flex gap-1 p-1 bg-surface rounded-xl w-fit">
             {['all', 'Payment', 'Settlement', 'Investment'].map((type) => (
@@ -327,75 +327,6 @@ export default function AuditPage() {
         </>
       ) : (
         <>
-          {/* Reconciliation Stats */}
-          {reconciliationStatus && (
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <StatCard
-                label="Pending"
-                value={reconciliationStatus.pending}
-                variant="orange"
-                animate
-                icon={<Clock className="w-4 h-4" />}
-              />
-              <StatCard
-                label="Verified"
-                value={reconciliationStatus.verified}
-                variant="accent"
-                animate
-                icon={<CircleCheck className="w-4 h-4" />}
-              />
-              <StatCard
-                label="Failed"
-                value={reconciliationStatus.failed}
-                variant="orange"
-                animate
-                icon={<XCircle className="w-4 h-4" />}
-              />
-              <StatCard
-                label="Not Found"
-                value={reconciliationStatus.notFound}
-                animate
-                icon={<HelpCircle className="w-4 h-4" />}
-              />
-              <StatCard
-                label="Manual Review"
-                value={reconciliationStatus.manual}
-                variant="purple"
-                animate
-                icon={<Eye className="w-4 h-4" />}
-              />
-            </div>
-          )}
-
-          {/* Run Reconciliation Button */}
-          <Card variant="glass" hover={false}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent to-emerald-400 flex items-center justify-center">
-                  <RefreshCw className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-text-primary">Manual Reconciliation</h3>
-                  <p className="text-sm text-text-muted">
-                    Run reconciliation to verify pending transactions on-chain.
-                    {reconciliationStatus?.lastRunAt && (
-                      <span className="ml-2">
-                        Last run: {new Date(reconciliationStatus.lastRunAt).toLocaleString()}
-                      </span>
-                    )}
-                  </p>
-                </div>
-              </div>
-              <Button
-                onClick={handleRunReconciliation}
-                disabled={runningReconciliation}
-                variant="primary"
-              >
-                {runningReconciliation ? 'Running...' : 'Run Reconciliation'}
-              </Button>
-            </div>
-          </Card>
-
           {/* Pending Reconciliations Table */}
           <Card variant="glass" hover={false}>
             <div className="flex items-center gap-3 mb-6">

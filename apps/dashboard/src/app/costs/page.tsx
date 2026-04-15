@@ -202,30 +202,12 @@ export default function CostsPage() {
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
-      {/* Hero Section */}
-      <motion.div variants={item} className="relative py-8 md:py-12">
-        {/* Background gradient */}
-        <div className="absolute inset-0 bg-gradient-to-b from-error/5 via-transparent to-transparent rounded-3xl" />
-
-        <div className="relative text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-error/5 border border-error/20 rounded-full mb-6 animate-slideUp">
-            <Receipt className="w-4 h-4 text-error" />
-            <span className="text-xs text-error font-medium uppercase tracking-wider">Expense Tracking</span>
-          </div>
-
-          <h1 className="text-3xl md:text-5xl font-bold text-text-primary mb-3">
-            Cost Management
-          </h1>
-          <p className="text-text-muted max-w-xl mx-auto">
-            Track operational expenses, analyze cost breakdown by category,
-            and manage your GPU infrastructure costs.
-          </p>
+      {/* Header */}
+      <motion.div variants={item} className="dash-header">
+        <div className="dash-header-left">
+          <h1><Receipt size={28} /> Cost Management</h1>
         </div>
-      </motion.div>
-
-      {/* Actions Bar */}
-      <motion.div variants={item} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+        <div className="dash-header-right">
           <select
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
@@ -236,13 +218,42 @@ export default function CostsPage() {
             <option value={30}>Last 30 days</option>
             <option value={90}>Last 90 days</option>
           </select>
-          <Button onClick={loadCosts} variant="outline" size="sm" icon={<RefreshCw className="w-4 h-4" />}>
-            Refresh
+          <Button onClick={() => setShowCreateModal(true)} variant="primary" size="sm" icon={<Plus className="w-4 h-4" />}>
+            Add Cost
           </Button>
         </div>
-        <Button onClick={() => setShowCreateModal(true)} variant="primary" icon={<Plus className="w-4 h-4" />}>
-          Add Cost
-        </Button>
+      </motion.div>
+
+      {/* KPI Stat Blocks */}
+      <motion.div variants={item} className="stat-blocks">
+        <div className="stat-block red">
+          <div className="stat-icon"><DollarSign size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{formatCurrency(summary?.total ?? 0)}</span>
+            <span className="stat-label">Total Costs</span>
+          </div>
+        </div>
+        <div className="stat-block amber">
+          <div className="stat-icon"><Receipt size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{costs.length}</span>
+            <span className="stat-label">This Month</span>
+          </div>
+        </div>
+        <div className="stat-block blue">
+          <div className="stat-icon"><FolderOpen size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{summary?.byCategory ? Object.keys(summary.byCategory).length : 0}</span>
+            <span className="stat-label">Categories</span>
+          </div>
+        </div>
+        <div className="stat-block purple">
+          <div className="stat-icon"><TrendingUp size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{topCategory ? formatCurrency(topCategory[1]) : '$0.00'}</span>
+            <span className="stat-label">Avg per Node</span>
+          </div>
+        </div>
       </motion.div>
 
       {/* Alerts */}
@@ -276,37 +287,6 @@ export default function CostsPage() {
         </div>
       ) : (
         <>
-          {/* Stats Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              label="Total Costs"
-              value={formatCurrency(summary?.total ?? 0)}
-              variant="orange"
-              animate
-              icon={<DollarSign className="w-4 h-4" />}
-            />
-            <StatCard
-              label="Cost Entries"
-              value={costs.length}
-              variant="blue"
-              animate
-              icon={<Receipt className="w-4 h-4" />}
-            />
-            <StatCard
-              label="Categories"
-              value={summary?.byCategory ? Object.keys(summary.byCategory).length : 0}
-              variant="purple"
-              animate
-              icon={<FolderOpen className="w-4 h-4" />}
-            />
-            <StatCard
-              label="Top Category"
-              value={topCategory ? topCategory[0] : 'N/A'}
-              animate
-              icon={<TrendingUp className="w-4 h-4" />}
-            />
-          </div>
-
           {/* Cost Distribution */}
           {summary && summary.total > 0 && (
             <Card variant="glass" hover={false}>

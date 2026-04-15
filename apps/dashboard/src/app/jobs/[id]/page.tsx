@@ -8,7 +8,7 @@ import {
   Briefcase, CircleCheck, CircleX, Loader2, Clock, Ban, Zap,
   Route, ArrowLeft, Server, DollarSign,
 } from 'lucide-react'
-import { Card, StatCard } from '@/components/ui/Card'
+import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
@@ -261,31 +261,21 @@ export default function JobDetailPage() {
 
   return (
     <motion.div className="space-y-8" variants={container} initial="hidden" animate="show">
-      {/* Breadcrumb */}
-      <motion.div variants={itemVar} className="flex items-center gap-2 text-sm">
-        <Link href="/jobs" className="text-text-muted hover:text-accent flex items-center gap-1">
-          <ArrowLeft size={14} />
-          Jobs
-        </Link>
-        <span className="text-text-muted">/</span>
-        <span className="text-text-primary">{job.deploymentId}</span>
-      </motion.div>
-
       {/* Header */}
-      <motion.div variants={itemVar} className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-2xl font-bold text-text-primary">{job.deploymentId}</h1>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getMarketColor(job.market)}`}>
-              {job.market || 'PENDING'}
+      <motion.div variants={itemVar}>
+        <Link href="/jobs" className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-accent transition-colors mb-4">
+          <ArrowLeft size={14} />
+          Back to Jobs
+        </Link>
+        <div className="dash-header">
+          <div className="dash-header-left">
+            <h1><Briefcase size={28} /> Job: {job.id.slice(0, 8)}</h1>
+            <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-lg text-sm font-medium border ${getMarketColor(job.market)}`}>
+              <span className={`w-2 h-2 rounded-full ${getStatusColor(job.status).split(' ')[0]}`} />
+              {job.status}
             </span>
           </div>
-          <p className="text-text-muted">
-            {job.gpuTier} • Created {new Date(job.timing.requestedAt).toLocaleString()}
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="flex gap-2">
+          <div className="dash-header-right">
             {canPerformAction('cancel') && (
               <Button
                 onClick={() => handleJobAction('cancel')}
@@ -318,9 +308,39 @@ export default function JobDetailPage() {
               </Button>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <span className={`w-3 h-3 rounded-full ${getStatusColor(job.status).split(' ')[0]}`} />
-            <span className="text-lg font-medium text-text-primary">{job.status}</span>
+        </div>
+      </motion.div>
+
+      {/* KPI Blocks */}
+      <motion.div variants={itemVar} className="stat-blocks">
+        <div className="stat-block green">
+          <div className="stat-icon">
+            <span className={`w-2.5 h-2.5 rounded-full ${getStatusColor(job.status).split(' ')[0]}`} />
+          </div>
+          <div className="stat-content">
+            <span className="stat-value">{job.status}</span>
+            <span className="stat-label">Status</span>
+          </div>
+        </div>
+        <div className="stat-block blue">
+          <div className="stat-icon"><Route size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{job.market || 'PENDING'}</span>
+            <span className="stat-label">Market</span>
+          </div>
+        </div>
+        <div className="stat-block purple">
+          <div className="stat-icon"><Clock size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{job.timing.durationSeconds ? `${Math.round(job.timing.durationSeconds / 60)}m` : '-'}</span>
+            <span className="stat-label">Duration</span>
+          </div>
+        </div>
+        <div className="stat-block orange">
+          <div className="stat-icon"><DollarSign size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">${job.earnings?.toFixed(4) || '0'}</span>
+            <span className="stat-label">Earnings</span>
           </div>
         </div>
       </motion.div>
@@ -395,29 +415,6 @@ export default function JobDetailPage() {
       </Card>
       </motion.div>
 
-      {/* Stats */}
-      <motion.div variants={itemVar} className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard
-          label="Rate"
-          value={job.ratePerHour ? (job.ratePerHour * 24).toFixed(2) : '0'}
-          prefix="$"
-          suffix="/day"
-        />
-        <StatCard
-          label="Duration"
-          value={job.timing.durationSeconds ? Math.round(job.timing.durationSeconds / 60) : 0}
-          suffix=" min"
-        />
-        <StatCard
-          label="Earnings"
-          value={job.earnings?.toFixed(4) || '0'}
-          prefix="$"
-        />
-        <StatCard
-          label="Retries"
-          value={job.retryCount}
-        />
-      </motion.div>
 
       {/* Financials */}
       {(job.cost != null || job.profit != null) && (

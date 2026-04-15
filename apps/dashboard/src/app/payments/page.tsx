@@ -202,85 +202,52 @@ export default function PaymentsPage() {
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
-      {/* Hero Section */}
-      <motion.div variants={item} className="relative py-8 md:py-12">
-        {/* Background gradient */}
-        <div className="absolute inset-0 bg-gradient-to-b from-purple-500/5 via-transparent to-transparent rounded-3xl" />
+      {/* Header */}
+      <motion.div variants={item} className="dash-header">
+        <div className="dash-header-left">
+          <h1><CreditCard size={28} /> Payments</h1>
+        </div>
+        <div className="dash-header-right">
+          <Button onClick={handleExportCSV} variant="outline" size="sm" icon={<Download className="w-4 h-4" />}>
+            Export CSV
+          </Button>
+          <button className="dash-refresh-btn" onClick={loadData} title="Refresh data">
+            <RefreshCw size={16} />
+          </button>
+        </div>
+      </motion.div>
 
-        <div className="relative text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500/5 border border-purple-500/20 rounded-full mb-6 animate-slideUp">
-            <CreditCard className="w-4 h-4 text-purple-400" />
-            <span className="text-xs text-purple-400 font-medium uppercase tracking-wider">Payment Processing</span>
+      {/* KPI Stat Blocks */}
+      <motion.div variants={item} className="stat-blocks">
+        <div className="stat-block green">
+          <div className="stat-icon"><Receipt size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{stats?.stats.total ?? 0}</span>
+            <span className="stat-label">Total Payments</span>
           </div>
-
-          <h1 className="text-3xl md:text-5xl font-bold text-text-primary mb-3">
-            Payments
-          </h1>
-          <p className="text-text-muted max-w-xl mx-auto">
-            Track payment transactions, process settlements, and verify on-chain payments.
-          </p>
+        </div>
+        <div className="stat-block blue">
+          <div className="stat-icon"><Clock size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{stats ? (stats.stats.total - stats.stats.confirmed - stats.stats.failed) : 0}</span>
+            <span className="stat-label">Pending</span>
+          </div>
+        </div>
+        <div className="stat-block green">
+          <div className="stat-icon"><CircleCheck size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{stats?.stats.confirmed ?? 0}</span>
+            <span className="stat-label">Completed</span>
+          </div>
+        </div>
+        <div className="stat-block red">
+          <div className="stat-icon"><XCircle size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{stats?.stats.failed ?? 0}</span>
+            <span className="stat-label">Failed</span>
+          </div>
         </div>
       </motion.div>
-
-      {/* Actions Bar */}
-      <motion.div variants={item} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <Button onClick={loadData} variant="outline" size="sm" icon={<RefreshCw className="w-4 h-4" />}>
-          Refresh
-        </Button>
-        <Button onClick={handleExportCSV} variant="outline" size="sm" icon={<Download className="w-4 h-4" />}>
-          Export CSV
-        </Button>
-      </motion.div>
-
-      {/* Stats Grid */}
-      {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <StatCard
-            label="Total Payments"
-            value={stats.stats.total}
-            variant="purple"
-            animate
-            icon={<Receipt className="w-4 h-4" />}
-          />
-          <StatCard
-            label="Confirmed"
-            value={stats.stats.confirmed}
-            variant="accent"
-            animate
-            icon={<CircleCheck className="w-4 h-4" />}
-          />
-          <StatCard
-            label="Failed"
-            value={stats.stats.failed}
-            variant="orange"
-            animate
-            icon={<XCircle className="w-4 h-4" />}
-          />
-          <StatCard
-            label="Dev Mode"
-            value={stats.stats.devModePayments}
-            animate
-            icon={<Code className="w-4 h-4" />}
-          />
-          <StatCard
-            label="Total Paid"
-            value={`$${stats.stats.totalAmountPaid.toFixed(2)}`}
-            variant="accent"
-            animate
-            icon={<DollarSign className="w-4 h-4" />}
-          />
-          {walletBalance && (
-            <StatCard
-              label="Wallet Balance"
-              value={`$${walletBalance.usdc.toFixed(2)}`}
-              variant="blue"
-              animate
-              icon={<Wallet className="w-4 h-4" />}
-              trend={{ value: walletBalance.sol, isPositive: true }}
-            />
-          )}
-        </div>
-      )}
 
       {/* Mode Banner */}
       {stats && (

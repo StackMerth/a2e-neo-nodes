@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, ExternalLink, CreditCard, Server, FileText, Briefcase } from 'lucide-react'
+import { ArrowLeft, ExternalLink, CreditCard, Server, FileText, Briefcase, Receipt, DollarSign, Clock } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
@@ -176,52 +176,95 @@ export default function SettlementDetailPage() {
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
       {/* Header */}
-      <motion.div variants={item} className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <button onClick={() => router.back()} className="text-text-muted hover:text-text-primary">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <h1 className="text-2xl font-bold text-text-primary">Settlement Details</h1>
-            {getStatusBadge(settlement.status)}
+      <motion.div variants={item}>
+        <Link href="/financial" className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-accent transition-colors mb-4">
+          <ArrowLeft size={16} />
+          Back to Settlements
+        </Link>
+        <div className="dash-header">
+          <div className="dash-header-left">
+            <h1><Receipt size={28} /> Settlement: {settlement.id.slice(0, 8)}</h1>
+            <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-lg text-sm font-medium ${
+              settlement.status === 'COMPLETED' ? 'bg-accent/10 text-accent border border-accent/20' :
+              settlement.status === 'FAILED' ? 'bg-error/10 text-error border border-error/20' :
+              settlement.status === 'PROCESSING' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+              'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+            }`}>
+              {settlement.status}
+            </span>
           </div>
-          <p className="text-text-muted text-sm font-mono">{settlement.id}</p>
-        </div>
-
-        {/* Actions */}
-        <div className="flex gap-2">
-          {settlement.status === 'PENDING' && (
-            <>
+          <div className="dash-header-right">
+            {settlement.status === 'PENDING' && (
+              <>
+                <button
+                  onClick={handleProcess}
+                  disabled={processing}
+                  className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 text-sm font-medium"
+                >
+                  {processing ? 'Processing...' : 'Process Payment'}
+                </button>
+                <button
+                  onClick={() => setShowCompleteModal(true)}
+                  className="px-4 py-2 bg-surface-hover text-text-primary rounded-lg hover:bg-accent/10 text-sm font-medium"
+                >
+                  Mark Complete
+                </button>
+                <button
+                  onClick={() => setShowFailModal(true)}
+                  className="px-4 py-2 bg-error/10 text-error rounded-lg hover:bg-error/20 text-sm font-medium"
+                >
+                  Mark Failed
+                </button>
+              </>
+            )}
+            {settlement.status === 'FAILED' && (
               <button
-                onClick={handleProcess}
+                onClick={handleRetry}
                 disabled={processing}
-                className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 text-sm font-medium"
               >
-                {processing ? 'Processing...' : 'Process Payment'}
+                {processing ? 'Retrying...' : 'Retry Settlement'}
               </button>
-              <button
-                onClick={() => setShowCompleteModal(true)}
-                className="px-4 py-2 bg-surface-hover text-text-primary rounded-lg hover:bg-accent/10"
-              >
-                Mark Complete
-              </button>
-              <button
-                onClick={() => setShowFailModal(true)}
-                className="px-4 py-2 bg-error/10 text-error rounded-lg hover:bg-error/20"
-              >
-                Mark Failed
-              </button>
-            </>
-          )}
-          {settlement.status === 'FAILED' && (
-            <button
-              onClick={handleRetry}
-              disabled={processing}
-              className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50"
-            >
-              {processing ? 'Retrying...' : 'Retry Settlement'}
-            </button>
-          )}
+            )}
+          </div>
+        </div>
+      </motion.div>
+
+      {/* KPI Blocks */}
+      <motion.div variants={item} className="stat-blocks">
+        <div className="stat-block green">
+          <div className="stat-icon"><DollarSign size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">${settlement.amount.toFixed(2)}</span>
+            <span className="stat-label">Amount</span>
+          </div>
+        </div>
+        <div className="stat-block blue">
+          <div className="stat-icon">
+            <span className={`w-2.5 h-2.5 rounded-full ${
+              settlement.status === 'COMPLETED' ? 'bg-accent' :
+              settlement.status === 'FAILED' ? 'bg-error' :
+              settlement.status === 'PROCESSING' ? 'bg-blue-400' : 'bg-yellow-400'
+            }`} />
+          </div>
+          <div className="stat-content">
+            <span className="stat-value">{settlement.status}</span>
+            <span className="stat-label">Status</span>
+          </div>
+        </div>
+        <div className="stat-block purple">
+          <div className="stat-icon"><Briefcase size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{settlement.jobCount}</span>
+            <span className="stat-label">Job Count</span>
+          </div>
+        </div>
+        <div className="stat-block orange">
+          <div className="stat-icon"><Clock size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{new Date(settlement.periodStart).toLocaleDateString()} - {new Date(settlement.periodEnd).toLocaleDateString()}</span>
+            <span className="stat-label">Period</span>
+          </div>
         </div>
       </motion.div>
 

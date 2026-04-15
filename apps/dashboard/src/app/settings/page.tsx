@@ -261,25 +261,13 @@ export default function SettingsPage() {
   const totalServices = systemHealth ? Object.keys(systemHealth.services).length : 0
 
   return (
-    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
-      {/* Hero Section */}
-      <motion.div variants={item} className="relative py-8 md:py-12">
-        {/* Background gradient */}
-        <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-3xl" />
-
-        <div className="relative text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent/5 border border-accent/20 rounded-full mb-6 animate-slideUp">
-            <SettingsIcon className="w-4 h-4 text-accent" />
-            <span className="text-xs text-accent font-medium uppercase tracking-wider">System Configuration</span>
-          </div>
-
-          <h1 className="text-3xl md:text-5xl font-bold text-text-primary mb-3">
-            Settings
-          </h1>
-          <p className="text-text-muted max-w-xl mx-auto">
-            Configure routing parameters, monitor system health, and manage payment settings.
-          </p>
+    <motion.div variants={container} initial="hidden" animate="show" className="dashboard-modern">
+      {/* Header */}
+      <motion.div className="dash-header" variants={item}>
+        <div className="dash-header-left">
+          <h1><LucideSettings size={28} /> Settings</h1>
         </div>
+        <div className="dash-header-right" />
       </motion.div>
 
       {/* Alerts */}
@@ -303,37 +291,6 @@ export default function SettingsPage() {
           <p className="text-accent text-sm">{success}</p>
         </div>
       )}
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          label="System Status"
-          value={systemHealth?.status ?? 'Unknown'}
-          variant={systemHealth?.status === 'healthy' ? 'accent' : 'orange'}
-          animate
-          icon={<Heart className="w-4 h-4" />}
-        />
-        <StatCard
-          label="Services"
-          value={`${healthyServices}/${totalServices}`}
-          variant="blue"
-          animate
-          icon={<Server className="w-4 h-4" />}
-        />
-        <StatCard
-          label="Uptime"
-          value={systemHealth ? formatUptime(systemHealth.uptime) : 'N/A'}
-          variant="purple"
-          animate
-          icon={<Clock className="w-4 h-4" />}
-        />
-        <StatCard
-          label="Version"
-          value={systemHealth?.version ?? 'Unknown'}
-          animate
-          icon={<Tag className="w-4 h-4" />}
-        />
-      </div>
 
       {loading ? (
         <div className="flex items-center justify-center h-64">

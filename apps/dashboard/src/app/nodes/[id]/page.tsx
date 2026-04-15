@@ -5,15 +5,15 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import {
-  Server, Cpu, Thermometer, HardDrive, Clock, MapPin, ArrowLeft,
-  ChevronRight, Heart, HeartPulse, Pause, Play, Trash2, Pencil,
-  Briefcase, CheckCircle, AlertCircle, X, Calendar, Globe,
+  Server, Cpu, Clock, ArrowLeft,
+  Heart, HeartPulse, Pause, Play, Trash2, Pencil,
+  Briefcase, CheckCircle, AlertCircle, X,
   FileText, DollarSign,
 } from 'lucide-react'
-import { Card, StatCard } from '@/components/ui/Card'
+import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ProgressBar, CircularProgress } from '@/components/ui/ProgressBar'
-import { Skeleton, SkeletonStatCard, SkeletonCard } from '@/components/ui/Skeleton'
+import { Skeleton, SkeletonCard } from '@/components/ui/Skeleton'
 import { ConfirmModal, Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { api } from '@/lib/api'
@@ -64,38 +64,27 @@ interface NodeDetail {
 function SkeletonNodeDetail() {
   return (
     <div className="space-y-8 animate-fadeIn">
-      {/* Breadcrumb skeleton */}
-      <div className="flex items-center gap-2">
-        <Skeleton className="h-4 w-16" />
-        <Skeleton className="h-4 w-4" />
-        <Skeleton className="h-4 w-24" />
-      </div>
+      {/* Back link skeleton */}
+      <Skeleton className="h-4 w-28" />
 
       {/* Header skeleton */}
-      <div className="relative py-8">
-        <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-3xl" />
-        <div className="relative">
-          <div className="flex items-start justify-between">
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <Skeleton className="w-4 h-4 rounded-full" />
-                <Skeleton className="h-8 w-48" />
-                <Skeleton className="h-6 w-20 rounded-lg" />
-              </div>
-              <Skeleton className="h-4 w-96" />
-            </div>
-            <div className="flex gap-3">
-              <Skeleton className="h-10 w-32 rounded-lg" />
-              <Skeleton className="h-10 w-28 rounded-lg" />
-            </div>
-          </div>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-6 w-20 rounded-lg" />
+        </div>
+        <div className="flex gap-3">
+          <Skeleton className="h-10 w-28 rounded-lg" />
+          <Skeleton className="h-10 w-24 rounded-lg" />
         </div>
       </div>
 
       {/* Stats skeleton */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="stat-blocks">
         {Array.from({ length: 4 }).map((_, i) => (
-          <SkeletonStatCard key={i} />
+          <div key={i} className="stat-block">
+            <Skeleton className="h-12 w-full" />
+          </div>
         ))}
       </div>
 
@@ -306,121 +295,61 @@ export default function NodeDetailPage() {
 
   return (
     <motion.div className="space-y-8" variants={container} initial="hidden" animate="show">
-      {/* Breadcrumb */}
-      <motion.nav variants={itemVariant} className="flex items-center gap-2 text-sm">
-        <Link href="/nodes" className="inline-flex items-center gap-1.5 text-text-muted hover:text-accent transition-colors">
+      {/* Header */}
+      <motion.div variants={itemVariant}>
+        <Link href="/nodes" className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-accent transition-colors mb-4">
           <ArrowLeft size={16} />
-          <span>Nodes</span>
+          Back to Nodes
         </Link>
-        <ChevronRight size={16} className="text-text-muted" />
-        <span className="text-text-primary font-medium">{node.id.slice(0, 8)}...</span>
-      </motion.nav>
+        <div className="dash-header">
+          <div className="dash-header-left">
+            <h1><Server size={28} /> Node: {node.gpuTier}</h1>
+            <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-lg text-sm font-medium border ${getStatusBadgeStyle(node.status)}`}>
+              <span className={`w-2 h-2 rounded-full ${getStatusDotColor(node.status)}`} />
+              {node.status}
+            </span>
+          </div>
+          <div className="dash-header-right">
+            <Button
+              variant="gradient"
+              onClick={handleHeartbeat}
+              loading={actionLoading === 'heartbeat'}
+              icon={<Heart size={16} />}
+            >
+              Heartbeat
+            </Button>
 
-      {/* Hero Header */}
-      <motion.div variants={itemVariant} className="relative py-8">
-        <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-3xl" />
-
-        <div className="relative">
-          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
-            <div>
-              <div className="flex items-center gap-4 mb-3">
-                <Server size={20} className="text-text-muted" />
-                <h1 className="text-3xl md:text-4xl font-bold text-text-primary">{node.gpuTier} Node</h1>
-                <span className={`px-3 py-1.5 rounded-lg text-sm font-medium border ${getStatusBadgeStyle(node.status)}`}>
-                  {node.status}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 mb-2">
-                <p className="text-text-muted font-mono text-sm">{node.walletAddress}</p>
-                <button
-                  onClick={openEditWallet}
-                  className="p-1 text-text-muted hover:text-accent hover:bg-accent/10 rounded transition-colors"
-                  title="Edit wallet address"
-                >
-                  <Pencil size={16} />
-                </button>
-              </div>
-              <div className="flex flex-wrap items-center gap-4 text-sm text-text-muted">
-                <span className="flex items-center gap-1.5">
-                  <Calendar size={16} />
-                  Registered {new Date(node.createdAt).toLocaleDateString()}
-                </span>
-                {node.region && (
-                  <span className="flex items-center gap-1.5">
-                    <MapPin size={16} />
-                    {node.region}
-                  </span>
-                )}
-                <span className="flex items-center gap-1.5">
-                  <Clock size={16} />
-                  Last heartbeat: {new Date(node.lastHeartbeat).toLocaleString()}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
+            {node.status === 'ONLINE' && (
               <Button
-                variant="gradient"
-                onClick={handleHeartbeat}
-                loading={actionLoading === 'heartbeat'}
-                icon={<Heart size={16} />}
+                variant="secondary"
+                onClick={() => handleStatusChange('PAUSED')}
+                loading={actionLoading === 'status'}
+                icon={<Pause size={16} />}
               >
-                Send Heartbeat
+                Pause
               </Button>
+            )}
 
-              {node.status === 'ONLINE' && (
-                <Button
-                  variant="secondary"
-                  onClick={() => handleStatusChange('PAUSED')}
-                  loading={actionLoading === 'status'}
-                  icon={<Pause size={16} />}
-                >
-                  Pause
-                </Button>
-              )}
-
-              {node.status === 'PAUSED' && (
-                <Button
-                  variant="secondary"
-                  onClick={() => handleStatusChange('ONLINE')}
-                  loading={actionLoading === 'status'}
-                  icon={<Play size={16} />}
-                >
-                  Resume
-                </Button>
-              )}
-
-              <div className="flex items-center gap-2">
-                <select
-                  value={statementDays}
-                  onChange={(e) => setStatementDays(Number(e.target.value))}
-                  className="px-2 py-2 bg-background border border-border rounded-lg text-xs text-text-primary"
-                >
-                  <option value={7}>7 days</option>
-                  <option value={14}>14 days</option>
-                  <option value={30}>30 days</option>
-                  <option value={90}>90 days</option>
-                </select>
-                <Button
-                  variant="secondary"
-                  onClick={handleGenerateStatement}
-                  loading={actionLoading === 'statement'}
-                  icon={<FileText size={16} />}
-                >
-                  Statement
-                </Button>
-              </div>
-
+            {node.status === 'PAUSED' && (
               <Button
-                variant="ghost"
-                onClick={handleDelete}
-                loading={actionLoading === 'delete'}
-                className="text-error hover:text-error hover:bg-error/10"
-                icon={<Trash2 size={16} />}
+                variant="secondary"
+                onClick={() => handleStatusChange('ONLINE')}
+                loading={actionLoading === 'status'}
+                icon={<Play size={16} />}
               >
-                Delete
+                Resume
               </Button>
-            </div>
+            )}
+
+            <Button
+              variant="ghost"
+              onClick={handleDelete}
+              loading={actionLoading === 'delete'}
+              className="text-error hover:text-error hover:bg-error/10"
+              icon={<Trash2 size={16} />}
+            >
+              Delete
+            </Button>
           </div>
         </div>
       </motion.div>
@@ -438,42 +367,38 @@ export default function NodeDetailPage() {
         </motion.div>
       )}
 
-      {/* Stats Grid */}
-      <motion.div variants={itemVariant} className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard
-          label="Total Jobs"
-          value={node._count?.jobs || 0}
-          variant="blue"
-          animate
-          icon={<Briefcase size={20} />}
-        />
-        <StatCard
-          label="Completed Jobs"
-          value={completedJobs.length}
-          variant="accent"
-          animate
-          icon={<CheckCircle size={20} />}
-          trend={node._count?.jobs ? {
-            value: Math.round(completedJobs.length / node._count.jobs * 100),
-            isPositive: true
-          } : undefined}
-        />
-        <StatCard
-          label="Avg GPU Usage"
-          value={avgUtilization.toFixed(0)}
-          suffix="%"
-          variant="purple"
-          animate
-          icon={<Cpu size={20} />}
-        />
-        <StatCard
-          label="Est. Earnings"
-          value={totalEarnings.toFixed(2)}
-          prefix="$"
-          variant="orange"
-          animate
-          icon={<DollarSign size={20} />}
-        />
+      {/* KPI Blocks */}
+      <motion.div variants={itemVariant} className="stat-blocks">
+        <div className="stat-block green">
+          <div className="stat-icon">
+            <span className={`w-2.5 h-2.5 rounded-full ${getStatusDotColor(node.status)}`} />
+          </div>
+          <div className="stat-content">
+            <span className="stat-value">{node.status}</span>
+            <span className="stat-label">Status</span>
+          </div>
+        </div>
+        <div className="stat-block blue">
+          <div className="stat-icon"><Clock size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{node.heartbeats?.length > 0 ? `${(node.heartbeats.length * 5 / 60).toFixed(0)}h` : '0h'}</span>
+            <span className="stat-label">Uptime Hours</span>
+          </div>
+        </div>
+        <div className="stat-block orange">
+          <div className="stat-icon"><DollarSign size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">${totalEarnings.toFixed(2)}</span>
+            <span className="stat-label">Total Earnings</span>
+          </div>
+        </div>
+        <div className="stat-block purple">
+          <div className="stat-icon"><CheckCircle size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{completedJobs.length}</span>
+            <span className="stat-label">Jobs Completed</span>
+          </div>
+        </div>
       </motion.div>
 
       <motion.div variants={itemVariant} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -493,9 +418,46 @@ export default function NodeDetailPage() {
             <InfoRow label="Node ID" value={node.id} mono />
             <InfoRow label="GPU Tier" value={node.gpuTier} badge badgeColor="accent" />
             <InfoRow label="Node Type" value={node.nodeType} />
+            <div className="flex justify-between items-center py-3 border-b border-border/50">
+              <span className="text-sm text-text-muted">Wallet</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-text-primary font-mono">{node.walletAddress.slice(0, 12)}...{node.walletAddress.slice(-6)}</span>
+                <button
+                  onClick={openEditWallet}
+                  className="p-1 text-text-muted hover:text-accent hover:bg-accent/10 rounded transition-colors"
+                  title="Edit wallet address"
+                >
+                  <Pencil size={14} />
+                </button>
+              </div>
+            </div>
             <InfoRow label="Region" value={node.region || 'Not specified'} />
             <InfoRow label="Registered" value={new Date(node.createdAt).toLocaleDateString()} />
-            <InfoRow label="Last Updated" value={new Date(node.updatedAt).toLocaleString()} noBorder />
+            <InfoRow label="Last Updated" value={new Date(node.updatedAt).toLocaleString()} />
+            <div className="flex justify-between items-center py-3">
+              <span className="text-sm text-text-muted">Statement</span>
+              <div className="flex items-center gap-2">
+                <select
+                  value={statementDays}
+                  onChange={(e) => setStatementDays(Number(e.target.value))}
+                  className="px-2 py-1.5 bg-background border border-border rounded-lg text-xs text-text-primary"
+                >
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={90}>90 days</option>
+                </select>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleGenerateStatement}
+                  loading={actionLoading === 'statement'}
+                  icon={<FileText size={14} />}
+                >
+                  Generate
+                </Button>
+              </div>
+            </div>
           </div>
         </Card>
 

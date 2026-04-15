@@ -129,25 +129,12 @@ export default function ReportsPage() {
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
-      {/* Hero Section */}
-      <motion.div variants={item} className="relative py-8 md:py-12">
-        {/* Background gradient */}
-        <div className="absolute inset-0 bg-gradient-to-b from-blue-500/5 via-transparent to-transparent rounded-3xl" />
-
-        <div className="relative text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500/5 border border-blue-500/20 rounded-full mb-6 animate-slideUp">
-            <FileText className="w-4 h-4 text-blue-400" />
-            <span className="text-xs text-blue-400 font-medium uppercase tracking-wider">Export & Analytics</span>
-          </div>
-
-          <h1 className="text-3xl md:text-5xl font-bold text-text-primary mb-3">
-            Reports
-          </h1>
-          <p className="text-text-muted max-w-xl mx-auto">
-            Generate comprehensive reports, export data in multiple formats,
-            and gain insights into your network&apos;s performance.
-          </p>
+      {/* Header */}
+      <motion.div variants={item} className="dash-header">
+        <div className="dash-header-left">
+          <h1><FileText size={28} /> Reports</h1>
         </div>
+        <div className="dash-header-right" />
       </motion.div>
 
       {/* Date Range Filter */}

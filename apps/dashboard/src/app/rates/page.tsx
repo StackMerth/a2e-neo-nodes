@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { TrendingUp, BarChart3, DollarSign, Server, Cpu, Star, Globe, Shield, RefreshCw, AlertTriangle } from 'lucide-react'
-import { Card, StatCard } from '@/components/ui/Card'
+import { TrendingUp, BarChart3, DollarSign, Server, Cpu, Star, Globe, Shield, RefreshCw, AlertTriangle, Clock } from 'lucide-react'
+import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { api } from '@/lib/api'
 
@@ -103,40 +103,22 @@ export default function RatesPage() {
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
-      {/* Hero Section */}
-      <motion.div variants={item} className="relative py-8 md:py-12">
-        <div className="absolute inset-0 bg-gradient-to-b from-accent-purple/5 via-transparent to-transparent rounded-3xl" />
-
-        <div className="relative">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent-purple/5 border border-accent-purple/20 rounded-full mb-4 animate-slideUp">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-purple opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-accent-purple" />
-                </span>
-                <span className="text-xs text-accent-purple font-medium uppercase tracking-wider">Live Pricing</span>
-              </div>
-              <h1 className="text-3xl md:text-4xl font-bold text-text-primary">
-                Market Rates
-              </h1>
-              <p className="text-text-muted mt-2 max-w-xl">
-                Real-time GPU pricing across all markets. Internal rates are premium retail; external rates are used as fallback.
-              </p>
-            </div>
-            <div className="flex items-center gap-4">
-              {lastUpdated && (
-                <div className="px-4 py-2 bg-surface rounded-lg border border-border">
-                  <span className="text-xs text-text-muted block">Last Updated</span>
-                  <span className="text-sm text-text-primary font-medium">
-                    {new Date(lastUpdated).toLocaleTimeString()}
-                  </span>
-                </div>
-              )}
-              <Button onClick={loadRates} variant="secondary" size="sm" icon={<RefreshCw className="w-4 h-4" />}>
-                Refresh
-              </Button>
-            </div>
+      {/* Header */}
+      <motion.div variants={item}>
+        <div className="dash-header">
+          <div className="dash-header-left">
+            <h1><TrendingUp size={28} /> Market Rates</h1>
+            {lastUpdated && (
+              <span className="dash-date-badge">
+                <Clock size={14} />
+                {new Date(lastUpdated).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
+          <div className="dash-header-right">
+            <button className="dash-refresh-btn" onClick={loadRates} title="Refresh rates">
+              <RefreshCw className="w-5 h-5" />
+            </button>
           </div>
         </div>
       </motion.div>
@@ -159,38 +141,36 @@ export default function RatesPage() {
         </div>
       ) : (
         <>
-          {/* Stats Grid */}
-          <motion.div variants={item} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              label="Internal Avg"
-              value={avgInternalRate.toFixed(2)}
-              prefix="$"
-              suffix="/day"
-              variant="accent"
-              icon={<DollarSign className="w-4 h-4" />}
-            />
-            <StatCard
-              label="Akash Avg"
-              value={avgAkashRate.toFixed(2)}
-              prefix="$"
-              suffix="/day"
-              variant="blue"
-              icon={<BarChart3 className="w-4 h-4" />}
-            />
-            <StatCard
-              label="IO.net Avg"
-              value={avgIonetRate.toFixed(2)}
-              prefix="$"
-              suffix="/day"
-              variant="purple"
-              icon={<BarChart3 className="w-4 h-4" />}
-            />
-            <StatCard
-              label="GPU Tiers"
-              value={GPU_TIER_ORDER.length}
-              variant="default"
-              icon={<Server className="w-4 h-4" />}
-            />
+          {/* KPI Blocks */}
+          <motion.div variants={item} className="stat-blocks">
+            <div className="stat-block green">
+              <div className="stat-icon"><Server size={20} /></div>
+              <div className="stat-content">
+                <span className="stat-value">{rates.filter(r => r.available).length}</span>
+                <span className="stat-label">Markets Active</span>
+              </div>
+            </div>
+            <div className="stat-block blue">
+              <div className="stat-icon"><BarChart3 size={20} /></div>
+              <div className="stat-content">
+                <span className="stat-value">${avgAkashRate.toFixed(2)}/day</span>
+                <span className="stat-label">Akash Avg Rate</span>
+              </div>
+            </div>
+            <div className="stat-block purple">
+              <div className="stat-icon"><BarChart3 size={20} /></div>
+              <div className="stat-content">
+                <span className="stat-value">${avgIonetRate.toFixed(2)}/day</span>
+                <span className="stat-label">IO.net Avg Rate</span>
+              </div>
+            </div>
+            <div className="stat-block orange">
+              <div className="stat-icon"><DollarSign size={20} /></div>
+              <div className="stat-content">
+                <span className="stat-value">${avgInternalRate.toFixed(2)}/day</span>
+                <span className="stat-label">Internal Rate</span>
+              </div>
+            </div>
           </motion.div>
 
           {/* GPU Tier Cards */}

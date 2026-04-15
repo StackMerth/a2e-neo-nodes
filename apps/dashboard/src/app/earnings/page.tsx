@@ -182,24 +182,47 @@ export default function EarningsPage() {
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
-      {/* Hero Section */}
-      <motion.div variants={item} className="relative py-8 md:py-12">
-        {/* Background gradient */}
-        <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-3xl" />
+      {/* Header */}
+      <motion.div variants={item} className="dash-header">
+        <div className="dash-header-left">
+          <h1><DollarSign size={28} /> Earnings</h1>
+        </div>
+        <div className="dash-header-right">
+          <button className="dash-refresh-btn" onClick={loadEarnings} title="Refresh data">
+            <RefreshCw size={16} />
+          </button>
+        </div>
+      </motion.div>
 
-        <div className="relative text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent/5 border border-accent/20 rounded-full mb-6 animate-slideUp">
-            <TrendingUp className="w-4 h-4 text-accent" />
-            <span className="text-xs text-accent font-medium uppercase tracking-wider">Revenue Analytics</span>
+      {/* KPI Stat Blocks */}
+      <motion.div variants={item} className="stat-blocks">
+        <div className="stat-block green">
+          <div className="stat-icon"><DollarSign size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{formatCurrency(summary?.totalEarnings ?? 0)}</span>
+            <span className="stat-label">Total Earnings</span>
           </div>
-
-          <h1 className="text-3xl md:text-5xl font-bold text-text-primary mb-3">
-            Earnings
-          </h1>
-          <p className="text-text-muted max-w-xl mx-auto">
-            Track revenue across markets, analyze earnings by GPU tier,
-            and monitor your network&apos;s financial performance.
-          </p>
+        </div>
+        <div className="stat-block blue">
+          <div className="stat-icon"><TrendingUp size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{formatCurrency(byMarket?.total.earnings ?? 0)}</span>
+            <span className="stat-label">Last {days}d</span>
+          </div>
+        </div>
+        <div className="stat-block amber">
+          <div className="stat-icon"><Briefcase size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{(summary?.totalJobs ?? 0).toLocaleString()}</span>
+            <span className="stat-label">Job Count</span>
+          </div>
+        </div>
+        <div className="stat-block purple">
+          <div className="stat-icon"><Clock size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{formatHours(summary?.totalGpuSeconds ?? 0)}</span>
+            <span className="stat-label">GPU Time</span>
+          </div>
         </div>
       </motion.div>
 
@@ -262,41 +285,6 @@ export default function EarningsPage() {
           {/* OVERVIEW TAB */}
           {activeTab === 'overview' && (
             <>
-              {/* Stats Grid */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard
-                  label="Total Earnings"
-                  value={formatCurrency(summary?.totalEarnings ?? 0)}
-                  variant="accent"
-                  animate
-                  icon={<DollarSign className="w-4 h-4" />}
-                />
-                <StatCard
-                  label="GPU Time"
-                  value={formatHours(summary?.totalGpuSeconds ?? 0)}
-                  variant="blue"
-                  animate
-                  icon={<Clock className="w-4 h-4" />}
-                />
-                <StatCard
-                  label="Total Jobs"
-                  value={(summary?.totalJobs ?? 0).toLocaleString()}
-                  variant="purple"
-                  animate
-                  icon={<Briefcase className="w-4 h-4" />}
-                />
-                <StatCard
-                  label="Avg/Job"
-                  value={
-                    summary && summary.totalJobs > 0
-                      ? formatCurrency(summary.totalEarnings / summary.totalJobs)
-                      : '$0.00'
-                  }
-                  animate
-                  icon={<BarChart3 className="w-4 h-4" />}
-                />
-              </div>
-
               {/* Market Distribution */}
               {byMarket && byMarket.total.earnings > 0 && (
                 <Card variant="glass" hover={false}>
