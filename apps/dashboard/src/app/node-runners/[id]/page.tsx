@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, DollarSign, TrendingUp, Wallet, Clock, BarChart3, Server } from 'lucide-react'
+import { ArrowLeft, Plus, DollarSign, TrendingUp, Wallet, Clock, BarChart3, Server, Users } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
 
@@ -151,72 +151,56 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
   return (
     <motion.div className="space-y-6" variants={container} initial="hidden" animate="show">
       {/* Header */}
-      <motion.div variants={item} className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link
-            href="/node-runners"
-            className="p-2 hover:bg-surface-hover rounded-lg transition-colors"
-          >
-            <ArrowLeft size={20} className="text-text-muted" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-text-primary">{runner.name}</h1>
-            <p className="text-text-muted mt-1">
-              Member since {new Date(runner.createdAt).toLocaleDateString()}
-            </p>
+      <motion.div variants={item}>
+        <Link href="/node-runners" className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-accent transition-colors mb-4">
+          <ArrowLeft size={16} />
+          Back to Node Runners
+        </Link>
+        <div className="dash-header">
+          <div className="dash-header-left">
+            <h1><Users size={28} /> {runner.name}</h1>
           </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <code className="text-sm text-text-secondary bg-surface px-3 py-1.5 rounded-lg border border-border">
-            {runner.walletAddress.slice(0, 12)}...{runner.walletAddress.slice(-8)}
-          </code>
-          <button
-            onClick={() => setShowInvestmentModal(true)}
-            className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors flex items-center gap-2 text-sm"
-          >
-            <Plus size={16} />
-            Add Investment
-          </button>
+          <div className="dash-header-right">
+            <button
+              onClick={() => setShowInvestmentModal(true)}
+              className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors flex items-center gap-2 text-sm"
+            >
+              <Plus size={16} />
+              Add Investment
+            </button>
+          </div>
         </div>
       </motion.div>
 
-      {/* Financial Summary Cards */}
-      <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-          <p className="text-text-muted text-sm">Total Invested</p>
-          <p className="text-2xl font-bold text-text-primary mt-1">
-            ${fin.totalInvested.toLocaleString()}
-          </p>
+      {/* KPI Blocks */}
+      <motion.div variants={item} className="stat-blocks">
+        <div className="stat-block green">
+          <div className="stat-icon"><DollarSign size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">${fin.totalInvested.toLocaleString()}</span>
+            <span className="stat-label">Total Invested</span>
+          </div>
         </div>
-        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-          <p className="text-text-muted text-sm">Total Earnings</p>
-          <p className="text-2xl font-bold text-accent mt-1">
-            ${fin.totalEarnings.toLocaleString()}
-          </p>
+        <div className="stat-block blue">
+          <div className="stat-icon"><TrendingUp size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">${fin.totalEarnings.toLocaleString()}</span>
+            <span className="stat-label">Total Earnings</span>
+          </div>
         </div>
-        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-          <p className="text-text-muted text-sm">Total Payouts</p>
-          <p className="text-2xl font-bold text-text-primary mt-1">
-            ${fin.totalPayouts.toLocaleString()}
-          </p>
+        <div className="stat-block orange">
+          <div className="stat-icon"><Wallet size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{fin.netPosition >= 0 ? '+' : ''}${fin.netPosition.toLocaleString()}</span>
+            <span className="stat-label">Net Position</span>
+          </div>
         </div>
-        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-          <p className="text-text-muted text-sm">Pending Payout</p>
-          <p className="text-2xl font-bold text-warning mt-1">
-            ${fin.pendingPayout.toLocaleString()}
-          </p>
-        </div>
-        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-          <p className="text-text-muted text-sm">Net Position</p>
-          <p className={`text-2xl font-bold mt-1 ${fin.netPosition >= 0 ? 'text-accent' : 'text-error'}`}>
-            {fin.netPosition >= 0 ? '+' : ''}${fin.netPosition.toLocaleString()}
-          </p>
-        </div>
-        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-          <p className="text-text-muted text-sm">ROI</p>
-          <p className={`text-2xl font-bold mt-1 ${fin.roiPercentage >= 0 ? 'text-accent' : 'text-error'}`}>
-            {fin.roiPercentage >= 0 ? '+' : ''}{fin.roiPercentage.toFixed(1)}%
-          </p>
+        <div className="stat-block purple">
+          <div className="stat-icon"><BarChart3 size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{fin.roiPercentage >= 0 ? '+' : ''}{fin.roiPercentage.toFixed(1)}%</span>
+            <span className="stat-label">ROI</span>
+          </div>
         </div>
       </motion.div>
 

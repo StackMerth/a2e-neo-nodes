@@ -275,38 +275,55 @@ export default function FinancialPage() {
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
-      {/* Hero Section */}
-      <motion.div variants={item} className="relative py-8 md:py-12">
-        <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-3xl" />
+      {/* Header */}
+      <motion.div variants={item} className="dash-header">
+        <div className="dash-header-left">
+          <h1><BarChart3 size={28} /> Financial Overview</h1>
+        </div>
+        <div className="dash-header-right">
+          <select
+            value={days}
+            onChange={(e) => setDays(Number(e.target.value))}
+            className="px-4 py-2.5 bg-surface border border-border rounded-xl text-sm text-text-primary focus:outline-none focus:border-accent"
+          >
+            <option value={7}>Last 7 days</option>
+            <option value={30}>Last 30 days</option>
+            <option value={90}>Last 90 days</option>
+          </select>
+          <button className="dash-refresh-btn" onClick={loadData} title="Refresh data">
+            <RefreshCw size={16} />
+          </button>
+        </div>
+      </motion.div>
 
-        <div className="relative">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent/5 border border-accent/20 rounded-full mb-4 animate-slideUp">
-                <DollarSign className="w-4 h-4 text-accent" />
-                <span className="text-xs text-accent font-medium uppercase tracking-wider">Financial Hub</span>
-              </div>
-              <h1 className="text-3xl md:text-4xl font-bold text-text-primary">
-                Financial Overview
-              </h1>
-              <p className="text-text-muted mt-2 max-w-xl">
-                Track revenue, costs, and settlements across all nodes and markets.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <select
-                value={days}
-                onChange={(e) => setDays(Number(e.target.value))}
-                className="px-4 py-2.5 bg-surface border border-border rounded-xl text-sm text-text-primary focus:outline-none focus:border-accent"
-              >
-                <option value={7}>Last 7 days</option>
-                <option value={30}>Last 30 days</option>
-                <option value={90}>Last 90 days</option>
-              </select>
-              <Button onClick={loadData} variant="secondary" size="sm" icon={<RefreshCw className="w-4 h-4" />}>
-                Refresh
-              </Button>
-            </div>
+      {/* KPI Stat Blocks */}
+      <motion.div variants={item} className="stat-blocks">
+        <div className="stat-block green">
+          <div className="stat-icon"><DollarSign size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{formatCurrency(summary?.revenue.total ?? 0)}</span>
+            <span className="stat-label">Total Revenue</span>
+          </div>
+        </div>
+        <div className="stat-block red">
+          <div className="stat-icon"><Receipt size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{formatCurrency(summary?.costs.total ?? 0)}</span>
+            <span className="stat-label">Total Costs</span>
+          </div>
+        </div>
+        <div className="stat-block blue">
+          <div className="stat-icon"><TrendingUp size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{formatCurrency(summary?.profit.gross ?? 0)}</span>
+            <span className="stat-label">Net Profit</span>
+          </div>
+        </div>
+        <div className="stat-block purple">
+          <div className="stat-icon"><BarChart3 size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{formatPercent(summary?.profit.margin ?? 0)}</span>
+            <span className="stat-label">Profit Margin</span>
           </div>
         </div>
       </motion.div>

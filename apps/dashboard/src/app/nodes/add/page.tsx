@@ -7,7 +7,7 @@ import { motion } from 'framer-motion'
 import {
   ArrowLeft, ArrowRight, ChevronRight, Check, CheckCircle,
   AlertCircle, X, Settings, Server, Terminal, ClipboardList,
-  Cpu, Key, Tag, Rocket, Copy, Loader2, FlaskConical,
+  Cpu, Key, Tag, Rocket, Copy, Loader2, FlaskConical, Plus,
 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -184,40 +184,21 @@ export default function AddNodePage() {
 
   return (
     <motion.div className="max-w-4xl mx-auto space-y-8" variants={container} initial="hidden" animate="show">
-      {/* Breadcrumb */}
-      <motion.nav variants={item} className="flex items-center gap-2 text-sm">
-        <Link href="/nodes" className="inline-flex items-center gap-1.5 text-text-muted hover:text-accent transition-colors">
-          <ArrowLeft size={16} />
-          <span>Nodes</span>
-        </Link>
-        <ChevronRight size={16} className="text-text-muted" />
-        <span className="text-text-primary font-medium">Add Node</span>
-      </motion.nav>
-
       {/* Header */}
-      <motion.div variants={item} className="relative py-8">
-        <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-3xl" />
-
-        <div className="relative text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent/5 border border-accent/20 rounded-full mb-6 animate-slideUp">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-accent" />
-            </span>
-            <span className="text-xs text-accent font-medium uppercase tracking-wider">Node Onboarding</span>
+      <motion.div variants={item}>
+        <Link href="/nodes" className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-accent transition-colors mb-4">
+          <ArrowLeft size={16} />
+          Back to Nodes
+        </Link>
+        <div className="dash-header">
+          <div className="dash-header-left">
+            <h1><Plus size={28} /> Add New Node</h1>
           </div>
-
-          <h1 className="text-3xl md:text-4xl font-bold text-text-primary mb-3">
-            Add a New Node
-          </h1>
-          <p className="text-text-muted max-w-xl mx-auto">
-            Connect your GPU server to the A²E network and start earning.
-          </p>
         </div>
       </motion.div>
 
       {/* Progress Steps */}
-      <div className="flex items-center justify-center gap-4">
+      <div className="flex items-center gap-4">
         {[1, 2, 3].map((s) => (
           <div key={s} className="flex items-center gap-2">
             <div

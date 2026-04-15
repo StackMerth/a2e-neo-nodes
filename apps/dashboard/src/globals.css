@@ -1230,6 +1230,8 @@ textarea:focus {
 .stat-blocks .stat-block.yellow .stat-icon { background: rgba(234, 179, 8, 0.15);  color: #eab308; }
 .stat-blocks .stat-block.cyan .stat-icon   { background: rgba(6, 182, 212, 0.15);  color: #06b6d4; }
 .stat-blocks .stat-block.orange .stat-icon { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+.stat-blocks .stat-block.red .stat-icon    { background: rgba(239, 68, 68, 0.15);  color: #ef4444; }
+.stat-blocks .stat-block.amber .stat-icon  { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
 
 .stat-blocks .stat-content {
   display: flex;

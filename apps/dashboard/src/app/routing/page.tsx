@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { FlaskConical, Star, Globe, Clock, Map, AlertTriangle, Shield, CircleCheck } from 'lucide-react'
+import { GitBranch, FlaskConical, Star, Globe, Clock, Map, AlertTriangle, Shield, CircleCheck } from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
@@ -94,59 +94,46 @@ export default function RoutingPage() {
   }
 
   return (
-    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
-      {/* Hero Section */}
-      <motion.div variants={item} className="relative py-8 md:py-12">
-        <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-3xl" />
-
-        <div className="relative">
-          <div className="text-center max-w-2xl mx-auto mb-8">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent/5 border border-accent/20 rounded-full mb-4 animate-slideUp">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-accent" />
-              </span>
-              <span className="text-xs text-accent font-medium uppercase tracking-wider">Routing Simulator</span>
-            </div>
-            <h1 className="text-3xl md:text-4xl font-bold text-text-primary mb-3">
-              Test A<sup className="text-accent">2</sup>E Routing
-            </h1>
-            <p className="text-text-muted">
-              Simulate routing decisions to understand how jobs are allocated across markets.
-              Configure parameters and see real-time routing outcomes.
-            </p>
-          </div>
+    <motion.div variants={container} initial="hidden" animate="show" className="dashboard-modern">
+      {/* Header */}
+      <motion.div className="dash-header" variants={item}>
+        <div className="dash-header-left">
+          <h1><GitBranch size={28} /> Routing Simulator</h1>
         </div>
+        <div className="dash-header-right" />
       </motion.div>
 
       {/* Session Stats */}
       {history.length > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard
-            label="Total Tests"
-            value={history.length}
-            variant="default"
-            icon={<FlaskConical className="w-4 h-4" />}
-          />
-          <StatCard
-            label="Internal Routes"
-            value={internalCount}
-            variant="accent"
-            icon={<Star className="w-4 h-4" />}
-          />
-          <StatCard
-            label="External Routes"
-            value={akashCount + ionetCount}
-            variant="blue"
-            icon={<Globe className="w-4 h-4" />}
-          />
-          <StatCard
-            label="Avg Decision"
-            value={avgDecisionTime}
-            suffix="ms"
-            variant="purple"
-            icon={<Clock className="w-4 h-4" />}
-          />
+        <div className="stat-blocks">
+          <div className="stat-block green">
+            <div className="stat-icon"><FlaskConical size={20} /></div>
+            <div className="stat-content">
+              <span className="stat-value">{history.length}</span>
+              <span className="stat-label">Total Tests</span>
+            </div>
+          </div>
+          <div className="stat-block purple">
+            <div className="stat-icon"><Star size={20} /></div>
+            <div className="stat-content">
+              <span className="stat-value">{internalCount}</span>
+              <span className="stat-label">Internal Routes</span>
+            </div>
+          </div>
+          <div className="stat-block blue">
+            <div className="stat-icon"><Globe size={20} /></div>
+            <div className="stat-content">
+              <span className="stat-value">{akashCount + ionetCount}</span>
+              <span className="stat-label">External Routes</span>
+            </div>
+          </div>
+          <div className="stat-block cyan">
+            <div className="stat-icon"><Clock size={20} /></div>
+            <div className="stat-content">
+              <span className="stat-value">{avgDecisionTime}ms</span>
+              <span className="stat-label">Avg Decision</span>
+            </div>
+          </div>
         </div>
       )}
 
