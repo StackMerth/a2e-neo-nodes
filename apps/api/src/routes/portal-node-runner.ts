@@ -522,8 +522,22 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
    * POST /v1/portal/node-runner/deploy — Request a new node deployment
    */
   fastify.post('/v1/portal/node-runner/deploy', async (request, reply) => {
-    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
-    if (!nr) return reply.code(404).send({ error: 'No node runner profile found. Complete onboarding first.' })
+    let nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+
+    // Auto-create NodeRunner profile if user doesn't have one
+    if (!nr) {
+      const user = await fastify.prisma.user.findUnique({ where: { id: request.user!.userId } })
+      if (!user) return reply.code(404).send({ error: 'User not found' })
+
+      nr = await fastify.prisma.nodeRunner.create({
+        data: {
+          name: user.email?.split('@')[0] ?? 'Node Runner',
+          email: user.email,
+          walletAddress: user.walletAddress ?? `pending-${user.id}`,
+          userId: user.id,
+        },
+      })
+    }
 
     const parsed = deploySchema.safeParse(request.body)
     if (!parsed.success) {
@@ -534,6 +548,9 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     const unitPrice = GPU_PRICING[gpuTier] ?? 2500
     const totalAmount = unitPrice * nodeCount
 
+    // Test mode: any txHash starting with 'test_' bypasses payment verification
+    const isTestTx = txHash.startsWith('test_')
+
     const investment = await fastify.prisma.investment.create({
       data: {
         nodeRunnerId: nr.id,
@@ -541,7 +558,7 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
         currency: 'USD',
         nodeCount,
         gpuTier: gpuTier as import('@a2e/database').GpuTier,
-        txHash,
+        txHash: isTestTx ? `TEST:${txHash}` : txHash,
         txConfirmed: true,
         cryptoAmount,
         cryptoCurrency,

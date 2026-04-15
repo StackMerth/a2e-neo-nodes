@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { motion } from 'framer-motion'
+import { Rocket, CircleCheck, Hash } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -23,20 +25,51 @@ const GPU_TIERS: GpuTier[] = [
   { id: 'GB300', name: 'GB300', price: 9000, dailyYield: 499.35 },
 ]
 
-const TIER_COLORS: Record<string, string> = {
-  H100: 'border-accent/40 bg-accent/5 shadow-[0_0_20px_theme(colors.accent/0.1)]',
-  H200: 'border-accent-blue/40 bg-accent-blue/5 shadow-[0_0_20px_theme(colors.accent-blue/0.1)]',
-  B200: 'border-accent-purple/40 bg-accent-purple/5 shadow-[0_0_20px_theme(colors.accent-purple/0.1)]',
-  B300: 'border-accent-orange/40 bg-accent-orange/5 shadow-[0_0_20px_theme(colors.accent-orange/0.1)]',
-  GB300: 'border-error/40 bg-error/5 shadow-[0_0_20px_theme(colors.error/0.1)]',
+const TIER_STYLES: Record<string, { border: string; bg: string; text: string; glow: string; ring: string }> = {
+  H100: {
+    border: 'rgba(34,197,94,0.4)',
+    bg: 'rgba(34,197,94,0.05)',
+    text: 'var(--success)',
+    glow: '0 0 20px rgba(34,197,94,0.1)',
+    ring: 'rgba(34,197,94,0.5)',
+  },
+  H200: {
+    border: 'rgba(59,130,246,0.4)',
+    bg: 'rgba(59,130,246,0.05)',
+    text: 'var(--info)',
+    glow: '0 0 20px rgba(59,130,246,0.1)',
+    ring: 'rgba(59,130,246,0.5)',
+  },
+  B200: {
+    border: 'rgba(139,92,246,0.4)',
+    bg: 'rgba(139,92,246,0.05)',
+    text: '#8b5cf6',
+    glow: '0 0 20px rgba(139,92,246,0.1)',
+    ring: 'rgba(139,92,246,0.5)',
+  },
+  B300: {
+    border: 'rgba(245,158,11,0.4)',
+    bg: 'rgba(245,158,11,0.05)',
+    text: 'var(--warning)',
+    glow: '0 0 20px rgba(245,158,11,0.1)',
+    ring: 'rgba(245,158,11,0.5)',
+  },
+  GB300: {
+    border: 'rgba(239,68,68,0.4)',
+    bg: 'rgba(239,68,68,0.05)',
+    text: 'var(--danger)',
+    glow: '0 0 20px rgba(239,68,68,0.1)',
+    ring: 'rgba(239,68,68,0.5)',
+  },
 }
 
-const TIER_TEXT: Record<string, string> = {
-  H100: 'text-accent',
-  H200: 'text-accent-blue',
-  B200: 'text-accent-purple',
-  B300: 'text-accent-orange',
-  GB300: 'text-error',
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 }
 
 export default function DeployPage() {
@@ -77,112 +110,137 @@ export default function DeployPage() {
   }
 
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <motion.div
+      className="space-y-8"
+      variants={container}
+      initial="hidden"
+      animate="show"
+    >
       {/* Header */}
-      <div className="relative py-6">
-        <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-2xl" />
+      <motion.div variants={item} className="relative py-6">
+        <div className="absolute inset-0 rounded-2xl" style={{ background: 'linear-gradient(to bottom, rgba(34,197,94,0.05), transparent)' }} />
         <div className="relative">
-          <h1 className="text-2xl md:text-3xl font-bold text-text-primary">Deploy a Node</h1>
-          <p className="text-text-muted mt-1">Select your GPU tier, choose how many nodes to deploy, and submit payment.</p>
+          <div className="flex items-center gap-3">
+            <Rocket size={28} style={{ color: 'var(--primary)' }} />
+            <h1 className="text-2xl md:text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>Deploy a Node</h1>
+          </div>
+          <p className="mt-1" style={{ color: 'var(--text-muted)' }}>Select your GPU tier, choose how many nodes to deploy, and submit payment.</p>
         </div>
-      </div>
+      </motion.div>
 
       {/* GPU Tier Selector */}
-      <div>
-        <h2 className="text-lg font-semibold text-text-primary mb-4">Select GPU Tier</h2>
+      <motion.div variants={item}>
+        <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Select GPU Tier</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {GPU_TIERS.map(t => {
             const isSelected = selectedTier === t.id
             const tierRoi = ((t.dailyYield * 30) / t.price) * 100
+            const ts = TIER_STYLES[t.id]!
             return (
               <button
                 key={t.id}
                 onClick={() => setSelectedTier(t.id)}
-                className={`relative text-left rounded-xl border p-5 transition-all duration-200 ${
-                  isSelected
-                    ? `${TIER_COLORS[t.id]} ring-1 ring-offset-0 ${t.id === 'H100' ? 'ring-accent/50' : t.id === 'H200' ? 'ring-accent-blue/50' : t.id === 'B200' ? 'ring-accent-purple/50' : t.id === 'B300' ? 'ring-accent-orange/50' : 'ring-error/50'}`
-                    : 'border-border bg-surface hover:border-accent/20 hover:bg-surface-hover'
-                }`}
+                className="relative text-left rounded-xl p-5 transition-all duration-200"
+                style={isSelected
+                  ? {
+                      border: `1px solid ${ts.border}`,
+                      background: ts.bg,
+                      boxShadow: `${ts.glow}, 0 0 0 1px ${ts.ring}`,
+                    }
+                  : {
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--glass-bg)',
+                    }
+                }
               >
                 {isSelected && (
                   <div className="absolute top-3 right-3">
-                    <svg className={`w-5 h-5 ${TIER_TEXT[t.id]}`} fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                    </svg>
+                    <CircleCheck size={20} style={{ color: ts.text }} />
                   </div>
                 )}
-                <div className={`text-lg font-bold mb-1 ${isSelected ? TIER_TEXT[t.id] : 'text-text-primary'}`}>
+                <div
+                  className="text-lg font-bold mb-1"
+                  style={{ color: isSelected ? ts.text : 'var(--text-primary)' }}
+                >
                   {t.name}
                 </div>
-                <div className="text-2xl font-bold text-text-primary mb-3">
+                <div className="text-2xl font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
                   ${t.price.toLocaleString()}
                 </div>
                 <div className="space-y-1.5 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-text-muted">Daily Yield</span>
-                    <span className="text-accent font-medium">${t.dailyYield.toFixed(2)}</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Daily Yield</span>
+                    <span className="font-medium" style={{ color: 'var(--primary)' }}>${t.dailyYield.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-text-muted">30d ROI</span>
-                    <span className="text-accent font-medium">{tierRoi.toFixed(1)}%</span>
+                    <span style={{ color: 'var(--text-muted)' }}>30d ROI</span>
+                    <span className="font-medium" style={{ color: 'var(--primary)' }}>{tierRoi.toFixed(1)}%</span>
                   </div>
                 </div>
               </button>
             )
           })}
         </div>
-      </div>
+      </motion.div>
 
       {/* Node Count */}
-      <div>
-        <h2 className="text-lg font-semibold text-text-primary mb-4">Number of Nodes</h2>
+      <motion.div variants={item}>
+        <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Number of Nodes</h2>
         <div className="flex gap-3">
           {[1, 2, 3, 4, 5].map(n => (
             <button
               key={n}
               onClick={() => setNodeCount(n)}
-              className={`w-14 h-14 rounded-xl font-bold text-lg transition-all duration-200 ${
-                nodeCount === n
-                  ? 'bg-accent text-white shadow-glow-sm'
-                  : 'bg-surface border border-border text-text-secondary hover:border-accent/30 hover:text-text-primary'
-              }`}
+              className="w-14 h-14 rounded-xl font-bold text-lg transition-all duration-200"
+              style={nodeCount === n
+                ? { background: 'var(--primary)', color: '#fff', boxShadow: '0 0 10px rgba(34,197,94,0.2)' }
+                : { background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }
+              }
             >
               {n}
             </button>
           ))}
         </div>
-      </div>
+      </motion.div>
 
       {/* Cost Summary */}
       {tier && (
-        <Card className="p-6 bg-gradient-to-r from-accent/5 via-surface to-surface border-accent/20">
-          <h2 className="text-lg font-semibold text-text-primary mb-4">Cost Summary</h2>
-          <div className="space-y-3">
-            <div className="flex justify-between text-sm">
-              <span className="text-text-muted">{tier.name} x {nodeCount}</span>
-              <span className="text-text-secondary">${tier.price.toLocaleString()} x {nodeCount}</span>
-            </div>
-            <div className="border-t border-border pt-3 flex justify-between">
-              <span className="font-semibold text-text-primary">Total</span>
-              <span className="text-2xl font-bold text-accent">${totalCost.toLocaleString()}</span>
-            </div>
-            <div className="border-t border-border pt-3 space-y-1.5">
+        <motion.div variants={item}>
+          <div
+            className="rounded-xl p-6"
+            style={{
+              background: 'linear-gradient(to right, rgba(34,197,94,0.05), var(--glass-bg))',
+              border: '1px solid rgba(34,197,94,0.2)',
+            }}
+          >
+            <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Cost Summary</h2>
+            <div className="space-y-3">
               <div className="flex justify-between text-sm">
-                <span className="text-text-muted">Est. Monthly Yield</span>
-                <span className="text-accent font-medium">${monthlyYield.toFixed(2)}</span>
+                <span style={{ color: 'var(--text-muted)' }}>{tier.name} x {nodeCount}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>${tier.price.toLocaleString()} x {nodeCount}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-text-muted">30-Day ROI</span>
-                <span className="text-accent font-medium">{roi30d.toFixed(1)}%</span>
+              <div className="pt-3 flex justify-between" style={{ borderTop: '1px solid var(--border-color)' }}>
+                <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Total</span>
+                <span className="text-2xl font-bold" style={{ color: 'var(--primary)' }}>${totalCost.toLocaleString()}</span>
+              </div>
+              <div className="pt-3 space-y-1.5" style={{ borderTop: '1px solid var(--border-color)' }}>
+                <div className="flex justify-between text-sm">
+                  <span style={{ color: 'var(--text-muted)' }}>Est. Monthly Yield</span>
+                  <span className="font-medium" style={{ color: 'var(--primary)' }}>${monthlyYield.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span style={{ color: 'var(--text-muted)' }}>30-Day ROI</span>
+                  <span className="font-medium" style={{ color: 'var(--primary)' }}>{roi30d.toFixed(1)}%</span>
+                </div>
               </div>
             </div>
           </div>
-        </Card>
+        </motion.div>
       )}
 
       {/* Payment */}
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold text-text-primary">Payment</h2>
+      <motion.div variants={item} className="space-y-4">
+        <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Payment</h2>
         <Input
           label="Transaction Hash (Solana)"
           placeholder="Enter your Solana transaction hash..."
@@ -190,18 +248,23 @@ export default function DeployPage() {
           onChange={e => setTxHash(e.target.value)}
         />
         <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-text-secondary">Deployment Note (optional)</label>
+          <label className="block text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Deployment Note (optional)</label>
           <textarea
-            className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-1 focus:ring-accent/30 transition-colors min-h-[80px] resize-y"
+            className="w-full rounded-lg px-4 py-2.5 transition-colors min-h-[80px] resize-y"
+            style={{
+              background: 'var(--bg-input)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text-primary)',
+            }}
             placeholder="Any special instructions or notes..."
             value={note}
             onChange={e => setNote(e.target.value)}
           />
         </div>
-      </div>
+      </motion.div>
 
       {/* Submit */}
-      <div className="flex justify-end pt-2">
+      <motion.div variants={item} className="flex justify-end pt-2">
         <Button
           size="lg"
           onClick={handleSubmit}
@@ -211,7 +274,7 @@ export default function DeployPage() {
         >
           Request Deployment
         </Button>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }
