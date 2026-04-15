@@ -20,14 +20,19 @@ export function Input({ label, error, icon, className = '', ...props }: InputPro
         )}
         <input
           className={`
-            w-full px-4 py-2 bg-background border border-border rounded-lg
+            w-full px-4 py-2.5 rounded-lg
             text-text-primary placeholder-text-muted
-            focus:border-accent focus:ring-1 focus:ring-accent
+            focus:ring-1 focus:ring-accent
             transition-colors
             ${icon ? 'pl-10' : ''}
             ${error ? 'border-error' : ''}
             ${className}
           `}
+          style={{
+            background: 'var(--bg-card)',
+            border: `1px solid ${error ? 'var(--error)' : 'var(--border-color)'}`,
+            color: 'var(--text-primary)',
+          }}
           {...props}
         />
       </div>
@@ -50,7 +55,8 @@ export function Select({ label, options, className = '', ...props }: SelectProps
         </label>
       )}
       <select
-        className={`w-full px-4 py-2 bg-background border border-border rounded-lg text-text-primary focus:border-accent focus:ring-1 focus:ring-accent transition-colors ${className}`}
+        className={`w-full px-4 py-2.5 rounded-lg text-text-primary focus:ring-1 focus:ring-accent transition-colors ${className}`}
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
         {...props}
       >
         {options.map((opt) => (

@@ -2,12 +2,23 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
+import { CreditCard, CircleCheck, Loader2, ExternalLink, RefreshCw, Download, Receipt, XCircle, Code, DollarSign, Wallet, ShieldCheck, Clock, Search, List } from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface Payment {
   id: string
@@ -190,15 +201,15 @@ export default function PaymentsPage() {
   const totalPendingAmount = pendingSettlements.reduce((sum, s) => sum + s.amount, 0)
 
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
       {/* Hero Section */}
-      <div className="relative py-8 md:py-12">
+      <motion.div variants={item} className="relative py-8 md:py-12">
         {/* Background gradient */}
         <div className="absolute inset-0 bg-gradient-to-b from-purple-500/5 via-transparent to-transparent rounded-3xl" />
 
         <div className="relative text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500/5 border border-purple-500/20 rounded-full mb-6 animate-slideUp">
-            <CreditCardIcon className="w-4 h-4 text-purple-400" />
+            <CreditCard className="w-4 h-4 text-purple-400" />
             <span className="text-xs text-purple-400 font-medium uppercase tracking-wider">Payment Processing</span>
           </div>
 
@@ -209,17 +220,17 @@ export default function PaymentsPage() {
             Track payment transactions, process settlements, and verify on-chain payments.
           </p>
         </div>
-      </div>
+      </motion.div>
 
       {/* Actions Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <Button onClick={loadData} variant="outline" size="sm" icon={<RefreshIcon />}>
+      <motion.div variants={item} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <Button onClick={loadData} variant="outline" size="sm" icon={<RefreshCw className="w-4 h-4" />}>
           Refresh
         </Button>
-        <Button onClick={handleExportCSV} variant="outline" size="sm" icon={<DownloadIcon />}>
+        <Button onClick={handleExportCSV} variant="outline" size="sm" icon={<Download className="w-4 h-4" />}>
           Export CSV
         </Button>
-      </div>
+      </motion.div>
 
       {/* Stats Grid */}
       {stats && (
@@ -229,34 +240,34 @@ export default function PaymentsPage() {
             value={stats.stats.total}
             variant="purple"
             animate
-            icon={<ReceiptIcon />}
+            icon={<Receipt className="w-4 h-4" />}
           />
           <StatCard
             label="Confirmed"
             value={stats.stats.confirmed}
             variant="accent"
             animate
-            icon={<CheckCircleIcon />}
+            icon={<CircleCheck className="w-4 h-4" />}
           />
           <StatCard
             label="Failed"
             value={stats.stats.failed}
             variant="orange"
             animate
-            icon={<XCircleIcon />}
+            icon={<XCircle className="w-4 h-4" />}
           />
           <StatCard
             label="Dev Mode"
             value={stats.stats.devModePayments}
             animate
-            icon={<CodeIcon />}
+            icon={<Code className="w-4 h-4" />}
           />
           <StatCard
             label="Total Paid"
             value={`$${stats.stats.totalAmountPaid.toFixed(2)}`}
             variant="accent"
             animate
-            icon={<DollarIcon />}
+            icon={<DollarSign className="w-4 h-4" />}
           />
           {walletBalance && (
             <StatCard
@@ -264,7 +275,7 @@ export default function PaymentsPage() {
               value={`$${walletBalance.usdc.toFixed(2)}`}
               variant="blue"
               animate
-              icon={<WalletIcon />}
+              icon={<Wallet className="w-4 h-4" />}
               trend={{ value: walletBalance.sol, isPositive: true }}
             />
           )}
@@ -282,9 +293,9 @@ export default function PaymentsPage() {
             stats.currentMode === 'dev' ? 'bg-warning/20' : 'bg-accent/20'
           }`}>
             {stats.currentMode === 'dev' ? (
-              <CodeIcon className="w-6 h-6 text-warning" />
+              <Code className="w-6 h-6 text-warning" />
             ) : (
-              <CheckShieldIcon className="w-6 h-6 text-accent" />
+              <ShieldCheck className="w-6 h-6 text-accent" />
             )}
           </div>
           <div className="flex-1">
@@ -308,7 +319,7 @@ export default function PaymentsPage() {
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-warning to-orange-400 flex items-center justify-center">
-                <ClockIcon className="w-5 h-5 text-white" />
+                <Clock className="w-5 h-5 text-white" />
               </div>
               <div>
                 <h3 className="font-semibold text-text-primary">Pending Settlements</h3>
@@ -386,7 +397,7 @@ export default function PaymentsPage() {
           ))}
         </div>
         <div className="flex-1 max-w-md relative">
-          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
           <input
             type="text"
             value={search}
@@ -401,7 +412,7 @@ export default function PaymentsPage() {
       <Card variant="glass" hover={false}>
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-400 flex items-center justify-center">
-            <ListIcon className="w-5 h-5 text-white" />
+            <List className="w-5 h-5 text-white" />
           </div>
           <div>
             <h3 className="font-semibold text-text-primary">Payment History</h3>
@@ -436,7 +447,7 @@ export default function PaymentsPage() {
                 <tr>
                   <td colSpan={7} className="py-12">
                     <EmptyState
-                      icon={<ReceiptIcon className="w-8 h-8" />}
+                      icon={<Receipt className="w-8 h-8" />}
                       title={search ? 'No payments match your search' : 'No payments found'}
                       description={search ? 'Try adjusting your search terms' : 'Payment records will appear here once settlements are processed'}
                     />
@@ -466,7 +477,7 @@ export default function PaymentsPage() {
                           className="text-xs font-mono text-accent hover:underline flex items-center gap-1"
                         >
                           {payment.txHash.substring(0, 12)}...
-                          <ExternalLinkIcon className="w-3 h-3" />
+                          <ExternalLink className="w-3 h-3" />
                         </a>
                       ) : (
                         <span className="text-xs text-text-muted">-</span>
@@ -566,7 +577,7 @@ export default function PaymentsPage() {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }
 

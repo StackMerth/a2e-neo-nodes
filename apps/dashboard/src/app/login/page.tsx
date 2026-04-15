@@ -1,9 +1,20 @@
 'use client'
 
 import { useState } from 'react'
+import { motion } from 'framer-motion'
+import { LogIn, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 export default function LoginPage() {
   const { login, isLoading: authLoading } = useAuth()
@@ -28,29 +39,50 @@ export default function LoginPage() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-text-muted">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
+        <div style={{ color: 'var(--text-muted)' }}>Loading...</div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden" style={{ background: 'var(--bg-primary)' }}>
+      {/* Background effects */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-accent/5 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent-purple/5 rounded-full blur-3xl" />
+      </div>
+
+      <motion.div
+        variants={container}
+        initial="hidden"
+        animate="show"
+        className="w-full max-w-md relative z-10"
+      >
         {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-accent rounded-2xl mb-4">
-            <span className="text-background font-bold text-2xl">A²</span>
+        <motion.div variants={item} className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-5" style={{ background: 'linear-gradient(135deg, var(--accent-green), var(--accent-green-hover, #16a34a))' }}>
+            <span className="font-bold text-3xl" style={{ color: 'var(--bg-primary)' }}>A<sup className="text-lg">2</sup>E</span>
           </div>
-          <h1 className="text-2xl font-bold text-text-primary">A²E Dashboard</h1>
-          <p className="text-text-muted mt-2">Sign in to access the admin dashboard</p>
-        </div>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-white/70 bg-clip-text text-transparent">
+            A<sup>2</sup>E Dashboard
+          </h1>
+          <p className="mt-2 text-sm" style={{ color: 'var(--text-muted)' }}>Admin Dashboard</p>
+        </motion.div>
 
         {/* Login Form */}
-        <div className="bg-surface border border-border rounded-xl p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <motion.div
+          variants={item}
+          className="rounded-2xl p-8 backdrop-blur-xl"
+          style={{
+            background: 'var(--glass-bg)',
+            border: '1px solid var(--glass-border)',
+          }}
+        >
+          <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
-              <div className="p-4 bg-error/10 border border-error/20 rounded-lg">
+              <div className="p-4 rounded-xl flex items-center gap-3" style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                <AlertCircle className="w-5 h-5 text-error flex-shrink-0" />
                 <p className="text-error text-sm">{error}</p>
               </div>
             )}
@@ -70,7 +102,7 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder="Enter your password"
               autoComplete="current-password"
               required
             />
@@ -80,29 +112,32 @@ export default function LoginPage() {
               loading={loading}
               className="w-full"
               size="lg"
+              variant="gradient"
+              icon={<LogIn className="w-4 h-4" />}
             >
               Sign In
             </Button>
           </form>
-        </div>
+        </motion.div>
 
         {/* Footer */}
-        <div className="mt-6 text-center">
-          <p className="text-sm text-text-muted">
-            A²E Arbitrage & Orchestration Engine
+        <motion.div variants={item} className="mt-6 text-center">
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            A<sup>2</sup>E Arbitrage & Orchestration Engine
           </p>
-          <p className="text-xs text-text-muted mt-1">
+          <p className="text-xs mt-1">
             <a
               href="https://a2e.byredstone.com/health"
               target="_blank"
               rel="noopener"
-              className="hover:text-accent"
+              className="hover:text-accent transition-colors"
+              style={{ color: 'var(--text-muted)' }}
             >
               API Status
             </a>
           </p>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     </div>
   )
 }

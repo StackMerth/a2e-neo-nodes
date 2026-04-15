@@ -3,10 +3,24 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
+import {
+  Briefcase, CircleCheck, CircleX, Loader2, Clock, Ban, Zap,
+  Route, ArrowLeft, Server, DollarSign,
+} from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const itemVar = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface JobDetail {
   id: string
@@ -246,18 +260,19 @@ export default function JobDetailPage() {
     : STATUS_STEPS.indexOf(job.status)
 
   return (
-    <div className="space-y-8">
+    <motion.div className="space-y-8" variants={container} initial="hidden" animate="show">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm">
-        <Link href="/jobs" className="text-text-muted hover:text-accent">
+      <motion.div variants={itemVar} className="flex items-center gap-2 text-sm">
+        <Link href="/jobs" className="text-text-muted hover:text-accent flex items-center gap-1">
+          <ArrowLeft size={14} />
           Jobs
         </Link>
         <span className="text-text-muted">/</span>
         <span className="text-text-primary">{job.deploymentId}</span>
-      </div>
+      </motion.div>
 
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <motion.div variants={itemVar} className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3 mb-2">
             <h1 className="text-2xl font-bold text-text-primary">{job.deploymentId}</h1>
@@ -308,9 +323,10 @@ export default function JobDetailPage() {
             <span className="text-lg font-medium text-text-primary">{job.status}</span>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Status Timeline */}
+      <motion.div variants={itemVar}>
       <Card title="Job Timeline">
         <div className="mt-6 mb-4">
           <div className="flex items-center justify-between relative">
@@ -377,9 +393,10 @@ export default function JobDetailPage() {
           </div>
         </div>
       </Card>
+      </motion.div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <motion.div variants={itemVar} className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           label="Rate"
           value={job.ratePerHour ? (job.ratePerHour * 24).toFixed(2) : '0'}
@@ -400,7 +417,7 @@ export default function JobDetailPage() {
           label="Retries"
           value={job.retryCount}
         />
-      </div>
+      </motion.div>
 
       {/* Financials */}
       {(job.cost != null || job.profit != null) && (
@@ -634,6 +651,6 @@ export default function JobDetailPage() {
           </div>
         </div>
       </Card>
-    </div>
+    </motion.div>
   )
 }

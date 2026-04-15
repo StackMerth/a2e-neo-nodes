@@ -111,6 +111,12 @@ importers:
       '@a2e/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      framer-motion:
+        specifier: ^12.38.0
+        version: 12.38.0(react-dom@18.3.1)(react@18.3.1)
+      lucide-react:
+        specifier: ^1.8.0
+        version: 1.8.0(react@18.3.1)
       next:
         specifier: ^14.1.0
         version: 14.2.35(react-dom@18.3.1)(react@18.3.1)
@@ -120,6 +126,9 @@ importers:
       react-dom:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
+      recharts:
+        specifier: ^3.8.1
+        version: 3.8.1(@types/react@18.3.28)(react-dom@18.3.1)(react-is@18.3.1)(react@18.3.1)(redux@5.0.1)
       socket.io-client:
         specifier: ^4.7.0
         version: 4.8.3

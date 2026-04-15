@@ -2,8 +2,19 @@
 
 import { useState, useEffect, use } from 'react'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
+import { ArrowLeft, Plus, DollarSign, TrendingUp, Wallet, Clock, BarChart3, Server } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface NodeRunnerDetail {
   id: string
@@ -138,15 +149,15 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
   const fin = runner.financials
 
   return (
-    <div className="space-y-6">
+    <motion.div className="space-y-6" variants={container} initial="hidden" animate="show">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <motion.div variants={item} className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link
             href="/node-runners"
             className="p-2 hover:bg-surface-hover rounded-lg transition-colors"
           >
-            <ArrowLeftIcon className="w-5 h-5 text-text-muted" />
+            <ArrowLeft size={20} className="text-text-muted" />
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-text-primary">{runner.name}</h1>
@@ -163,51 +174,51 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
             onClick={() => setShowInvestmentModal(true)}
             className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors flex items-center gap-2 text-sm"
           >
-            <PlusIcon className="w-4 h-4" />
+            <Plus size={16} />
             Add Investment
           </button>
         </div>
-      </div>
+      </motion.div>
 
       {/* Financial Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <div className="bg-surface border border-border rounded-xl p-4">
+      <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
           <p className="text-text-muted text-sm">Total Invested</p>
           <p className="text-2xl font-bold text-text-primary mt-1">
             ${fin.totalInvested.toLocaleString()}
           </p>
         </div>
-        <div className="bg-surface border border-border rounded-xl p-4">
+        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
           <p className="text-text-muted text-sm">Total Earnings</p>
           <p className="text-2xl font-bold text-accent mt-1">
             ${fin.totalEarnings.toLocaleString()}
           </p>
         </div>
-        <div className="bg-surface border border-border rounded-xl p-4">
+        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
           <p className="text-text-muted text-sm">Total Payouts</p>
           <p className="text-2xl font-bold text-text-primary mt-1">
             ${fin.totalPayouts.toLocaleString()}
           </p>
         </div>
-        <div className="bg-surface border border-border rounded-xl p-4">
+        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
           <p className="text-text-muted text-sm">Pending Payout</p>
           <p className="text-2xl font-bold text-warning mt-1">
             ${fin.pendingPayout.toLocaleString()}
           </p>
         </div>
-        <div className="bg-surface border border-border rounded-xl p-4">
+        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
           <p className="text-text-muted text-sm">Net Position</p>
           <p className={`text-2xl font-bold mt-1 ${fin.netPosition >= 0 ? 'text-accent' : 'text-error'}`}>
             {fin.netPosition >= 0 ? '+' : ''}${fin.netPosition.toLocaleString()}
           </p>
         </div>
-        <div className="bg-surface border border-border rounded-xl p-4">
+        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
           <p className="text-text-muted text-sm">ROI</p>
           <p className={`text-2xl font-bold mt-1 ${fin.roiPercentage >= 0 ? 'text-accent' : 'text-error'}`}>
             {fin.roiPercentage >= 0 ? '+' : ''}{fin.roiPercentage.toFixed(1)}%
           </p>
         </div>
-      </div>
+      </motion.div>
 
       {/* ROI Projections */}
       {roi && (
@@ -282,7 +293,7 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
       )}
 
       {/* Nodes */}
-      <div className="bg-surface border border-border rounded-xl overflow-hidden">
+      <div className="rounded-xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
         <div className="px-6 py-4 border-b border-border">
           <h2 className="text-lg font-semibold text-text-primary">Nodes ({runner.nodes.length})</h2>
         </div>
@@ -351,7 +362,7 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
       </div>
 
       {/* Investment History */}
-      <div className="bg-surface border border-border rounded-xl overflow-hidden">
+      <div className="rounded-xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
         <div className="px-6 py-4 border-b border-border flex items-center justify-between">
           <h2 className="text-lg font-semibold text-text-primary">Investment History</h2>
           <button
@@ -507,11 +518,11 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
           </div>
         </form>
       </Modal>
-    </div>
+    </motion.div>
   )
 }
 
-function PlusIcon({ className }: { className?: string }) {
+function _PlusIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

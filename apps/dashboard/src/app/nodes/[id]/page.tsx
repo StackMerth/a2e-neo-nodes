@@ -3,6 +3,13 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
+import {
+  Server, Cpu, Thermometer, HardDrive, Clock, MapPin, ArrowLeft,
+  ChevronRight, Heart, HeartPulse, Pause, Play, Trash2, Pencil,
+  Briefcase, CheckCircle, AlertCircle, X, Calendar, Globe,
+  FileText, DollarSign,
+} from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ProgressBar, CircularProgress } from '@/components/ui/ProgressBar'
@@ -10,6 +17,15 @@ import { Skeleton, SkeletonStatCard, SkeletonCard } from '@/components/ui/Skelet
 import { ConfirmModal, Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { api } from '@/lib/api'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const itemVariant = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface NodeDetail {
   id: string
@@ -244,14 +260,14 @@ export default function NodeDetailPage() {
     return (
       <div className="space-y-6 animate-fadeIn">
         <Link href="/nodes" className="inline-flex items-center gap-2 text-text-muted hover:text-accent transition-colors">
-          <ArrowLeftIcon className="w-4 h-4" />
+          <ArrowLeft size={16} />
           <span>Back to Nodes</span>
         </Link>
 
         <Card variant="glass" className="border-error/20">
           <div className="text-center py-8">
             <div className="w-16 h-16 rounded-2xl bg-error/10 flex items-center justify-center mx-auto mb-4">
-              <AlertIcon className="w-8 h-8 text-error" />
+              <AlertCircle size={32} className="text-error" />
             </div>
             <h2 className="text-lg font-semibold text-text-primary mb-2">Node Not Found</h2>
             <p className="text-text-muted text-sm mb-6">{error || 'The requested node could not be found.'}</p>
@@ -289,26 +305,26 @@ export default function NodeDetailPage() {
   }
 
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <motion.div className="space-y-8" variants={container} initial="hidden" animate="show">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-2 text-sm">
+      <motion.nav variants={itemVariant} className="flex items-center gap-2 text-sm">
         <Link href="/nodes" className="inline-flex items-center gap-1.5 text-text-muted hover:text-accent transition-colors">
-          <ArrowLeftIcon className="w-4 h-4" />
+          <ArrowLeft size={16} />
           <span>Nodes</span>
         </Link>
-        <ChevronRightIcon className="w-4 h-4 text-text-muted" />
+        <ChevronRight size={16} className="text-text-muted" />
         <span className="text-text-primary font-medium">{node.id.slice(0, 8)}...</span>
-      </nav>
+      </motion.nav>
 
       {/* Hero Header */}
-      <div className="relative py-8">
+      <motion.div variants={itemVariant} className="relative py-8">
         <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-3xl" />
 
         <div className="relative">
           <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
             <div>
               <div className="flex items-center gap-4 mb-3">
-                <span className={`w-4 h-4 rounded-full ${getStatusDotColor(node.status)}`} />
+                <Server size={20} className="text-text-muted" />
                 <h1 className="text-3xl md:text-4xl font-bold text-text-primary">{node.gpuTier} Node</h1>
                 <span className={`px-3 py-1.5 rounded-lg text-sm font-medium border ${getStatusBadgeStyle(node.status)}`}>
                   {node.status}
@@ -321,22 +337,22 @@ export default function NodeDetailPage() {
                   className="p-1 text-text-muted hover:text-accent hover:bg-accent/10 rounded transition-colors"
                   title="Edit wallet address"
                 >
-                  <PencilIcon className="w-4 h-4" />
+                  <Pencil size={16} />
                 </button>
               </div>
               <div className="flex flex-wrap items-center gap-4 text-sm text-text-muted">
                 <span className="flex items-center gap-1.5">
-                  <CalendarIcon className="w-4 h-4" />
+                  <Calendar size={16} />
                   Registered {new Date(node.createdAt).toLocaleDateString()}
                 </span>
                 {node.region && (
                   <span className="flex items-center gap-1.5">
-                    <GlobeIcon className="w-4 h-4" />
+                    <MapPin size={16} />
                     {node.region}
                   </span>
                 )}
                 <span className="flex items-center gap-1.5">
-                  <ClockIcon className="w-4 h-4" />
+                  <Clock size={16} />
                   Last heartbeat: {new Date(node.lastHeartbeat).toLocaleString()}
                 </span>
               </div>
@@ -347,7 +363,7 @@ export default function NodeDetailPage() {
                 variant="gradient"
                 onClick={handleHeartbeat}
                 loading={actionLoading === 'heartbeat'}
-                icon={<HeartIcon className="w-4 h-4" />}
+                icon={<Heart size={16} />}
               >
                 Send Heartbeat
               </Button>
@@ -357,7 +373,7 @@ export default function NodeDetailPage() {
                   variant="secondary"
                   onClick={() => handleStatusChange('PAUSED')}
                   loading={actionLoading === 'status'}
-                  icon={<PauseIcon className="w-4 h-4" />}
+                  icon={<Pause size={16} />}
                 >
                   Pause
                 </Button>
@@ -368,7 +384,7 @@ export default function NodeDetailPage() {
                   variant="secondary"
                   onClick={() => handleStatusChange('ONLINE')}
                   loading={actionLoading === 'status'}
-                  icon={<PlayIcon className="w-4 h-4" />}
+                  icon={<Play size={16} />}
                 >
                   Resume
                 </Button>
@@ -389,7 +405,7 @@ export default function NodeDetailPage() {
                   variant="secondary"
                   onClick={handleGenerateStatement}
                   loading={actionLoading === 'statement'}
-                  icon={<DocumentIcon className="w-4 h-4" />}
+                  icon={<FileText size={16} />}
                 >
                   Statement
                 </Button>
@@ -400,43 +416,43 @@ export default function NodeDetailPage() {
                 onClick={handleDelete}
                 loading={actionLoading === 'delete'}
                 className="text-error hover:text-error hover:bg-error/10"
-                icon={<TrashIcon className="w-4 h-4" />}
+                icon={<Trash2 size={16} />}
               >
                 Delete
               </Button>
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Error Alert */}
       {error && (
-        <div className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3 animate-slideUp">
+        <motion.div variants={itemVariant} className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-error/20 flex items-center justify-center shrink-0">
-            <AlertIcon className="w-4 h-4 text-error" />
+            <AlertCircle size={16} className="text-error" />
           </div>
           <p className="text-error text-sm">{error}</p>
           <button onClick={() => setError(null)} className="ml-auto text-error/60 hover:text-error">
-            <CloseIcon className="w-4 h-4" />
+            <X size={16} />
           </button>
-        </div>
+        </motion.div>
       )}
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <motion.div variants={itemVariant} className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           label="Total Jobs"
           value={node._count?.jobs || 0}
           variant="blue"
           animate
-          icon={<BriefcaseIcon />}
+          icon={<Briefcase size={20} />}
         />
         <StatCard
           label="Completed Jobs"
           value={completedJobs.length}
           variant="accent"
           animate
-          icon={<CheckCircleIcon />}
+          icon={<CheckCircle size={20} />}
           trend={node._count?.jobs ? {
             value: Math.round(completedJobs.length / node._count.jobs * 100),
             isPositive: true
@@ -448,7 +464,7 @@ export default function NodeDetailPage() {
           suffix="%"
           variant="purple"
           animate
-          icon={<ChipIcon />}
+          icon={<Cpu size={20} />}
         />
         <StatCard
           label="Est. Earnings"
@@ -456,16 +472,16 @@ export default function NodeDetailPage() {
           prefix="$"
           variant="orange"
           animate
-          icon={<DollarIcon />}
+          icon={<DollarSign size={20} />}
         />
-      </div>
+      </motion.div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <motion.div variants={itemVariant} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Node Info */}
         <Card variant="glass" hover={false}>
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-emerald-400 flex items-center justify-center">
-              <ServerIcon className="w-5 h-5 text-background" />
+              <Server size={20} className="text-background" />
             </div>
             <div>
               <h3 className="font-semibold text-text-primary">Node Information</h3>
@@ -487,7 +503,7 @@ export default function NodeDetailPage() {
         <Card variant="glass" hover={false}>
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-purple to-purple-400 flex items-center justify-center">
-              <ChipIcon className="w-5 h-5 text-background" />
+              <Cpu size={20} className="text-background" />
             </div>
             <div>
               <h3 className="font-semibold text-text-primary">GPU Metrics</h3>
@@ -588,14 +604,14 @@ export default function NodeDetailPage() {
           ) : (
             <div className="py-12 text-center">
               <div className="w-16 h-16 rounded-2xl bg-surface-hover flex items-center justify-center mx-auto mb-4">
-                <ChipIcon className="w-8 h-8 text-text-muted" />
+                <Cpu size={32} className="text-text-muted" />
               </div>
               <p className="text-text-muted text-sm">No heartbeat data available</p>
               <p className="text-text-muted text-xs mt-1">Send a heartbeat to see GPU metrics</p>
             </div>
           )}
         </Card>
-      </div>
+      </motion.div>
 
       {/* Heartbeat History */}
       {node.heartbeats && node.heartbeats.length > 0 && (
@@ -603,7 +619,7 @@ export default function NodeDetailPage() {
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-blue to-blue-400 flex items-center justify-center">
-                <HeartPulseIcon className="w-5 h-5 text-background" />
+                <HeartPulse size={20} className="text-background" />
               </div>
               <div>
                 <h3 className="font-semibold text-text-primary">Heartbeat History</h3>
@@ -672,7 +688,7 @@ export default function NodeDetailPage() {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-amber-400 flex items-center justify-center">
-              <BriefcaseIcon className="w-5 h-5 text-background" />
+              <Briefcase size={20} className="text-background" />
             </div>
             <div>
               <h3 className="font-semibold text-text-primary">Job History</h3>
@@ -729,7 +745,7 @@ export default function NodeDetailPage() {
         ) : (
           <div className="py-12 text-center">
             <div className="w-16 h-16 rounded-2xl bg-surface-hover flex items-center justify-center mx-auto mb-4">
-              <BriefcaseIcon className="w-8 h-8 text-text-muted" />
+              <Briefcase size={32} className="text-text-muted" />
             </div>
             <p className="text-text-muted text-sm">No jobs processed by this node yet</p>
             <p className="text-text-muted text-xs mt-1">Jobs will appear here once routing begins</p>
@@ -786,7 +802,7 @@ export default function NodeDetailPage() {
         variant="danger"
         loading={actionLoading === 'delete'}
       />
-    </div>
+    </motion.div>
   )
 }
 
@@ -826,157 +842,4 @@ function InfoRow({
   )
 }
 
-// Icons
-function ArrowLeftIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-    </svg>
-  )
-}
-
-function ChevronRightIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
-  )
-}
-
-function ServerIcon({ className = 'w-5 h-5' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
-    </svg>
-  )
-}
-
-function AlertIcon({ className = 'w-5 h-5' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
-}
-
-function CloseIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-    </svg>
-  )
-}
-
-function CalendarIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-    </svg>
-  )
-}
-
-function GlobeIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
-}
-
-function ClockIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
-}
-
-function HeartIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-    </svg>
-  )
-}
-
-function HeartPulseIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12h4l2-3 2 6 2-3h4" />
-    </svg>
-  )
-}
-
-function PauseIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
-}
-
-function PlayIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
-}
-
-function TrashIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-    </svg>
-  )
-}
-
-function PencilIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-    </svg>
-  )
-}
-
-function BriefcaseIcon({ className = 'w-5 h-5' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-    </svg>
-  )
-}
-
-function CheckCircleIcon({ className = 'w-5 h-5' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
-}
-
-function ChipIcon({ className = 'w-5 h-5' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-    </svg>
-  )
-}
-
-function DollarIcon({ className = 'w-5 h-5' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
-}
-
-function DocumentIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-    </svg>
-  )
-}
+// Icons removed - using lucide-react imports above

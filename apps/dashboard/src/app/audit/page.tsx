@@ -1,11 +1,22 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { motion } from 'framer-motion'
+import { ClipboardCheck, RefreshCw, FileText, CreditCard, Banknote, Wallet, List, Clock, CircleCheck, XCircle, HelpCircle, Eye, ExternalLink } from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface AuditLog {
   id: string
@@ -130,13 +141,13 @@ export default function AuditPage() {
   }
 
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
       {/* Hero Section */}
-      <div className="relative py-8 md:py-12">
+      <motion.div variants={item} className="relative py-8 md:py-12">
         <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/5 via-transparent to-transparent rounded-3xl" />
         <div className="relative text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-500/5 border border-indigo-500/20 rounded-full mb-6 animate-slideUp">
-            <ClipboardCheckIcon className="w-4 h-4 text-indigo-400" />
+            <ClipboardCheck className="w-4 h-4 text-indigo-400" />
             <span className="text-xs text-indigo-400 font-medium uppercase tracking-wider">System Integrity</span>
           </div>
           <h1 className="text-3xl md:text-5xl font-bold text-text-primary mb-3">
@@ -146,7 +157,7 @@ export default function AuditPage() {
             Track financial state changes, monitor transaction integrity, and reconcile orphaned payments.
           </p>
         </div>
-      </div>
+      </motion.div>
 
       {/* Actions Bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -172,7 +183,7 @@ export default function AuditPage() {
             Reconciliation
           </button>
         </div>
-        <Button onClick={loadData} variant="outline" size="sm" icon={<RefreshIcon />}>
+        <Button onClick={loadData} variant="outline" size="sm" icon={<RefreshCw className="w-4 h-4" />}>
           Refresh
         </Button>
       </div>
@@ -186,28 +197,28 @@ export default function AuditPage() {
               value={auditLogs.length}
               variant="purple"
               animate
-              icon={<DocumentIcon />}
+              icon={<FileText className="w-4 h-4" />}
             />
             <StatCard
               label="Payments"
               value={auditLogs.filter(l => l.entityType === 'Payment').length}
               variant="accent"
               animate
-              icon={<CreditCardIcon />}
+              icon={<CreditCard className="w-4 h-4" />}
             />
             <StatCard
               label="Settlements"
               value={auditLogs.filter(l => l.entityType === 'Settlement').length}
               variant="blue"
               animate
-              icon={<BanknotesIcon />}
+              icon={<Banknote className="w-4 h-4" />}
             />
             <StatCard
               label="Investments"
               value={auditLogs.filter(l => l.entityType === 'Investment').length}
               variant="orange"
               animate
-              icon={<WalletIcon />}
+              icon={<Wallet className="w-4 h-4" />}
             />
           </div>
 
@@ -232,7 +243,7 @@ export default function AuditPage() {
           <Card variant="glass" hover={false}>
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-400 flex items-center justify-center">
-                <ListIcon className="w-5 h-5 text-white" />
+                <List className="w-5 h-5 text-white" />
               </div>
               <div>
                 <h3 className="font-semibold text-text-primary">Audit Trail</h3>
@@ -265,7 +276,7 @@ export default function AuditPage() {
                     <tr>
                       <td colSpan={5} className="py-12">
                         <EmptyState
-                          icon={<ClipboardCheckIcon className="w-8 h-8" />}
+                          icon={<ClipboardCheck className="w-8 h-8" />}
                           title="No audit logs found"
                           description="Audit logs will appear here when financial state changes occur"
                         />
@@ -324,34 +335,34 @@ export default function AuditPage() {
                 value={reconciliationStatus.pending}
                 variant="orange"
                 animate
-                icon={<ClockIcon />}
+                icon={<Clock className="w-4 h-4" />}
               />
               <StatCard
                 label="Verified"
                 value={reconciliationStatus.verified}
                 variant="accent"
                 animate
-                icon={<CheckCircleIcon />}
+                icon={<CircleCheck className="w-4 h-4" />}
               />
               <StatCard
                 label="Failed"
                 value={reconciliationStatus.failed}
                 variant="orange"
                 animate
-                icon={<XCircleIcon />}
+                icon={<XCircle className="w-4 h-4" />}
               />
               <StatCard
                 label="Not Found"
                 value={reconciliationStatus.notFound}
                 animate
-                icon={<QuestionIcon />}
+                icon={<HelpCircle className="w-4 h-4" />}
               />
               <StatCard
                 label="Manual Review"
                 value={reconciliationStatus.manual}
                 variant="purple"
                 animate
-                icon={<EyeIcon />}
+                icon={<Eye className="w-4 h-4" />}
               />
             </div>
           )}
@@ -361,7 +372,7 @@ export default function AuditPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent to-emerald-400 flex items-center justify-center">
-                  <RefreshIcon className="w-6 h-6 text-white" />
+                  <RefreshCw className="w-6 h-6 text-white" />
                 </div>
                 <div>
                   <h3 className="font-semibold text-text-primary">Manual Reconciliation</h3>
@@ -389,7 +400,7 @@ export default function AuditPage() {
           <Card variant="glass" hover={false}>
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-orange-400 flex items-center justify-center">
-                <ClockIcon className="w-5 h-5 text-white" />
+                <Clock className="w-5 h-5 text-white" />
               </div>
               <div>
                 <h3 className="font-semibold text-text-primary">Pending Reconciliations</h3>
@@ -423,7 +434,7 @@ export default function AuditPage() {
                     <tr>
                       <td colSpan={6} className="py-12">
                         <EmptyState
-                          icon={<CheckCircleIcon className="w-8 h-8" />}
+                          icon={<CircleCheck className="w-8 h-8" />}
                           title="All caught up!"
                           description="No pending reconciliations at this time"
                         />
@@ -440,7 +451,7 @@ export default function AuditPage() {
                             className="text-xs font-mono text-accent hover:underline flex items-center gap-1"
                           >
                             {rec.txHash.substring(0, 16)}...
-                            <ExternalLinkIcon className="w-3 h-3" />
+                            <ExternalLink className="w-3 h-3" />
                           </a>
                         </td>
                         <td className="py-4 px-4">
@@ -469,7 +480,7 @@ export default function AuditPage() {
           </Card>
         </>
       )}
-    </div>
+    </motion.div>
   )
 }
 

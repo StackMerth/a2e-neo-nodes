@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { motion } from 'framer-motion'
+import { Receipt, Plus, Trash2, DollarSign, FolderOpen, TrendingUp, List, RefreshCw, AlertTriangle, X, Check, Zap, Server as ServerIcon, Wrench, TrendingDown, Globe, MoreHorizontal } from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
@@ -9,6 +11,15 @@ import { DistributionBar } from '@/components/ui/ProgressBar'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface Cost {
   id: string
@@ -115,12 +126,12 @@ export default function CostsPage() {
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
-      case 'ELECTRICITY': return <BoltIcon className="w-4 h-4" />
+      case 'ELECTRICITY': return <Zap className="w-4 h-4" />
       case 'HOSTING': return <ServerIcon className="w-4 h-4" />
-      case 'MAINTENANCE': return <WrenchIcon className="w-4 h-4" />
-      case 'DEPRECIATION': return <ChartDownIcon className="w-4 h-4" />
-      case 'NETWORK': return <GlobeIcon className="w-4 h-4" />
-      default: return <DotsIcon className="w-4 h-4" />
+      case 'MAINTENANCE': return <Wrench className="w-4 h-4" />
+      case 'DEPRECIATION': return <TrendingDown className="w-4 h-4" />
+      case 'NETWORK': return <Globe className="w-4 h-4" />
+      default: return <MoreHorizontal className="w-4 h-4" />
     }
   }
 
@@ -190,15 +201,15 @@ export default function CostsPage() {
     : null
 
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
       {/* Hero Section */}
-      <div className="relative py-8 md:py-12">
+      <motion.div variants={item} className="relative py-8 md:py-12">
         {/* Background gradient */}
         <div className="absolute inset-0 bg-gradient-to-b from-error/5 via-transparent to-transparent rounded-3xl" />
 
         <div className="relative text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-error/5 border border-error/20 rounded-full mb-6 animate-slideUp">
-            <ReceiptIcon className="w-4 h-4 text-error" />
+            <Receipt className="w-4 h-4 text-error" />
             <span className="text-xs text-error font-medium uppercase tracking-wider">Expense Tracking</span>
           </div>
 
@@ -210,10 +221,10 @@ export default function CostsPage() {
             and manage your GPU infrastructure costs.
           </p>
         </div>
-      </div>
+      </motion.div>
 
       {/* Actions Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <motion.div variants={item} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <select
             value={days}
@@ -225,24 +236,24 @@ export default function CostsPage() {
             <option value={30}>Last 30 days</option>
             <option value={90}>Last 90 days</option>
           </select>
-          <Button onClick={loadCosts} variant="outline" size="sm" icon={<RefreshIcon />}>
+          <Button onClick={loadCosts} variant="outline" size="sm" icon={<RefreshCw className="w-4 h-4" />}>
             Refresh
           </Button>
         </div>
-        <Button onClick={() => setShowCreateModal(true)} variant="primary" icon={<PlusIcon />}>
+        <Button onClick={() => setShowCreateModal(true)} variant="primary" icon={<Plus className="w-4 h-4" />}>
           Add Cost
         </Button>
-      </div>
+      </motion.div>
 
       {/* Alerts */}
       {error && (
         <div className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3 animate-slideUp">
           <div className="w-8 h-8 rounded-lg bg-error/20 flex items-center justify-center shrink-0">
-            <AlertIcon className="w-4 h-4 text-error" />
+            <AlertTriangle className="w-4 h-4 text-error" />
           </div>
           <p className="text-error text-sm">{error}</p>
           <button onClick={() => setError(null)} className="ml-auto text-error/60 hover:text-error">
-            <CloseIcon className="w-4 h-4" />
+            <X className="w-4 h-4" />
           </button>
         </div>
       )}
@@ -250,7 +261,7 @@ export default function CostsPage() {
       {success && (
         <div className="p-4 bg-accent/10 border border-accent/20 rounded-xl flex items-center gap-3 animate-slideUp">
           <div className="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center shrink-0">
-            <CheckIcon className="w-4 h-4 text-accent" />
+            <Check className="w-4 h-4 text-accent" />
           </div>
           <p className="text-accent text-sm">{success}</p>
         </div>
@@ -272,27 +283,27 @@ export default function CostsPage() {
               value={formatCurrency(summary?.total ?? 0)}
               variant="orange"
               animate
-              icon={<DollarIcon />}
+              icon={<DollarSign className="w-4 h-4" />}
             />
             <StatCard
               label="Cost Entries"
               value={costs.length}
               variant="blue"
               animate
-              icon={<ReceiptIcon />}
+              icon={<Receipt className="w-4 h-4" />}
             />
             <StatCard
               label="Categories"
               value={summary?.byCategory ? Object.keys(summary.byCategory).length : 0}
               variant="purple"
               animate
-              icon={<FolderIcon />}
+              icon={<FolderOpen className="w-4 h-4" />}
             />
             <StatCard
               label="Top Category"
               value={topCategory ? topCategory[0] : 'N/A'}
               animate
-              icon={<TrendingUpIcon />}
+              icon={<TrendingUp className="w-4 h-4" />}
             />
           </div>
 
@@ -345,7 +356,7 @@ export default function CostsPage() {
           <Card variant="glass" hover={false}>
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-error to-orange-400 flex items-center justify-center">
-                <ListIcon className="w-5 h-5 text-white" />
+                <List className="w-5 h-5 text-white" />
               </div>
               <div>
                 <h3 className="font-semibold text-text-primary">Cost Entries</h3>
@@ -355,7 +366,7 @@ export default function CostsPage() {
 
             {costs.length === 0 ? (
               <EmptyState
-                icon={<ReceiptIcon className="w-8 h-8" />}
+                icon={<Receipt className="w-8 h-8" />}
                 title="No cost entries"
                 description="Start tracking your operational expenses by adding a cost entry."
                 action={
@@ -539,7 +550,7 @@ export default function CostsPage() {
         variant="danger"
         loading={processing}
       />
-    </div>
+    </motion.div>
   )
 }
 
@@ -635,13 +646,7 @@ function BoltIcon({ className }: { className?: string }) {
   )
 }
 
-function ServerIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-    </svg>
-  )
-}
+// ServerIcon removed - using lucide-react import
 
 function WrenchIcon({ className }: { className?: string }) {
   return (

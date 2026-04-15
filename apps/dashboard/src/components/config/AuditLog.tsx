@@ -121,7 +121,8 @@ export function AuditLog() {
           {logs.map((log) => (
             <div
               key={log.id}
-              className="p-3 bg-background rounded-lg border border-border"
+              className="p-3 rounded-lg"
+              style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
