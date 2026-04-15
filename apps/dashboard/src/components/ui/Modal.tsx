@@ -41,14 +41,16 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', showClose
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+        className="absolute inset-0 backdrop-blur-sm"
+        style={{ background: 'rgba(0, 0, 0, 0.6)' }}
         onClick={onClose}
       />
 
       {/* Modal */}
       <div
         ref={modalRef}
-        className={`relative w-full ${sizeClasses[size]} mx-4 bg-surface border border-border rounded-xl shadow-2xl animate-scaleIn`}
+        className={`relative w-full ${sizeClasses[size]} mx-4 rounded-xl shadow-2xl animate-scaleIn`}
+        style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', backdropFilter: 'blur(20px)' }}
       >
         {/* Header */}
         {(title || showClose) && (

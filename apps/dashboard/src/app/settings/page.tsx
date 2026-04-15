@@ -1,12 +1,23 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { motion } from 'framer-motion'
+import { Settings as LucideSettings, Database, Shield, Heart, Server, Clock, Tag, AlertTriangle, X, Check } from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Tabs, TabList, Tab, TabPanel } from '@/components/ui/Tabs'
 import { api } from '@/lib/api'
 import { AuditLog } from '@/components/config/AuditLog'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface YieldFloor {
   gpuTier: string
@@ -250,9 +261,9 @@ export default function SettingsPage() {
   const totalServices = systemHealth ? Object.keys(systemHealth.services).length : 0
 
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
       {/* Hero Section */}
-      <div className="relative py-8 md:py-12">
+      <motion.div variants={item} className="relative py-8 md:py-12">
         {/* Background gradient */}
         <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-3xl" />
 
@@ -269,17 +280,17 @@ export default function SettingsPage() {
             Configure routing parameters, monitor system health, and manage payment settings.
           </p>
         </div>
-      </div>
+      </motion.div>
 
       {/* Alerts */}
       {error && (
         <div className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3 animate-slideUp">
           <div className="w-8 h-8 rounded-lg bg-error/20 flex items-center justify-center shrink-0">
-            <AlertIcon className="w-4 h-4 text-error" />
+            <AlertTriangle className="w-4 h-4 text-error" />
           </div>
           <p className="text-error text-sm">{error}</p>
           <button onClick={() => setError(null)} className="ml-auto text-error/60 hover:text-error">
-            <CloseIcon className="w-4 h-4" />
+            <X className="w-4 h-4" />
           </button>
         </div>
       )}
@@ -287,7 +298,7 @@ export default function SettingsPage() {
       {success && (
         <div className="p-4 bg-accent/10 border border-accent/20 rounded-xl flex items-center gap-3 animate-slideUp">
           <div className="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center shrink-0">
-            <CheckIcon className="w-4 h-4 text-accent" />
+            <Check className="w-4 h-4 text-accent" />
           </div>
           <p className="text-accent text-sm">{success}</p>
         </div>
@@ -300,27 +311,27 @@ export default function SettingsPage() {
           value={systemHealth?.status ?? 'Unknown'}
           variant={systemHealth?.status === 'healthy' ? 'accent' : 'orange'}
           animate
-          icon={<HeartIcon />}
+          icon={<Heart className="w-4 h-4" />}
         />
         <StatCard
           label="Services"
           value={`${healthyServices}/${totalServices}`}
           variant="blue"
           animate
-          icon={<ServerIcon />}
+          icon={<Server className="w-4 h-4" />}
         />
         <StatCard
           label="Uptime"
           value={systemHealth ? formatUptime(systemHealth.uptime) : 'N/A'}
           variant="purple"
           animate
-          icon={<ClockIcon />}
+          icon={<Clock className="w-4 h-4" />}
         />
         <StatCard
           label="Version"
           value={systemHealth?.version ?? 'Unknown'}
           animate
-          icon={<TagIcon />}
+          icon={<Tag className="w-4 h-4" />}
         />
       </div>
 
@@ -978,7 +989,7 @@ export default function SettingsPage() {
           </TabPanel>
         </Tabs>
       )}
-    </div>
+    </motion.div>
   )
 }
 

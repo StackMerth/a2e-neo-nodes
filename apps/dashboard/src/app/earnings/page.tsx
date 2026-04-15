@@ -1,11 +1,22 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { motion } from 'framer-motion'
+import { DollarSign, BarChart3, TrendingUp, Clock, Briefcase, Server, List, RefreshCw, AlertTriangle } from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { DistributionBar } from '@/components/ui/ProgressBar'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { api } from '@/lib/api'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface EarningsSummary {
   totalEarnings: number
@@ -170,15 +181,15 @@ export default function EarningsPage() {
     : []
 
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
       {/* Hero Section */}
-      <div className="relative py-8 md:py-12">
+      <motion.div variants={item} className="relative py-8 md:py-12">
         {/* Background gradient */}
         <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-3xl" />
 
         <div className="relative text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent/5 border border-accent/20 rounded-full mb-6 animate-slideUp">
-            <TrendingUpIcon className="w-4 h-4 text-accent" />
+            <TrendingUp className="w-4 h-4 text-accent" />
             <span className="text-xs text-accent font-medium uppercase tracking-wider">Revenue Analytics</span>
           </div>
 
@@ -190,7 +201,7 @@ export default function EarningsPage() {
             and monitor your network&apos;s financial performance.
           </p>
         </div>
-      </div>
+      </motion.div>
 
       {/* Actions Bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -224,7 +235,7 @@ export default function EarningsPage() {
             <option value={30}>Last 30 days</option>
             <option value={90}>Last 90 days</option>
           </select>
-          <Button onClick={loadEarnings} variant="outline" size="sm" icon={<RefreshIcon />}>
+          <Button onClick={loadEarnings} variant="outline" size="sm" icon={<RefreshCw className="w-4 h-4" />}>
             Refresh
           </Button>
         </div>
@@ -233,7 +244,7 @@ export default function EarningsPage() {
       {error && (
         <div className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3 animate-slideUp">
           <div className="w-8 h-8 rounded-lg bg-error/20 flex items-center justify-center shrink-0">
-            <AlertIcon className="w-4 h-4 text-error" />
+            <AlertTriangle className="w-4 h-4 text-error" />
           </div>
           <p className="text-error text-sm">{error}</p>
         </div>
@@ -258,21 +269,21 @@ export default function EarningsPage() {
                   value={formatCurrency(summary?.totalEarnings ?? 0)}
                   variant="accent"
                   animate
-                  icon={<DollarIcon />}
+                  icon={<DollarSign className="w-4 h-4" />}
                 />
                 <StatCard
                   label="GPU Time"
                   value={formatHours(summary?.totalGpuSeconds ?? 0)}
                   variant="blue"
                   animate
-                  icon={<ClockIcon />}
+                  icon={<Clock className="w-4 h-4" />}
                 />
                 <StatCard
                   label="Total Jobs"
                   value={(summary?.totalJobs ?? 0).toLocaleString()}
                   variant="purple"
                   animate
-                  icon={<BriefcaseIcon />}
+                  icon={<Briefcase className="w-4 h-4" />}
                 />
                 <StatCard
                   label="Avg/Job"
@@ -282,7 +293,7 @@ export default function EarningsPage() {
                       : '$0.00'
                   }
                   animate
-                  icon={<ChartIcon />}
+                  icon={<BarChart3 className="w-4 h-4" />}
                 />
               </div>
 
@@ -350,7 +361,7 @@ export default function EarningsPage() {
                 {(!byMarket?.byMarket || Object.keys(byMarket.byMarket).length === 0) && (
                   <div className="col-span-3">
                     <EmptyState
-                      icon={<ChartIcon className="w-8 h-8" />}
+                      icon={<BarChart3 className="w-8 h-8" />}
                       title="No earnings data"
                       description="Earnings will appear here once jobs are completed"
                     />
@@ -362,7 +373,7 @@ export default function EarningsPage() {
               <Card variant="glass" hover={false}>
                 <div className="flex items-center gap-3 mb-6">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-emerald-400 flex items-center justify-center">
-                    <ChartIcon className="w-5 h-5 text-white" />
+                    <BarChart3 className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <h3 className="font-semibold text-text-primary">Earnings Trend</h3>
@@ -417,7 +428,7 @@ export default function EarningsPage() {
                   </div>
                 ) : (
                   <EmptyState
-                    icon={<ChartIcon className="w-8 h-8" />}
+                    icon={<BarChart3 className="w-8 h-8" />}
                     title="No trend data"
                     description="Trend data will appear once you have earnings"
                   />
@@ -429,7 +440,7 @@ export default function EarningsPage() {
                 <Card variant="glass" hover={false}>
                   <div className="flex items-center gap-3 mb-6">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-400 flex items-center justify-center">
-                      <ServerIcon className="w-5 h-5 text-white" />
+                      <Server className="w-5 h-5 text-white" />
                     </div>
                     <div>
                       <h3 className="font-semibold text-text-primary">Top Earning Nodes</h3>
@@ -487,7 +498,7 @@ export default function EarningsPage() {
             <Card variant="glass" hover={false}>
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-400 flex items-center justify-center">
-                  <ListIcon className="w-5 h-5 text-white" />
+                  <List className="w-5 h-5 text-white" />
                 </div>
                 <div>
                   <h3 className="font-semibold text-text-primary">Earnings Records</h3>
@@ -596,7 +607,7 @@ export default function EarningsPage() {
                 </>
               ) : (
                 <EmptyState
-                  icon={<ListIcon className="w-8 h-8" />}
+                  icon={<List className="w-8 h-8" />}
                   title="No earnings records"
                   description="Earning records will appear here once jobs are completed"
                 />
@@ -653,7 +664,7 @@ export default function EarningsPage() {
               <Card variant="glass" hover={false}>
                 <div className="flex items-center gap-3 mb-6">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-orange-400 flex items-center justify-center">
-                    <ChartIcon className="w-5 h-5 text-white" />
+                    <BarChart3 className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <h3 className="font-semibold text-text-primary">Tier Performance Comparison</h3>
@@ -713,7 +724,7 @@ export default function EarningsPage() {
           )}
         </>
       )}
-    </div>
+    </motion.div>
   )
 }
 

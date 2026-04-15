@@ -102,7 +102,8 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
 
   return (
     <div
-      className={`${bgColor} border backdrop-blur-sm rounded-lg p-4 shadow-lg animate-slide-in flex items-start gap-3`}
+      className={`${bgColor} border backdrop-blur-xl rounded-lg p-4 shadow-lg animate-slide-in flex items-start gap-3`}
+      style={{ backdropFilter: 'blur(16px)' }}
     >
       <div className={iconColor}>{icon}</div>
       <div className="flex-1 min-w-0">

@@ -3,10 +3,25 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { motion } from 'framer-motion'
+import {
+  ArrowLeft, ArrowRight, ChevronRight, Check, CheckCircle,
+  AlertCircle, X, Settings, Server, Terminal, ClipboardList,
+  Cpu, Key, Tag, Rocket, Copy, Loader2, FlaskConical,
+} from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
 import { api } from '@/lib/api'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 const GPU_TIERS = [
   { value: 'H100', label: 'NVIDIA H100', vram: '80 GB', price: '$140/day' },
@@ -168,19 +183,19 @@ export default function AddNodePage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-fadeIn">
+    <motion.div className="max-w-4xl mx-auto space-y-8" variants={container} initial="hidden" animate="show">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-2 text-sm">
+      <motion.nav variants={item} className="flex items-center gap-2 text-sm">
         <Link href="/nodes" className="inline-flex items-center gap-1.5 text-text-muted hover:text-accent transition-colors">
-          <ArrowLeftIcon className="w-4 h-4" />
+          <ArrowLeft size={16} />
           <span>Nodes</span>
         </Link>
-        <ChevronRightIcon className="w-4 h-4 text-text-muted" />
+        <ChevronRight size={16} className="text-text-muted" />
         <span className="text-text-primary font-medium">Add Node</span>
-      </nav>
+      </motion.nav>
 
       {/* Header */}
-      <div className="relative py-8">
+      <motion.div variants={item} className="relative py-8">
         <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-3xl" />
 
         <div className="relative text-center">
@@ -199,7 +214,7 @@ export default function AddNodePage() {
             Connect your GPU server to the A²E network and start earning.
           </p>
         </div>
-      </div>
+      </motion.div>
 
       {/* Progress Steps */}
       <div className="flex items-center justify-center gap-4">
@@ -217,7 +232,7 @@ export default function AddNodePage() {
                 }
               `}
             >
-              {step > s ? <CheckIcon className="w-4 h-4" /> : s}
+              {step > s ? <Check size={16} /> : s}
             </div>
             <span className={`text-sm ${step >= s ? 'text-text-primary' : 'text-text-muted'}`}>
               {s === 1 ? 'Configure' : s === 2 ? 'Connect' : 'Provision'}
@@ -233,11 +248,11 @@ export default function AddNodePage() {
       {error && (
         <div className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3 animate-slideUp">
           <div className="w-8 h-8 rounded-lg bg-error/20 flex items-center justify-center shrink-0">
-            <AlertIcon className="w-4 h-4 text-error" />
+            <AlertCircle size={16} className="text-error" />
           </div>
           <p className="text-error text-sm flex-1">{error}</p>
           <button onClick={() => setError(null)} className="text-error/60 hover:text-error">
-            <CloseIcon className="w-4 h-4" />
+            <X size={16} />
           </button>
         </div>
       )}
@@ -249,7 +264,7 @@ export default function AddNodePage() {
           <Card variant="glass" hover={false}>
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-emerald-400 flex items-center justify-center">
-                <SettingsIcon className="w-5 h-5 text-background" />
+                <Settings size={20} className="text-background" />
               </div>
               <div>
                 <h3 className="font-semibold text-text-primary">Installation Method</h3>
@@ -271,7 +286,7 @@ export default function AddNodePage() {
                 <span className="absolute -top-2 -right-2 px-2 py-0.5 bg-accent text-background text-[10px] font-bold rounded-full">
                   RECOMMENDED
                 </span>
-                <ServerIcon className={`w-8 h-8 mb-3 ${method === 'ssh' ? 'text-accent' : 'text-text-muted'}`} />
+                <Server className={`w-8 h-8 mb-3 ${method === 'ssh' ? 'text-accent' : 'text-text-muted'}`} />
                 <h4 className="font-medium text-text-primary mb-1">SSH Provisioning</h4>
                 <p className="text-xs text-text-muted">
                   Enter SSH credentials and we'll install everything automatically.
@@ -288,7 +303,7 @@ export default function AddNodePage() {
                   }
                 `}
               >
-                <TerminalIcon className={`w-8 h-8 mb-3 ${method === 'manual' ? 'text-accent' : 'text-text-muted'}`} />
+                <Terminal className={`w-8 h-8 mb-3 ${method === 'manual' ? 'text-accent' : 'text-text-muted'}`} />
                 <h4 className="font-medium text-text-primary mb-1">Manual Installation</h4>
                 <p className="text-xs text-text-muted">
                   Run the install command yourself on your server.
@@ -301,7 +316,7 @@ export default function AddNodePage() {
           <Card variant="glass" hover={false}>
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-blue to-blue-400 flex items-center justify-center">
-                <ChecklistIcon className="w-5 h-5 text-background" />
+                <ClipboardList size={20} className="text-background" />
               </div>
               <div>
                 <h3 className="font-semibold text-text-primary">System Requirements</h3>
@@ -312,7 +327,7 @@ export default function AddNodePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {SYSTEM_REQUIREMENTS.map((req) => (
                 <div key={req.label} className="flex items-start gap-3 p-3 bg-surface/50 rounded-lg border border-border/50">
-                  <CheckCircleIcon className="w-5 h-5 text-accent shrink-0 mt-0.5" />
+                  <CheckCircle size={20} className="text-accent shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm font-medium text-text-primary">{req.label}</p>
                     <p className="text-xs text-text-muted">{req.value}</p>
@@ -326,7 +341,7 @@ export default function AddNodePage() {
           <Card variant="glass" hover={false}>
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-purple to-purple-400 flex items-center justify-center">
-                <ChipIcon className="w-5 h-5 text-background" />
+                <Cpu size={20} className="text-background" />
               </div>
               <div>
                 <h3 className="font-semibold text-text-primary">GPU Type</h3>
@@ -383,7 +398,7 @@ export default function AddNodePage() {
           <Card variant="glass" hover={false}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-warning to-amber-400 flex items-center justify-center">
-                <BeakerIcon className="w-5 h-5 text-background" />
+                <FlaskConical size={20} className="text-background" />
               </div>
               <div>
                 <h3 className="font-semibold text-text-primary">Test Mode</h3>
@@ -420,7 +435,7 @@ export default function AddNodePage() {
               variant="gradient"
               size="lg"
               onClick={() => setStep(2)}
-              icon={<ArrowRightIcon className="w-4 h-4" />}
+              icon={<ArrowRight size={16} />}
             >
               Continue
             </Button>
@@ -435,7 +450,7 @@ export default function AddNodePage() {
           <Card variant="glass" hover={false}>
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-warning to-amber-400 flex items-center justify-center">
-                <KeyIcon className="w-5 h-5 text-background" />
+                <Key size={20} className="text-background" />
               </div>
               <div>
                 <h3 className="font-semibold text-text-primary">SSH Connection</h3>
@@ -519,7 +534,7 @@ export default function AddNodePage() {
           <Card variant="glass" hover={false}>
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-blue to-blue-400 flex items-center justify-center">
-                <TagIcon className="w-5 h-5 text-background" />
+                <Tag size={20} className="text-background" />
               </div>
               <div>
                 <h3 className="font-semibold text-text-primary">Node Configuration</h3>
@@ -544,7 +559,7 @@ export default function AddNodePage() {
           </Card>
 
           <div className="flex justify-between">
-            <Button variant="secondary" onClick={() => setStep(1)} icon={<ArrowLeftIcon className="w-4 h-4" />}>
+            <Button variant="secondary" onClick={() => setStep(1)} icon={<ArrowLeft size={16} />}>
               Back
             </Button>
             <Button
@@ -553,7 +568,7 @@ export default function AddNodePage() {
               onClick={startProvisioning}
               disabled={!canStartProvisioning}
               loading={provisioning}
-              icon={<RocketIcon className="w-4 h-4" />}
+              icon={<Rocket size={16} />}
             >
               Start Provisioning
             </Button>
@@ -568,7 +583,7 @@ export default function AddNodePage() {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-emerald-400 flex items-center justify-center">
-                  <TerminalIcon className="w-5 h-5 text-background" />
+                  <Terminal size={20} className="text-background" />
                 </div>
                 <div>
                   <h3 className="font-semibold text-text-primary">Installation Command</h3>
@@ -580,7 +595,7 @@ export default function AddNodePage() {
                 variant="secondary"
                 size="sm"
                 onClick={copyToClipboard}
-                icon={copied ? <CheckIcon className="w-4 h-4" /> : <CopyIcon className="w-4 h-4" />}
+                icon={copied ? <Check size={16} /> : <Copy size={16} />}
               >
                 {copied ? 'Copied!' : 'Copy'}
               </Button>
@@ -606,14 +621,14 @@ export default function AddNodePage() {
           </Card>
 
           <div className="flex justify-between">
-            <Button variant="secondary" onClick={() => setStep(1)} icon={<ArrowLeftIcon className="w-4 h-4" />}>
+            <Button variant="secondary" onClick={() => setStep(1)} icon={<ArrowLeft size={16} />}>
               Back
             </Button>
             <Button
               variant="gradient"
               size="lg"
               onClick={() => router.push('/nodes')}
-              icon={<CheckIcon className="w-4 h-4" />}
+              icon={<Check size={16} />}
             >
               I've Run the Command
             </Button>
@@ -628,7 +643,7 @@ export default function AddNodePage() {
             {provisionStatus?.status === 'COMPLETED' ? (
               <div className="text-center py-8">
                 <div className="w-20 h-20 rounded-full bg-accent/20 flex items-center justify-center mx-auto mb-6">
-                  <CheckCircleIcon className="w-10 h-10 text-accent" />
+                  <CheckCircle size={40} className="text-accent" />
                 </div>
                 <h2 className="text-2xl font-bold text-text-primary mb-2">Node Provisioned!</h2>
                 <p className="text-text-muted mb-6">
@@ -648,7 +663,7 @@ export default function AddNodePage() {
             ) : provisionStatus?.status === 'FAILED' ? (
               <div className="text-center py-8">
                 <div className="w-20 h-20 rounded-full bg-error/20 flex items-center justify-center mx-auto mb-6">
-                  <AlertIcon className="w-10 h-10 text-error" />
+                  <AlertCircle size={40} className="text-error" />
                 </div>
                 <h2 className="text-2xl font-bold text-text-primary mb-2">Provisioning Failed</h2>
                 <p className="text-error mb-6">{provisionStatus.error}</p>
@@ -665,7 +680,7 @@ export default function AddNodePage() {
               <div className="py-8">
                 <div className="text-center mb-8">
                   <div className="w-20 h-20 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-6">
-                    <LoadingSpinner className="w-10 h-10 text-accent" />
+                    <Loader2 size={40} className="text-accent animate-spin" />
                   </div>
                   <h2 className="text-2xl font-bold text-text-primary mb-2">
                     {provisionStatus?.currentAction || 'Starting...'}
@@ -728,20 +743,12 @@ export default function AddNodePage() {
           )}
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }
 
-// Icons
-function ArrowLeftIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-    </svg>
-  )
-}
-
-function ArrowRightIcon({ className = 'w-4 h-4' }: { className?: string }) {
+// All SVG icon functions removed - using lucide-react imports
+function _legacyArrowRightIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />

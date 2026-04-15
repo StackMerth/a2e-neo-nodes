@@ -3,10 +3,21 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
+import { ArrowLeft, ExternalLink, CreditCard, Server, FileText, Briefcase } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface Settlement {
   id: string
@@ -163,15 +174,13 @@ export default function SettlementDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <motion.div variants={item} className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3 mb-2">
             <button onClick={() => router.back()} className="text-text-muted hover:text-text-primary">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
+              <ArrowLeft className="w-5 h-5" />
             </button>
             <h1 className="text-2xl font-bold text-text-primary">Settlement Details</h1>
             {getStatusBadge(settlement.status)}
@@ -214,12 +223,17 @@ export default function SettlementDetailPage() {
             </button>
           )}
         </div>
-      </div>
+      </motion.div>
 
       {/* Settlement Info */}
-      <div className="grid md:grid-cols-2 gap-6">
-        <Card className="p-6">
-          <h3 className="font-semibold text-text-primary mb-4">Settlement Information</h3>
+      <motion.div variants={item} className="grid md:grid-cols-2 gap-6">
+        <Card className="p-6" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
+              <FileText className="w-4 h-4 text-accent" />
+            </div>
+            <h3 className="font-semibold text-text-primary">Settlement Information</h3>
+          </div>
           <dl className="space-y-3">
             <div className="flex justify-between">
               <dt className="text-text-muted">Amount</dt>
@@ -248,8 +262,13 @@ export default function SettlementDetailPage() {
           </dl>
         </Card>
 
-        <Card className="p-6">
-          <h3 className="font-semibold text-text-primary mb-4">Node Information</h3>
+        <Card className="p-6" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 rounded-lg bg-accent-blue/10 flex items-center justify-center">
+              <Server className="w-4 h-4 text-accent-blue" />
+            </div>
+            <h3 className="font-semibold text-text-primary">Node Information</h3>
+          </div>
           <dl className="space-y-3">
             <div className="flex justify-between">
               <dt className="text-text-muted">Node ID</dt>
@@ -271,12 +290,18 @@ export default function SettlementDetailPage() {
             </div>
           </dl>
         </Card>
-      </div>
+      </motion.div>
 
       {/* Payment Information */}
       {(settlement.txHash || settlement.payment) && (
-        <Card className="p-6">
-          <h3 className="font-semibold text-text-primary mb-4">Payment Information</h3>
+        <motion.div variants={item}>
+        <Card className="p-6" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 rounded-lg bg-accent-purple/10 flex items-center justify-center">
+              <CreditCard className="w-4 h-4 text-accent-purple" />
+            </div>
+            <h3 className="font-semibold text-text-primary">Payment Information</h3>
+          </div>
           <dl className="space-y-3">
             {settlement.txHash && (
               <div className="flex justify-between items-center">
@@ -286,9 +311,10 @@ export default function SettlementDetailPage() {
                     href={`https://solscan.io/tx/${settlement.txHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-accent hover:underline font-mono text-sm"
+                    className="text-accent hover:underline font-mono text-sm inline-flex items-center gap-1"
                   >
                     {settlement.txHash.substring(0, 20)}...
+                    <ExternalLink className="w-3 h-3" />
                   </a>
                 </dd>
               </div>
@@ -315,11 +341,18 @@ export default function SettlementDetailPage() {
             )}
           </dl>
         </Card>
+        </motion.div>
       )}
 
       {/* Jobs in Settlement */}
-      <Card className="p-6">
-        <h3 className="font-semibold text-text-primary mb-4">Jobs Included ({settlement.jobs?.length ?? 0})</h3>
+      <motion.div variants={item}>
+      <Card className="p-6" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center">
+            <Briefcase className="w-4 h-4 text-orange-400" />
+          </div>
+          <h3 className="font-semibold text-text-primary">Jobs Included ({settlement.jobs?.length ?? 0})</h3>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -353,6 +386,7 @@ export default function SettlementDetailPage() {
           </table>
         </div>
       </Card>
+      </motion.div>
 
       {/* Complete Modal */}
       <ConfirmModal
@@ -392,6 +426,6 @@ export default function SettlementDetailPage() {
           className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary mb-4 focus:outline-none focus:border-accent"
         />
       </ConfirmModal>
-    </div>
+    </motion.div>
   )
 }

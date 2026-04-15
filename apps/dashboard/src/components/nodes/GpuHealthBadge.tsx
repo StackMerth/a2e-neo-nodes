@@ -1,5 +1,7 @@
 'use client'
 
+import { Cpu, Thermometer } from 'lucide-react'
+
 interface GpuHealthBadgeProps {
   utilization: number | null
   temperature: number | null
@@ -19,12 +21,10 @@ function getHealthStatus(
     return 'unknown'
   }
 
-  // Critical: Temperature > 85°C or utilization > 95%
   if ((temperature !== null && temperature > 85) || (utilization !== null && utilization > 95)) {
     return 'critical'
   }
 
-  // Warning: Temperature > 75°C or utilization > 85%
   if ((temperature !== null && temperature > 75) || (utilization !== null && utilization > 85)) {
     return 'warning'
   }
@@ -38,34 +38,39 @@ const STATUS_CONFIG: Record<HealthStatus, {
   bgColor: string
   borderColor: string
   dotColor: string
+  dotShadow: string
 }> = {
   healthy: {
     label: 'Healthy',
-    color: 'text-accent',
-    bgColor: 'bg-accent/10',
-    borderColor: 'border-accent/20',
-    dotColor: 'bg-accent shadow-[0_0_8px_rgba(34,197,94,0.6)]',
+    color: 'var(--success)',
+    bgColor: 'rgba(34,197,94,0.1)',
+    borderColor: 'rgba(34,197,94,0.2)',
+    dotColor: 'var(--success)',
+    dotShadow: '0 0 8px rgba(34,197,94,0.6)',
   },
   warning: {
     label: 'Warning',
-    color: 'text-warning',
-    bgColor: 'bg-warning/10',
-    borderColor: 'border-warning/20',
-    dotColor: 'bg-warning shadow-[0_0_8px_rgba(245,158,11,0.6)]',
+    color: 'var(--warning)',
+    bgColor: 'rgba(245,158,11,0.1)',
+    borderColor: 'rgba(245,158,11,0.2)',
+    dotColor: 'var(--warning)',
+    dotShadow: '0 0 8px rgba(245,158,11,0.6)',
   },
   critical: {
     label: 'Critical',
-    color: 'text-error',
-    bgColor: 'bg-error/10',
-    borderColor: 'border-error/20',
-    dotColor: 'bg-error shadow-[0_0_8px_rgba(239,68,68,0.6)] animate-pulse',
+    color: 'var(--danger)',
+    bgColor: 'rgba(239,68,68,0.1)',
+    borderColor: 'rgba(239,68,68,0.2)',
+    dotColor: 'var(--danger)',
+    dotShadow: '0 0 8px rgba(239,68,68,0.6)',
   },
   unknown: {
     label: 'Unknown',
-    color: 'text-text-muted',
-    bgColor: 'bg-surface',
-    borderColor: 'border-border',
-    dotColor: 'bg-text-muted',
+    color: 'var(--text-muted)',
+    bgColor: 'var(--bg-card)',
+    borderColor: 'var(--border-color)',
+    dotColor: 'var(--text-muted)',
+    dotShadow: 'none',
   },
 }
 
@@ -102,13 +107,20 @@ export function GpuHealthBadge({
 
   return (
     <div
-      className={`
-        inline-flex items-center ${sizeConfig.gap} ${sizeConfig.padding}
-        rounded-lg border font-medium
-        ${config.bgColor} ${config.borderColor} ${config.color}
-      `}
+      className={`inline-flex items-center ${sizeConfig.gap} ${sizeConfig.padding} rounded-lg font-medium`}
+      style={{
+        background: config.bgColor,
+        border: `1px solid ${config.borderColor}`,
+        color: config.color,
+      }}
     >
-      <span className={`${sizeConfig.dot} rounded-full ${config.dotColor}`} />
+      <span
+        className={`${sizeConfig.dot} rounded-full`}
+        style={{
+          background: config.dotColor,
+          boxShadow: config.dotShadow,
+        }}
+      />
       {showLabel && <span className={sizeConfig.text}>{config.label}</span>}
     </div>
   )
@@ -120,56 +132,55 @@ export function GpuHealthBadge({
 export function GpuMetricsBadge({
   utilization,
   temperature,
-  size = 'sm',
 }: Pick<GpuHealthBadgeProps, 'utilization' | 'temperature' | 'size'>) {
   const status = getHealthStatus(utilization, temperature)
   const config = STATUS_CONFIG[status]
 
+  const getUtilColor = (val: number) => {
+    if (val > 85) return 'var(--danger)'
+    if (val > 70) return 'var(--warning)'
+    return 'var(--text-primary)'
+  }
+
+  const getTempColor = (val: number) => {
+    if (val > 80) return 'var(--danger)'
+    if (val > 70) return 'var(--warning)'
+    return 'var(--text-primary)'
+  }
+
   return (
     <div className="inline-flex items-center gap-3">
-      {/* GPU Usage */}
       {utilization !== null && (
         <div className="flex items-center gap-1.5">
-          <GpuIcon className="w-3.5 h-3.5 text-text-muted" />
-          <span className={`text-xs font-medium tabular-nums ${
-            utilization > 85 ? 'text-error' : utilization > 70 ? 'text-warning' : 'text-text-primary'
-          }`}>
+          <Cpu size={14} style={{ color: 'var(--text-muted)' }} />
+          <span
+            className="text-xs font-medium tabular-nums"
+            style={{ color: getUtilColor(utilization) }}
+          >
             {utilization.toFixed(0)}%
           </span>
         </div>
       )}
 
-      {/* Temperature */}
       {temperature !== null && (
         <div className="flex items-center gap-1.5">
-          <ThermometerIcon className="w-3.5 h-3.5 text-text-muted" />
-          <span className={`text-xs font-medium tabular-nums ${
-            temperature > 80 ? 'text-error' : temperature > 70 ? 'text-warning' : 'text-text-primary'
-          }`}>
-            {temperature.toFixed(0)}°C
+          <Thermometer size={14} style={{ color: 'var(--text-muted)' }} />
+          <span
+            className="text-xs font-medium tabular-nums"
+            style={{ color: getTempColor(temperature) }}
+          >
+            {temperature.toFixed(0)}{'\u00B0'}C
           </span>
         </div>
       )}
 
-      {/* Health dot */}
-      <span className={`w-2 h-2 rounded-full ${config.dotColor}`} />
+      <span
+        className="w-2 h-2 rounded-full"
+        style={{
+          background: config.dotColor,
+          boxShadow: config.dotShadow,
+        }}
+      />
     </div>
-  )
-}
-
-// Icons
-function GpuIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-    </svg>
-  )
-}
-
-function ThermometerIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9V3m0 0L9 6m3-3l3 3m-3 14a4 4 0 100-8 4 4 0 000 8z" />
-    </svg>
   )
 }

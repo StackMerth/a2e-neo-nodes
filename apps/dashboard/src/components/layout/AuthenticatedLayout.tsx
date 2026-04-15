@@ -1,81 +1,76 @@
 'use client'
 
-import { useAuth } from '@/hooks/useAuth'
 import { usePathname } from 'next/navigation'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useAuth } from '@/hooks/useAuth'
+import { useSidebar } from './SidebarContext'
 import { Sidebar } from './Sidebar'
+import { MobileMenuButton } from './MobileMenuButton'
 import { WebSocketNotifier } from '@/components/WebSocketNotifier'
+
+const mainEase: [number, number, number, number] = [0.4, 0, 0.2, 1]
 
 export function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
   const pathname = usePathname()
+  const { sidebarOpen, setSidebarOpen } = useSidebar()
 
-  // Don't show layout on login page
   if (pathname === '/login') {
     return <>{children}</>
   }
 
-  // Show loading state while checking auth
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 bg-accent rounded-xl flex items-center justify-center">
-            <span className="text-background font-bold">A²</span>
-          </div>
-          <p className="text-text-muted">Loading...</p>
+          <div className="animate-spin w-8 h-8 border-2 border-t-transparent rounded-full" style={{ borderColor: 'var(--primary)', borderTopColor: 'transparent' }} />
+          <p style={{ color: 'var(--text-muted)' }}>Loading...</p>
         </div>
       </div>
     )
   }
 
-  // If not authenticated and not on login page, the AuthProvider will redirect
   if (!isAuthenticated) {
     return null
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="app-layout">
       <WebSocketNotifier />
+      <MobileMenuButton />
       <Sidebar />
 
-      {/* Main content area - offset by collapsed sidebar width (16 = w-16) */}
-      <div className="pl-16 transition-all duration-300">
-        {/* Page content */}
-        <main className="p-6">
-          <div className="max-w-[1800px] mx-auto">
-            {children}
-          </div>
-        </main>
+      {/* Mobile Overlay */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <motion.div
+            className="mobile-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
-        {/* Footer */}
-        <footer className="border-t border-border mt-8 py-6 px-6">
-          <div className="max-w-[1800px] mx-auto flex items-center justify-between text-sm text-text-muted">
-            <div>
-              <span>A²E Engine</span>
-              <span className="mx-2">·</span>
-              <span>TokenOS Arbitrage & Orchestration</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <a
-                href="https://compute.tokenos.ai"
-                target="_blank"
-                rel="noopener"
-                className="hover:text-accent transition-colors"
-              >
-                TokenOS
-              </a>
-              <a
-                href="https://a2e.byredstone.com/health"
-                target="_blank"
-                rel="noopener"
-                className="hover:text-accent transition-colors"
-              >
-                API Status
-              </a>
-            </div>
-          </div>
-        </footer>
-      </div>
+      <motion.main
+        className="main-content"
+        initial={{ marginLeft: 80 }}
+        animate={{ marginLeft: sidebarOpen ? 280 : 80 }}
+        transition={{ duration: 0.3, ease: mainEase }}
+      >
+        <div className="page-container">
+          {children}
+
+          <footer className="admin-footer">
+            <span>&copy; {new Date().getFullYear()} A²E Engine</span>
+            {' \u2022 '}
+            <a href="https://compute.tokenos.ai" target="_blank" rel="noopener noreferrer">TokenOS</a>
+            {' \u2022 '}
+            <a href="https://a2e.byredstone.com/health" target="_blank" rel="noopener noreferrer">API Status</a>
+          </footer>
+        </div>
+      </motion.main>
     </div>
   )
 }

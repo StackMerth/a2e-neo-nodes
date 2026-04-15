@@ -9,6 +9,7 @@ type CardVariant = 'default' | 'glass' | 'gradient-border' | 'elevated'
 interface CardProps {
   children: ReactNode
   className?: string
+  style?: React.CSSProperties
   title?: string
   description?: string
   action?: ReactNode
@@ -19,9 +20,16 @@ interface CardProps {
 
 const variantStyles: Record<CardVariant, string> = {
   default: 'bg-surface border border-border',
-  glass: 'bg-surface/60 backdrop-blur-xl border border-white/5',
+  glass: 'backdrop-blur-xl',
   'gradient-border': 'bg-surface gradient-border',
   elevated: 'bg-surface-elevated border border-border shadow-card',
+}
+
+const variantInlineStyles: Record<CardVariant, React.CSSProperties> = {
+  default: {},
+  glass: { background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' },
+  'gradient-border': {},
+  elevated: {},
 }
 
 const paddingStyles = {
@@ -34,6 +42,7 @@ const paddingStyles = {
 export function Card({
   children,
   className = '',
+  style,
   title,
   description,
   action,
@@ -54,6 +63,7 @@ export function Card({
         ${hoverStyles}
         ${className}
       `}
+      style={{ ...variantInlineStyles[variant], ...style }}
     >
       {(title || description || action) && (
         <div className="mb-4 flex items-start justify-between gap-4">

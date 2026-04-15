@@ -1,11 +1,22 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { motion } from 'framer-motion'
+import { Download, FileText, DollarSign, Receipt, TrendingUp, BarChart3, Briefcase, Landmark, Server, Calendar, Check, AlertTriangle, Info } from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { DateRangePicker } from '@/components/ui/DateRangePicker'
 import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 type ReportType = 'earnings' | 'settlements' | 'jobs' | 'nodes'
 
@@ -63,28 +74,28 @@ export default function ReportsPage() {
       value: 'earnings',
       label: 'Earnings Report',
       description: 'Revenue breakdown by market, node, and time period',
-      icon: <DollarIcon className="w-5 h-5" />,
+      icon: <DollarSign className="w-5 h-5" />,
       color: 'from-accent to-emerald-400',
     },
     {
       value: 'settlements',
       label: 'Settlements Report',
       description: 'All settlements with payment status and transaction details',
-      icon: <BankIcon className="w-5 h-5" />,
+      icon: <Landmark className="w-5 h-5" />,
       color: 'from-purple-500 to-purple-400',
     },
     {
       value: 'jobs',
       label: 'Jobs Report',
       description: 'Complete job history with routing decisions and earnings',
-      icon: <BriefcaseIcon className="w-5 h-5" />,
+      icon: <Briefcase className="w-5 h-5" />,
       color: 'from-blue-500 to-blue-400',
     },
     {
       value: 'nodes',
       label: 'Nodes Report',
       description: 'Node registry with status, GPU tiers, and performance metrics',
-      icon: <ServerIcon className="w-5 h-5" />,
+      icon: <Server className="w-5 h-5" />,
       color: 'from-orange-500 to-orange-400',
     },
   ]
@@ -117,15 +128,15 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
       {/* Hero Section */}
-      <div className="relative py-8 md:py-12">
+      <motion.div variants={item} className="relative py-8 md:py-12">
         {/* Background gradient */}
         <div className="absolute inset-0 bg-gradient-to-b from-blue-500/5 via-transparent to-transparent rounded-3xl" />
 
         <div className="relative text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500/5 border border-blue-500/20 rounded-full mb-6 animate-slideUp">
-            <DocumentIcon className="w-4 h-4 text-blue-400" />
+            <FileText className="w-4 h-4 text-blue-400" />
             <span className="text-xs text-blue-400 font-medium uppercase tracking-wider">Export & Analytics</span>
           </div>
 
@@ -137,14 +148,14 @@ export default function ReportsPage() {
             and gain insights into your network&apos;s performance.
           </p>
         </div>
-      </div>
+      </motion.div>
 
       {/* Date Range Filter */}
       <Card variant="glass" hover={false}>
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
-              <CalendarIcon className="w-5 h-5 text-blue-400" />
+              <Calendar className="w-5 h-5 text-blue-400" />
             </div>
             <div>
               <span className="text-sm font-medium text-text-primary">Report Period</span>
@@ -177,7 +188,7 @@ export default function ReportsPage() {
             value={formatCurrency(summary.revenue.total)}
             variant="accent"
             animate
-            icon={<DollarIcon />}
+            icon={<DollarSign className="w-4 h-4" />}
             className={loadingSummary ? 'animate-pulse' : ''}
           />
           <StatCard
@@ -185,7 +196,7 @@ export default function ReportsPage() {
             value={formatCurrency(summary.costs.total)}
             variant="orange"
             animate
-            icon={<ReceiptIcon />}
+            icon={<Receipt className="w-4 h-4" />}
             className={loadingSummary ? 'animate-pulse' : ''}
           />
           <StatCard
@@ -193,7 +204,7 @@ export default function ReportsPage() {
             value={formatCurrency(summary.profit.gross)}
             variant="accent"
             animate
-            icon={<TrendingUpIcon />}
+            icon={<TrendingUp className="w-4 h-4" />}
             className={loadingSummary ? 'animate-pulse' : ''}
           />
           <StatCard
@@ -201,7 +212,7 @@ export default function ReportsPage() {
             value={`${summary.profit.margin.toFixed(1)}%`}
             variant="purple"
             animate
-            icon={<ChartIcon />}
+            icon={<BarChart3 className="w-4 h-4" />}
             className={loadingSummary ? 'animate-pulse' : ''}
           />
           <StatCard
@@ -209,14 +220,14 @@ export default function ReportsPage() {
             value={summary.activity.totalJobs.toLocaleString()}
             variant="blue"
             animate
-            icon={<BriefcaseIcon />}
+            icon={<Briefcase className="w-4 h-4" />}
             className={loadingSummary ? 'animate-pulse' : ''}
           />
           <StatCard
             label="Settlements Paid"
             value={formatCurrency(summary.settlements.amount)}
             animate
-            icon={<BankIcon />}
+            icon={<Landmark className="w-4 h-4" />}
             className={loadingSummary ? 'animate-pulse' : ''}
           />
         </div>
@@ -251,7 +262,7 @@ export default function ReportsPage() {
                     disabled={downloading === `${report.value}-csv`}
                     variant="outline"
                     size="sm"
-                    icon={<DownloadIcon />}
+                    icon={<Download className="w-4 h-4" />}
                   >
                     {downloading === `${report.value}-csv` ? 'Downloading...' : 'CSV'}
                   </Button>
@@ -264,7 +275,7 @@ export default function ReportsPage() {
                       disabled={downloading === `${report.value}-pdf`}
                       variant="primary"
                       size="sm"
-                      icon={<FileIcon />}
+                      icon={<FileText className="w-4 h-4" />}
                     >
                       {downloading === `${report.value}-pdf` ? 'Generating...' : 'PDF'}
                     </Button>
@@ -273,7 +284,7 @@ export default function ReportsPage() {
               </div>
               {reportType === report.value && (
                 <div className="w-6 h-6 rounded-full bg-accent flex items-center justify-center shrink-0">
-                  <CheckIcon className="w-4 h-4 text-white" />
+                  <Check className="w-4 h-4 text-white" />
                 </div>
               )}
             </div>
@@ -285,7 +296,7 @@ export default function ReportsPage() {
       <Card variant="glass" hover={false}>
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-400 flex items-center justify-center">
-            <DownloadIcon className="w-5 h-5 text-white" />
+            <Download className="w-5 h-5 text-white" />
           </div>
           <div>
             <h3 className="font-semibold text-text-primary">Quick Export</h3>
@@ -298,7 +309,7 @@ export default function ReportsPage() {
             onClick={() => handleDownloadCSV('earnings')}
             disabled={downloading !== null}
             variant="outline"
-            icon={<DollarIcon />}
+            icon={<DollarSign className="w-4 h-4" />}
           >
             All Earnings
           </Button>
@@ -306,7 +317,7 @@ export default function ReportsPage() {
             onClick={() => handleDownloadCSV('settlements')}
             disabled={downloading !== null}
             variant="outline"
-            icon={<BankIcon />}
+            icon={<Landmark className="w-4 h-4" />}
           >
             All Settlements
           </Button>
@@ -314,7 +325,7 @@ export default function ReportsPage() {
             onClick={() => handleDownloadCSV('jobs')}
             disabled={downloading !== null}
             variant="outline"
-            icon={<BriefcaseIcon />}
+            icon={<Briefcase className="w-4 h-4" />}
           >
             All Jobs
           </Button>
@@ -322,7 +333,7 @@ export default function ReportsPage() {
             onClick={() => handleDownloadCSV('nodes')}
             disabled={downloading !== null}
             variant="outline"
-            icon={<ServerIcon />}
+            icon={<Server className="w-4 h-4" />}
           >
             All Nodes
           </Button>
@@ -333,7 +344,7 @@ export default function ReportsPage() {
       <Card variant="glass" hover={false}>
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-400 flex items-center justify-center">
-            <FileIcon className="w-5 h-5 text-white" />
+            <FileText className="w-5 h-5 text-white" />
           </div>
           <div>
             <h3 className="font-semibold text-text-primary">Generate Invoice</h3>
@@ -354,7 +365,7 @@ export default function ReportsPage() {
             onClick={() => handleDownloadPDF('settlements')}
             disabled={downloading === 'settlements-pdf' || !dateRange.start || !dateRange.end}
             variant="primary"
-            icon={<FileIcon />}
+            icon={<FileText className="w-4 h-4" />}
           >
             {downloading === 'settlements-pdf' ? 'Generating...' : 'Generate Invoice'}
           </Button>
@@ -362,7 +373,7 @@ export default function ReportsPage() {
 
         {(!dateRange.start || !dateRange.end) && (
           <div className="mt-4 p-3 bg-warning/5 border border-warning/20 rounded-xl flex items-center gap-2">
-            <AlertIcon className="w-4 h-4 text-warning shrink-0" />
+            <AlertTriangle className="w-4 h-4 text-warning shrink-0" />
             <p className="text-xs text-warning">Select a date range to generate an invoice</p>
           </div>
         )}
@@ -371,7 +382,7 @@ export default function ReportsPage() {
       {/* Report Info */}
       <Card variant="glass" hover={false}>
         <div className="flex items-center gap-3 mb-4">
-          <InfoIcon className="w-5 h-5 text-accent" />
+          <Info className="w-5 h-5 text-accent" />
           <h3 className="font-medium text-text-primary">About Reports</h3>
         </div>
         <div className="grid md:grid-cols-2 gap-6 text-sm text-text-secondary">
@@ -385,7 +396,7 @@ export default function ReportsPage() {
           </div>
         </div>
       </Card>
-    </div>
+    </motion.div>
   )
 }
 

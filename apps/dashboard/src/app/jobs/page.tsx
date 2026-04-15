@@ -2,6 +2,11 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
+import {
+  Briefcase, Play, Clock, CircleCheck, RefreshCw, Plus, Search,
+  AlertTriangle, CircleX, Loader2, Ban, Zap,
+} from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Input'
@@ -9,6 +14,15 @@ import { ConfirmModal, Modal } from '@/components/ui/Modal'
 import { DistributionBar } from '@/components/ui/ProgressBar'
 import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface Job {
   id: string
@@ -237,9 +251,9 @@ export default function JobsPage() {
   ]
 
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <motion.div className="space-y-8" variants={container} initial="hidden" animate="show">
       {/* Hero Section */}
-      <div className="relative py-8 md:py-12">
+      <motion.div variants={item} className="relative py-8 md:py-12">
         <div className="absolute inset-0 bg-gradient-to-b from-accent-blue/5 via-transparent to-transparent rounded-3xl" />
 
         <div className="relative">
@@ -260,44 +274,44 @@ export default function JobsPage() {
               </p>
             </div>
             <div className="flex gap-3">
-              <Button onClick={loadJobs} variant="secondary" size="sm" icon={<RefreshIcon />}>
+              <Button onClick={loadJobs} variant="secondary" size="sm" icon={<RefreshCw size={16} />}>
                 Refresh
               </Button>
-              <Button onClick={() => setShowCreateModal(true)} variant="gradient" size="sm" icon={<PlusIcon />}>
+              <Button onClick={() => setShowCreateModal(true)} variant="gradient" size="sm" icon={<Plus size={16} />}>
                 Create Job
               </Button>
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <motion.div variants={item} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="Total Jobs"
           value={pagination?.total ?? jobs.length}
           variant="default"
-          icon={<BriefcaseIcon />}
+          icon={<Briefcase size={20} />}
         />
         <StatCard
           label="Running"
           value={jobStats.byStatus.RUNNING || 0}
           variant="blue"
-          icon={<PlayIcon />}
+          icon={<Play size={20} />}
         />
         <StatCard
           label="Pending"
           value={(jobStats.byStatus.PENDING || 0) + (jobStats.byStatus.ROUTING || 0)}
           variant="orange"
-          icon={<ClockIcon />}
+          icon={<Clock size={20} />}
         />
         <StatCard
           label="Completed"
           value={jobStats.byStatus.COMPLETED || 0}
           variant="accent"
-          icon={<CheckIcon />}
+          icon={<CircleCheck size={20} />}
         />
-      </div>
+      </motion.div>
 
       {/* Market Distribution */}
       {(pagination?.total ?? jobs.length) > 0 && (
@@ -332,7 +346,7 @@ export default function JobsPage() {
         </div>
         <div className="flex-1 max-w-md">
           <div className="relative">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
             <input
               type="text"
               value={search}
@@ -364,7 +378,7 @@ export default function JobsPage() {
       {selectedJobs.length > 0 && (
         <div className="flex items-center gap-4 p-4 bg-accent/5 border border-accent/20 rounded-xl animate-slideUp">
           <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
-            <CheckIcon className="w-5 h-5 text-accent" />
+            <CircleCheck size={20} className="text-accent" />
           </div>
           <span className="text-sm text-accent font-medium">
             {selectedJobs.length} job{selectedJobs.length !== 1 ? 's' : ''} selected
@@ -392,7 +406,7 @@ export default function JobsPage() {
       {error && (
         <div className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-error/10 flex items-center justify-center flex-shrink-0">
-            <AlertIcon className="w-5 h-5 text-error" />
+            <AlertTriangle size={20} className="text-error" />
           </div>
           <p className="text-error text-sm">{error}</p>
         </div>
@@ -409,7 +423,7 @@ export default function JobsPage() {
           </div>
         ) : filteredJobs.length === 0 ? (
           <EmptyState
-            icon={<BriefcaseIcon className="w-8 h-8" />}
+            icon={<Briefcase size={32} />}
             title={search ? 'No jobs match your search' : 'No jobs yet'}
             description={search ? 'Try adjusting your search or filters' : 'Create your first job or test routing to get started'}
             action={
@@ -643,7 +657,7 @@ export default function JobsPage() {
         variant="danger"
         loading={bulkProcessing}
       />
-    </div>
+    </motion.div>
   )
 }
 
@@ -671,8 +685,8 @@ function EmptyState({
   )
 }
 
-// Icons
-function BriefcaseIcon({ className = 'w-5 h-5' }: { className?: string }) {
+// SVG icon functions removed - using lucide-react imports
+function _legacyBriefcaseIcon({ className = 'w-5 h-5' }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />

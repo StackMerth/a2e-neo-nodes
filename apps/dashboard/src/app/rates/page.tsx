@@ -1,9 +1,20 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { motion } from 'framer-motion'
+import { TrendingUp, BarChart3, DollarSign, Server, Cpu, Star, Globe, Shield, RefreshCw, AlertTriangle } from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { api } from '@/lib/api'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface Rate {
   market: string
@@ -91,9 +102,9 @@ export default function RatesPage() {
     Math.max(1, rates.filter(r => r.market === 'INTERNAL').length)
 
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
       {/* Hero Section */}
-      <div className="relative py-8 md:py-12">
+      <motion.div variants={item} className="relative py-8 md:py-12">
         <div className="absolute inset-0 bg-gradient-to-b from-accent-purple/5 via-transparent to-transparent rounded-3xl" />
 
         <div className="relative">
@@ -122,21 +133,21 @@ export default function RatesPage() {
                   </span>
                 </div>
               )}
-              <Button onClick={loadRates} variant="secondary" size="sm" icon={<RefreshIcon />}>
+              <Button onClick={loadRates} variant="secondary" size="sm" icon={<RefreshCw className="w-4 h-4" />}>
                 Refresh
               </Button>
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {error && (
-        <div className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3">
+        <motion.div variants={item} className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-error/10 flex items-center justify-center flex-shrink-0">
-            <AlertIcon className="w-5 h-5 text-error" />
+            <AlertTriangle className="w-5 h-5 text-error" />
           </div>
           <p className="text-error text-sm">{error}</p>
-        </div>
+        </motion.div>
       )}
 
       {loading ? (
@@ -149,14 +160,14 @@ export default function RatesPage() {
       ) : (
         <>
           {/* Stats Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <motion.div variants={item} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard
               label="Internal Avg"
               value={avgInternalRate.toFixed(2)}
               prefix="$"
               suffix="/day"
               variant="accent"
-              icon={<DollarIcon />}
+              icon={<DollarSign className="w-4 h-4" />}
             />
             <StatCard
               label="Akash Avg"
@@ -164,7 +175,7 @@ export default function RatesPage() {
               prefix="$"
               suffix="/day"
               variant="blue"
-              icon={<ChartIcon />}
+              icon={<BarChart3 className="w-4 h-4" />}
             />
             <StatCard
               label="IO.net Avg"
@@ -172,18 +183,18 @@ export default function RatesPage() {
               prefix="$"
               suffix="/day"
               variant="purple"
-              icon={<ChartIcon />}
+              icon={<BarChart3 className="w-4 h-4" />}
             />
             <StatCard
               label="GPU Tiers"
               value={GPU_TIER_ORDER.length}
               variant="default"
-              icon={<ServerIcon />}
+              icon={<Server className="w-4 h-4" />}
             />
-          </div>
+          </motion.div>
 
           {/* GPU Tier Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {ratesByTier.map(({ tier, internal, akash, ionet }) => {
               const externalRates = [
                 akash?.available ? akash.ratePerDay : 0,
@@ -193,11 +204,11 @@ export default function RatesPage() {
               const externalDiscount = internal && bestExternal ? ((1 - bestExternal / internal.ratePerDay) * 100) : null
 
               return (
-                <Card key={tier} variant="glass" className="group">
+                <Card key={tier} variant="glass" className="group" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
                   <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent/20 to-accent-purple/20 flex items-center justify-center">
-                        <GpuIcon className="w-6 h-6 text-accent" />
+                        <Cpu className="w-6 h-6 text-accent" />
                       </div>
                       <div>
                         <h3 className="text-lg font-bold text-text-primary">{tier}</h3>
@@ -265,9 +276,10 @@ export default function RatesPage() {
                 </Card>
               )
             })}
-          </div>
+          </motion.div>
 
           {/* Rate History Chart */}
+          <motion.div variants={item}>
           <Card variant="glass" title="Rate History" description="Track rate changes over time">
             <div className="space-y-6 mt-4">
               {/* Tier and Market Selection */}
@@ -310,7 +322,7 @@ export default function RatesPage() {
                     ))}
                   </div>
                 </div>
-                <Button onClick={loadHistory} variant="secondary" size="sm" className="mt-5" icon={<RefreshIcon />}>
+                <Button onClick={loadHistory} variant="secondary" size="sm" className="mt-5" icon={<RefreshCw className="w-4 h-4" />}>
                   Refresh
                 </Button>
               </div>
@@ -327,7 +339,7 @@ export default function RatesPage() {
                 <div className="h-48 flex items-center justify-center">
                   <div className="text-center">
                     <div className="w-12 h-12 rounded-xl bg-surface-hover flex items-center justify-center mx-auto mb-3">
-                      <ChartIcon className="w-6 h-6 text-text-muted" />
+                      <BarChart3 className="w-6 h-6 text-text-muted" />
                     </div>
                     <p className="text-text-muted">No rate history available for {selectedTier} on {selectedMarket}</p>
                   </div>
@@ -397,13 +409,15 @@ export default function RatesPage() {
               )}
             </div>
           </Card>
+          </motion.div>
 
           {/* Info Card */}
+          <motion.div variants={item}>
           <Card variant="glass">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="flex gap-4">
                 <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
-                  <StarIcon className="w-5 h-5 text-accent" />
+                  <Star className="w-5 h-5 text-accent" />
                 </div>
                 <div>
                   <h4 className="font-medium text-text-primary mb-1">Internal Rate</h4>
@@ -412,7 +426,7 @@ export default function RatesPage() {
               </div>
               <div className="flex gap-4">
                 <div className="w-10 h-10 rounded-lg bg-accent-blue/10 flex items-center justify-center flex-shrink-0">
-                  <GlobeIcon className="w-5 h-5 text-accent-blue" />
+                  <Globe className="w-5 h-5 text-accent-blue" />
                 </div>
                 <div>
                   <h4 className="font-medium text-text-primary mb-1">External Rates</h4>
@@ -421,7 +435,7 @@ export default function RatesPage() {
               </div>
               <div className="flex gap-4">
                 <div className="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0">
-                  <ShieldIcon className="w-5 h-5 text-warning" />
+                  <Shield className="w-5 h-5 text-warning" />
                 </div>
                 <div>
                   <h4 className="font-medium text-text-primary mb-1">Yield Floor</h4>
@@ -430,9 +444,10 @@ export default function RatesPage() {
               </div>
             </div>
           </Card>
+          </motion.div>
         </>
       )}
-    </div>
+    </motion.div>
   )
 }
 

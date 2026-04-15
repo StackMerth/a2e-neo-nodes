@@ -2,8 +2,22 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
+import {
+  Clock as ClockLucide, Rocket, CheckCircle, XCircle as XCircleLucide,
+  AlertTriangle,
+} from 'lucide-react'
 import { api } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const itemVar = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface Deployment {
   id: string
@@ -194,7 +208,7 @@ export default function DeploymentsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <motion.div className="space-y-6" variants={container} initial="hidden" animate="show">
       {/* Toast */}
       {toast && (
         <div className="fixed top-4 right-4 z-50 bg-accent text-white px-4 py-3 rounded-lg shadow-lg animate-scaleIn">
@@ -203,7 +217,7 @@ export default function DeploymentsPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <motion.div variants={itemVar} className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-text-primary">Deployment Requests</h1>
           {pendingCount > 0 && (
@@ -212,7 +226,7 @@ export default function DeploymentsPage() {
             </span>
           )}
         </div>
-      </div>
+      </motion.div>
 
       {error && (
         <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg">
@@ -227,7 +241,7 @@ export default function DeploymentsPage() {
       )}
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <motion.div variants={itemVar} className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div
           className={`bg-surface border rounded-xl p-4 cursor-pointer transition-colors ${
             filter === 'DEPLOYMENT_REQUESTED' ? 'border-warning' : 'border-border hover:border-warning/50'
@@ -236,7 +250,7 @@ export default function DeploymentsPage() {
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-warning/10 rounded-lg flex items-center justify-center">
-              <ClockIcon className="w-5 h-5 text-warning" />
+              <ClockLucide size={20} className="text-warning" />
             </div>
             <div>
               <p className="text-text-muted text-sm">Pending</p>
@@ -253,7 +267,7 @@ export default function DeploymentsPage() {
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-accent-purple/10 rounded-lg flex items-center justify-center">
-              <RocketIcon className="w-5 h-5 text-accent-purple" />
+              <Rocket size={20} className="text-accent-purple" />
             </div>
             <div>
               <p className="text-text-muted text-sm">Deploying</p>
@@ -270,7 +284,7 @@ export default function DeploymentsPage() {
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center">
-              <CheckIcon className="w-5 h-5 text-accent" />
+              <CheckCircle size={20} className="text-accent" />
             </div>
             <div>
               <p className="text-text-muted text-sm">Provisioned</p>
@@ -287,7 +301,7 @@ export default function DeploymentsPage() {
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-text-muted/10 rounded-lg flex items-center justify-center">
-              <XCircleIcon className="w-5 h-5 text-text-muted" />
+              <XCircleLucide size={20} className="text-text-muted" />
             </div>
             <div>
               <p className="text-text-muted text-sm">Cancelled</p>
@@ -295,14 +309,14 @@ export default function DeploymentsPage() {
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Pending Alert */}
       {pendingCount > 0 && filter === 'all' && (
         <div className="bg-warning/10 border border-warning/20 rounded-xl p-4">
           <div className="flex items-start gap-3">
             <div className="w-8 h-8 bg-warning/20 rounded-lg flex items-center justify-center flex-shrink-0">
-              <AlertIcon className="w-4 h-4 text-warning" />
+              <AlertTriangle size={16} className="text-warning" />
             </div>
             <div>
               <h3 className="font-semibold text-text-primary">
@@ -345,7 +359,7 @@ export default function DeploymentsPage() {
       </div>
 
       {/* Deployments Table */}
-      <div className="bg-surface border border-border rounded-xl overflow-hidden">
+      <div className="rounded-xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
         <div className="px-6 py-4 border-b border-border flex items-center justify-between">
           <h2 className="text-lg font-semibold text-text-primary">
             {filter === 'all' ? 'All Deployments' : `${STATUS_FILTERS.find(f => f.value === filter)?.label} Deployments`}
@@ -652,15 +666,15 @@ export default function DeploymentsPage() {
           </div>
         </form>
       </Modal>
-    </div>
+    </motion.div>
   )
 }
 
 // =============================================================================
-// ICONS
+// ICONS (Legacy - using lucide-react imports instead)
 // =============================================================================
 
-function ClockIcon({ className }: { className?: string }) {
+function _ClockIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />

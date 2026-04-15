@@ -1,15 +1,36 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/hooks/useAuth'
+import { useSidebar } from './SidebarContext'
+import {
+  LayoutDashboard,
+  Server,
+  Briefcase,
+  GitBranch,
+  Users,
+  Wallet,
+  Rocket,
+  TrendingUp,
+  BarChart3,
+  CreditCard,
+  DollarSign,
+  Receipt,
+  FileText,
+  ClipboardCheck,
+  Settings,
+  LogOut,
+  PanelLeftOpen,
+  PanelLeftClose,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
 interface NavItem {
-  name: string
-  href: string
-  icon: React.ComponentType<{ className?: string }>
-  badge?: number
+  path: string
+  icon: LucideIcon
+  label: string
 }
 
 interface NavGroup {
@@ -17,316 +38,233 @@ interface NavGroup {
   items: NavItem[]
 }
 
-const navigation: NavGroup[] = [
+const navGroups: NavGroup[] = [
   {
     title: 'MAIN',
     items: [
-      { name: 'Dashboard', href: '/', icon: HomeIcon },
-      { name: 'Nodes', href: '/nodes', icon: ServerIcon },
-      { name: 'Jobs', href: '/jobs', icon: BriefcaseIcon },
-      { name: 'Routing', href: '/routing', icon: RouteIcon },
+      { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
+      { path: '/nodes', icon: Server, label: 'Nodes' },
+      { path: '/jobs', icon: Briefcase, label: 'Jobs' },
+      { path: '/routing', icon: GitBranch, label: 'Routing' },
     ],
   },
   {
     title: 'INVESTORS',
     items: [
-      { name: 'Node Runners', href: '/node-runners', icon: UsersIcon },
-      { name: 'Investments', href: '/investments', icon: WalletIcon },
-      { name: 'Deployments', href: '/deployments', icon: DeployIcon },
+      { path: '/node-runners', icon: Users, label: 'Node Runners' },
+      { path: '/investments', icon: Wallet, label: 'Investments' },
+      { path: '/deployments', icon: Rocket, label: 'Deployments' },
     ],
   },
   {
     title: 'MARKET',
     items: [
-      { name: 'Rates', href: '/rates', icon: ChartIcon },
+      { path: '/rates', icon: TrendingUp, label: 'Rates' },
     ],
   },
   {
     title: 'FINANCE',
     items: [
-      { name: 'Financial', href: '/financial', icon: DollarIcon },
-      { name: 'Payments', href: '/payments', icon: CreditCardIcon },
-      { name: 'Earnings', href: '/earnings', icon: TrendingUpIcon },
-      { name: 'Costs', href: '/costs', icon: ReceiptIcon },
-      { name: 'Reports', href: '/reports', icon: DocumentIcon },
+      { path: '/financial', icon: BarChart3, label: 'Financial' },
+      { path: '/payments', icon: CreditCard, label: 'Payments' },
+      { path: '/earnings', icon: DollarSign, label: 'Earnings' },
+      { path: '/costs', icon: Receipt, label: 'Costs' },
+      { path: '/reports', icon: FileText, label: 'Reports' },
     ],
   },
   {
     title: 'SYSTEM',
     items: [
-      { name: 'Audit', href: '/audit', icon: ClipboardCheckIcon },
-      { name: 'Settings', href: '/settings', icon: SettingsIcon },
+      { path: '/audit', icon: ClipboardCheck, label: 'Audit' },
+      { path: '/settings', icon: Settings, label: 'Settings' },
     ],
   },
 ]
 
+const sidebarEase: [number, number, number, number] = [0.4, 0, 0.2, 1]
+
+const sidebarVariants = {
+  open: { width: 280, transition: { duration: 0.3, ease: sidebarEase } },
+  closed: { width: 80, transition: { duration: 0.3, ease: sidebarEase } },
+}
+
+const labelVariants = {
+  open: { opacity: 1, x: 0, display: 'block', transition: { delay: 0.1 } },
+  closed: { opacity: 0, x: -10, transitionEnd: { display: 'none' } },
+}
+
 export function Sidebar() {
-  const pathname = usePathname()
   const { user, logout } = useAuth()
-  const [collapsed, setCollapsed] = useState(true)
+  const router = useRouter()
+  const pathname = usePathname()
+  const { sidebarOpen, setSidebarOpen } = useSidebar()
+
+  const handleLogout = () => {
+    logout()
+    router.push('/login')
+  }
+
+  const displayName = user?.username || 'Admin'
+  const avatarLetter = (user?.username || 'A').charAt(0).toUpperCase()
+
+  let itemIndex = 0
 
   return (
-    <aside
-      className={`fixed left-0 top-0 h-screen bg-surface border-r border-border flex flex-col transition-all duration-300 z-40 ${
-        collapsed ? 'w-16' : 'w-64'
-      }`}
+    <motion.aside
+      className={`sidebar ${!sidebarOpen ? 'collapsed' : ''} ${sidebarOpen ? 'mobile-open' : ''}`}
+      variants={sidebarVariants}
+      animate={sidebarOpen ? 'open' : 'closed'}
+      initial="closed"
+      style={{ width: sidebarOpen ? 280 : 80 }}
     >
       {/* Logo */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-border">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="relative">
-            <div className="absolute inset-0 bg-accent/20 rounded-lg blur-md" />
-            <div className="relative w-9 h-9 bg-gradient-to-br from-accent to-accent-hover rounded-lg flex items-center justify-center shadow-lg shadow-accent/20">
-              <span className="text-background font-bold text-sm">A²</span>
-            </div>
-          </div>
-          {!collapsed && (
-            <div className="flex flex-col">
-              <span className="font-semibold text-text-primary leading-tight">A²E Engine</span>
-              <span className="text-[10px] text-text-muted uppercase tracking-wider">Dashboard</span>
-            </div>
-          )}
-        </Link>
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="p-1.5 text-text-muted hover:text-text-primary hover:bg-surface-hover rounded-lg transition-colors"
+      <div className="sidebar-header">
+        <motion.div
+          className="logo"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => router.push('/')}
         >
-          <CollapseIcon className={`w-4 h-4 transition-transform ${collapsed ? 'rotate-180' : ''}`} />
-        </button>
+          <div className="logo-icon">A²E</div>
+          <AnimatePresence>
+            {sidebarOpen && (
+              <motion.span
+                className="logo-text"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ duration: 0.2 }}
+              >
+                Admin
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </motion.div>
+
+        {sidebarOpen && (
+          <motion.button
+            className="collapse-btn"
+            onClick={() => setSidebarOpen(false)}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            title="Collapse sidebar"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+          >
+            <PanelLeftClose size={20} />
+          </motion.button>
+        )}
       </div>
 
+      {!sidebarOpen && (
+        <motion.div
+          className="sidebar-toggle-collapsed"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          <motion.button
+            className="collapse-btn centered"
+            onClick={() => setSidebarOpen(true)}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            title="Expand sidebar"
+          >
+            <PanelLeftOpen size={20} />
+          </motion.button>
+        </motion.div>
+      )}
+
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3">
-        {navigation.map((group) => (
-          <div key={group.title} className="mb-6">
-            {!collapsed && (
-              <h3 className="px-3 mb-2 text-[10px] font-semibold text-text-muted tracking-wider">
-                {group.title}
-              </h3>
-            )}
-            <ul className="space-y-1">
-              {group.items.map((item) => {
-                const isActive = pathname === item.href
-                const Icon = item.icon
-                return (
-                  <li key={item.name}>
-                    <Link
-                      href={item.href}
-                      className={`
-                        flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200
-                        ${isActive
-                          ? 'bg-accent text-white shadow-lg shadow-accent/20'
-                          : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
-                        }
-                        ${collapsed ? 'justify-center' : ''}
-                      `}
-                      title={collapsed ? item.name : undefined}
+      <nav className="sidebar-nav">
+        {navGroups.map((group) => (
+          <div key={group.title}>
+            <AnimatePresence>
+              {sidebarOpen && (
+                <motion.div
+                  className="nav-group-title"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  {group.title}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {group.items.map((item) => {
+              const currentIndex = itemIndex++
+              const isActive = item.path === '/'
+                ? pathname === '/'
+                : pathname === item.path || pathname.startsWith(item.path + '/')
+
+              return (
+                <Link
+                  key={item.path}
+                  href={item.path}
+                  className={`nav-item ${isActive ? 'active' : ''}`}
+                  title={!sidebarOpen ? item.label : undefined}
+                >
+                  <motion.div
+                    className="nav-item-content"
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: currentIndex * 0.03 }}
+                    whileHover={{ x: 4 }}
+                  >
+                    {isActive && (
+                      <motion.div
+                        className="nav-indicator"
+                        layoutId="nav-indicator"
+                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                      />
+                    )}
+                    <div className="nav-icon-wrapper">
+                      <item.icon size={20} className="nav-icon" />
+                    </div>
+                    <motion.span
+                      className="nav-label"
+                      variants={labelVariants}
                     >
-                      <Icon className="w-5 h-5 flex-shrink-0" />
-                      {!collapsed && (
-                        <>
-                          <span className="flex-1 text-sm font-medium">{item.name}</span>
-                          {item.badge !== undefined && (
-                            <span className={`px-2 py-0.5 text-xs rounded-full ${
-                              isActive ? 'bg-white/20' : 'bg-accent/10 text-accent'
-                            }`}>
-                              {item.badge}
-                            </span>
-                          )}
-                        </>
-                      )}
-                    </Link>
-                  </li>
-                )
-              })}
-            </ul>
+                      {item.label}
+                    </motion.span>
+                  </motion.div>
+                </Link>
+              )
+            })}
           </div>
         ))}
       </nav>
 
-      {/* Status Bar */}
-      <div className="p-3 border-t border-border">
-        <div className={`flex items-center gap-2 px-3 py-2 bg-accent/5 border border-accent/20 rounded-lg ${collapsed ? 'justify-center' : ''}`}>
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-accent" />
-          </span>
-          {!collapsed && (
-            <span className="text-xs text-accent font-medium">API Connected</span>
-          )}
+      {/* Footer */}
+      <div className="sidebar-footer">
+        <div className="user-info">
+          <motion.div
+            className="user-avatar"
+            whileHover={{ scale: 1.05 }}
+          >
+            {avatarLetter}
+          </motion.div>
+          <motion.div
+            className="user-details"
+            variants={labelVariants}
+          >
+            <span className="user-name">{displayName}</span>
+            <span className="user-role">{user?.role || 'Administrator'}</span>
+          </motion.div>
         </div>
+
+        <motion.button
+          className="logout-btn"
+          onClick={handleLogout}
+          whileHover={{ scale: 1.02, backgroundColor: 'rgba(239, 68, 68, 0.15)' }}
+          whileTap={{ scale: 0.98 }}
+          title={!sidebarOpen ? 'Logout' : undefined}
+        >
+          <LogOut size={20} />
+          <motion.span variants={labelVariants}>Logout</motion.span>
+        </motion.button>
       </div>
-
-      {/* User Section */}
-      <div className="p-3 border-t border-border">
-        <div className={`flex items-center gap-3 ${collapsed ? 'justify-center' : ''}`}>
-          <div className="w-9 h-9 bg-gradient-to-br from-accent/30 to-accent-purple/30 rounded-lg flex items-center justify-center border border-accent/20 flex-shrink-0">
-            <span className="text-sm text-accent font-semibold">
-              {user?.username?.charAt(0).toUpperCase() || 'A'}
-            </span>
-          </div>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-text-primary truncate">
-                {user?.username || 'Admin'}
-              </p>
-              <p className="text-xs text-text-muted truncate">
-                {user?.role || 'Administrator'}
-              </p>
-            </div>
-          )}
-          {!collapsed && (
-            <button
-              onClick={logout}
-              className="p-2 text-text-muted hover:text-error hover:bg-error/10 rounded-lg transition-colors"
-              title="Sign out"
-            >
-              <LogoutIcon className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
-    </aside>
-  )
-}
-
-// =============================================================================
-// ICONS
-// =============================================================================
-
-function HomeIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-    </svg>
-  )
-}
-
-function ServerIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-    </svg>
-  )
-}
-
-function RouteIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-    </svg>
-  )
-}
-
-function BriefcaseIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-    </svg>
-  )
-}
-
-function ChartIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-    </svg>
-  )
-}
-
-function DollarIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
-}
-
-function CreditCardIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-    </svg>
-  )
-}
-
-function TrendingUpIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-    </svg>
-  )
-}
-
-function ReceiptIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
-    </svg>
-  )
-}
-
-function DocumentIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-    </svg>
-  )
-}
-
-function SettingsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
-  )
-}
-
-function LogoutIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-    </svg>
-  )
-}
-
-function CollapseIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-    </svg>
-  )
-}
-
-function UsersIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-    </svg>
-  )
-}
-
-function WalletIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-    </svg>
-  )
-}
-
-function ClipboardCheckIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-    </svg>
-  )
-}
-
-function DeployIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.63 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
-    </svg>
+    </motion.aside>
   )
 }

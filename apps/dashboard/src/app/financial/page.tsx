@@ -2,11 +2,22 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
+import { DollarSign, TrendingUp, TrendingDown, BarChart3, RefreshCw, AlertTriangle, FlaskConical, ShieldCheck, Pencil, Briefcase, Clock, Download, Banknote, Receipt, Check } from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { DistributionBar } from '@/components/ui/ProgressBar'
 import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface ReportSummary {
   period: { start: string; end: string }
@@ -250,7 +261,7 @@ export default function FinancialPage() {
       <div className="max-w-md mx-auto mt-20 animate-fadeIn">
         <Card variant="elevated" className="text-center">
           <div className="w-16 h-16 rounded-full bg-error/10 flex items-center justify-center mx-auto mb-4">
-            <AlertIcon className="w-8 h-8 text-error" />
+            <AlertTriangle className="w-8 h-8 text-error" />
           </div>
           <h2 className="text-lg font-semibold text-text-primary mb-2">Connection Error</h2>
           <p className="text-text-muted text-sm mb-6">{error}</p>
@@ -263,16 +274,16 @@ export default function FinancialPage() {
   }
 
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
       {/* Hero Section */}
-      <div className="relative py-8 md:py-12">
+      <motion.div variants={item} className="relative py-8 md:py-12">
         <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-3xl" />
 
         <div className="relative">
           <div className="flex items-center justify-between mb-6">
             <div>
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent/5 border border-accent/20 rounded-full mb-4 animate-slideUp">
-                <DollarIcon className="w-4 h-4 text-accent" />
+                <DollarSign className="w-4 h-4 text-accent" />
                 <span className="text-xs text-accent font-medium uppercase tracking-wider">Financial Hub</span>
               </div>
               <h1 className="text-3xl md:text-4xl font-bold text-text-primary">
@@ -292,13 +303,13 @@ export default function FinancialPage() {
                 <option value={30}>Last 30 days</option>
                 <option value={90}>Last 90 days</option>
               </select>
-              <Button onClick={loadData} variant="secondary" size="sm" icon={<RefreshIcon />}>
+              <Button onClick={loadData} variant="secondary" size="sm" icon={<RefreshCw className="w-4 h-4" />}>
                 Refresh
               </Button>
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Payment Mode & Wallet Balance */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -314,9 +325,9 @@ export default function FinancialPage() {
                 paymentMode.devMode ? 'bg-warning/10' : 'bg-accent/10'
               }`}>
                 {paymentMode.devMode ? (
-                  <TestTubeIcon className="w-6 h-6 text-warning" />
+                  <FlaskConical className="w-6 h-6 text-warning" />
                 ) : (
-                  <ShieldCheckIcon className="w-6 h-6 text-accent" />
+                  <ShieldCheck className="w-6 h-6 text-accent" />
                 )}
               </div>
               <div>
@@ -369,25 +380,25 @@ export default function FinancialPage() {
           label="Total Revenue"
           value={formatCurrency(summary?.revenue.total ?? 0)}
           variant="accent"
-          icon={<TrendingUpIcon />}
+          icon={<TrendingUp className="w-4 h-4" />}
         />
         <StatCard
           label="Total Costs"
           value={formatCurrency(summary?.costs.total ?? 0)}
           variant="default"
-          icon={<TrendingDownIcon />}
+          icon={<TrendingDown className="w-4 h-4" />}
         />
         <StatCard
           label="Gross Profit"
           value={formatCurrency(summary?.profit.gross ?? 0)}
           variant={summary?.profit.gross && summary.profit.gross > 0 ? 'accent' : 'default'}
-          icon={<DollarIcon />}
+          icon={<DollarSign className="w-4 h-4" />}
         />
         <StatCard
           label="Profit Margin"
           value={formatPercent(summary?.profit.margin ?? 0)}
           variant="purple"
-          icon={<ChartIcon />}
+          icon={<BarChart3 className="w-4 h-4" />}
         />
       </div>
 
@@ -440,7 +451,7 @@ export default function FinancialPage() {
             </div>
           ) : (
             <EmptyState
-              icon={<ChartIcon className="w-8 h-8" />}
+              icon={<BarChart3 className="w-8 h-8" />}
               title="No revenue yet"
               description="Revenue will appear here once jobs complete"
             />
@@ -493,7 +504,7 @@ export default function FinancialPage() {
             </div>
           ) : (
             <EmptyState
-              icon={<ReceiptIcon className="w-8 h-8" />}
+              icon={<Receipt className="w-8 h-8" />}
               title="No costs recorded"
               description="Cost entries will appear here"
             />
@@ -543,7 +554,7 @@ export default function FinancialPage() {
             ) : (
               <div className="text-center py-8">
                 <div className="w-12 h-12 rounded-xl bg-surface-hover flex items-center justify-center mx-auto mb-3">
-                  <CheckIcon className="w-6 h-6 text-accent" />
+                  <Check className="w-6 h-6 text-accent" />
                 </div>
                 <p className="text-text-muted text-sm">No pending settlements</p>
               </div>
@@ -641,7 +652,7 @@ export default function FinancialPage() {
               </table>
             ) : (
               <EmptyState
-                icon={<BankIcon className="w-8 h-8" />}
+                icon={<Banknote className="w-8 h-8" />}
                 title="No settlements yet"
                 description="Completed settlements will appear here"
               />
@@ -697,7 +708,7 @@ export default function FinancialPage() {
                 }}
                 variant="secondary"
                 size="sm"
-                icon={<EditIcon />}
+                icon={<Pencil className="w-4 h-4" />}
               >
                 Edit Configuration
               </Button>
@@ -820,11 +831,11 @@ export default function FinancialPage() {
                   <p className="text-sm text-text-primary">
                     {paymentMode?.payerConfigured ? (
                       <span className="text-accent flex items-center gap-2">
-                        <CheckIcon className="w-4 h-4" /> Configured
+                        <Check className="w-4 h-4" /> Configured
                       </span>
                     ) : (
                       <span className="text-warning flex items-center gap-2">
-                        <AlertIcon className="w-4 h-4" /> Not configured
+                        <AlertTriangle className="w-4 h-4" /> Not configured
                       </span>
                     )}
                   </p>
@@ -835,7 +846,7 @@ export default function FinancialPage() {
                   onClick={() => setEditingSolanaConfig(true)}
                   variant="secondary"
                   size="sm"
-                  icon={<EditIcon />}
+                  icon={<Pencil className="w-4 h-4" />}
                 >
                   Configure Solana
                 </Button>
@@ -847,7 +858,7 @@ export default function FinancialPage() {
           ) : (
             <div className="space-y-4">
               <div className="p-4 bg-warning/10 border border-warning/30 rounded-xl flex items-start gap-3">
-                <AlertIcon className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
+                <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm text-warning font-medium">Security Warning</p>
                   <p className="text-xs text-text-muted mt-1">
@@ -921,14 +932,14 @@ export default function FinancialPage() {
 
       {/* Activity Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Total Jobs" value={summary?.activity.totalJobs ?? 0} icon={<BriefcaseIcon />} />
-        <StatCard label="GPU Hours" value={(summary?.revenue.gpuHours ?? 0).toFixed(1)} icon={<ClockIcon />} />
-        <StatCard label="Completed Settlements" value={summary?.settlements.completed ?? 0} variant="accent" icon={<CheckIcon />} />
+        <StatCard label="Total Jobs" value={summary?.activity.totalJobs ?? 0} icon={<Briefcase className="w-4 h-4" />} />
+        <StatCard label="GPU Hours" value={(summary?.revenue.gpuHours ?? 0).toFixed(1)} icon={<Clock className="w-4 h-4" />} />
+        <StatCard label="Completed Settlements" value={summary?.settlements.completed ?? 0} variant="accent" icon={<Check className="w-4 h-4" />} />
         <StatCard
           label="Settled Amount"
           value={formatCurrency(summary?.settlements.amount ?? 0)}
           variant="accent"
-          icon={<BankIcon />}
+          icon={<Banknote className="w-4 h-4" />}
         />
       </div>
 
@@ -939,7 +950,7 @@ export default function FinancialPage() {
             onClick={() => api.reports.downloadCSV('earnings')}
             variant="secondary"
             size="sm"
-            icon={<DownloadIcon />}
+            icon={<Download className="w-4 h-4" />}
           >
             Earnings CSV
           </Button>
@@ -947,7 +958,7 @@ export default function FinancialPage() {
             onClick={() => api.reports.downloadCSV('settlements')}
             variant="secondary"
             size="sm"
-            icon={<DownloadIcon />}
+            icon={<Download className="w-4 h-4" />}
           >
             Settlements CSV
           </Button>
@@ -955,7 +966,7 @@ export default function FinancialPage() {
             onClick={() => api.reports.downloadCSV('jobs')}
             variant="secondary"
             size="sm"
-            icon={<DownloadIcon />}
+            icon={<Download className="w-4 h-4" />}
           >
             Jobs CSV
           </Button>
@@ -963,13 +974,13 @@ export default function FinancialPage() {
             onClick={() => api.reports.downloadCSV('nodes')}
             variant="secondary"
             size="sm"
-            icon={<DownloadIcon />}
+            icon={<Download className="w-4 h-4" />}
           >
             Nodes CSV
           </Button>
         </div>
       </Card>
-    </div>
+    </motion.div>
   )
 }
 

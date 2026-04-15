@@ -1,10 +1,21 @@
 'use client'
 
 import { useState } from 'react'
+import { motion } from 'framer-motion'
+import { FlaskConical, Star, Globe, Clock, Map, AlertTriangle, Shield, CircleCheck } from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
 import { api } from '@/lib/api'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 const GPU_TIERS = [
   { value: 'H100', label: 'NVIDIA H100 — $140.15/day retail' },
@@ -83,9 +94,9 @@ export default function RoutingPage() {
   }
 
   return (
-    <div className="space-y-8 animate-fadeIn">
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
       {/* Hero Section */}
-      <div className="relative py-8 md:py-12">
+      <motion.div variants={item} className="relative py-8 md:py-12">
         <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-3xl" />
 
         <div className="relative">
@@ -106,7 +117,7 @@ export default function RoutingPage() {
             </p>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Session Stats */}
       {history.length > 0 && (
@@ -115,26 +126,26 @@ export default function RoutingPage() {
             label="Total Tests"
             value={history.length}
             variant="default"
-            icon={<LabIcon />}
+            icon={<FlaskConical className="w-4 h-4" />}
           />
           <StatCard
             label="Internal Routes"
             value={internalCount}
             variant="accent"
-            icon={<StarIcon />}
+            icon={<Star className="w-4 h-4" />}
           />
           <StatCard
             label="External Routes"
             value={akashCount + ionetCount}
             variant="blue"
-            icon={<GlobeIcon />}
+            icon={<Globe className="w-4 h-4" />}
           />
           <StatCard
             label="Avg Decision"
             value={avgDecisionTime}
             suffix="ms"
             variant="purple"
-            icon={<ClockIcon />}
+            icon={<Clock className="w-4 h-4" />}
           />
         </div>
       )}
@@ -175,7 +186,7 @@ export default function RoutingPage() {
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                       !hasInternalDemand ? 'bg-accent/10' : 'bg-surface-hover'
                     }`}>
-                      <GlobeIcon className={`w-5 h-5 ${!hasInternalDemand ? 'text-accent' : 'text-text-muted'}`} />
+                      <Globe className={`w-5 h-5 ${!hasInternalDemand ? 'text-accent' : 'text-text-muted'}`} />
                     </div>
                     <div className="text-left">
                       <p className={`font-medium ${!hasInternalDemand ? 'text-accent' : 'text-text-primary'}`}>
@@ -198,7 +209,7 @@ export default function RoutingPage() {
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                       hasInternalDemand ? 'bg-accent/10' : 'bg-surface-hover'
                     }`}>
-                      <StarIcon className={`w-5 h-5 ${hasInternalDemand ? 'text-accent' : 'text-text-muted'}`} />
+                      <Star className={`w-5 h-5 ${hasInternalDemand ? 'text-accent' : 'text-text-muted'}`} />
                     </div>
                     <div className="text-left">
                       <p className={`font-medium ${hasInternalDemand ? 'text-accent' : 'text-text-primary'}`}>
@@ -216,12 +227,12 @@ export default function RoutingPage() {
 
             {error && (
               <div className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3">
-                <AlertIcon className="w-5 h-5 text-error flex-shrink-0" />
+                <AlertTriangle className="w-5 h-5 text-error flex-shrink-0" />
                 <p className="text-error text-sm">{error}</p>
               </div>
             )}
 
-            <Button type="submit" loading={loading} variant="gradient" className="w-full" size="lg" icon={<RouteIcon />}>
+            <Button type="submit" loading={loading} variant="gradient" className="w-full" size="lg" icon={<Map className="w-4 h-4" />}>
               Send Routing Request
             </Button>
           </form>
@@ -266,9 +277,9 @@ export default function RoutingPage() {
                   <p className="text-xs text-text-muted mb-1">Yield Floor Applied</p>
                   <div className="flex items-center gap-2">
                     {result.yieldFloorApplied ? (
-                      <ShieldIcon className="w-5 h-5 text-warning" />
+                      <Shield className="w-5 h-5 text-warning" />
                     ) : (
-                      <CheckIcon className="w-5 h-5 text-accent" />
+                      <CircleCheck className="w-5 h-5 text-accent" />
                     )}
                     <p className={`font-bold ${result.yieldFloorApplied ? 'text-warning' : 'text-accent'}`}>
                       {result.yieldFloorApplied ? 'Yes' : 'No'}
@@ -278,7 +289,7 @@ export default function RoutingPage() {
                 <div className="p-4 bg-surface rounded-xl">
                   <p className="text-xs text-text-muted mb-1">Decision Time</p>
                   <div className="flex items-center gap-2">
-                    <ClockIcon className="w-5 h-5 text-accent-purple" />
+                    <Clock className="w-5 h-5 text-accent-purple" />
                     <p className="font-bold text-text-primary">{result.decisionTimeMs}ms</p>
                   </div>
                 </div>
@@ -295,7 +306,7 @@ export default function RoutingPage() {
           ) : (
             <div className="flex flex-col items-center justify-center py-16">
               <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-accent/10 to-accent-purple/10 flex items-center justify-center mb-6">
-                <RouteIcon className="w-10 h-10 text-accent/50" />
+                <Map className="w-10 h-10 text-accent/50" />
               </div>
               <h3 className="text-lg font-medium text-text-primary mb-2">No Decision Yet</h3>
               <p className="text-sm text-text-muted text-center max-w-xs">
@@ -351,7 +362,7 @@ export default function RoutingPage() {
                     <td className="py-4 px-4 text-center">
                       {item.yieldFloorApplied ? (
                         <span className="inline-flex items-center gap-1 text-warning text-xs">
-                          <ShieldIcon className="w-3.5 h-3.5" />
+                          <Shield className="w-3.5 h-3.5" />
                           Yes
                         </span>
                       ) : (
@@ -407,7 +418,7 @@ export default function RoutingPage() {
           </div>
         </div>
       </Card>
-    </div>
+    </motion.div>
   )
 }
 
