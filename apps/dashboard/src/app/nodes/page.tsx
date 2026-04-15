@@ -276,26 +276,15 @@ export default function NodesPage() {
       initial="hidden"
       animate="show"
     >
-      {/* Hero Section */}
-      <motion.div variants={item} className="relative py-8 md:py-12">
-        <div className="absolute inset-0 bg-gradient-to-b from-accent/5 via-transparent to-transparent rounded-3xl" />
-
-        <div className="relative text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent/5 border border-accent/20 rounded-full mb-6">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-accent" />
-            </span>
-            <span className="text-xs text-accent font-medium uppercase tracking-wider">Node Registry</span>
-          </div>
-
-          <h1 className="text-3xl md:text-5xl font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
-            Node Management
-          </h1>
-          <p style={{ color: 'var(--text-muted)' }} className="max-w-xl mx-auto">
-            Register, monitor, and manage GPU nodes across the network.
-            Track health metrics and control node status in real-time.
-          </p>
+      {/* Header */}
+      <motion.div variants={item} className="dash-header">
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+          <Server size={28} style={{ color: 'var(--primary)' }} />
+          Nodes
+        </h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Button onClick={loadNodes} variant="secondary" size="sm" icon={<RefreshCw size={16} />}>Refresh</Button>
+          <Link href="/nodes/add"><Button size="sm" icon={<Plus size={16} />}>Add Node</Button></Link>
         </div>
       </motion.div>
 
