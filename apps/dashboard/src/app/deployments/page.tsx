@@ -217,15 +217,17 @@ export default function DeploymentsPage() {
       )}
 
       {/* Header */}
-      <motion.div variants={itemVar} className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-text-primary">Deployment Requests</h1>
+      <motion.div variants={itemVar} className="dash-header">
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+          <Rocket size={28} style={{ color: 'var(--primary)' }} />
+          Deployments
           {pendingCount > 0 && (
-            <span className="px-2.5 py-1 text-sm font-semibold bg-warning/10 text-warning rounded-full">
+            <span className="px-2.5 py-1 text-sm font-semibold bg-warning/10 text-warning rounded-lg">
               {pendingCount} pending
             </span>
           )}
-        </div>
+        </h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }} />
       </motion.div>
 
       {error && (

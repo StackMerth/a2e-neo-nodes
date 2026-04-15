@@ -252,36 +252,19 @@ export default function JobsPage() {
 
   return (
     <motion.div className="space-y-8" variants={container} initial="hidden" animate="show">
-      {/* Hero Section */}
-      <motion.div variants={item} className="relative py-8 md:py-12">
-        <div className="absolute inset-0 bg-gradient-to-b from-accent-blue/5 via-transparent to-transparent rounded-3xl" />
-
-        <div className="relative">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-accent-blue/5 border border-accent-blue/20 rounded-full mb-4 animate-slideUp">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-blue opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-accent-blue" />
-                </span>
-                <span className="text-xs text-accent-blue font-medium uppercase tracking-wider">Job Management</span>
-              </div>
-              <h1 className="text-3xl md:text-4xl font-bold text-text-primary">
-                Job Queue
-              </h1>
-              <p className="text-text-muted mt-2 max-w-xl">
-                Monitor routing decisions and manage job lifecycle across all GPU tiers and markets.
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <Button onClick={loadJobs} variant="secondary" size="sm" icon={<RefreshCw size={16} />}>
-                Refresh
-              </Button>
-              <Button onClick={() => setShowCreateModal(true)} variant="gradient" size="sm" icon={<Plus size={16} />}>
-                Create Job
-              </Button>
-            </div>
-          </div>
+      {/* Header */}
+      <motion.div variants={item} className="dash-header">
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+          <Briefcase size={28} style={{ color: 'var(--primary)' }} />
+          Jobs
+        </h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Button onClick={loadJobs} variant="secondary" size="sm" icon={<RefreshCw size={16} />}>
+            Refresh
+          </Button>
+          <Button onClick={() => setShowCreateModal(true)} variant="gradient" size="sm" icon={<Plus size={16} />}>
+            Create Job
+          </Button>
         </div>
       </motion.div>
 
