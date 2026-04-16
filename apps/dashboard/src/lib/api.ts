@@ -1325,11 +1325,7 @@ export const api = {
 
     availability: () =>
       apiFetch<{
-        tiers: Array<{
-          gpuTier: string
-          idle: number
-          total: number
-        }>
+        availability: Record<string, { total: number; idle: number; busy: number }>
       }>('/v1/admin/compute/availability'),
 
     approve: (id: string, note?: string) =>
