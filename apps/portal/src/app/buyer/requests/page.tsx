@@ -15,7 +15,7 @@ interface ComputeRequest {
   totalCost: number
   status: string
   purpose?: string
-  createdAt: string
+  requestedAt: string
 }
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
@@ -162,7 +162,7 @@ export default function RequestsListPage() {
                             </span>
                           </div>
                           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                            {new Date(req.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            {new Date(req.requestedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                           </span>
                         </div>
                       </div>
