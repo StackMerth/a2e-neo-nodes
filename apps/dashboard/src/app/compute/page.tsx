@@ -44,9 +44,10 @@ interface ComputeRequest {
 }
 
 interface TierAvailability {
-  gpuTier: string
+  tier: string
   idle: number
   total: number
+  busy: number
 }
 
 interface Counts {
@@ -117,9 +118,11 @@ export default function ComputeRequestsPage() {
         api.compute.list(status),
         api.compute.availability(),
       ])
-      setRequests(requestsData.requests)
-      setCounts(requestsData.counts)
-      setAvailability(availData.tiers)
+      setRequests(requestsData.requests || [])
+      setCounts(requestsData.counts || { pending: 0, approved: 0, allocated: 0, active: 0, completed: 0, cancelled: 0, rejected: 0 })
+      // Convert availability object to array
+      const availObj = (availData as { availability: Record<string, { total: number; idle: number; busy: number }> }).availability || {}
+      setAvailability(Object.entries(availObj).map(([tier, data]) => ({ tier, ...data })))
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load compute requests')
@@ -482,8 +485,8 @@ export default function ComputeRequestsPage() {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
               {availability.map((tier) => (
-                <div key={tier.gpuTier} className="bg-surface border border-border rounded-lg p-3">
-                  <p className="text-sm font-medium text-accent">{tier.gpuTier}</p>
+                <div key={tier.tier} className="bg-surface border border-border rounded-lg p-3">
+                  <p className="text-sm font-medium text-accent">{tier.tier}</p>
                   <p className="text-lg font-bold text-text-primary">
                     {tier.idle} <span className="text-text-muted text-sm font-normal">/ {tier.total}</span>
                   </p>
