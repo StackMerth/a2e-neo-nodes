@@ -19,6 +19,8 @@ export default function NodeRunnerLayout({ children }: { children: React.ReactNo
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login')
+    } else if (!loading && user && user.role === 'COMPUTE_BUYER') {
+      router.push('/buyer/dashboard')
     }
   }, [user, loading, router])
 

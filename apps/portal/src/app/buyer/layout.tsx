@@ -19,6 +19,8 @@ export default function BuyerLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login')
+    } else if (!loading && user && user.role !== 'COMPUTE_BUYER' && user.role !== 'ADMIN') {
+      router.push('/dashboard')
     }
   }, [user, loading, router])
 
