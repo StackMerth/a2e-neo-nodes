@@ -40,7 +40,7 @@ interface BuyerDashboardData {
     durationDays: number
     totalCost: number
     status: string
-    createdAt: string
+    requestedAt: string
   }[]
 }
 

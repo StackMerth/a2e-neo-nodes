@@ -282,7 +282,7 @@ export default function RequestComputePage() {
         <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Payment</h2>
         <Input
           label="Transaction Hash (Solana)"
-          placeholder="Enter your Solana transaction hash or 'test_tx' for testing..."
+          placeholder="Enter your Solana transaction hash..."
           value={txHash}
           onChange={e => setTxHash(e.target.value)}
         />

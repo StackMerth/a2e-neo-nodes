@@ -29,7 +29,7 @@ interface ComputeRequestDetail {
   status: string
   purpose?: string
   txHash: string
-  createdAt: string
+  requestedAt: string
   approvedAt?: string
   allocatedAt?: string
   activatedAt?: string
@@ -332,7 +332,7 @@ export default function RequestDetailPage() {
             <div className="flex justify-between py-2">
               <span style={{ color: 'var(--text-muted)' }}>Submitted</span>
               <span style={{ color: 'var(--text-secondary)' }}>
-                {new Date(data.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                {new Date(data.requestedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
           </div>
