@@ -59,12 +59,27 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
 
     const availability: Record<string, { total: number; idle: number; busy: number }> = {}
 
+    // Only count nodes with a real agent (agentVersion set) and recent heartbeat (< 2 min)
+    const heartbeatThreshold = new Date(Date.now() - 2 * 60 * 1000)
+
     for (const tier of gpuTiers) {
       const total = await fastify.prisma.node.count({
-        where: { gpuTier: tier, status: { in: ['ONLINE', 'PAUSED'] } },
+        where: {
+          gpuTier: tier,
+          status: { in: ['ONLINE', 'PAUSED'] },
+          agentVersion: { not: null },
+          lastHeartbeat: { gte: heartbeatThreshold },
+          pendingDeletion: false,
+        },
       })
       const busy = await fastify.prisma.node.count({
-        where: { gpuTier: tier, status: 'ONLINE', currentJobId: { not: null } },
+        where: {
+          gpuTier: tier,
+          status: 'ONLINE',
+          agentVersion: { not: null },
+          lastHeartbeat: { gte: heartbeatThreshold },
+          currentJobId: { not: null },
+        },
       })
       availability[tier] = { total, idle: total - busy, busy }
     }
@@ -107,15 +122,18 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: `Cannot allocate: status is ${cr.status}` })
     }
 
-    // Find idle internal nodes matching the GPU tier
+    // Find idle internal nodes with a real running agent
+    const heartbeatThreshold = new Date(Date.now() - 2 * 60 * 1000)
     const idleNodes = await fastify.prisma.node.findMany({
       where: {
         gpuTier: cr.gpuTier,
         status: 'ONLINE',
         currentJobId: null,
         pendingDeletion: false,
+        agentVersion: { not: null },
+        lastHeartbeat: { gte: heartbeatThreshold },
       },
-      orderBy: { lastHeartbeat: 'desc' }, // Prefer most recently active
+      orderBy: { lastHeartbeat: 'desc' },
       take: cr.gpuCount,
       select: { id: true, walletAddress: true },
     })
