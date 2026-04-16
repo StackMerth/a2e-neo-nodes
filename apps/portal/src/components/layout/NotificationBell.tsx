@@ -121,8 +121,13 @@ export function NotificationBell({ collapsed = false }: { collapsed?: boolean })
       </motion.button>
 
       {open && (
-        <div className="absolute left-full bottom-0 ml-2 w-80 bg-surface-elevated border border-border rounded-xl shadow-xl animate-scaleIn overflow-hidden z-50"
-          style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
+        <div className="fixed ml-2 w-80 rounded-xl shadow-xl animate-scaleIn overflow-hidden z-50"
+          style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            bottom: '80px',
+            left: '80px',
+          }}
         >
           <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
             <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Notifications</span>
