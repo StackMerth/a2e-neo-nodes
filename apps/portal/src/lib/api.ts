@@ -52,7 +52,7 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
 
   const token = getToken()
   const fetchHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(body ? { 'Content-Type': 'application/json' } : {}),
     ...headers,
   }
   if (token) {
