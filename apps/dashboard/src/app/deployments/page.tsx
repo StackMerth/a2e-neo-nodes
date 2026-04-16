@@ -75,7 +75,7 @@ export default function DeploymentsPage() {
       setLoading(true)
       const status = filter !== 'all' ? filter : undefined
       const data = await api.deployments.list(status)
-      setDeployments(data.deployments)
+      setDeployments(data.deployments || [])
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load deployments')

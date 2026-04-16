@@ -1,10 +1,12 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/hooks/useAuth'
 import { useSidebar } from './SidebarContext'
+import { api } from '@/lib/api'
 import {
   LayoutDashboard,
   Server,
@@ -32,6 +34,7 @@ interface NavItem {
   path: string
   icon: LucideIcon
   label: string
+  badgeKey?: string // Key to look up badge count
 }
 
 interface NavGroup {
@@ -54,13 +57,13 @@ const navGroups: NavGroup[] = [
     items: [
       { path: '/node-runners', icon: Users, label: 'Node Runners' },
       { path: '/investments', icon: Wallet, label: 'Investments' },
-      { path: '/deployments', icon: Rocket, label: 'Deployments' },
+      { path: '/deployments', icon: Rocket, label: 'Deployments', badgeKey: 'deployments' },
     ],
   },
   {
     title: 'DEMAND',
     items: [
-      { path: '/compute', icon: Monitor, label: 'Compute' },
+      { path: '/compute', icon: Monitor, label: 'Compute', badgeKey: 'compute' },
     ],
   },
   {
@@ -105,6 +108,26 @@ export function Sidebar() {
   const router = useRouter()
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen } = useSidebar()
+  const [badges, setBadges] = useState<Record<string, number>>({})
+
+  // Fetch pending counts for badge indicators
+  useEffect(() => {
+    const fetchBadges = async () => {
+      try {
+        const [deployData, computeData] = await Promise.all([
+          api.deployments.list('DEPLOYMENT_REQUESTED').catch(() => null),
+          api.compute.list('PENDING').catch(() => null),
+        ])
+        setBadges({
+          deployments: (deployData as { deployments?: unknown[] })?.deployments?.length ?? 0,
+          compute: (computeData as { requests?: unknown[] })?.requests?.length ?? 0,
+        })
+      } catch { /* ignore */ }
+    }
+    fetchBadges()
+    const interval = setInterval(fetchBadges, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   const handleLogout = () => {
     logout()
@@ -228,6 +251,9 @@ export function Sidebar() {
                     )}
                     <div className="nav-icon-wrapper">
                       <item.icon size={20} className="nav-icon" />
+                      {item.badgeKey && (badges[item.badgeKey] ?? 0) > 0 && (
+                        <span className="nav-badge">{badges[item.badgeKey]}</span>
+                      )}
                     </div>
                     <motion.span
                       className="nav-label"
