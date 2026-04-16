@@ -14,9 +14,9 @@ interface User {
 interface AuthContextType {
   user: User | null
   loading: boolean
-  login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string) => Promise<void>
-  walletLogin: (address: string, signature: string, nonce: string) => Promise<void>
+  login: (email: string, password: string) => Promise<User>
+  register: (email: string, password: string) => Promise<User>
+  walletLogin: (address: string, signature: string, nonce: string) => Promise<User>
   logout: () => Promise<void>
 }
 
@@ -47,22 +47,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loadUser()
   }, [loadUser])
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<User> => {
     const data = await authApi.login(email, password)
     setTokens(data.accessToken, data.refreshToken)
-    setUser(data.user as User)
+    const u = data.user as User
+    setUser(u)
+    return u
   }
 
-  const register = async (email: string, password: string) => {
+  const register = async (email: string, password: string): Promise<User> => {
     const data = await authApi.register(email, password)
     setTokens(data.accessToken, data.refreshToken)
-    setUser(data.user as User)
+    const u = data.user as User
+    setUser(u)
+    return u
   }
 
-  const walletLogin = async (address: string, signature: string, nonce: string) => {
+  const walletLogin = async (address: string, signature: string, nonce: string): Promise<User> => {
     const data = await authApi.walletAuth(address, signature, nonce)
     setTokens(data.accessToken, data.refreshToken)
-    setUser(data.user as User)
+    const u = data.user as User
+    setUser(u)
+    return u
   }
 
   const logout = async () => {

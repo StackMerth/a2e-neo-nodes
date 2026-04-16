@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/components/ui/Toast'
 import { Button } from '@/components/ui/Button'
@@ -13,6 +13,8 @@ export default function RegisterPage() {
   const { register } = useAuth()
   const { toast } = useToast()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isBuyer = searchParams.get('role') === 'buyer'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -34,9 +36,13 @@ export default function RegisterPage() {
 
     setLoading(true)
     try {
-      await register(email, password)
+      const user = await register(email, password)
       toast('success', 'Account created successfully')
-      router.push('/dashboard')
+      if (isBuyer || user.role === 'COMPUTE_BUYER') {
+        router.push('/buyer/dashboard')
+      } else {
+        router.push('/dashboard')
+      }
     } catch (error) {
       toast('error', error instanceof Error ? error.message : 'Registration failed')
     } finally {
@@ -46,8 +52,12 @@ export default function RegisterPage() {
 
   return (
     <Card className="p-8">
-      <h1 className="text-2xl font-bold text-text-primary mb-2">Create Account</h1>
-      <p className="text-text-secondary text-sm mb-6">Start earning with your GPU nodes</p>
+      <h1 className="text-2xl font-bold text-text-primary mb-2">
+        {isBuyer ? 'Create Buyer Account' : 'Create Account'}
+      </h1>
+      <p className="text-text-secondary text-sm mb-6">
+        {isBuyer ? 'Get started with on-demand GPU compute' : 'Start earning with your GPU nodes'}
+      </p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
@@ -78,7 +88,7 @@ export default function RegisterPage() {
           required
         />
         <Button type="submit" loading={loading} className="w-full">
-          Create Account
+          {isBuyer ? 'Create Buyer Account' : 'Create Account'}
         </Button>
       </form>
 
@@ -91,13 +101,33 @@ export default function RegisterPage() {
         </div>
       </div>
 
-      <Link href="/connect-wallet">
-        <Button variant="secondary" className="w-full">
-          Connect Wallet Instead
-        </Button>
-      </Link>
+      {!isBuyer && (
+        <Link href="/connect-wallet">
+          <Button variant="secondary" className="w-full">
+            Connect Wallet Instead
+          </Button>
+        </Link>
+      )}
 
-      <p className="text-sm text-text-muted text-center mt-6">
+      <p className="text-sm text-text-muted text-center mt-4">
+        {isBuyer ? (
+          <>
+            Want to run GPU nodes instead?{' '}
+            <Link href="/register" className="text-accent hover:underline">
+              Register as Node Runner
+            </Link>
+          </>
+        ) : (
+          <>
+            Looking to buy compute?{' '}
+            <Link href="/register?role=buyer" className="text-accent hover:underline">
+              Register as Buyer
+            </Link>
+          </>
+        )}
+      </p>
+
+      <p className="text-sm text-text-muted text-center mt-2">
         Already have an account?{' '}
         <Link href="/login" className="text-accent hover:underline">
           Sign in

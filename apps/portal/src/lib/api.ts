@@ -139,6 +139,21 @@ export const nodeRunner = {
   deployment: (id: string) => apiFetch(`/v1/portal/node-runner/deployments/${id}`),
 }
 
+// Buyer API
+export const buyer = {
+  dashboard: () => apiFetch('/v1/buyer/dashboard'),
+  requestCompute: (data: { gpuTier: string; gpuCount: number; durationDays: number; purpose?: string; txHash: string }) =>
+    apiFetch('/v1/buyer/compute/request', { method: 'POST', body: data }),
+  requests: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : ''
+    return apiFetch(`/v1/buyer/compute/requests${qs}`)
+  },
+  request: (id: string) => apiFetch(`/v1/buyer/compute/requests/${id}`),
+  activeCompute: () => apiFetch('/v1/buyer/compute/active'),
+  cancelRequest: (id: string) => apiFetch(`/v1/buyer/compute/requests/${id}/cancel`, { method: 'PATCH' }),
+  settings: (data: unknown) => apiFetch('/v1/buyer/settings', { method: 'PATCH', body: data }),
+}
+
 // Notifications API
 export const notifications = {
   list: (params?: Record<string, string>) => {

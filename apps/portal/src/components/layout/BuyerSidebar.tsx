@@ -8,12 +8,9 @@ import { useSidebar } from './SidebarContext'
 import { NotificationBell } from './NotificationBell'
 import {
   LayoutDashboard,
-  Rocket,
+  Plus,
+  List,
   Server,
-  Package,
-  DollarSign,
-  Wallet,
-  Zap,
   Settings,
   LogOut,
   PanelLeftOpen,
@@ -21,14 +18,11 @@ import {
 } from 'lucide-react'
 
 const navItems = [
-  { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { path: '/deploy', icon: Rocket, label: 'Deploy' },
-  { path: '/nodes', icon: Server, label: 'Nodes' },
-  { path: '/deployments', icon: Package, label: 'Deployments' },
-  { path: '/earnings', icon: DollarSign, label: 'Earnings' },
-  { path: '/payouts', icon: Wallet, label: 'Payouts' },
-  { path: '/jobs', icon: Zap, label: 'Jobs' },
-  { path: '/settings', icon: Settings, label: 'Settings' },
+  { path: '/buyer/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { path: '/buyer/request', icon: Plus, label: 'Request Compute' },
+  { path: '/buyer/requests', icon: List, label: 'My Requests' },
+  { path: '/buyer/active', icon: Server, label: 'Active Compute' },
+  { path: '/buyer/settings', icon: Settings, label: 'Settings' },
 ]
 
 const sidebarEase: [number, number, number, number] = [0.4, 0, 0.2, 1]
@@ -43,7 +37,7 @@ const labelVariants = {
   closed: { opacity: 0, x: -10, transitionEnd: { display: 'none' } },
 }
 
-export function Sidebar() {
+export function BuyerSidebar() {
   const { user, logout } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
@@ -74,7 +68,7 @@ export function Sidebar() {
           className="logo"
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
-          onClick={() => router.push('/dashboard')}
+          onClick={() => router.push('/buyer/dashboard')}
         >
           <div className="logo-icon">A2</div>
           <AnimatePresence>
@@ -86,7 +80,7 @@ export function Sidebar() {
                 exit={{ opacity: 0, x: -10 }}
                 transition={{ duration: 0.2 }}
               >
-                Portal
+                Compute
               </motion.span>
             )}
           </AnimatePresence>
@@ -128,7 +122,9 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="sidebar-nav">
         {navItems.map((item, index) => {
-          const isActive = pathname === item.path || (item.path !== '/dashboard' && pathname.startsWith(item.path))
+          const isActive =
+            pathname === item.path ||
+            (item.path !== '/buyer/dashboard' && pathname.startsWith(item.path))
           return (
             <Link
               key={item.path}
@@ -146,7 +142,7 @@ export function Sidebar() {
                 {isActive && (
                   <motion.div
                     className="nav-indicator"
-                    layoutId="nav-indicator"
+                    layoutId="buyer-nav-indicator"
                     transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                   />
                 )}
@@ -179,7 +175,7 @@ export function Sidebar() {
             variants={labelVariants}
           >
             <span className="user-name">{displayName}</span>
-            <span className="user-role">{user?.role === 'ADMIN' ? 'Administrator' : user?.role === 'COMPUTE_BUYER' ? 'Compute Buyer' : 'Node Runner'}</span>
+            <span className="user-role">Compute Buyer</span>
           </motion.div>
         </div>
 

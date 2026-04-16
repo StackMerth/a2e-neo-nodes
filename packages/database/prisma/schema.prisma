@@ -58,7 +58,8 @@ enum Market {
 
 enum UserRole {
   NODE_RUNNER
-  CUSTOMER
+  COMPUTE_BUYER
+  CUSTOMER       // Legacy — use COMPUTE_BUYER for new buyers
   ADMIN
 }
 
@@ -72,6 +73,13 @@ enum NotificationType {
   DEPLOYMENT_REQUESTED
   DEPLOYMENT_STARTED
   DEPLOYMENT_COMPLETED
+  COMPUTE_REQUEST_NEW
+  COMPUTE_REQUEST_APPROVED
+  COMPUTE_ALLOCATED
+  COMPUTE_ACTIVE
+  COMPUTE_EXPIRING
+  COMPUTE_COMPLETED
+  COMPUTE_REJECTED
 }
 
 model User {
@@ -91,6 +99,7 @@ model User {
   nodeRunner       NodeRunner?
   notifications    Notification[]
   refreshTokens    RefreshToken[]
+  computeRequests  ComputeRequest[]
 
   @@index([role])
 }
@@ -706,4 +715,66 @@ enum ReconciliationStatus {
   FAILED     // Transaction failed or not found
   NOT_FOUND  // Transaction not found after max attempts
   MANUAL     // Requires manual intervention
+}
+
+// ============================================================================
+// COMPUTE REQUESTS (M6 - Buyer Portal)
+// ============================================================================
+
+model ComputeRequest {
+  id              String               @id @default(cuid())
+  userId          String
+  user            User                 @relation(fields: [userId], references: [id])
+
+  // What they need
+  gpuTier         GpuTier
+  gpuCount        Int                  @default(1)
+  durationDays    Int                  @default(30)
+  purpose         String?              // What they'll use it for
+
+  // Pricing
+  ratePerDay      Float                // Rate at time of request
+  totalCost       Float                // gpuCount × ratePerDay × durationDays
+
+  // Payment
+  txHash          String?              // Solana transaction hash
+  txConfirmed     Boolean              @default(false)
+  currency        String               @default("USD")
+
+  // Status
+  status          ComputeRequestStatus @default(PENDING)
+  adminNote       String?              // Admin's internal note
+
+  // Allocation — which internal nodes are assigned
+  allocatedNodeIds String[]            // Array of Node IDs assigned
+  allocationMethod String?             // 'auto' or 'manual'
+
+  // SSH access details (filled when allocated)
+  sshHost         String?
+  sshPort         Int?
+  sshUsername      String?
+  sshPassword     String?
+
+  // Timestamps
+  requestedAt     DateTime             @default(now())
+  approvedAt      DateTime?
+  allocatedAt     DateTime?
+  activatedAt     DateTime?
+  expiresAt       DateTime?            // activatedAt + durationDays
+  completedAt     DateTime?
+
+  @@index([userId])
+  @@index([status])
+  @@index([requestedAt])
+  @@index([expiresAt])
+}
+
+enum ComputeRequestStatus {
+  PENDING        // Buyer submitted, waiting for admin review
+  APPROVED       // Admin approved, waiting for allocation
+  ALLOCATED      // Nodes assigned, SSH details ready
+  ACTIVE         // Buyer has access, compute is running
+  COMPLETED      // Lease expired or manually completed
+  CANCELLED      // Buyer cancelled
+  REJECTED       // Admin rejected
 }

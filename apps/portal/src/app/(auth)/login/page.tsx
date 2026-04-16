@@ -21,9 +21,13 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     try {
-      await login(email, password)
+      const user = await login(email, password)
       toast('success', 'Logged in successfully')
-      router.push('/dashboard')
+      if (user.role === 'COMPUTE_BUYER') {
+        router.push('/buyer/dashboard')
+      } else {
+        router.push('/dashboard')
+      }
     } catch (error) {
       toast('error', error instanceof Error ? error.message : 'Login failed')
     } finally {
