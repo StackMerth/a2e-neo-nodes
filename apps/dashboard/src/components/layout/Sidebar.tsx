@@ -13,6 +13,7 @@ import {
   Users,
   Wallet,
   Rocket,
+  Monitor,
   TrendingUp,
   BarChart3,
   CreditCard,
@@ -54,6 +55,12 @@ const navGroups: NavGroup[] = [
       { path: '/node-runners', icon: Users, label: 'Node Runners' },
       { path: '/investments', icon: Wallet, label: 'Investments' },
       { path: '/deployments', icon: Rocket, label: 'Deployments' },
+    ],
+  },
+  {
+    title: 'DEMAND',
+    items: [
+      { path: '/compute', icon: Monitor, label: 'Compute' },
     ],
   },
   {

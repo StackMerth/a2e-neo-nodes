@@ -10,6 +10,7 @@ const registerSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   name: z.string().min(1).max(100).optional(),
+  role: z.enum(['NODE_RUNNER', 'COMPUTE_BUYER']).default('NODE_RUNNER'),
 })
 
 const loginSchema = z.object({
@@ -45,10 +46,10 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
       })
     }
 
-    const { email, password } = parsed.data
+    const { email, password, role } = parsed.data
 
     try {
-      const user = await registerUser(email, password, 'NODE_RUNNER')
+      const user = await registerUser(email, password, role)
       const accessToken = generateAccessToken(user.id, user.role)
       const refreshToken = await generateRefreshToken(user.id)
 

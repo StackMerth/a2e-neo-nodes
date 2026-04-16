@@ -1263,6 +1263,104 @@ export const api = {
       }),
   },
 
+  // Compute Requests
+  compute: {
+    list: (status?: string) =>
+      apiFetch<{
+        requests: Array<{
+          id: string
+          buyerEmail: string
+          gpuTier: string
+          gpuCount: number
+          durationDays: number
+          totalCost: number
+          status: string
+          sshHost: string | null
+          sshPort: number | null
+          sshUsername: string | null
+          sshPassword: string | null
+          nodeIds: string[] | null
+          adminNote: string | null
+          rejectReason: string | null
+          createdAt: string
+          updatedAt: string
+        }>
+        counts: {
+          pending: number
+          approved: number
+          allocated: number
+          active: number
+          completed: number
+          cancelled: number
+          rejected: number
+        }
+        total: number
+      }>('/v1/admin/compute/requests', { params: status ? { status } : undefined }),
+
+    get: (id: string) =>
+      apiFetch<{
+        id: string
+        buyerEmail: string
+        gpuTier: string
+        gpuCount: number
+        durationDays: number
+        totalCost: number
+        status: string
+        sshHost: string | null
+        sshPort: number | null
+        sshUsername: string | null
+        sshPassword: string | null
+        nodeIds: string[] | null
+        adminNote: string | null
+        rejectReason: string | null
+        createdAt: string
+        updatedAt: string
+      }>(`/v1/admin/compute/requests/${id}`),
+
+    availability: () =>
+      apiFetch<{
+        tiers: Array<{
+          gpuTier: string
+          idle: number
+          total: number
+        }>
+      }>('/v1/admin/compute/availability'),
+
+    approve: (id: string, note?: string) =>
+      apiFetch<{ id: string; status: string; message: string }>(`/v1/admin/compute/requests/${id}/approve`, {
+        method: 'PATCH',
+        body: JSON.stringify({ note }),
+      }),
+
+    autoAllocate: (id: string) =>
+      apiFetch<{ id: string; status: string; nodesAllocated: number; message: string }>(`/v1/admin/compute/requests/${id}/auto-allocate`, {
+        method: 'POST',
+      }),
+
+    allocate: (id: string, data: { nodeIds: string[]; sshHost: string; sshPort: number; sshUsername: string; sshPassword: string }) =>
+      apiFetch<{ id: string; status: string; message: string }>(`/v1/admin/compute/requests/${id}/allocate`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+
+    activate: (id: string, sshDetails?: { sshHost: string; sshPort: number; sshUsername: string; sshPassword: string }) =>
+      apiFetch<{ id: string; status: string; message: string }>(`/v1/admin/compute/requests/${id}/activate`, {
+        method: 'PATCH',
+        body: JSON.stringify(sshDetails || {}),
+      }),
+
+    reject: (id: string, reason?: string) =>
+      apiFetch<{ id: string; status: string; message: string }>(`/v1/admin/compute/requests/${id}/reject`, {
+        method: 'PATCH',
+        body: JSON.stringify({ reason }),
+      }),
+
+    complete: (id: string) =>
+      apiFetch<{ id: string; status: string; message: string }>(`/v1/admin/compute/requests/${id}/complete`, {
+        method: 'PATCH',
+      }),
+  },
+
   reconciliation: {
     status: () =>
       apiFetch<{
