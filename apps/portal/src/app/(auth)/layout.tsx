@@ -9,10 +9,14 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
   const { user, loading } = useAuth()
   const router = useRouter()
 
-  // Redirect to dashboard if already logged in
+  // Redirect to appropriate dashboard if already logged in
   useEffect(() => {
     if (!loading && user) {
-      router.push('/dashboard')
+      if (user.role === 'COMPUTE_BUYER') {
+        router.push('/buyer/dashboard')
+      } else {
+        router.push('/dashboard')
+      }
     }
   }, [user, loading, router])
 
