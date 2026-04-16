@@ -1185,20 +1185,26 @@ export const api = {
       apiFetch<{
         deployments: Array<{
           id: string
-          nodeRunnerName: string
-          walletAddress: string
-          gpuTier: string
-          nodeCount: number
+          nodeRunnerId: string
           amount: number
           currency: string
-          txHash: string | null
+          nodeCount: number
+          gpuTier: string
           status: string
-          provisionId: string | null
+          txHash: string | null
           nodeId: string | null
+          deploymentNote: string | null
+          sshHost: string | null
+          sshPort: number | null
+          sshUsername: string | null
+          provisionJobId: string | null
           createdAt: string
-          updatedAt: string
+          confirmedAt: string | null
+          deploymentRequestedAt: string | null
+          provisionedAt: string | null
+          nodeRunner: { id: string; name: string; email: string | null; walletAddress: string } | null
         }>
-        total: number
+        pendingCount: number
       }>(`/v1/admin/deployments${status ? `?status=${status}` : ''}`),
 
     get: (id: string) =>

@@ -21,18 +21,19 @@ const itemVar = {
 
 interface Deployment {
   id: string
-  nodeRunnerName: string
-  walletAddress: string
+  nodeRunnerId: string
   gpuTier: string
   nodeCount: number
   amount: number
   currency: string
   txHash: string | null
   status: string
-  provisionId: string | null
   nodeId: string | null
+  deploymentNote: string | null
+  sshHost: string | null
+  provisionJobId: string | null
   createdAt: string
-  updatedAt: string
+  nodeRunner: { id: string; name: string; email: string | null; walletAddress: string } | null
 }
 
 type StatusFilter = 'all' | 'DEPLOYMENT_REQUESTED' | 'DEPLOYING' | 'PROVISIONED' | 'CANCELLED'
@@ -400,9 +401,9 @@ export default function DeploymentsPage() {
                 deployments.map((dep) => (
                   <tr key={dep.id} className="hover:bg-surface-hover transition-colors">
                     <td className="px-6 py-4">
-                      <p className="font-medium text-text-primary">{dep.nodeRunnerName}</p>
+                      <p className="font-medium text-text-primary">{dep.nodeRunner?.name}</p>
                       <code className="text-xs text-text-muted">
-                        {dep.walletAddress.slice(0, 8)}...{dep.walletAddress.slice(-6)}
+                        {dep.nodeRunner?.walletAddress ? `${dep.nodeRunner.walletAddress.slice(0, 8)}...${dep.nodeRunner.walletAddress.slice(-6)}` : 'N/A'}
                       </code>
                     </td>
                     <td className="px-6 py-4">
@@ -460,9 +461,9 @@ export default function DeploymentsPage() {
                         )}
                         {dep.status === 'DEPLOYING' && (
                           <>
-                            {dep.provisionId ? (
+                            {dep.provisionJobId ? (
                               <Link
-                                href={`/nodes?provisionId=${dep.provisionId}`}
+                                href={`/nodes?provisionId=${dep.provisionJobId}`}
                                 className="px-3 py-1.5 text-sm bg-accent-purple/10 text-accent-purple hover:bg-accent-purple/20 rounded-lg transition-colors flex items-center gap-1.5"
                               >
                                 <span className="relative flex h-2 w-2">
@@ -513,7 +514,7 @@ export default function DeploymentsPage() {
         <form onSubmit={handleSubmitSsh} className="space-y-4">
           <p className="text-text-muted">
             Provide SSH access to start provisioning for{' '}
-            <span className="text-text-primary font-medium">{selectedDeployment?.nodeRunnerName}</span>
+            <span className="text-text-primary font-medium">{selectedDeployment?.nodeRunner?.name}</span>
             {' '}&mdash;{' '}
             <span className="text-accent font-medium">{selectedDeployment?.gpuTier}</span>
             {' '}({selectedDeployment?.nodeCount} node{(selectedDeployment?.nodeCount ?? 0) !== 1 ? 's' : ''})
