@@ -152,6 +152,12 @@ model NodeRunner {
   userId        String?  @unique
   user          User?    @relation(fields: [userId], references: [id])
 
+  // Payout preferences
+  payoutThreshold  Float    @default(10.0)   // Minimum USD to trigger payout
+  payoutFrequency  String   @default("WEEKLY") // DAILY, WEEKLY, MONTHLY
+  payoutDayOfWeek  Int?     // 0=Sunday, 1=Monday, etc. (for WEEKLY)
+  payoutDayOfMonth Int?     // 1-28 (for MONTHLY)
+
   // Timestamps
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
