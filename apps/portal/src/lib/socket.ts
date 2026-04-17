@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client'
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001'
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
 let socket: Socket | null = null
 
