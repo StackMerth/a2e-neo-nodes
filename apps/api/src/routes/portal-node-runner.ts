@@ -244,6 +244,36 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     reply.send({ success: true, message: 'Node marked for removal' })
   })
 
+  /**
+   * POST /v1/portal/node-runner/nodes/pause-all — Pause all online nodes
+   */
+  fastify.post('/v1/portal/node-runner/nodes/pause-all', async (request, reply) => {
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+    const result = await fastify.prisma.node.updateMany({
+      where: { nodeRunnerId: nr.id, status: 'ONLINE' },
+      data: { status: 'PAUSED' },
+    })
+
+    reply.send({ success: true, count: result.count, message: `${result.count} node${result.count !== 1 ? 's' : ''} paused` })
+  })
+
+  /**
+   * POST /v1/portal/node-runner/nodes/resume-all — Resume all paused nodes
+   */
+  fastify.post('/v1/portal/node-runner/nodes/resume-all', async (request, reply) => {
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+    const result = await fastify.prisma.node.updateMany({
+      where: { nodeRunnerId: nr.id, status: 'PAUSED' },
+      data: { status: 'ONLINE' },
+    })
+
+    reply.send({ success: true, count: result.count, message: `${result.count} node${result.count !== 1 ? 's' : ''} resumed` })
+  })
+
   // ===================================================================
   // EARNINGS
   // ===================================================================
