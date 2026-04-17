@@ -62,6 +62,11 @@ import {
   createReconciliationWorker,
   scheduleReconciliation,
 } from './jobs/reconciliation-scheduler'
+import {
+  createEarningsRollupQueue,
+  createEarningsRollupWorker,
+  scheduleEarningsRollup,
+} from './jobs/earnings-rollup'
 
 const server = Fastify({
   logger: {
@@ -125,6 +130,7 @@ async function start() {
 
     const provisionQueue = createProvisionQueue(redisConnection)
     const reconciliationQueue = createReconciliationQueue(redisConnection)
+    const earningsRollupQueue = createEarningsRollupQueue(redisConnection)
 
     // Decorate server with queues for routes to access
     server.decorate('jobQueue', jobProcessorQueue)
@@ -162,14 +168,19 @@ async function start() {
     // Reconciliation worker
     createReconciliationWorker(redisConnection, server.prisma)
 
+    // Earnings rollup worker (calculates uptime earnings every 5 minutes)
+    createEarningsRollupWorker({ redis: redisConnection, prisma: server.prisma })
+    scheduleEarningsRollup(earningsRollupQueue)
+
     await scheduleRateFetcher(rateFetcherQueue)
-    await scheduleReconciliation(reconciliationQueue, 5) // Run every 5 minutes
+    await scheduleReconciliation(reconciliationQueue, 5)
     await scheduleNodeHealthChecker(nodeHealthQueue)
-    await scheduleSettlementChecker(60) // Check every hour
+    await scheduleSettlementChecker(60)
     server.log.info('Job processor queue initialized')
     server.log.info('Settlement scheduler initialized (checks hourly when enabled)')
     server.log.info('Provision worker initialized')
     server.log.info('Reconciliation scheduler initialized (runs every 5 minutes)')
+    server.log.info('Earnings rollup initialized (runs every 5 minutes)')
 
     const port = parseInt(process.env.PORT ?? '3001', 10)
     const host = process.env.HOST ?? '0.0.0.0'
