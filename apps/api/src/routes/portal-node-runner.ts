@@ -52,6 +52,10 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       name: nr.name,
       email: nr.email,
       walletAddress: nr.walletAddress,
+      payoutThreshold: nr.payoutThreshold,
+      payoutFrequency: nr.payoutFrequency,
+      payoutDayOfWeek: nr.payoutDayOfWeek,
+      payoutDayOfMonth: nr.payoutDayOfMonth,
       nodeCount,
       investmentCount,
       createdAt: nr.createdAt,
@@ -424,6 +428,10 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     name: z.string().min(1).max(100).optional(),
     email: z.string().email().optional(),
     walletAddress: z.string().min(32).max(64).optional(),
+    payoutThreshold: z.number().min(1).max(100000).optional(),
+    payoutFrequency: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']).optional(),
+    payoutDayOfWeek: z.number().int().min(0).max(6).optional(),
+    payoutDayOfMonth: z.number().int().min(1).max(28).optional(),
   })
 
   /**
