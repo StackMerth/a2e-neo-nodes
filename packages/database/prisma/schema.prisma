@@ -105,8 +105,25 @@ model User {
   notifications    Notification[]
   refreshTokens    RefreshToken[]
   computeRequests  ComputeRequest[]
+  apiKeys          ApiKey[]
 
   @@index([role])
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  key         String    @unique
+  name        String
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permissions String[]  @default(["compute:read", "compute:write"])
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([key])
 }
 
 model RefreshToken {

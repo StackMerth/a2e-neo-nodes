@@ -4,6 +4,7 @@
 import type { FastifyInstance, FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify'
 import fp from 'fastify-plugin'
 import { verifyAccessToken, type AccessTokenPayload } from '../services/auth/jwt.js'
+import { isBuyerApiKey, verifyApiKey } from '../services/apikey/manager.js'
 import type { UserRole } from '@a2e/database'
 
 declare module 'fastify' {
@@ -79,6 +80,16 @@ const authPlugin: FastifyPluginCallback = async (fastify: FastifyInstance) => {
       if (provisionJob && provisionJob.status !== 'COMPLETED' && provisionJob.status !== 'FAILED') {
         request.authType = 'provision'
         request.authProvisionId = provisionJob.id
+        return
+      }
+    }
+
+    // Check buyer API key
+    if (isBuyerApiKey(apiKey)) {
+      const result = await verifyApiKey(apiKey)
+      if (result) {
+        request.authType = 'user'
+        request.user = { userId: result.userId, role: result.role, type: 'access' }
         return
       }
     }
