@@ -1275,7 +1275,7 @@ export const api = {
       apiFetch<{
         requests: Array<{
           id: string
-          buyerEmail: string
+          user?: { id: string; email: string | null; walletAddress: string | null }
           gpuTier: string
           gpuCount: number
           durationDays: number
@@ -1285,11 +1285,9 @@ export const api = {
           sshPort: number | null
           sshUsername: string | null
           sshPassword: string | null
-          nodeIds: string[] | null
+          allocatedNodeIds: string[]
           adminNote: string | null
-          rejectReason: string | null
-          createdAt: string
-          updatedAt: string
+          requestedAt: string
         }>
         counts: {
           pending: number
