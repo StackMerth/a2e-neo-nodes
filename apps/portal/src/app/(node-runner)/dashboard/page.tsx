@@ -237,8 +237,8 @@ export default function DashboardPage() {
       colorClass: 'purple',
     },
     {
-      label: 'Jobs Completed',
-      value: formatCompact(data?.jobs.completed ?? 0),
+      label: 'Nodes In Use',
+      value: `${data?.nodes.inUse ?? 0}`,
       icon: <Zap size={18} />,
       colorClass: 'yellow',
     },
@@ -249,8 +249,8 @@ export default function DashboardPage() {
       colorClass: 'cyan',
     },
     {
-      label: 'Running Jobs',
-      value: `${data?.jobs.running ?? 0}`,
+      label: 'Earnings Today',
+      value: formatCurrency(data?.earnings.today ?? 0),
       icon: <Cpu size={18} />,
       colorClass: 'orange',
     },
