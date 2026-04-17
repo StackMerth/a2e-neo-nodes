@@ -1379,6 +1379,37 @@ export const api = {
       apiFetch<any>(`/v1/admin/withdrawals/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
   },
 
+  smtp: {
+    get: () =>
+      apiFetch<{
+        host: string
+        port: number
+        secure: boolean
+        username: string
+        fromAddress: string
+        configured: boolean
+      }>('/v1/admin/smtp'),
+
+    update: (data: {
+      host?: string
+      port?: number
+      secure?: boolean
+      username?: string
+      password?: string
+      fromAddress?: string
+    }) =>
+      apiFetch<{ message: string }>('/v1/admin/smtp', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+
+    test: (email: string) =>
+      apiFetch<{ message: string; success: boolean }>('/v1/admin/smtp/test', {
+        method: 'POST',
+        body: JSON.stringify({ to: email }),
+      }),
+  },
+
   reconciliation: {
     status: () =>
       apiFetch<{

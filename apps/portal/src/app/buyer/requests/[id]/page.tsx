@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
+import { useWebSocket } from '@/hooks/useWebSocket'
 import {
   ArrowLeft,
   Server,
@@ -153,6 +154,12 @@ export default function RequestDetailPage() {
     const interval = setInterval(loadData, 10_000)
     return () => clearInterval(interval)
   }, [loadData, data?.status])
+
+  // Real-time updates via WebSocket
+  const handleComputeEvent = useCallback(() => { loadData() }, [loadData])
+  useWebSocket({
+    events: { 'compute:activated': handleComputeEvent, 'compute:statusChange': handleComputeEvent },
+  })
 
   const handleCancel = async () => {
     setCancelling(true)

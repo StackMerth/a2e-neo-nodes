@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Settings as LucideSettings, Database, Shield, Heart, Server, Clock, Tag, AlertTriangle, X, Check } from 'lucide-react'
+import { Settings as LucideSettings, Database, Shield, Heart, Server, Clock, Tag, AlertTriangle, X, Check, Mail } from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -89,6 +89,21 @@ export default function SettingsPage() {
   const [updating, setUpdating] = useState<string | null>(null)
   const [retrying, setRetrying] = useState<string | null>(null)
 
+  // SMTP state
+  const [smtpConfig, setSmtpConfig] = useState<{
+    host: string
+    port: number
+    secure: boolean
+    username: string
+    password: string
+    fromAddress: string
+    configured: boolean
+  }>({ host: '', port: 587, secure: true, username: '', password: '', fromAddress: '', configured: false })
+  const [smtpLoading, setSmtpLoading] = useState(false)
+  const [smtpSaving, setSmtpSaving] = useState(false)
+  const [testEmail, setTestEmail] = useState('')
+  const [testingSend, setTestingSend] = useState(false)
+
   // Edit state
   const [editFloor, setEditFloor] = useState<{ tier: string; value: string } | null>(null)
 
@@ -98,13 +113,14 @@ export default function SettingsPage() {
 
   async function loadSettings() {
     try {
-      const [floorsData, marketsData, healthData, paymentModeData, settlementConfigData, failedData] = await Promise.all([
+      const [floorsData, marketsData, healthData, paymentModeData, settlementConfigData, failedData, smtpData] = await Promise.all([
         api.config.yieldFloors(),
         api.config.markets(),
         api.system.health().catch(() => null),
         api.payments.mode().catch(() => null),
         api.settlements.config().catch(() => null),
         api.settlements.failed().catch(() => ({ retriable: [], exhausted: [] })),
+        api.smtp.get().catch(() => null),
       ])
       setFloors(floorsData?.floors ?? [])
       setMarkets(marketsData?.markets ?? [])
@@ -112,6 +128,17 @@ export default function SettingsPage() {
       setPaymentMode(paymentModeData)
       setSettlementConfig(settlementConfigData)
       setFailedSettlements(failedData)
+      if (smtpData) {
+        setSmtpConfig({
+          host: smtpData.host || '',
+          port: smtpData.port || 587,
+          secure: smtpData.secure ?? true,
+          username: smtpData.username || '',
+          password: '',
+          fromAddress: smtpData.fromAddress || '',
+          configured: smtpData.configured ?? false,
+        })
+      }
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings')
@@ -253,6 +280,50 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleSaveSmtp() {
+    setSmtpSaving(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      const payload: Record<string, unknown> = {
+        host: smtpConfig.host,
+        port: smtpConfig.port,
+        secure: smtpConfig.secure,
+        username: smtpConfig.username,
+        fromAddress: smtpConfig.fromAddress,
+      }
+      if (smtpConfig.password) {
+        payload.password = smtpConfig.password
+      }
+      await api.smtp.update(payload as Parameters<typeof api.smtp.update>[0])
+      setSmtpConfig(prev => ({ ...prev, password: '', configured: true }))
+      setSuccess('SMTP settings saved successfully')
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save SMTP settings')
+    } finally {
+      setSmtpSaving(false)
+    }
+  }
+
+  async function handleTestEmail() {
+    if (!testEmail) return
+    setTestingSend(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      await api.smtp.test(testEmail)
+      setSuccess(`Test email sent to ${testEmail}`)
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send test email')
+    } finally {
+      setTestingSend(false)
+    }
+  }
+
   // Count healthy services
   const healthyServices = systemHealth ?
     Object.values(systemHealth.services).filter(s =>
@@ -306,6 +377,7 @@ export default function SettingsPage() {
             <Tab value="settlements">Settlements</Tab>
             <Tab value="health">System Health</Tab>
             <Tab value="payment">Payment Config</Tab>
+            <Tab value="email">Email / SMTP</Tab>
             <Tab value="audit">Audit Log</Tab>
           </TabList>
 
@@ -938,6 +1010,143 @@ export default function SettingsPage() {
             </div>
           </TabPanel>
 
+          {/* Email / SMTP Tab */}
+          <TabPanel value="email">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-6">
+              {/* SMTP Configuration */}
+              <Card variant="glass" hover={false}>
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center">
+                    <Mail className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-text-primary">SMTP Configuration</h3>
+                    <p className="text-xs text-text-muted">Configure email delivery settings</p>
+                  </div>
+                  <span className={`ml-auto px-3 py-1 rounded-full text-xs font-medium ${
+                    smtpConfig.configured
+                      ? 'bg-accent/10 text-accent'
+                      : 'bg-warning/10 text-warning'
+                  }`}>
+                    {smtpConfig.configured ? 'Configured' : 'Not Configured'}
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input
+                      label="SMTP Host"
+                      placeholder="smtp.example.com"
+                      value={smtpConfig.host}
+                      onChange={(e) => setSmtpConfig(prev => ({ ...prev, host: e.target.value }))}
+                    />
+                    <Input
+                      label="SMTP Port"
+                      type="number"
+                      placeholder="587"
+                      value={smtpConfig.port.toString()}
+                      onChange={(e) => setSmtpConfig(prev => ({ ...prev, port: parseInt(e.target.value) || 587 }))}
+                    />
+                  </div>
+
+                  <div className="p-4 bg-background/50 rounded-xl border border-border/50 flex items-center justify-between">
+                    <div>
+                      <span className="font-medium text-text-primary text-sm">Secure Connection (TLS)</span>
+                      <p className="text-xs text-text-muted mt-0.5">Enable TLS encryption for email transport</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={smtpConfig.secure}
+                        onChange={(e) => setSmtpConfig(prev => ({ ...prev, secure: e.target.checked }))}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-text-muted after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent peer-checked:after:bg-background"></div>
+                    </label>
+                  </div>
+
+                  <Input
+                    label="SMTP Username"
+                    placeholder="your-username or email"
+                    value={smtpConfig.username}
+                    onChange={(e) => setSmtpConfig(prev => ({ ...prev, username: e.target.value }))}
+                  />
+
+                  <Input
+                    label="SMTP Password"
+                    type="password"
+                    placeholder={smtpConfig.configured ? '(unchanged)' : 'Enter SMTP password'}
+                    value={smtpConfig.password}
+                    onChange={(e) => setSmtpConfig(prev => ({ ...prev, password: e.target.value }))}
+                  />
+
+                  <Input
+                    label="From Address"
+                    placeholder='A2E Engine <noreply@tokenos.ai>'
+                    value={smtpConfig.fromAddress}
+                    onChange={(e) => setSmtpConfig(prev => ({ ...prev, fromAddress: e.target.value }))}
+                  />
+
+                  <Button
+                    onClick={handleSaveSmtp}
+                    loading={smtpSaving}
+                    className="w-full"
+                  >
+                    Save SMTP Settings
+                  </Button>
+                </div>
+              </Card>
+
+              {/* Test Email */}
+              <Card variant="glass" hover={false}>
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-400 flex items-center justify-center">
+                    <SendIcon className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-text-primary">Send Test Email</h3>
+                    <p className="text-xs text-text-muted">Verify your SMTP configuration works</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {!smtpConfig.configured && (
+                    <div className="p-4 bg-warning/5 border border-warning/20 rounded-xl flex items-center gap-3">
+                      <AlertIcon className="w-5 h-5 text-warning shrink-0" />
+                      <p className="text-sm text-warning">
+                        Configure and save SMTP settings before sending a test email.
+                      </p>
+                    </div>
+                  )}
+
+                  <Input
+                    label="Recipient Email"
+                    type="email"
+                    placeholder="test@example.com"
+                    value={testEmail}
+                    onChange={(e) => setTestEmail(e.target.value)}
+                  />
+
+                  <Button
+                    onClick={handleTestEmail}
+                    loading={testingSend}
+                    variant="outline"
+                    className="w-full"
+                    disabled={!smtpConfig.configured || !testEmail}
+                  >
+                    Send Test Email
+                  </Button>
+
+                  <div className="p-4 bg-accent/5 border border-accent/20 rounded-xl">
+                    <p className="text-sm text-text-secondary">
+                      <strong className="text-accent">Tip:</strong> The test email will be sent from the configured &quot;From Address&quot; using the saved SMTP credentials.
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          </TabPanel>
+
           {/* Audit Log Tab */}
           <TabPanel value="audit">
             <div className="pt-6">
@@ -1071,6 +1280,14 @@ function CalendarIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+  )
+}
+
+function SendIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
     </svg>
   )
 }
