@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { CircleCheck, CircleX, Loader2, Clock, Ban, Zap, Route } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
@@ -128,7 +129,7 @@ export default function JobsPage() {
                       const ss = statusStyles[job.status] ?? statusStyles.PENDING!
                       return (
                         <tr key={job.id} className="transition-colors hover:opacity-90" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                          <td className="px-5 py-3 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{job.id.slice(0, 12)}</td>
+                          <td className="px-5 py-3 font-mono text-xs"><Link href={`/jobs/${job.id}`} className="hover:underline" style={{ color: 'var(--primary)' }}>{job.id.slice(0, 12)}</Link></td>
                           <td className="px-5 py-3">
                             <span
                               className="text-xs font-medium px-2 py-0.5 rounded-full inline-flex items-center gap-1"
