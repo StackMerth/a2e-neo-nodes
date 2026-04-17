@@ -80,6 +80,7 @@ const navGroups: NavGroup[] = [
       { path: '/earnings', icon: DollarSign, label: 'Earnings' },
       { path: '/costs', icon: Receipt, label: 'Costs' },
       { path: '/reports', icon: FileText, label: 'Reports' },
+      { path: '/withdrawals', icon: Wallet, label: 'Withdrawals', badgeKey: 'withdrawals' },
     ],
   },
   {
@@ -114,13 +115,15 @@ export function Sidebar() {
   useEffect(() => {
     const fetchBadges = async () => {
       try {
-        const [deployData, computeData] = await Promise.all([
+        const [deployData, computeData, withdrawalData] = await Promise.all([
           api.deployments.list('DEPLOYMENT_REQUESTED').catch(() => null),
           api.compute.list('PENDING').catch(() => null),
+          api.withdrawals.list('PENDING').catch(() => null),
         ])
         setBadges({
           deployments: (deployData as { deployments?: unknown[] })?.deployments?.length ?? 0,
           compute: (computeData as { requests?: unknown[] })?.requests?.length ?? 0,
+          withdrawals: (withdrawalData as { withdrawals?: unknown[] })?.withdrawals?.length ?? 0,
         })
       } catch { /* ignore */ }
     }

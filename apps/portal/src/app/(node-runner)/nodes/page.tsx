@@ -21,6 +21,8 @@ interface NodeItem {
   lastHeartbeat: string
   customGpuModel: string | null
   createdAt: string
+  isInUse?: boolean
+  assignedComputeRequestId?: string | null
 }
 
 const container = {
@@ -194,6 +196,32 @@ export default function NodesPage() {
                       <div className="flex justify-between">
                         <span style={{ color: 'var(--text-muted)' }}>Agent</span>
                         <span style={{ color: 'var(--text-secondary)' }}>{node.agentVersion ?? 'Unknown'}</span>
+                      </div>
+                      {/* Usage badge */}
+                      <div className="flex items-center gap-2 mt-2">
+                        {(node.isInUse || node.assignedComputeRequestId) ? (
+                          <span
+                            className="text-xs font-medium px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                            style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--info)' }}
+                          >
+                            <span
+                              className="w-1.5 h-1.5 rounded-full"
+                              style={{ background: 'var(--info)', boxShadow: '0 0 6px var(--info)' }}
+                            />
+                            In Use
+                          </span>
+                        ) : (
+                          <span
+                            className="text-xs font-medium px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                            style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}
+                          >
+                            <span
+                              className="w-1.5 h-1.5 rounded-full"
+                              style={{ background: 'var(--text-muted)' }}
+                            />
+                            Idle
+                          </span>
+                        )}
                       </div>
                       {node.currentJobId && (
                         <div

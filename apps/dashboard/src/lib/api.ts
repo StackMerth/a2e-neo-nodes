@@ -1363,6 +1363,22 @@ export const api = {
       }),
   },
 
+  // Withdrawals
+  withdrawals: {
+    list: (status?: string) =>
+      apiFetch<{ withdrawals: any[]; counts: any }>(`/v1/admin/withdrawals${status ? `?status=${status}` : ''}`),
+    get: (id: string) =>
+      apiFetch<any>(`/v1/admin/withdrawals/${id}`),
+    approve: (id: string) =>
+      apiFetch<any>(`/v1/admin/withdrawals/${id}/approve`, { method: 'PATCH' }),
+    process: (id: string) =>
+      apiFetch<any>(`/v1/admin/withdrawals/${id}/process`, { method: 'PATCH' }),
+    complete: (id: string, txHash: string) =>
+      apiFetch<any>(`/v1/admin/withdrawals/${id}/complete`, { method: 'PATCH', body: JSON.stringify({ txHash }) }),
+    reject: (id: string, reason?: string) =>
+      apiFetch<any>(`/v1/admin/withdrawals/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
+  },
+
   reconciliation: {
     status: () =>
       apiFetch<{

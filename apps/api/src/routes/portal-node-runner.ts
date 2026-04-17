@@ -75,6 +75,7 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       where: { nodeRunnerId: nr.id },
       select: {
         id: true, status: true, gpuTier: true, lastHeartbeat: true, currentJobId: true,
+        assignedComputeRequestId: true,
       },
     })
 
@@ -107,6 +108,8 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     const onlineCount = nodes.filter(n => n.status === 'ONLINE').length
     const uptimePercent = nodes.length > 0 ? Math.round((onlineCount / nodes.length) * 100) : 0
 
+    const nodesInUse = nodes.filter(n => n.assignedComputeRequestId !== null).length
+
     reply.send({
       earnings: {
         today: earningsToday._sum.earnings ?? 0,
@@ -119,6 +122,7 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
         online: onlineCount,
         offline: nodes.filter(n => n.status === 'OFFLINE').length,
         maintenance: nodes.filter(n => n.status === 'MAINTENANCE' || n.status === 'PAUSED').length,
+        inUse: nodesInUse,
       },
       jobs: {
         completed: jobsCompleted,
@@ -149,10 +153,16 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
         id: true, walletAddress: true, gpuTier: true, nodeType: true, status: true,
         region: true, agentVersion: true, currentJobId: true, lastHeartbeat: true,
         customGpuModel: true, customRatePerHour: true, createdAt: true,
+        assignedComputeRequestId: true,
       },
     })
 
-    reply.send({ nodes })
+    const nodesWithUsage = nodes.map(node => ({
+      ...node,
+      isInUse: node.assignedComputeRequestId !== null,
+    }))
+
+    reply.send({ nodes: nodesWithUsage })
   })
 
   /**

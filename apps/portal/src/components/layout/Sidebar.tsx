@@ -13,6 +13,7 @@ import {
   Package,
   DollarSign,
   Wallet,
+  ArrowDownToLine,
   Zap,
   Settings,
   LogOut,
@@ -27,6 +28,7 @@ const navItems = [
   { path: '/deployments', icon: Package, label: 'Deployments' },
   { path: '/earnings', icon: DollarSign, label: 'Earnings' },
   { path: '/payouts', icon: Wallet, label: 'Payouts' },
+  { path: '/withdrawals', icon: ArrowDownToLine, label: 'Withdrawals' },
   { path: '/jobs', icon: Zap, label: 'Jobs' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ]
