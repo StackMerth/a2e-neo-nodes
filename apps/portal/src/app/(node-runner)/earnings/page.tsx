@@ -27,10 +27,6 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 }
 
-interface WithdrawalBalance {
-  availableBalance: number
-}
-
 export default function EarningsPage() {
   const [data, setData] = useState<EarningsData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -41,7 +37,7 @@ export default function EarningsPage() {
 
   useEffect(() => {
     nodeRunner.withdrawalBalance()
-      .then((res) => setWithdrawalBalance((res as WithdrawalBalance).availableBalance))
+      .then((res) => setWithdrawalBalance((res as { available: number }).available ?? 0))
       .catch(() => { /* ignore */ })
   }, [])
 
