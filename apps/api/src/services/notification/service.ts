@@ -1,6 +1,7 @@
 import { prisma } from '@a2e/database'
 import type { NotificationType } from '@a2e/database'
 import type { Server as SocketServer } from 'socket.io'
+import { sendEmail, isEmailConfigured } from '../email/sender.js'
 
 /** WebSocket server reference — set during server startup */
 let io: SocketServer | null = null
@@ -10,8 +11,18 @@ export function setNotificationSocket(server: SocketServer) {
   io = server
 }
 
+/** Notification types that should also trigger an email */
+const EMAIL_NOTIFICATION_TYPES: NotificationType[] = [
+  'NODE_OFFLINE',
+  'PAYOUT_SENT',
+  'DEPLOYMENT_COMPLETED',
+  'COMPUTE_ACTIVE',
+  'WITHDRAWAL_COMPLETED',
+]
+
 /**
- * Create a notification for a user and emit via WebSocket
+ * Create a notification for a user and emit via WebSocket.
+ * For certain high-priority types, also sends an email if SMTP is configured.
  */
 export async function createNotification(
   userId: string,
@@ -31,6 +42,31 @@ export async function createNotification(
     title,
     message,
   })
+
+  // Send email for high-priority notification types (non-blocking)
+  if (EMAIL_NOTIFICATION_TYPES.includes(type)) {
+    void (async () => {
+      try {
+        const configured = await isEmailConfigured()
+        if (!configured) return
+
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { email: true },
+        })
+        if (!user?.email) return
+
+        void sendEmail(
+          user.email,
+          `${title} — A²E Engine`,
+          `<h2 style="color: #ffffff; margin: 0 0 16px;">${title}</h2>
+           <p style="color: #a1a1aa; line-height: 1.6;">${message}</p>`,
+        )
+      } catch {
+        // Email delivery should never block notification creation
+      }
+    })()
+  }
 
   return notification
 }
