@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { useToast } from '@/components/ui/Toast'
 import { useWebSocket } from '@/hooks/useWebSocket'
 
 /* -----------------------------------------------
@@ -118,10 +119,12 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: Tooltip
    ----------------------------------------------- */
 
 export default function DashboardPage() {
+  const { toast } = useToast()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [period, setPeriod] = useState<Period>('month')
+  const [actionLoading, setActionLoading] = useState(false)
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -434,11 +437,27 @@ export default function DashboardPage() {
                 Deploy New Node
               </button>
             </Link>
-            <button className="btn btn-secondary">
+            <button className="btn btn-secondary" disabled={actionLoading} onClick={async () => {
+              setActionLoading(true)
+              try {
+                const res = await nodeRunner.pauseAll()
+                toast('success', res.message)
+                loadData(true)
+              } catch (e) { toast('error', e instanceof Error ? e.message : 'Failed') }
+              finally { setActionLoading(false) }
+            }}>
               <PauseCircle size={16} />
               Pause All
             </button>
-            <button className="btn btn-secondary">
+            <button className="btn btn-secondary" disabled={actionLoading} onClick={async () => {
+              setActionLoading(true)
+              try {
+                const res = await nodeRunner.resumeAll()
+                toast('success', res.message)
+                loadData(true)
+              } catch (e) { toast('error', e instanceof Error ? e.message : 'Failed') }
+              finally { setActionLoading(false) }
+            }}>
               <PlayCircle size={16} />
               Resume All
             </button>
