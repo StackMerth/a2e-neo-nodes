@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, use, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Check, Loader2, XCircle, ArrowRight, Info } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
@@ -53,8 +54,8 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 }
 
-export default function DeploymentDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
+export default function DeploymentDetailPage() {
+  const { id } = useParams() as { id: string }
   const { toast } = useToast()
   const [data, setData] = useState<DeploymentDetail | null>(null)
   const [loading, setLoading] = useState(true)

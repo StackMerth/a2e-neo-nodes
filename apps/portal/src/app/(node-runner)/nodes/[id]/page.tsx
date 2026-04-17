@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Cpu, Thermometer, MemoryStick, Clock, MapPin, Tag, Server, Activity, CircleCheck, CircleX, Loader2, Ban } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
@@ -29,8 +29,8 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 }
 
-export default function NodeDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
+export default function NodeDetailPage() {
+  const { id } = useParams() as { id: string }
   const router = useRouter()
   const { toast } = useToast()
   const [data, setData] = useState<{ node: NodeDetail; uptimeEarnings: { earnings: number; uptimeHours: number } } | null>(null)
