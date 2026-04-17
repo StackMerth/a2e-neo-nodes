@@ -26,7 +26,7 @@ const itemVar = {
 
 interface ComputeRequest {
   id: string
-  buyerEmail: string
+  user?: { id: string; email: string | null; walletAddress: string | null }
   gpuTier: string
   gpuCount: number
   durationDays: number
@@ -36,11 +36,9 @@ interface ComputeRequest {
   sshPort: number | null
   sshUsername: string | null
   sshPassword: string | null
-  nodeIds: string[] | null
+  allocatedNodeIds?: string[]
   adminNote: string | null
-  rejectReason: string | null
-  createdAt: string
-  updatedAt: string
+  requestedAt: string
 }
 
 interface TierAvailability {
@@ -558,7 +556,7 @@ export default function ComputeRequestsPage() {
                 requests.map((req) => (
                   <tr key={req.id} className="hover:bg-surface-hover transition-colors">
                     <td className="px-6 py-4">
-                      <p className="font-medium text-text-primary text-sm">{req.buyerEmail}</p>
+                      <p className="font-medium text-text-primary text-sm">{req.user?.email ?? "N/A"}</p>
                     </td>
                     <td className="px-6 py-4">
                       <span className="px-2 py-1 bg-accent/10 text-accent rounded text-sm font-medium">
@@ -580,7 +578,7 @@ export default function ComputeRequestsPage() {
                       {getStatusBadge(req.status)}
                     </td>
                     <td className="px-6 py-4 text-text-muted text-sm">
-                      {new Date(req.createdAt).toLocaleDateString()}
+                      {new Date(req.requestedAt).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -669,7 +667,7 @@ export default function ComputeRequestsPage() {
         <form onSubmit={handleAllocateSubmit} className="space-y-4">
           <p className="text-text-muted">
             Manually allocate nodes for{' '}
-            <span className="text-text-primary font-medium">{selectedRequest?.buyerEmail}</span>
+            <span className="text-text-primary font-medium">{selectedRequest?.user?.email ?? "N/A"}</span>
             {' '}&mdash;{' '}
             <span className="text-accent font-medium">{selectedRequest?.gpuTier}</span>
             {' '}x{selectedRequest?.gpuCount}
@@ -783,7 +781,7 @@ export default function ComputeRequestsPage() {
         <form onSubmit={handleActivateSubmit} className="space-y-4">
           <p className="text-text-muted">
             Provide SSH access to activate{' '}
-            <span className="text-text-primary font-medium">{selectedRequest?.buyerEmail}</span>
+            <span className="text-text-primary font-medium">{selectedRequest?.user?.email ?? "N/A"}</span>
             {' '}&mdash;{' '}
             <span className="text-accent font-medium">{selectedRequest?.gpuTier}</span>
             {' '}x{selectedRequest?.gpuCount}
@@ -883,7 +881,7 @@ export default function ComputeRequestsPage() {
         <form onSubmit={handleRejectSubmit} className="space-y-4">
           <p className="text-text-muted">
             Reject compute request from{' '}
-            <span className="text-text-primary font-medium">{selectedRequest?.buyerEmail}</span>?
+            <span className="text-text-primary font-medium">{selectedRequest?.user?.email ?? "N/A"}</span>?
           </p>
 
           <div>
