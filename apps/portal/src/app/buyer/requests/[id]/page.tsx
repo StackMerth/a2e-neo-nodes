@@ -14,6 +14,7 @@ import {
   FileText,
   Terminal,
   XCircle,
+  Download,
 } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
@@ -338,6 +339,22 @@ export default function RequestDetailPage() {
           </div>
         </div>
       </motion.div>
+
+      {/* Invoice Download */}
+      {['ACTIVE', 'COMPLETED', 'APPROVED', 'ALLOCATED'].includes(data.status) && (
+        <motion.div variants={itemVariants}>
+          <a
+            href={buyer.invoiceUrl(id)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all"
+            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--primary)' }}
+          >
+            <Download size={16} />
+            Download Invoice
+          </a>
+        </motion.div>
+      )}
 
       {/* Time Remaining (only when ACTIVE) */}
       {data.status === 'ACTIVE' && data.expiresAt && (

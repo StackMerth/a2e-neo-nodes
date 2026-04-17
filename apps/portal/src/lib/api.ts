@@ -162,6 +162,8 @@ export const buyer = {
   activeCompute: () => apiFetch('/v1/buyer/compute/active'),
   cancelRequest: (id: string) => apiFetch(`/v1/buyer/compute/requests/${id}/cancel`, { method: 'PATCH' }),
   settings: (data: unknown) => apiFetch('/v1/buyer/settings', { method: 'PATCH', body: data }),
+  billing: () => apiFetch('/v1/buyer/billing'),
+  invoiceUrl: (requestId: string) => `${API_URL}/v1/buyer/billing/invoice/${requestId}`,
 }
 
 // Notifications API
