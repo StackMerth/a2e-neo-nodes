@@ -11,6 +11,7 @@ import {
   Plus,
   List,
   Server,
+  CreditCard,
   Settings,
   LogOut,
   PanelLeftOpen,
@@ -22,6 +23,7 @@ const navItems = [
   { path: '/buyer/request', icon: Plus, label: 'Request Compute' },
   { path: '/buyer/requests', icon: List, label: 'My Requests' },
   { path: '/buyer/active', icon: Server, label: 'Active Compute' },
+  { path: '/buyer/billing', icon: CreditCard, label: 'Billing' },
   { path: '/buyer/settings', icon: Settings, label: 'Settings' },
 ]
 
