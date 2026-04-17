@@ -31,7 +31,7 @@ import { useWebSocket } from '@/hooks/useWebSocket'
 
 interface DashboardData {
   earnings: { today: number; week: number; month: number; allTime: number }
-  nodes: { total: number; online: number; offline: number; maintenance: number; paused?: number }
+  nodes: { total: number; online: number; offline: number; maintenance: number; paused?: number; inUse?: number }
   jobs: { completed: number; running: number }
   totalPaidOut: number
   uptimePercent: number
@@ -70,6 +70,7 @@ const NODE_STATUS_COLORS: Record<string, string> = {
   offline: '#ef4444',
   maintenance: '#f59e0b',
   paused: '#3b82f6',
+  inUse: '#6366f1',
 }
 
 /* -----------------------------------------------
@@ -162,6 +163,7 @@ export default function DashboardPage() {
     if (data.nodes.offline > 0) entries.push({ name: 'Offline', value: data.nodes.offline, color: NODE_STATUS_COLORS.offline })
     if (data.nodes.maintenance > 0) entries.push({ name: 'Maintenance', value: data.nodes.maintenance, color: NODE_STATUS_COLORS.maintenance })
     if ((data.nodes.paused ?? 0) > 0) entries.push({ name: 'Paused', value: data.nodes.paused ?? 0, color: NODE_STATUS_COLORS.paused })
+    if ((data.nodes.inUse ?? 0) > 0) entries.push({ name: 'In Use', value: data.nodes.inUse ?? 0, color: NODE_STATUS_COLORS.inUse })
     return entries
   }, [data])
 

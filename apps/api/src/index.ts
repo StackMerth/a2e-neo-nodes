@@ -27,6 +27,8 @@ import {
   adminDeploymentRoutes,
   buyerComputeRoutes,
   adminComputeRoutes,
+  portalWithdrawalRoutes,
+  adminWithdrawalRoutes,
 } from './routes'
 import { setupWebSocket } from './websocket'
 import { setNotificationSocket } from './services/notification/service.js'
@@ -111,6 +113,8 @@ async function start() {
     await server.register(adminDeploymentRoutes)
     await server.register(buyerComputeRoutes)
     await server.register(adminComputeRoutes)
+    await server.register(portalWithdrawalRoutes)
+    await server.register(adminWithdrawalRoutes)
 
     const redisConnection = server.redis as unknown as import('bullmq').ConnectionOptions
     const rateFetcherQueue = createRateFetcherQueue(redisConnection)

@@ -153,6 +153,12 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
     // For bare metal, admin may still need to provide SSH details separately
     // Auto-allocate assigns the nodes, admin provides SSH in a follow-up or activation step
 
+    // Mark the allocated nodes as assigned to this compute request
+    await fastify.prisma.node.updateMany({
+      where: { id: { in: nodeIds } },
+      data: { assignedComputeRequestId: id },
+    })
+
     await fastify.prisma.computeRequest.update({
       where: { id },
       data: {
@@ -192,6 +198,12 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
     }
 
     const { nodeIds, sshHost, sshPort, sshUsername, sshPassword } = parsed.data
+
+    // Mark the allocated nodes as assigned to this compute request
+    await fastify.prisma.node.updateMany({
+      where: { id: { in: nodeIds } },
+      data: { assignedComputeRequestId: id },
+    })
 
     await fastify.prisma.computeRequest.update({
       where: { id },
@@ -289,6 +301,12 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
     const cr = await fastify.prisma.computeRequest.findUnique({ where: { id } })
     if (!cr) return reply.code(404).send({ error: 'Request not found' })
     if (cr.status !== 'ACTIVE') return reply.code(400).send({ error: `Cannot complete: status is ${cr.status}` })
+
+    // Clear assignedComputeRequestId on nodes that were allocated to this request
+    await fastify.prisma.node.updateMany({
+      where: { assignedComputeRequestId: id },
+      data: { assignedComputeRequestId: null },
+    })
 
     await fastify.prisma.computeRequest.update({
       where: { id },

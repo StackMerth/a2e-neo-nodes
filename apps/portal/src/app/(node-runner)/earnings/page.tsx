@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { TrendingUp, BarChart3, CalendarDays } from 'lucide-react'
+import { TrendingUp, BarChart3, CalendarDays, ArrowDownToLine } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -27,12 +27,23 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 }
 
+interface WithdrawalBalance {
+  availableBalance: number
+}
+
 export default function EarningsPage() {
   const [data, setData] = useState<EarningsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState<Period>('month')
+  const [withdrawalBalance, setWithdrawalBalance] = useState<number | null>(null)
 
   useEffect(() => { loadData() }, [period])
+
+  useEffect(() => {
+    nodeRunner.withdrawalBalance()
+      .then((res) => setWithdrawalBalance((res as WithdrawalBalance).availableBalance))
+      .catch(() => { /* ignore */ })
+  }, [])
 
   async function loadData() {
     setLoading(true)
@@ -56,12 +67,28 @@ export default function EarningsPage() {
       initial="hidden"
       animate="show"
     >
-      <motion.div variants={item} className="flex items-center justify-between">
+      <motion.div variants={item} className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Earnings</h1>
           <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Track your GPU compute earnings across all markets</p>
         </div>
-        <Link href="/earnings/history"><Button variant="secondary" size="sm">View Full History</Button></Link>
+        <div className="flex items-center gap-3 flex-wrap">
+          {withdrawalBalance !== null && (
+            <span
+              className="text-xs font-medium px-3 py-1.5 rounded-lg"
+              style={{ background: 'rgba(34,197,94,0.08)', color: 'var(--success)', border: '1px solid rgba(34,197,94,0.2)' }}
+            >
+              Available for withdrawal: ${withdrawalBalance.toFixed(2)}
+            </span>
+          )}
+          <Link href="/withdrawals">
+            <Button size="sm">
+              <ArrowDownToLine size={14} className="mr-1.5" />
+              Withdraw
+            </Button>
+          </Link>
+          <Link href="/earnings/history"><Button variant="secondary" size="sm">View Full History</Button></Link>
+        </div>
       </motion.div>
 
       {/* Period Selector */}

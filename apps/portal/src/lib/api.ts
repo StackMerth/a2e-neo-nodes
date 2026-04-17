@@ -132,6 +132,14 @@ export const nodeRunner = {
     return apiFetch(`/v1/portal/node-runner/jobs${qs}`)
   },
   job: (id: string) => apiFetch(`/v1/portal/node-runner/jobs/${id}`),
+  withdrawals: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : ''
+    return apiFetch(`/v1/portal/node-runner/withdrawals${qs}`)
+  },
+  withdrawalBalance: () => apiFetch('/v1/portal/node-runner/withdrawals/balance'),
+  requestWithdrawal: (data: { amount: number; walletAddress: string }) =>
+    apiFetch('/v1/portal/node-runner/withdrawals/request', { method: 'POST', body: data }),
+  withdrawal: (id: string) => apiFetch(`/v1/portal/node-runner/withdrawals/${id}`),
   investments: () => apiFetch('/v1/portal/node-runner/investments'),
   deploy: (data: { gpuTier: string; nodeCount: number; txHash: string; cryptoAmount?: number; cryptoCurrency?: string; deploymentNote?: string }) =>
     apiFetch('/v1/portal/node-runner/deploy', { method: 'POST', body: data }),

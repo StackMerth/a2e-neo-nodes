@@ -2,6 +2,7 @@ import { Queue, Worker, Job } from 'bullmq'
 import type { ConnectionOptions } from 'bullmq'
 import type { PrismaClient, GpuTier } from '@a2e/database'
 import { NodeProvisioner, ProvisionConfig } from '../services/provisioning'
+import { createNotification } from '../services/notification/service.js'
 import type { Server as SocketServer } from 'socket.io'
 import crypto from 'crypto'
 
@@ -60,6 +61,53 @@ export function createProvisionWorker(options: {
       try {
         await provisioner.provision(config)
         console.log(`[Provision] Job ${provisionId} completed successfully`)
+
+        // Auto-complete any Investment/deployment that triggered this provisioning
+        const provisionJob = await prisma.provisionJob.findUnique({
+          where: { id: provisionId },
+          select: { nodeId: true },
+        })
+        if (provisionJob?.nodeId) {
+          const investment = await prisma.investment.findFirst({
+            where: { provisionJobId: provisionId, status: 'DEPLOYING' },
+            include: { nodeRunner: { select: { id: true, userId: true, name: true } } },
+          })
+          if (investment) {
+            await prisma.$transaction([
+              prisma.node.update({
+                where: { id: provisionJob.nodeId },
+                data: { nodeRunnerId: investment.nodeRunnerId },
+              }),
+              prisma.investment.update({
+                where: { id: investment.id },
+                data: {
+                  status: 'PROVISIONED',
+                  nodeId: provisionJob.nodeId,
+                  provisionedAt: new Date(),
+                },
+              }),
+            ])
+            console.log(`[Provision] Auto-completed deployment ${investment.id} → node ${provisionJob.nodeId}`)
+
+            // Notify node runner
+            if (investment.nodeRunner?.userId) {
+              void createNotification(
+                investment.nodeRunner.userId,
+                'DEPLOYMENT_COMPLETED',
+                'Node Deployed!',
+                `Your ${investment.gpuTier} node is now live and earning.`,
+              )
+            }
+
+            io?.emit('deployment:statusChange', {
+              investmentId: investment.id,
+              oldStatus: 'DEPLOYING',
+              newStatus: 'PROVISIONED',
+              nodeRunnerId: investment.nodeRunnerId,
+              timestamp: new Date().toISOString(),
+            })
+          }
+        }
       } catch (error) {
         console.error(`[Provision] Job ${provisionId} failed:`, error)
         throw error
