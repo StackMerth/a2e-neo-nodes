@@ -37,7 +37,7 @@ interface ComputeRequestDetail {
   expiresAt?: string
   sshHost?: string
   sshPort?: number
-  sshUser?: string
+  sshUsername?: string
   sshPassword?: string
 }
 
@@ -136,8 +136,8 @@ export default function RequestDetailPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const d = (await buyer.request(id)) as ComputeRequestDetail
-      setData(d)
+      const response = (await buyer.request(id)) as { request: ComputeRequestDetail }
+      setData(response.request)
     } catch {
       /* silently fail */
     } finally {
@@ -384,8 +384,8 @@ export default function RequestDetailPage() {
               <div className="flex items-center justify-between py-2 text-sm" style={{ borderBottom: '1px solid var(--glass-border)' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Username</span>
                 <div className="flex items-center">
-                  <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{data.sshUser}</span>
-                  <CopyButton text={data.sshUser ?? ''} />
+                  <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{data.sshUsername}</span>
+                  <CopyButton text={data.sshUsername ?? ''} />
                 </div>
               </div>
               {data.sshPassword && (
@@ -400,9 +400,9 @@ export default function RequestDetailPage() {
             </div>
             <div className="mt-4 p-3 rounded-lg" style={{ background: 'var(--bg-card)' }}>
               <p className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
-                ssh {data.sshUser}@{data.sshHost} -p {data.sshPort}
+                ssh {data.sshUsername}@{data.sshHost} -p {data.sshPort}
               </p>
-              <CopyButton text={`ssh ${data.sshUser}@${data.sshHost} -p ${data.sshPort}`} />
+              <CopyButton text={`ssh ${data.sshUsername}@${data.sshHost} -p ${data.sshPort}`} />
             </div>
           </div>
         </motion.div>
