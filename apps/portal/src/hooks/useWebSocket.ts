@@ -4,7 +4,7 @@ import { useEffect, useRef, useCallback } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import { useAuth } from './useAuth'
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001'
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
 type EventHandler = (data: unknown) => void
 

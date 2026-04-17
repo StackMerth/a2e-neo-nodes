@@ -49,12 +49,30 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       ? Math.max(0, Math.ceil((nearestExpiry.expiresAt.getTime() - Date.now()) / 86400000))
       : null
 
+    // Fetch active allocations and recent requests for dashboard display
+    const [activeAllocations, recentRequests] = await Promise.all([
+      fastify.prisma.computeRequest.findMany({
+        where: { userId, status: 'ACTIVE' },
+        orderBy: { activatedAt: 'desc' },
+        take: 5,
+        select: { id: true, gpuTier: true, gpuCount: true, sshHost: true, sshPort: true, sshUsername: true, sshPassword: true, expiresAt: true, activatedAt: true },
+      }),
+      fastify.prisma.computeRequest.findMany({
+        where: { userId },
+        orderBy: { requestedAt: 'desc' },
+        take: 5,
+        select: { id: true, gpuTier: true, gpuCount: true, durationDays: true, totalCost: true, status: true, requestedAt: true },
+      }),
+    ])
+
     reply.send({
       activeCompute: active,
       pendingRequests: pending,
       totalSpent: totalSpent._sum.totalCost ?? 0,
       totalRequests: allRequests,
       daysRemaining,
+      activeAllocations,
+      recentRequests,
     })
   })
 
