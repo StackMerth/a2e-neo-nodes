@@ -173,7 +173,12 @@ export default function EarningsPage() {
           </motion.div>
 
           {/* Projections */}
-          {data && data.total > 0 && period === 'month' && (
+          {data && data.total > 0 && period === 'month' && (() => {
+            const uniqueDays = new Set(data.earnings.map(e => e.date?.slice(0, 10))).size || 1
+            const dailyAvg = data.total / uniqueDays
+            const projectedMonthly = dailyAvg * 30
+            const projectedYearly = dailyAvg * 365
+            return (
             <motion.div variants={item}>
               <div
                 className="rounded-xl p-6"
@@ -186,21 +191,23 @@ export default function EarningsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="p-4 rounded-lg" style={{ background: 'var(--bg-card-hover)' }}>
                     <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Daily Average</p>
-                    <p className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>${(data.total / 30).toFixed(2)}</p>
+                    <p className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>${dailyAvg.toFixed(2)}</p>
+                    <p className="text-2xs mt-1" style={{ color: 'var(--text-muted)' }}>Based on {uniqueDays} day{uniqueDays !== 1 ? 's' : ''}</p>
                   </div>
                   <div className="p-4 rounded-lg" style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)' }}>
                     <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Projected Monthly</p>
-                    <p className="text-xl font-bold" style={{ color: 'var(--primary)' }}>${data.total.toFixed(2)}</p>
+                    <p className="text-xl font-bold" style={{ color: 'var(--primary)' }}>${projectedMonthly.toFixed(2)}</p>
                   </div>
                   <div className="p-4 rounded-lg" style={{ background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.2)' }}>
                     <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Projected Yearly</p>
-                    <p className="text-xl font-bold" style={{ color: 'var(--info)' }}>${(data.total * 12).toFixed(2)}</p>
+                    <p className="text-xl font-bold" style={{ color: 'var(--info)' }}>${projectedYearly.toFixed(2)}</p>
                   </div>
                 </div>
-                <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>Based on your last 30 days of earnings. Actual results may vary.</p>
+                <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>Based on your earnings data. Actual results may vary.</p>
               </div>
             </motion.div>
-          )}
+            )
+          })()}
         </>
       )}
     </motion.div>
