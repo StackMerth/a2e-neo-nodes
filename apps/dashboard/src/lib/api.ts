@@ -24,10 +24,11 @@ async function apiFetch<T>(endpoint: string, options: FetchOptions = {}): Promis
     }
   }
 
+  const hasBody = fetchOptions.body !== undefined && fetchOptions.body !== null
   const response = await fetch(url, {
     ...fetchOptions,
     headers: {
-      'Content-Type': 'application/json',
+      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       'X-API-Key': API_KEY,
       ...fetchOptions.headers,
     },
