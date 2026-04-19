@@ -1265,6 +1265,52 @@ textarea:focus {
   .dash-charts-row {
     grid-template-columns: 1fr;
   }
+
+  .stat-blocks {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-sm);
+  }
+
+  .stat-blocks .stat-block {
+    padding: var(--space-sm) var(--space-md);
+  }
+
+  .stat-blocks .stat-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .dash-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-sm);
+  }
+
+  .dash-header h1 {
+    font-size: 1.1rem !important;
+  }
+
+  .dashboard-modern {
+    gap: var(--space-md);
+  }
+
+  .page-container {
+    padding: var(--space-md);
+  }
+}
+
+@media (max-width: 480px) {
+  .stat-blocks {
+    grid-template-columns: 1fr;
+  }
+
+  .main-content {
+    padding: var(--space-sm) !important;
+  }
+
+  .page-container {
+    padding: var(--space-sm);
+  }
 }
 
 .dash-chart-card {
