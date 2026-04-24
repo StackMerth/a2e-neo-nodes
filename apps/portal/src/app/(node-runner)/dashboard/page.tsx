@@ -20,6 +20,7 @@ import {
   PauseCircle,
   PlayCircle,
   Plus,
+  Globe,
 } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -32,7 +33,7 @@ import { useWebSocket } from '@/hooks/useWebSocket'
 
 interface DashboardData {
   earnings: { today: number; week: number; month: number; allTime: number }
-  nodes: { total: number; online: number; offline: number; maintenance: number; paused?: number; inUse?: number }
+  nodes: { total: number; online: number; offline: number; maintenance: number; paused?: number; inUse?: number; externallyListed?: number }
   jobs: { completed: number; running: number }
   totalPaidOut: number
   uptimePercent: number
@@ -215,6 +216,8 @@ export default function DashboardPage() {
 
   /* ---- Stat block definitions ---- */
 
+  const externallyListed = data?.nodes.externallyListed ?? 0
+
   const stats: {
     label: string
     value: string
@@ -258,6 +261,15 @@ export default function DashboardPage() {
       colorClass: 'orange',
     },
   ]
+
+  if (externallyListed > 0) {
+    stats.push({
+      label: 'Externally Listed',
+      value: `${externallyListed}`,
+      icon: <Globe size={18} />,
+      colorClass: 'orange',
+    })
+  }
 
   /* ---- Render ---- */
 

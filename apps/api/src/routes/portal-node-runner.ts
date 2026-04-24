@@ -114,6 +114,16 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
 
     const nodesInUse = nodes.filter(n => n.assignedComputeRequestId !== null).length
 
+    // How many of this runner's nodes are currently listed on an external market
+    const nodesExternallyListed = nodeIds.length === 0 ? 0 : await fastify.prisma.node.count({
+      where: {
+        id: { in: nodeIds },
+        externalDeployments: {
+          some: { status: { in: ['PENDING', 'ACTIVE', 'TERMINATING'] } },
+        },
+      },
+    })
+
     reply.send({
       earnings: {
         today: earningsToday._sum.earnings ?? 0,
@@ -127,6 +137,7 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
         offline: nodes.filter(n => n.status === 'OFFLINE').length,
         maintenance: nodes.filter(n => n.status === 'MAINTENANCE' || n.status === 'PAUSED').length,
         inUse: nodesInUse,
+        externallyListed: nodesExternallyListed,
       },
       jobs: {
         completed: jobsCompleted,
@@ -158,6 +169,12 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
         region: true, agentVersion: true, currentJobId: true, lastHeartbeat: true,
         customGpuModel: true, customRatePerHour: true, createdAt: true,
         assignedComputeRequestId: true,
+        externalDeployments: {
+          where: { status: { in: ['PENDING', 'ACTIVE', 'TERMINATING'] } },
+          select: { id: true, market: true, status: true, ratePerHour: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
       },
     })
 

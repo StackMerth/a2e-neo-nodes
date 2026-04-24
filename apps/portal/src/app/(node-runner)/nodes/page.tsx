@@ -3,11 +3,19 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { Server, Wifi, WifiOff, Pause, Wrench, Activity } from 'lucide-react'
+import { Server, Wifi, WifiOff, Pause, Wrench, Activity, Globe } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
+import { getMarketColor } from '@/lib/market-colors'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Skeleton } from '@/components/ui/Skeleton'
+
+interface ExternalDeploymentSummary {
+  id: string
+  market: string
+  status: string
+  ratePerHour: number
+}
 
 interface NodeItem {
   id: string
@@ -23,6 +31,7 @@ interface NodeItem {
   createdAt: string
   isInUse?: boolean
   assignedComputeRequestId?: string | null
+  externalDeployments?: ExternalDeploymentSummary[]
 }
 
 const container = {
@@ -153,6 +162,7 @@ export default function NodesPage() {
           {nodes.map((node, idx) => {
             const status = statusConfig[node.status] ?? statusConfig.OFFLINE!
             const tier = tierColors[node.gpuTier] ?? tierColors.OTHER!
+            const activeExternal = node.externalDeployments?.[0]
             return (
               <motion.div key={node.id} variants={item}>
                 <Link href={`/nodes/${node.id}`}>
@@ -197,8 +207,8 @@ export default function NodesPage() {
                         <span style={{ color: 'var(--text-muted)' }}>Agent</span>
                         <span style={{ color: 'var(--text-secondary)' }}>{node.agentVersion ?? 'Unknown'}</span>
                       </div>
-                      {/* Usage badge */}
-                      <div className="flex items-center gap-2 mt-2">
+                      {/* Usage + External listing badges */}
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
                         {(node.isInUse || node.assignedComputeRequestId) ? (
                           <span
                             className="text-xs font-medium px-2 py-0.5 rounded-full inline-flex items-center gap-1"
@@ -222,6 +232,19 @@ export default function NodesPage() {
                             Idle
                           </span>
                         )}
+                        {activeExternal && (() => {
+                          const mc = getMarketColor(activeExternal.market)
+                          return (
+                            <span
+                              className="text-xs font-medium px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                              style={{ background: mc.bg, color: mc.text }}
+                              title={`Listed externally on ${mc.label} (${activeExternal.status})`}
+                            >
+                              <Globe size={10} />
+                              External: {mc.label}
+                            </span>
+                          )
+                        })()}
                       </div>
                       {node.currentJobId && (
                         <div

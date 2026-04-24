@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { TrendingUp, BarChart3, CalendarDays, ArrowDownToLine } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
+import { getMarketColor } from '@/lib/market-colors'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -48,12 +49,6 @@ export default function EarningsPage() {
       setData(d)
     } catch { /* ignore */ }
     finally { setLoading(false) }
-  }
-
-  const marketColors: Record<string, { bg: string; text: string; bar: string }> = {
-    INTERNAL: { bg: 'rgba(34,197,94,0.1)', text: 'var(--success)', bar: 'var(--success)' },
-    AKASH: { bg: 'rgba(59,130,246,0.1)', text: 'var(--info)', bar: 'var(--info)' },
-    IONET: { bg: 'rgba(139,92,246,0.1)', text: '#8b5cf6', bar: '#8b5cf6' },
   }
 
   return (
@@ -147,7 +142,7 @@ export default function EarningsPage() {
               ) : (
                 <div className="space-y-3">
                   {Object.entries(data?.byMarket ?? {}).map(([market, amount]) => {
-                    const colors = marketColors[market] ?? { bg: 'var(--bg-card-hover)', text: 'var(--text-secondary)', bar: 'var(--text-muted)' }
+                    const colors = getMarketColor(market)
                     const pct = data?.total ? (amount / data.total) * 100 : 0
                     return (
                       <div key={market} className="flex items-center gap-4">
