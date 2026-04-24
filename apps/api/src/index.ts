@@ -1,6 +1,6 @@
 import Fastify from 'fastify'
 import './types' // Type augmentations
-import { prismaPlugin, redisPlugin, authPlugin, corsPlugin } from './plugins'
+import { prismaPlugin, redisPlugin, authPlugin, corsPlugin, overflowRegistryPlugin } from './plugins'
 import errorHandlerPlugin from './plugins/error-handler'
 import {
   healthRoutes,
@@ -32,6 +32,7 @@ import {
   buyerBillingRoutes,
   buyerApiKeyRoutes,
   adminSmtpRoutes,
+  externalRoutes,
 } from './routes'
 import { setupWebSocket } from './websocket'
 import { setNotificationSocket } from './services/notification/service.js'
@@ -93,6 +94,7 @@ async function start() {
     await server.register(prismaPlugin)
     await server.register(redisPlugin)
     await server.register(authPlugin)
+    await server.register(overflowRegistryPlugin)
 
     const socketServer = setupWebSocket(server)
     setNotificationSocket(socketServer)
@@ -126,6 +128,7 @@ async function start() {
     await server.register(buyerBillingRoutes)
     await server.register(buyerApiKeyRoutes)
     await server.register(adminSmtpRoutes)
+    await server.register(externalRoutes)
 
     const redisConnection = server.redis as unknown as import('bullmq').ConnectionOptions
     const rateFetcherQueue = createRateFetcherQueue(redisConnection)
