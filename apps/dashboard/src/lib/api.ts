@@ -1378,6 +1378,146 @@ export const api = {
       apiFetch<any>(`/v1/admin/withdrawals/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
   },
 
+  // External Markets (M7)
+  external: {
+    status: () =>
+      apiFetch<{
+        simulationMode: boolean
+        overflow: {
+          enabled: boolean
+          idleThresholdMinutes: number
+          demandThresholdPercent: number
+          marginProtectionPercent: number
+          gracePeriodSeconds: number
+        }
+        markets: Array<{
+          market: 'AKASH' | 'IONET' | 'VASTAI'
+          enabled: boolean
+          healthy: boolean
+          autoDisabled: boolean
+          failureCount: number
+          lastSuccess: string | null
+          lastFailure: string | null
+          lastError: string | null
+          latestRates: Record<string, { ratePerHour: number; available: boolean } | null>
+        }>
+      }>('/v1/external/status'),
+
+    deployments: (params?: { status?: string }) =>
+      apiFetch<{
+        deployments: Array<{
+          id: string
+          nodeId: string
+          market: 'AKASH' | 'IONET' | 'VASTAI'
+          externalId: string
+          status: 'PENDING' | 'ACTIVE' | 'TERMINATING' | 'TERMINATED' | 'FAILED'
+          ratePerHour: number
+          costAccumulated: number
+          earningsAccumulated: number
+          createdAt: string
+          terminatedAt: string | null
+          lastCheckedAt: string
+          terminationMode: string | null
+          terminationReason: string | null
+          node: { id: string; gpuTier: string; walletAddress: string }
+        }>
+        counts: Record<'PENDING' | 'ACTIVE' | 'TERMINATING' | 'TERMINATED' | 'FAILED', number>
+      }>('/v1/external/deployments', { params }),
+
+    deployment: (id: string) =>
+      apiFetch<{
+        deployment: {
+          id: string
+          nodeId: string
+          market: 'AKASH' | 'IONET' | 'VASTAI'
+          externalId: string
+          status: string
+          ratePerHour: number
+          costAccumulated: number
+          earningsAccumulated: number
+          createdAt: string
+          terminatedAt: string | null
+          lastCheckedAt: string
+          node: { id: string; gpuTier: string; walletAddress: string }
+        }
+        jobs: Array<{
+          id: string
+          status: string
+          earnings: number | null
+          cost: number | null
+          createdAt: string
+        }>
+      }>(`/v1/external/deployments/${id}`),
+
+    listNode: (nodeId: string, body?: { market?: 'AKASH' | 'IONET' | 'VASTAI' }) =>
+      apiFetch<{
+        deploymentId: string
+        externalId: string
+        status: string
+        market: 'AKASH' | 'IONET' | 'VASTAI'
+        ratePerHour: number
+      }>(`/v1/external/list/${nodeId}`, {
+        method: 'POST',
+        body: JSON.stringify(body ?? {}),
+      }),
+
+    delistNode: (nodeId: string, mode: 'safe' | 'force', reason: string) =>
+      apiFetch<{ status: string; terminated: boolean; deploymentId: string }>(
+        `/v1/external/list/${nodeId}?mode=${mode}&reason=${encodeURIComponent(reason)}`,
+        { method: 'DELETE' },
+      ),
+
+    earnings: (params?: { from?: string; to?: string; nodeId?: string; market?: string }) =>
+      apiFetch<{
+        totalUsd: number
+        byMarket: Record<'AKASH' | 'IONET' | 'VASTAI', number>
+        byNode: Array<{ nodeId: string; walletAddress: string; totalUsd: number }>
+        periodStart: string
+        periodEnd: string
+      }>('/v1/external/earnings', { params }),
+
+    getConfig: () =>
+      apiFetch<{
+        config: {
+          id: string
+          enabled: boolean
+          simulationMode: boolean
+          idleThresholdMinutes: number
+          demandThresholdPercent: number
+          marginProtectionPercent: number
+          gracePeriodSeconds: number
+          preferredMarkets: Array<'AKASH' | 'IONET' | 'VASTAI'>
+          createdAt: string
+          updatedAt: string
+        }
+      }>('/v1/external/config'),
+
+    updateConfig: (body: Partial<{
+      enabled: boolean
+      simulationMode: boolean
+      idleThresholdMinutes: number
+      demandThresholdPercent: number
+      marginProtectionPercent: number
+      gracePeriodSeconds: number
+      preferredMarkets: Array<'AKASH' | 'IONET' | 'VASTAI'>
+    }>) =>
+      apiFetch<{
+        config: {
+          id: string
+          enabled: boolean
+          simulationMode: boolean
+          idleThresholdMinutes: number
+          demandThresholdPercent: number
+          marginProtectionPercent: number
+          gracePeriodSeconds: number
+          preferredMarkets: Array<'AKASH' | 'IONET' | 'VASTAI'>
+        }
+      }>('/v1/external/config', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+  },
+
   smtp: {
     get: () =>
       apiFetch<{

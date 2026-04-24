@@ -27,6 +27,7 @@ import {
   LogOut,
   PanelLeftOpen,
   PanelLeftClose,
+  Globe,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -70,6 +71,7 @@ const navGroups: NavGroup[] = [
     title: 'MARKET',
     items: [
       { path: '/rates', icon: TrendingUp, label: 'Rates' },
+      { path: '/external', icon: Globe, label: 'External Markets' },
     ],
   },
   {
