@@ -13,7 +13,7 @@ export type NodeStatus = 'ONLINE' | 'DEGRADED' | 'OFFLINE'
 export type JobStatus = 'PENDING' | 'ROUTING' | 'ASSIGNED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
 
 // Market types
-export type Market = 'INTERNAL' | 'AKASH' | 'IONET'
+export type Market = 'INTERNAL' | 'AKASH' | 'IONET' | 'VASTAI'
 
 // Rate information per GPU tier (daily rates in USD)
 export const GPU_TIER_CONFIG: Record<

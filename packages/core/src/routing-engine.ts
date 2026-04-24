@@ -105,6 +105,14 @@ export class RoutingEngine {
       })
     }
 
+    if (rates.vastai.available) {
+      markets.push({
+        market: 'VASTAI',
+        ratePerHour: rates.vastai.ratePerHour,
+        ratePerDay: rates.vastai.ratePerDay,
+      })
+    }
+
     // Sort by rate descending (highest first)
     return markets.sort((a, b) => b.ratePerHour - a.ratePerHour)
   }

@@ -13,6 +13,7 @@ describe('RoutingEngine', () => {
   let yieldFloorConfig: DefaultYieldFloorConfig
   let akashAdapter: MockMarketAdapter
   let ionetAdapter: MockMarketAdapter
+  let vastaiAdapter: MockMarketAdapter
 
   beforeEach(() => {
     rateProvider = new DefaultRateProvider({ cacheTtlMs: 0 })
@@ -20,9 +21,11 @@ describe('RoutingEngine', () => {
 
     akashAdapter = new MockMarketAdapter('AKASH', { enabled: true, rateMultiplier: 0.65 })
     ionetAdapter = new MockMarketAdapter('IONET', { enabled: true, rateMultiplier: 0.70 })
+    vastaiAdapter = new MockMarketAdapter('VASTAI', { enabled: true, rateMultiplier: 0.55 })
 
     rateProvider.registerAdapter(akashAdapter)
     rateProvider.registerAdapter(ionetAdapter)
+    rateProvider.registerAdapter(vastaiAdapter)
 
     routingEngine = new RoutingEngine({
       rateProvider,
@@ -68,9 +71,10 @@ describe('RoutingEngine', () => {
     })
 
     it('should apply yield floor when external rate is below floor', async () => {
-      // Set both adapters to very low rates (below cost floor)
+      // Set all adapters to very low rates (below cost floor)
       akashAdapter.setRateMultiplier(0.3) // 30% of retail = ~$42/day (below $83 floor for H100)
       ionetAdapter.setRateMultiplier(0.3)
+      vastaiAdapter.setRateMultiplier(0.3)
 
       const decision = await routingEngine.route({
         gpuTier: 'H100',
@@ -85,6 +89,7 @@ describe('RoutingEngine', () => {
     it('should handle disabled external markets', async () => {
       akashAdapter.setEnabled(false)
       ionetAdapter.setEnabled(false)
+      vastaiAdapter.setEnabled(false)
 
       const decision = await routingEngine.route({
         gpuTier: 'H100',
@@ -95,6 +100,34 @@ describe('RoutingEngine', () => {
       expect(decision.market).toBe('INTERNAL')
       expect(decision.yieldFloorApplied).toBe(true)
       expect(decision.reason).toContain('No external markets available')
+    })
+
+    it('should route to VASTAI when it has the highest rate', async () => {
+      akashAdapter.setRateMultiplier(0.5)
+      ionetAdapter.setRateMultiplier(0.5)
+      vastaiAdapter.setRateMultiplier(0.9) // Unusually high to beat the others
+
+      const decision = await routingEngine.route({
+        gpuTier: 'H100',
+        hasInternalDemand: false,
+      })
+
+      expect(decision.market).toBe('VASTAI')
+      expect(decision.yieldFloorApplied).toBe(false)
+    })
+
+    it('should include VASTAI in the external ranking by default', async () => {
+      akashAdapter.setEnabled(false)
+      ionetAdapter.setEnabled(false)
+      vastaiAdapter.setRateMultiplier(0.7) // Above floor
+
+      const decision = await routingEngine.route({
+        gpuTier: 'H100',
+        hasInternalDemand: false,
+      })
+
+      expect(decision.market).toBe('VASTAI')
+      expect(decision.yieldFloorApplied).toBe(false)
     })
   })
 
@@ -135,6 +168,7 @@ describe('RoutingEngine', () => {
 
       akashAdapter.setRateMultiplier(0.5) // $70/day
       ionetAdapter.setRateMultiplier(0.5)
+      vastaiAdapter.setRateMultiplier(0.5)
 
       const decision = await routingEngine.route({
         gpuTier: 'H100',
@@ -150,6 +184,7 @@ describe('RoutingEngine', () => {
 
       akashAdapter.setRateMultiplier(0.3) // Below floor
       ionetAdapter.setRateMultiplier(0.3)
+      vastaiAdapter.setRateMultiplier(0.3)
 
       const decision = await routingEngine.route({
         gpuTier: 'H100',

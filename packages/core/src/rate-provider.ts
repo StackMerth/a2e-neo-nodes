@@ -12,6 +12,7 @@ export interface MarketRates {
   internal: MarketRateInfo
   akash: MarketRateInfo
   ionet: MarketRateInfo
+  vastai: MarketRateInfo
 }
 
 export interface RateProvider {
@@ -20,7 +21,7 @@ export interface RateProvider {
 }
 
 export interface ExternalMarketAdapter {
-  market: 'AKASH' | 'IONET'
+  market: 'AKASH' | 'IONET' | 'VASTAI'
   getRate(gpuTier: GpuTier): Promise<MarketRateInfo>
   isEnabled(): boolean
 }
@@ -78,6 +79,7 @@ export class DefaultRateProvider implements RateProvider {
 
     const akashAdapter = this.adapters.get('AKASH')
     const ionetAdapter = this.adapters.get('IONET')
+    const vastaiAdapter = this.adapters.get('VASTAI')
 
     let akash: MarketRateInfo = {
       ratePerHour: 0,
@@ -87,6 +89,13 @@ export class DefaultRateProvider implements RateProvider {
     }
 
     let ionet: MarketRateInfo = {
+      ratePerHour: 0,
+      ratePerDay: 0,
+      available: false,
+      fetchedAt: now,
+    }
+
+    let vastai: MarketRateInfo = {
       ratePerHour: 0,
       ratePerDay: 0,
       available: false,
@@ -109,7 +118,15 @@ export class DefaultRateProvider implements RateProvider {
       }
     }
 
-    return { internal, akash, ionet }
+    if (vastaiAdapter?.isEnabled()) {
+      try {
+        vastai = await vastaiAdapter.getRate(gpuTier)
+      } catch (error) {
+        console.error('Failed to fetch Vast.ai rates:', error)
+      }
+    }
+
+    return { internal, akash, ionet, vastai }
   }
 }
 
@@ -117,11 +134,11 @@ export class DefaultRateProvider implements RateProvider {
  * Mock adapter for testing
  */
 export class MockMarketAdapter implements ExternalMarketAdapter {
-  market: 'AKASH' | 'IONET'
+  market: 'AKASH' | 'IONET' | 'VASTAI'
   private enabled: boolean
   private rateMultiplier: number
 
-  constructor(market: 'AKASH' | 'IONET', options: { enabled?: boolean; rateMultiplier?: number } = {}) {
+  constructor(market: 'AKASH' | 'IONET' | 'VASTAI', options: { enabled?: boolean; rateMultiplier?: number } = {}) {
     this.market = market
     this.enabled = options.enabled ?? true
     this.rateMultiplier = options.rateMultiplier ?? 0.7 // Default to 70% of retail
