@@ -480,6 +480,76 @@ describe('delistNode', () => {
     expect(store.updateCalls).toHaveLength(1)
   })
 
+  it('SAFE mode schedules termination-policy job when terminationQueue is provided', async () => {
+    const dep = makeDeployment({ status: 'ACTIVE' })
+    const { prisma } = makeFakePrisma({ deployments: [dep] })
+    const fake = makeFakeRegistry({})
+
+    // Extend fake prisma with an overflowConfig upsert — the SAFE+queue
+    // path reads gracePeriodSeconds from the singleton config row.
+    const upsertSpy = vi.fn(async () => ({
+      id: 'singleton',
+      enabled: false,
+      simulationMode: true,
+      idleThresholdMinutes: 10,
+      demandThresholdPercent: 80,
+      marginProtectionPercent: 15,
+      gracePeriodSeconds: 180,
+      preferredMarkets: '["AKASH","IONET","VASTAI"]',
+      updatedAt: new Date(),
+    }))
+    ;(prisma as unknown as { overflowConfig: { upsert: typeof upsertSpy } }).overflowConfig = {
+      upsert: upsertSpy,
+    }
+
+    const queueAdd = vi.fn().mockResolvedValue({ id: 'bull-1' })
+    const terminationQueue = { add: queueAdd } as unknown as import('bullmq').Queue
+
+    const result = await delistNode(prisma, fake.registry, {
+      deploymentId: dep.id,
+      mode: 'SAFE' as ExternalTerminationMode,
+      reason: 'draining',
+      terminationQueue,
+    })
+
+    expect(result).toEqual({ status: 'TERMINATING', terminated: false })
+    expect(upsertSpy).toHaveBeenCalledTimes(1)
+    expect(queueAdd).toHaveBeenCalledTimes(1)
+    const [name, data, opts] = queueAdd.mock.calls[0]!
+    expect(name).toBe('safe-termination-poll')
+    expect(data).toMatchObject({
+      deploymentId: dep.id,
+      reason: 'draining',
+      mode: 'SAFE',
+      gracePeriodSeconds: 180,
+    })
+    expect(opts.delay).toBe(30_000) // default poll interval
+  })
+
+  it('SAFE mode does not touch queue when terminationQueue is omitted', async () => {
+    const dep = makeDeployment({ status: 'ACTIVE' })
+    const { prisma } = makeFakePrisma({ deployments: [dep] })
+    const fake = makeFakeRegistry({})
+
+    // Attach an overflowConfig mock that would throw if called — proves
+    // the SAFE path without a queue never reads the config.
+    const upsertSpy = vi.fn(async () => {
+      throw new Error('should not be called')
+    })
+    ;(prisma as unknown as { overflowConfig: { upsert: typeof upsertSpy } }).overflowConfig = {
+      upsert: upsertSpy,
+    }
+
+    const result = await delistNode(prisma, fake.registry, {
+      deploymentId: dep.id,
+      mode: 'SAFE' as ExternalTerminationMode,
+      reason: 'draining',
+    })
+
+    expect(result).toEqual({ status: 'TERMINATING', terminated: false })
+    expect(upsertSpy).not.toHaveBeenCalled()
+  })
+
   it('SAFE mode is a no-op on already TERMINATING deployment', async () => {
     const dep = makeDeployment({
       status: 'TERMINATING',

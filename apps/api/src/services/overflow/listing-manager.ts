@@ -12,6 +12,7 @@
 // accurate. The four functions are invoked by the overflow scheduler (F3.2),
 // the status-checker worker (F4.1), and the earnings calculator (F4.2).
 
+import type { Queue } from 'bullmq'
 import type {
   PrismaClient,
   ExternalDeployment,
@@ -19,6 +20,8 @@ import type {
   ExternalTerminationMode,
 } from '@a2e/database'
 import type { AdapterRegistry, DeploymentStatus } from '@a2e/core'
+import { getOrCreateOverflowConfig } from './engine'
+import { scheduleSafeTermination } from './termination-policy'
 
 type ExternalMarket = 'AKASH' | 'IONET' | 'VASTAI'
 
@@ -52,6 +55,13 @@ export interface DelistNodeInput {
   deploymentId: string
   mode: ExternalTerminationMode
   reason: string
+  /**
+   * Optional BullMQ queue for the SAFE termination policy worker. When
+   * provided and mode is SAFE and this call actually transitions ACTIVE→
+   * TERMINATING (i.e. not a no-op), a delayed poll job is enqueued. Tests
+   * and admin callers that drive the policy themselves can omit this.
+   */
+  terminationQueue?: Queue
 }
 
 export interface DelistNodeResult {
@@ -173,6 +183,16 @@ export async function delistNode(
         terminationReason: input.reason,
       },
     })
+
+    if (input.terminationQueue) {
+      const config = await getOrCreateOverflowConfig(prisma)
+      await scheduleSafeTermination(input.terminationQueue, {
+        deploymentId: deployment.id,
+        reason: input.reason,
+        gracePeriodSeconds: config.gracePeriodSeconds,
+      })
+    }
+
     return { status: updated.status, terminated: false }
   }
 
