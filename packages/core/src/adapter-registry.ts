@@ -36,20 +36,6 @@ interface HealthState {
 const DEFAULT_FAILURE_THRESHOLD = 5
 const DEFAULT_PROBE_INTERVAL_MS = 5 * 60_000
 
-/**
- * Adapter that exposes a mutable enabled flag. All concrete adapters in this
- * codebase (Akash, IO.net, Vast.ai, Mock) implement this, but the base
- * ExternalMarketAdapter interface keeps setEnabled optional so the registry
- * can still function against adapters that only expose a read-only flag.
- */
-interface ToggleableAdapter extends ExternalMarketAdapter {
-  setEnabled(enabled: boolean): void
-}
-
-function hasSetEnabled(adapter: ExternalMarketAdapter): adapter is ToggleableAdapter {
-  return typeof (adapter as Partial<ToggleableAdapter>).setEnabled === 'function'
-}
-
 function cloneHealth(state: HealthState): AdapterHealth {
   return {
     market: state.market,
@@ -116,7 +102,7 @@ export class AdapterRegistry {
     if (wasAutoDisabled) {
       state.autoDisabled = false
       const adapter = this.adapters.get(market)
-      if (adapter && hasSetEnabled(adapter)) {
+      if (adapter) {
         adapter.setEnabled(true)
       }
       if (this.onAutoEnable) {
@@ -145,7 +131,7 @@ export class AdapterRegistry {
     if (state.failureCount >= this.failureThreshold) {
       state.autoDisabled = true
       const adapter = this.adapters.get(market)
-      if (adapter && hasSetEnabled(adapter)) {
+      if (adapter) {
         adapter.setEnabled(false)
       }
       if (this.onAutoDisable) {

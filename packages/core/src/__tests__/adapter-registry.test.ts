@@ -5,7 +5,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { AdapterRegistry } from '../adapter-registry'
 import { MockMarketAdapter } from '../rate-provider'
 import type { AdapterMarket } from '../adapter-registry'
-import type { ExternalMarketAdapter, MarketRateInfo } from '../rate-provider'
+import type {
+  CreateDeploymentInput,
+  CreateDeploymentResult,
+  DeploymentCostResult,
+  DeploymentStatusResult,
+  ExternalMarketAdapter,
+  MarketRateInfo,
+} from '../rate-provider'
 import type { GpuTier } from '@a2e/shared'
 
 /**
@@ -47,6 +54,24 @@ class ControllableAdapter implements ExternalMarketAdapter {
       available: true,
       fetchedAt: new Date(),
     }
+  }
+
+  // Deployment methods are not exercised by AdapterRegistry tests — stubbed
+  // just to satisfy the ExternalMarketAdapter contract.
+  async createDeployment(_input: CreateDeploymentInput): Promise<CreateDeploymentResult> {
+    throw new Error('not implemented in ControllableAdapter')
+  }
+  async getDeploymentStatus(_externalId: string): Promise<DeploymentStatusResult> {
+    throw new Error('not implemented in ControllableAdapter')
+  }
+  async terminateDeployment(_externalId: string): Promise<void> {
+    throw new Error('not implemented in ControllableAdapter')
+  }
+  async getDeploymentLogs(_externalId: string): Promise<string> {
+    throw new Error('not implemented in ControllableAdapter')
+  }
+  async getDeploymentCost(_externalId: string): Promise<DeploymentCostResult> {
+    throw new Error('not implemented in ControllableAdapter')
   }
 }
 

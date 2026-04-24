@@ -20,10 +20,47 @@ export interface RateProvider {
   refreshRates(): Promise<void>
 }
 
+// Deployment lifecycle types (F1.2)
+
+export type DeploymentStatus = 'PENDING' | 'ACTIVE' | 'TERMINATING' | 'TERMINATED' | 'FAILED'
+
+export interface CreateDeploymentInput {
+  nodeId: string
+  gpuTier: GpuTier
+  durationHours?: number
+}
+
+export interface CreateDeploymentResult {
+  externalId: string
+  status: DeploymentStatus
+  estimatedRatePerHour: number
+  market: 'AKASH' | 'IONET' | 'VASTAI'
+}
+
+export interface DeploymentStatusResult {
+  externalId: string
+  status: DeploymentStatus
+  message?: string
+}
+
+export interface DeploymentCostResult {
+  accumulatedUsd: number
+  nativeAmount?: number
+  nativeCurrency?: 'AKT' | 'CREDITS' | 'USD'
+}
+
 export interface ExternalMarketAdapter {
   market: 'AKASH' | 'IONET' | 'VASTAI'
   getRate(gpuTier: GpuTier): Promise<MarketRateInfo>
   isEnabled(): boolean
+  setEnabled(enabled: boolean): void
+
+  // Deployment lifecycle (F1.2)
+  createDeployment(input: CreateDeploymentInput): Promise<CreateDeploymentResult>
+  getDeploymentStatus(externalId: string): Promise<DeploymentStatusResult>
+  terminateDeployment(externalId: string): Promise<void>
+  getDeploymentLogs(externalId: string): Promise<string>
+  getDeploymentCost(externalId: string): Promise<DeploymentCostResult>
 }
 
 /**
@@ -132,11 +169,27 @@ export class DefaultRateProvider implements RateProvider {
 
 /**
  * Mock adapter for testing
+ *
+ * Implements the deployment lifecycle with a trivial in-memory store so that
+ * tests which register this adapter against code paths touching deployments
+ * continue to work without wiring a real market integration.
  */
+interface MockDeploymentState {
+  externalId: string
+  nodeId: string
+  gpuTier: GpuTier
+  ratePerHour: number
+  status: DeploymentStatus
+  createdAt: Date
+  terminatedAt: Date | null
+  logs: string[]
+}
+
 export class MockMarketAdapter implements ExternalMarketAdapter {
   market: 'AKASH' | 'IONET' | 'VASTAI'
   private enabled: boolean
   private rateMultiplier: number
+  private deployments: Map<string, MockDeploymentState> = new Map()
 
   constructor(market: 'AKASH' | 'IONET' | 'VASTAI', options: { enabled?: boolean; rateMultiplier?: number } = {}) {
     this.market = market
@@ -170,5 +223,65 @@ export class MockMarketAdapter implements ExternalMarketAdapter {
 
   setRateMultiplier(multiplier: number): void {
     this.rateMultiplier = multiplier
+  }
+
+  async createDeployment(input: CreateDeploymentInput): Promise<CreateDeploymentResult> {
+    const rate = await this.getRate(input.gpuTier)
+    if (!rate.available) {
+      throw new Error(`Mock adapter ${this.market}: rate unavailable for ${input.gpuTier}`)
+    }
+
+    const externalId = `mock-${this.market.toLowerCase()}-${Math.random().toString(36).slice(2, 10)}`
+    this.deployments.set(externalId, {
+      externalId,
+      nodeId: input.nodeId,
+      gpuTier: input.gpuTier,
+      ratePerHour: rate.ratePerHour,
+      status: 'ACTIVE',
+      createdAt: new Date(),
+      terminatedAt: null,
+      logs: [`[mock] deployment created for ${input.nodeId}`],
+    })
+
+    return {
+      externalId,
+      status: 'ACTIVE',
+      estimatedRatePerHour: rate.ratePerHour,
+      market: this.market,
+    }
+  }
+
+  async getDeploymentStatus(externalId: string): Promise<DeploymentStatusResult> {
+    const state = this.deployments.get(externalId)
+    if (!state) {
+      throw new Error(`Mock adapter ${this.market}: unknown deployment ${externalId}`)
+    }
+    return { externalId, status: state.status, message: `mock ${state.status.toLowerCase()}` }
+  }
+
+  async terminateDeployment(externalId: string): Promise<void> {
+    const state = this.deployments.get(externalId)
+    if (!state) return
+    state.status = 'TERMINATED'
+    state.terminatedAt = new Date()
+    state.logs.push('[mock] terminated')
+  }
+
+  async getDeploymentLogs(externalId: string): Promise<string> {
+    const state = this.deployments.get(externalId)
+    if (!state) {
+      throw new Error(`Mock adapter ${this.market}: unknown deployment ${externalId}`)
+    }
+    return state.logs.join('\n')
+  }
+
+  async getDeploymentCost(externalId: string): Promise<DeploymentCostResult> {
+    const state = this.deployments.get(externalId)
+    if (!state) {
+      throw new Error(`Mock adapter ${this.market}: unknown deployment ${externalId}`)
+    }
+    const endTime = state.terminatedAt ?? new Date()
+    const hours = Math.max(0, (endTime.getTime() - state.createdAt.getTime()) / (1000 * 60 * 60))
+    return { accumulatedUsd: hours * state.ratePerHour }
   }
 }
