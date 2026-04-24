@@ -1,15 +1,31 @@
+import { randomUUID } from 'node:crypto'
 import type { GpuTier } from '@a2e/shared'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
-import type { ExternalMarketAdapter, MarketRateInfo } from '../rate-provider'
+import type {
+  CreateDeploymentInput,
+  CreateDeploymentResult,
+  DeploymentCostResult,
+  DeploymentStatusResult,
+  ExternalMarketAdapter,
+  MarketRateInfo,
+} from '../rate-provider'
+import { isSimulationMode } from '../external-simulation-config'
+import { SimulationStore } from './simulation'
 
 export class IONetAdapter implements ExternalMarketAdapter {
   readonly market = 'IONET' as const
   private enabled: boolean
   private apiEndpoint: string
+  private readonly simulationMode: boolean
+  private readonly store: SimulationStore | null
 
-  constructor(options: { enabled?: boolean; apiEndpoint?: string } = {}) {
+  constructor(
+    options: { enabled?: boolean; apiEndpoint?: string; simulationMode?: boolean } = {}
+  ) {
     this.enabled = options.enabled ?? (process.env.IONET_ENABLED === 'true')
     this.apiEndpoint = options.apiEndpoint ?? process.env.IONET_API_ENDPOINT ?? ''
+    this.simulationMode = options.simulationMode ?? isSimulationMode()
+    this.store = this.simulationMode ? new SimulationStore() : null
   }
 
   isEnabled(): boolean {
@@ -48,6 +64,94 @@ export class IONetAdapter implements ExternalMarketAdapter {
         available: false,
         fetchedAt: new Date(),
       }
+    }
+  }
+
+  async createDeployment(input: CreateDeploymentInput): Promise<CreateDeploymentResult> {
+    if (!this.simulationMode || !this.store) {
+      throw new Error('IO.net live mode not implemented — credentials pending')
+    }
+
+    const rate = await this.getRate(input.gpuTier)
+    if (!rate.available || rate.ratePerHour <= 0) {
+      throw new Error(`IO.net: rate unavailable for tier ${input.gpuTier}`)
+    }
+
+    const externalId = `sim-ionet-${randomUUID()}`
+    this.store.create({
+      externalId,
+      market: this.market,
+      nodeId: input.nodeId,
+      gpuTier: input.gpuTier,
+      ratePerHour: rate.ratePerHour,
+    })
+    this.store.appendLog(externalId, `[sim] deployment created for ${input.nodeId}`)
+
+    return {
+      externalId,
+      status: 'PENDING',
+      estimatedRatePerHour: rate.ratePerHour,
+      market: this.market,
+    }
+  }
+
+  async getDeploymentStatus(externalId: string): Promise<DeploymentStatusResult> {
+    if (!this.simulationMode || !this.store) {
+      throw new Error('IO.net live mode not implemented — credentials pending')
+    }
+
+    const state = this.store.tick(externalId)
+    if (!state) {
+      throw new Error(`IO.net: unknown deployment ${externalId}`)
+    }
+
+    return {
+      externalId,
+      status: state.status,
+      message: `simulation status: ${state.status.toLowerCase()}`,
+    }
+  }
+
+  async terminateDeployment(externalId: string): Promise<void> {
+    if (!this.simulationMode || !this.store) {
+      throw new Error('IO.net live mode not implemented — credentials pending')
+    }
+
+    const existing = this.store.get(externalId)
+    if (!existing) {
+      return
+    }
+    this.store.terminate(externalId)
+    this.store.appendLog(externalId, '[sim] terminated')
+  }
+
+  async getDeploymentLogs(externalId: string): Promise<string> {
+    if (!this.simulationMode || !this.store) {
+      throw new Error('IO.net live mode not implemented — credentials pending')
+    }
+
+    const state = this.store.get(externalId)
+    if (!state) {
+      throw new Error(`IO.net: unknown deployment ${externalId}`)
+    }
+    return state.logs.join('\n')
+  }
+
+  async getDeploymentCost(externalId: string): Promise<DeploymentCostResult> {
+    if (!this.simulationMode || !this.store) {
+      throw new Error('IO.net live mode not implemented — credentials pending')
+    }
+
+    const state = this.store.get(externalId)
+    if (!state) {
+      throw new Error(`IO.net: unknown deployment ${externalId}`)
+    }
+
+    const accumulatedUsd = this.store.computeAccumulatedUsd(externalId)
+    return {
+      accumulatedUsd,
+      nativeAmount: accumulatedUsd,
+      nativeCurrency: 'CREDITS',
     }
   }
 
