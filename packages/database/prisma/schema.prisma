@@ -50,6 +50,25 @@ enum Market {
   INTERNAL   // TokenOS internal (premium retail rate)
   AKASH      // Akash Network (external)
   IONET      // IO.net (external)
+  VASTAI     // Vast.ai (external)
+}
+
+enum JobSource {
+  INTERNAL   // Job originated from TokenOS internal demand (existing behavior)
+  EXTERNAL   // Job arrived via external market (Akash/IO.net/Vast.ai deployment)
+}
+
+enum ExternalDeploymentStatus {
+  PENDING      // Creation initiated, awaiting confirmation from market
+  ACTIVE       // Running on external market
+  TERMINATING  // Delist in progress (SAFE mode grace window)
+  TERMINATED   // Successfully terminated
+  FAILED       // Creation or runtime failure
+}
+
+enum ExternalTerminationMode {
+  SAFE   // Waited for workload completion or grace window
+  FORCE  // Terminated immediately, forfeit in-flight earnings
 }
 
 // ============================================================================
@@ -290,12 +309,13 @@ model Node {
   updatedAt     DateTime   @updatedAt
 
   // Relations
-  jobs               Job[]
-  earnings           Earning[]
-  heartbeats         Heartbeat[]
-  settlements        Settlement[]
+  jobs                Job[]
+  earnings            Earning[]
+  heartbeats          Heartbeat[]
+  settlements         Settlement[]
   infrastructureCosts InfrastructureCost[]
-  provisionJob       ProvisionJob?
+  provisionJob        ProvisionJob?
+  externalDeployments ExternalDeployment[]
 
   @@index([status])
   @@index([gpuTier])
@@ -339,6 +359,11 @@ model Job {
   gpuTier       GpuTier
   status        JobStatus @default(PENDING)
 
+  // Origin — whether this job came from internal TokenOS demand or an external market
+  source               JobSource           @default(INTERNAL)
+  externalDeploymentId String?
+  externalDeployment   ExternalDeployment? @relation(fields: [externalDeploymentId], references: [id])
+
   // Timing
   requestedAt   DateTime  @default(now())
   routedAt      DateTime?
@@ -367,6 +392,8 @@ model Job {
   @@index([nodeId])
   @@index([market])
   @@index([requestedAt])
+  @@index([source])
+  @@index([externalDeploymentId])
 }
 
 // ============================================================================
@@ -386,6 +413,7 @@ model RoutingLog {
   internalRate    Float?
   akashRate       Float?
   ionetRate       Float?
+  vastaiRate      Float?
 
   // Yield floor
   yieldFloor          Float
@@ -486,6 +514,59 @@ model MarketConfig {
   apiEndpoint String?
 
   updatedAt   DateTime @updatedAt
+}
+
+// ============================================================================
+// EXTERNAL MARKET OVERFLOW (M7)
+// ============================================================================
+
+model ExternalDeployment {
+  id              String                   @id @default(cuid())
+  nodeId          String
+  node            Node                     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  market          Market                   // AKASH | IONET | VASTAI (never INTERNAL)
+  externalId      String                   // Deployment ID on the external platform
+  status          ExternalDeploymentStatus @default(PENDING)
+
+  // Economics
+  ratePerHour         Float                // Rate we expect to earn per hour
+  costAccumulated     Float                @default(0) // Running cost in USD
+  earningsAccumulated Float                @default(0) // Running earnings in USD
+
+  // Lifecycle
+  createdAt       DateTime                 @default(now())
+  terminatedAt    DateTime?
+  lastCheckedAt   DateTime                 @default(now())
+
+  // Termination tracking
+  terminationMode   ExternalTerminationMode?
+  terminationReason String?
+
+  // Relations — jobs that executed on this external deployment
+  jobs            Job[]
+
+  @@index([nodeId])
+  @@index([market])
+  @@index([status])
+  @@index([externalId])
+}
+
+model OverflowConfig {
+  id                      String   @id @default("singleton")  // always "singleton"
+  enabled                 Boolean  @default(false)             // overflow off by default
+  simulationMode          Boolean  @default(true)              // simulated adapters by default until credentials arrive
+
+  idleThresholdMinutes    Int      @default(10)                // how long idle before listing externally
+  demandThresholdPercent  Int      @default(80)                // % of nodes busy triggers delist
+  marginProtectionPercent Int      @default(15)                // minimum margin above cost floor
+
+  gracePeriodSeconds      Int      @default(300)               // SAFE termination grace window (5 min)
+
+  // Preferred market order (JSON array of Market enum values as strings)
+  preferredMarkets        String   @default("[\"AKASH\",\"IONET\",\"VASTAI\"]")
+
+  updatedAt               DateTime @updatedAt
 }
 
 // ============================================================================
