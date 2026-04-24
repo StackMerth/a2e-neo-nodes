@@ -9,13 +9,16 @@ describe('DefaultRateProvider', () => {
   let rateProvider: DefaultRateProvider
   let akashAdapter: MockMarketAdapter
   let ionetAdapter: MockMarketAdapter
+  let vastaiAdapter: MockMarketAdapter
 
   beforeEach(() => {
     rateProvider = new DefaultRateProvider({ cacheTtlMs: 1000 })
     akashAdapter = new MockMarketAdapter('AKASH', { enabled: true, rateMultiplier: 0.65 })
     ionetAdapter = new MockMarketAdapter('IONET', { enabled: true, rateMultiplier: 0.70 })
+    vastaiAdapter = new MockMarketAdapter('VASTAI', { enabled: true, rateMultiplier: 0.55 })
     rateProvider.registerAdapter(akashAdapter)
     rateProvider.registerAdapter(ionetAdapter)
+    rateProvider.registerAdapter(vastaiAdapter)
   })
 
   describe('Internal Rates', () => {
@@ -51,8 +54,10 @@ describe('DefaultRateProvider', () => {
 
       expect(rates.akash.available).toBe(true)
       expect(rates.ionet.available).toBe(true)
+      expect(rates.vastai.available).toBe(true)
       expect(rates.akash.ratePerHour).toBeGreaterThan(0)
       expect(rates.ionet.ratePerHour).toBeGreaterThan(0)
+      expect(rates.vastai.ratePerHour).toBeGreaterThan(0)
     })
 
     it('should not fetch rates from disabled adapters', async () => {
@@ -64,17 +69,20 @@ describe('DefaultRateProvider', () => {
       expect(rates.akash.available).toBe(false)
       expect(rates.akash.ratePerHour).toBe(0)
       expect(rates.ionet.available).toBe(true)
+      expect(rates.vastai.available).toBe(true)
     })
 
-    it('should return unavailable when both adapters disabled', async () => {
+    it('should return unavailable when all adapters disabled', async () => {
       akashAdapter.setEnabled(false)
       ionetAdapter.setEnabled(false)
+      vastaiAdapter.setEnabled(false)
       rateProvider.refreshRates()
 
       const rates = await rateProvider.getRates('H100')
 
       expect(rates.akash.available).toBe(false)
       expect(rates.ionet.available).toBe(false)
+      expect(rates.vastai.available).toBe(false)
     })
   })
 

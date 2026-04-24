@@ -79,6 +79,7 @@ export async function routeRoutes(fastify: FastifyInstance) {
           internalRate: rates.internal.ratePerHour,
           akashRate: rates.akash.available ? rates.akash.ratePerHour : null,
           ionetRate: rates.ionet.available ? rates.ionet.ratePerHour : null,
+          vastaiRate: rates.vastai.available ? rates.vastai.ratePerHour : null,
           yieldFloor: yieldFloor.ratePerHour,
           yieldFloorApplied: decision.yieldFloorApplied,
           reason: decision.reason,
@@ -120,6 +121,7 @@ async function getRatesFromCache(
   internal: { ratePerHour: number; ratePerDay: number; available: boolean; fetchedAt: Date }
   akash: { ratePerHour: number; ratePerDay: number; available: boolean; fetchedAt: Date }
   ionet: { ratePerHour: number; ratePerDay: number; available: boolean; fetchedAt: Date }
+  vastai: { ratePerHour: number; ratePerDay: number; available: boolean; fetchedAt: Date }
 }> {
   const tierConfig = GPU_TIER_CONFIG[gpuTier]
   const now = new Date()
@@ -133,15 +135,19 @@ async function getRatesFromCache(
   }
 
   // Try to get external rates from database
-  const [akashRate, ionetRate, akashConfig, ionetConfig] = await Promise.all([
+  const [akashRate, ionetRate, vastaiRate, akashConfig, ionetConfig, vastaiConfig] = await Promise.all([
     fastify.prisma.marketRate.findUnique({
       where: { market_gpuTier: { market: 'AKASH', gpuTier } },
     }),
     fastify.prisma.marketRate.findUnique({
       where: { market_gpuTier: { market: 'IONET', gpuTier } },
     }),
+    fastify.prisma.marketRate.findUnique({
+      where: { market_gpuTier: { market: 'VASTAI', gpuTier } },
+    }),
     fastify.prisma.marketConfig.findUnique({ where: { market: 'AKASH' } }),
     fastify.prisma.marketConfig.findUnique({ where: { market: 'IONET' } }),
+    fastify.prisma.marketConfig.findUnique({ where: { market: 'VASTAI' } }),
   ])
 
   const akash = {
@@ -158,7 +164,14 @@ async function getRatesFromCache(
     fetchedAt: ionetRate?.fetchedAt ?? now,
   }
 
-  return { internal, akash, ionet }
+  const vastai = {
+    ratePerHour: vastaiRate?.ratePerHour ?? 0,
+    ratePerDay: vastaiRate?.ratePerDay ?? 0,
+    available: vastaiRate?.available === true && vastaiConfig?.enabled !== false,
+    fetchedAt: vastaiRate?.fetchedAt ?? now,
+  }
+
+  return { internal, akash, ionet, vastai }
 }
 
 async function getYieldFloor(

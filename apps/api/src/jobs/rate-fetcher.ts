@@ -1,6 +1,6 @@
 import { Queue, Worker, Job, type ConnectionOptions } from 'bullmq'
 import type { PrismaClient, GpuTier, Market } from '@a2e/database'
-import { AkashAdapter, IONetAdapter } from '@a2e/core'
+import { AkashAdapter, IONetAdapter, VastAiAdapter } from '@a2e/core'
 import type { Server as SocketServer } from 'socket.io'
 
 const GPU_TIERS: GpuTier[] = ['H100', 'H200', 'B200', 'B300', 'GB300']
@@ -32,6 +32,9 @@ export function createRateFetcherWorker(deps: RateFetcherDeps): Worker {
 
   const akashAdapter = new AkashAdapter()
   const ionetAdapter = new IONetAdapter()
+  // VASTAI MarketConfig rows are created on-demand via the admin /v1/config/markets
+  // upsert endpoint — no bootstrap seed is required here.
+  const vastaiAdapter = new VastAiAdapter()
 
   const worker = new Worker(
     QUEUE_NAME,
@@ -79,6 +82,21 @@ export function createRateFetcherWorker(deps: RateFetcherDeps): Worker {
             })
           } catch (err) {
             jobLogger.error(`Failed to fetch IO.net rate for ${gpuTier}`, err)
+          }
+        }
+
+        if (vastaiAdapter.isEnabled()) {
+          try {
+            const vastaiRate = await vastaiAdapter.getRate(gpuTier)
+            results.push({
+              market: 'VASTAI',
+              gpuTier,
+              ratePerHour: vastaiRate.ratePerHour,
+              ratePerDay: vastaiRate.ratePerDay,
+              available: vastaiRate.available,
+            })
+          } catch (err) {
+            jobLogger.error(`Failed to fetch Vast.ai rate for ${gpuTier}`, err)
           }
         }
       }
