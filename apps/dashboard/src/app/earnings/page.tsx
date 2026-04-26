@@ -140,11 +140,12 @@ export default function EarningsPage() {
     return hours.toFixed(1) + 'h'
   }
 
-  const getMarketColor = (market: string): 'accent' | 'blue' | 'purple' | 'orange' | 'gray' => {
+  const getMarketColor = (market: string): 'accent' | 'blue' | 'purple' | 'amber' | 'orange' | 'gray' => {
     switch (market) {
       case 'INTERNAL': return 'accent'
       case 'AKASH': return 'blue'
       case 'IONET': return 'purple'
+      case 'VASTAI': return 'amber'
       default: return 'gray'
     }
   }
@@ -154,6 +155,7 @@ export default function EarningsPage() {
       case 'INTERNAL': return 'bg-accent/10 text-accent border-accent/20'
       case 'AKASH': return 'bg-blue-500/10 text-blue-400 border-blue-500/20'
       case 'IONET': return 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+      case 'VASTAI': return 'bg-amber-500/10 text-amber-400 border-amber-500/20'
       default: return 'bg-text-muted/10 text-text-muted border-border'
     }
   }
@@ -300,29 +302,37 @@ export default function EarningsPage() {
               )}
 
               {/* Market Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                 {byMarket?.byMarket && Object.entries(byMarket.byMarket).map(([market, data]) => {
                   const percentage = byMarket.total.earnings > 0
                     ? (data.earnings / byMarket.total.earnings) * 100
                     : 0
+                  const iconBg =
+                    market === 'INTERNAL' ? 'bg-accent/20' :
+                    market === 'AKASH' ? 'bg-blue-500/20' :
+                    market === 'IONET' ? 'bg-purple-500/20' : ''
+                  const iconStyle = market === 'VASTAI' ? { background: 'rgba(234,179,8,0.18)' } : undefined
+                  const textCls =
+                    market === 'INTERNAL' ? 'text-accent' :
+                    market === 'AKASH' ? 'text-blue-400' :
+                    market === 'IONET' ? 'text-purple-400' : ''
+                  const textStyle = market === 'VASTAI' ? { color: '#eab308' } : undefined
+                  const barCls =
+                    market === 'INTERNAL' ? 'bg-accent' :
+                    market === 'AKASH' ? 'bg-blue-500' :
+                    market === 'IONET' ? 'bg-purple-500' : ''
+                  const barStyle = market === 'VASTAI' ? { background: '#eab308', width: `${percentage}%` } : { width: `${percentage}%` }
                   return (
                     <Card key={market} variant="glass">
                       <div className="flex items-center gap-3 mb-4">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                          market === 'INTERNAL' ? 'bg-accent/20' :
-                          market === 'AKASH' ? 'bg-blue-500/20' : 'bg-purple-500/20'
-                        }`}>
-                          <span className={`text-lg font-bold ${
-                            market === 'INTERNAL' ? 'text-accent' :
-                            market === 'AKASH' ? 'text-blue-400' : 'text-purple-400'
-                          }`}>
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${iconBg}`} style={iconStyle}>
+                          <span className={`text-lg font-bold ${textCls}`} style={textStyle}>
                             {market.charAt(0)}
                           </span>
                         </div>
-                        <span className={`font-semibold ${
-                          market === 'INTERNAL' ? 'text-accent' :
-                          market === 'AKASH' ? 'text-blue-400' : 'text-purple-400'
-                        }`}>{market}</span>
+                        <span className={`font-semibold ${textCls}`} style={textStyle}>
+                          {market === 'VASTAI' ? 'VAST.AI' : market}
+                        </span>
                       </div>
                       <p className="text-3xl font-bold text-text-primary mb-2">
                         {formatCurrency(data.earnings)}
@@ -332,13 +342,7 @@ export default function EarningsPage() {
                         <span>{data.gpuHours.toFixed(1)}h GPU time</span>
                       </div>
                       <div className="h-2 bg-surface-hover rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${
-                            market === 'INTERNAL' ? 'bg-accent' :
-                            market === 'AKASH' ? 'bg-blue-500' : 'bg-purple-500'
-                          }`}
-                          style={{ width: `${percentage}%` }}
-                        />
+                        <div className={`h-full rounded-full ${barCls}`} style={barStyle} />
                       </div>
                       <p className="text-xs text-text-muted mt-2 text-right">
                         {percentage.toFixed(1)}% of total
@@ -507,6 +511,7 @@ export default function EarningsPage() {
                     <option value="INTERNAL">Internal</option>
                     <option value="AKASH">Akash</option>
                     <option value="IONET">IO.net</option>
+                    <option value="VASTAI">Vast.ai</option>
                   </select>
                 </div>
                 <Button onClick={loadRecords} variant="outline" size="sm" className="mt-5">
