@@ -9,7 +9,7 @@ const updateYieldFloorSchema = z.object({
 })
 
 const updateMarketConfigSchema = z.object({
-  market: z.enum(['AKASH', 'IONET']),
+  market: z.enum(['AKASH', 'IONET', 'VASTAI']),
   enabled: z.boolean().optional(),
   priority: z.number().int().min(0).max(100).optional(),
   apiEndpoint: z.string().url().optional().nullable(),
@@ -132,7 +132,7 @@ export async function configRoutes(fastify: FastifyInstance) {
         orderBy: { priority: 'desc' },
       })
 
-      const markets: Market[] = ['INTERNAL', 'AKASH', 'IONET']
+      const markets: Market[] = ['INTERNAL', 'AKASH', 'IONET', 'VASTAI']
       const configMap = new Map(configs.map((c) => [c.market, c]))
 
       const result = markets.map((market) => {

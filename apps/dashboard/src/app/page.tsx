@@ -253,7 +253,7 @@ export default function OverviewPage() {
       {/* ========== Header ========== */}
       <motion.div className="dash-header" variants={itemVariants}>
         <div className="dash-header-left">
-          <h1><LayoutDashboard size={28} /> A<sup>2</sup>E Engine Overview</h1>
+          <h1><LayoutDashboard size={28} /> A²E Engine Overview</h1>
         </div>
         <div className="dash-header-right">
           <div className="dash-date-badge">

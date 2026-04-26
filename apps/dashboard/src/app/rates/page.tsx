@@ -33,7 +33,14 @@ interface RateHistory {
 }
 
 const GPU_TIER_ORDER = ['H100', 'H200', 'B200', 'B300', 'GB300']
-const MARKETS = ['AKASH', 'IONET']
+const MARKETS = ['AKASH', 'IONET', 'VASTAI']
+
+const MARKET_LABEL: Record<string, string> = { AKASH: 'Akash', IONET: 'IO.net', VASTAI: 'Vast.ai' }
+const MARKET_BUTTON_BG: Record<string, string> = {
+  AKASH: 'bg-accent-blue text-white',
+  IONET: 'bg-accent-purple text-white',
+  VASTAI: 'bg-amber-500 text-white',
+}
 
 export default function RatesPage() {
   const [rates, setRates] = useState<Rate[]>([])
@@ -90,14 +97,18 @@ export default function RatesPage() {
       internal: tierRates.find((r) => r.market === 'INTERNAL'),
       akash: tierRates.find((r) => r.market === 'AKASH'),
       ionet: tierRates.find((r) => r.market === 'IONET'),
+      vastai: tierRates.find((r) => r.market === 'VASTAI'),
     }
   })
 
   // Calculate summary stats
-  const avgAkashRate = rates.filter(r => r.market === 'AKASH' && r.available).reduce((sum, r) => sum + r.ratePerDay, 0) /
-    Math.max(1, rates.filter(r => r.market === 'AKASH' && r.available).length)
-  const avgIonetRate = rates.filter(r => r.market === 'IONET' && r.available).reduce((sum, r) => sum + r.ratePerDay, 0) /
-    Math.max(1, rates.filter(r => r.market === 'IONET' && r.available).length)
+  const avgRate = (market: string) => {
+    const filtered = rates.filter(r => r.market === market && r.available)
+    return filtered.length > 0 ? filtered.reduce((sum, r) => sum + r.ratePerDay, 0) / filtered.length : 0
+  }
+  const avgAkashRate = avgRate('AKASH')
+  const avgIonetRate = avgRate('IONET')
+  const avgVastaiRate = avgRate('VASTAI')
   const avgInternalRate = rates.filter(r => r.market === 'INTERNAL').reduce((sum, r) => sum + r.ratePerDay, 0) /
     Math.max(1, rates.filter(r => r.market === 'INTERNAL').length)
 
@@ -164,6 +175,13 @@ export default function RatesPage() {
                 <span className="stat-label">IO.net Avg Rate</span>
               </div>
             </div>
+            <div className="stat-block" style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.2)' }}>
+              <div className="stat-icon" style={{ background: 'rgba(234,179,8,0.15)', color: '#eab308' }}><BarChart3 size={20} /></div>
+              <div className="stat-content">
+                <span className="stat-value">${avgVastaiRate.toFixed(2)}/day</span>
+                <span className="stat-label">Vast.ai Avg Rate</span>
+              </div>
+            </div>
             <div className="stat-block orange">
               <div className="stat-icon"><DollarSign size={20} /></div>
               <div className="stat-content">
@@ -175,10 +193,11 @@ export default function RatesPage() {
 
           {/* GPU Tier Cards */}
           <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {ratesByTier.map(({ tier, internal, akash, ionet }) => {
+            {ratesByTier.map(({ tier, internal, akash, ionet, vastai }) => {
               const externalRates = [
                 akash?.available ? akash.ratePerDay : 0,
                 ionet?.available ? ionet.ratePerDay : 0,
+                vastai?.available ? vastai.ratePerDay : 0,
               ].filter((r) => r > 0)
               const bestExternal = externalRates.length > 0 ? Math.max(...externalRates) : null
               const externalDiscount = internal && bestExternal ? ((1 - bestExternal / internal.ratePerDay) * 100) : null
@@ -215,7 +234,7 @@ export default function RatesPage() {
                     </div>
 
                     {/* External Rates */}
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-3 gap-2">
                       <div className="p-3 bg-accent-blue/5 border border-accent-blue/20 rounded-xl">
                         <span className="text-xs text-text-muted block mb-1">Akash</span>
                         {akash?.available ? (
@@ -231,6 +250,16 @@ export default function RatesPage() {
                         {ionet?.available ? (
                           <span className="text-sm font-bold text-accent-purple">
                             ${ionet.ratePerDay.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-text-muted">N/A</span>
+                        )}
+                      </div>
+                      <div className="p-3 rounded-xl" style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                        <span className="text-xs text-text-muted block mb-1">Vast.ai</span>
+                        {vastai?.available ? (
+                          <span className="text-sm font-bold" style={{ color: '#eab308' }}>
+                            ${vastai.ratePerDay.toFixed(2)}
                           </span>
                         ) : (
                           <span className="text-sm text-text-muted">N/A</span>
@@ -291,9 +320,7 @@ export default function RatesPage() {
                         onClick={() => setSelectedMarket(market)}
                         className={`px-4 py-2 text-sm rounded-lg font-medium transition-all ${
                           selectedMarket === market
-                            ? market === 'AKASH'
-                              ? 'bg-accent-blue text-white'
-                              : 'bg-accent-purple text-white'
+                            ? MARKET_BUTTON_BG[market]
                             : 'bg-surface text-text-secondary hover:bg-surface-hover'
                         }`}
                       >

@@ -487,23 +487,35 @@ export default function SettingsPage() {
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                            market.market === 'INTERNAL' ? 'bg-accent/20' :
-                            market.market === 'AKASH' ? 'bg-blue-500/20' : 'bg-purple-500/20'
-                          }`}>
-                            <span className={`text-sm font-bold ${
-                              market.market === 'INTERNAL' ? 'text-accent' :
-                              market.market === 'AKASH' ? 'text-blue-400' : 'text-purple-400'
-                            }`}>
+                          <div
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                              market.market === 'INTERNAL' ? 'bg-accent/20' :
+                              market.market === 'AKASH' ? 'bg-blue-500/20' :
+                              market.market === 'IONET' ? 'bg-purple-500/20' : ''
+                            }`}
+                            style={market.market === 'VASTAI' ? { background: 'rgba(234,179,8,0.18)' } : undefined}
+                          >
+                            <span
+                              className={`text-sm font-bold ${
+                                market.market === 'INTERNAL' ? 'text-accent' :
+                                market.market === 'AKASH' ? 'text-blue-400' :
+                                market.market === 'IONET' ? 'text-purple-400' : ''
+                              }`}
+                              style={market.market === 'VASTAI' ? { color: '#eab308' } : undefined}
+                            >
                               {market.market.charAt(0)}
                             </span>
                           </div>
                           <div>
-                            <span className={`font-medium ${
-                              market.market === 'INTERNAL' ? 'text-accent' :
-                              market.market === 'AKASH' ? 'text-blue-400' : 'text-purple-400'
-                            }`}>
-                              {market.market}
+                            <span
+                              className={`font-medium ${
+                                market.market === 'INTERNAL' ? 'text-accent' :
+                                market.market === 'AKASH' ? 'text-blue-400' :
+                                market.market === 'IONET' ? 'text-purple-400' : ''
+                              }`}
+                              style={market.market === 'VASTAI' ? { color: '#eab308' } : undefined}
+                            >
+                              {market.market === 'VASTAI' ? 'VAST.AI' : market.market}
                             </span>
                             {market.market === 'INTERNAL' && (
                               <p className="text-xs text-text-muted">Always enabled (premium rate)</p>

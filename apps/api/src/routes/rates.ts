@@ -5,12 +5,12 @@ import type { GpuTier, Market } from '@a2e/database'
 
 const ratesQuerySchema = z.object({
   gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300']).optional(),
-  market: z.enum(['INTERNAL', 'AKASH', 'IONET']).optional(),
+  market: z.enum(['INTERNAL', 'AKASH', 'IONET', 'VASTAI']).optional(),
 })
 
 const rateHistoryQuerySchema = z.object({
   gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300']),
-  market: z.enum(['AKASH', 'IONET']),
+  market: z.enum(['AKASH', 'IONET', 'VASTAI']),
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
   limit: z.coerce.number().min(1).max(1000).default(100),
@@ -89,7 +89,7 @@ export async function rateRoutes(fastify: FastifyInstance) {
       }
 
       const tierOrder: Record<string, number> = { H100: 1, H200: 2, B200: 3, B300: 4, GB300: 5 }
-      const marketOrder: Record<string, number> = { INTERNAL: 1, AKASH: 2, IONET: 3 }
+      const marketOrder: Record<string, number> = { INTERNAL: 1, AKASH: 2, IONET: 3, VASTAI: 4 }
       rates.sort((a, b) => {
         const tierDiff = (tierOrder[a.gpuTier] ?? 99) - (tierOrder[b.gpuTier] ?? 99)
         if (tierDiff !== 0) return tierDiff

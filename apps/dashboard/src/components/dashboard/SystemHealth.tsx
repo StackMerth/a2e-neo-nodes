@@ -24,6 +24,17 @@ interface HealthStatus {
   }
 }
 
+interface ExternalMarketsStatus {
+  simulationMode: boolean
+  markets: Array<{
+    market: 'AKASH' | 'IONET' | 'VASTAI'
+    enabled: boolean
+    healthy: boolean
+    autoDisabled: boolean
+    failureCount: number
+  }>
+}
+
 type ServiceStatus = 'healthy' | 'degraded' | 'error' | 'unknown'
 
 interface ServiceEntry {
@@ -73,12 +84,17 @@ const STATUS_LABEL: Record<ServiceStatus, string> = {
 
 export function SystemHealth() {
   const [health, setHealth] = useState<HealthStatus | null>(null)
+  const [external, setExternal] = useState<ExternalMarketsStatus | null>(null)
   const [loading, setLoading] = useState(true)
 
   const checkHealth = useCallback(async () => {
     try {
-      const data = await api.health.detailed()
+      const [data, ext] = await Promise.all([
+        api.health.detailed(),
+        api.external.status().catch(() => null),
+      ])
       setHealth(data as HealthStatus)
+      setExternal(ext as ExternalMarketsStatus | null)
     } catch {
       setHealth({ status: 'error', timestamp: new Date().toISOString() })
     } finally {
@@ -91,6 +107,27 @@ export function SystemHealth() {
     const interval = setInterval(checkHealth, 30_000)
     return () => clearInterval(interval)
   }, [checkHealth])
+
+  // Derive external markets status from M7 endpoint
+  function externalMarketsState(): { status: ServiceStatus; detail: string } {
+    if (!external) {
+      return { status: 'unknown', detail: 'Checking...' }
+    }
+    const enabledMarkets = external.markets.filter((m) => m.enabled)
+    if (enabledMarkets.length === 0) {
+      const mode = external.simulationMode ? ' (simulation)' : ''
+      return { status: 'unknown', detail: `All disabled${mode}` }
+    }
+    const unhealthy = enabledMarkets.filter((m) => !m.healthy || m.autoDisabled)
+    const mode = external.simulationMode ? ' (sim)' : ''
+    if (unhealthy.length === 0) {
+      return { status: 'healthy', detail: `${enabledMarkets.length} healthy${mode}` }
+    }
+    if (unhealthy.length === enabledMarkets.length) {
+      return { status: 'error', detail: `All ${unhealthy.length} unhealthy${mode}` }
+    }
+    return { status: 'degraded', detail: `${unhealthy.length}/${enabledMarkets.length} unhealthy${mode}` }
+  }
 
   const services: ServiceEntry[] = [
     {
@@ -115,20 +152,15 @@ export function SystemHealth() {
         ? `${health.services.redis.latency}ms`
         : STATUS_LABEL[resolveStatus(health?.services?.redis?.status)],
     },
-    {
-      name: 'External Markets',
-      icon: <Globe size={16} />,
-      status: resolveStatus(
-        health?.services?.akash?.status === 'ok' && health?.services?.ionet?.status === 'ok'
-          ? 'ok'
-          : health?.services?.akash?.status === 'error' || health?.services?.ionet?.status === 'error'
-          ? 'error'
-          : health?.services?.akash?.status ?? health?.services?.ionet?.status,
-      ),
-      detail: health?.services?.akash
-        ? `Akash: ${health.services.akash.status} / IO.net: ${health.services?.ionet?.status ?? '?'}`
-        : STATUS_LABEL[resolveStatus(undefined)],
-    },
+    (() => {
+      const ext = externalMarketsState()
+      return {
+        name: 'External Markets',
+        icon: <Globe size={16} />,
+        status: ext.status,
+        detail: ext.detail,
+      }
+    })(),
   ]
 
   if (loading) {

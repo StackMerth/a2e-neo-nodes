@@ -104,7 +104,7 @@ export function ProgressBar({
 interface DistributionSegment {
   value: number
   label: string
-  color: 'accent' | 'blue' | 'purple' | 'orange' | 'gray'
+  color: 'accent' | 'blue' | 'purple' | 'orange' | 'amber' | 'gray'
 }
 
 interface DistributionBarProps {
@@ -120,6 +120,7 @@ const segmentColors: Record<string, string> = {
   blue: 'bg-accent-blue',
   purple: 'bg-accent-purple',
   orange: 'bg-accent-orange',
+  amber: 'bg-amber-500',
   gray: 'bg-text-muted',
 }
 
@@ -128,6 +129,7 @@ const dotColors: Record<string, string> = {
   blue: 'bg-accent-blue',
   purple: 'bg-accent-purple',
   orange: 'bg-accent-orange',
+  amber: 'bg-amber-500',
   gray: 'bg-text-muted',
 }
 
