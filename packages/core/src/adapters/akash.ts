@@ -43,7 +43,7 @@ export class AkashAdapter implements ExternalMarketAdapter {
   ) {
     this.enabled = options.enabled ?? (process.env.AKASH_ENABLED === 'true')
     this.apiEndpoint = options.apiEndpoint ?? process.env.AKASH_API_ENDPOINT ?? 'https://api.cloudmos.io'
-    this.simulationMode = options.simulationMode ?? isSimulationMode()
+    this.simulationMode = options.simulationMode ?? isSimulationMode('AKASH')
     this.store = this.simulationMode ? new SimulationStore() : null
   }
 
