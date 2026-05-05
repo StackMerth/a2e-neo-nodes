@@ -379,26 +379,39 @@ export class VastAiAdapter implements ExternalMarketAdapter {
       return { accumulatedUsd: 0, nativeAmount: 0, nativeCurrency: 'USD' }
     }
 
-    // Determine elapsed time. The locally-tracked `startDateMs` (when we
-    // called create) is the truthful upper bound. Vast.ai's `start_date`
-    // can be much earlier (reservation timestamp), so we cap at local.
+    // Vast.ai billing rules — learned from production canary:
+    //
+    //   * `actual_status === 'running'` is the ONLY signal that the workload
+    //     is actually executing and accruing charges. While loading or
+    //     queued, `actual_status` is null/undefined.
+    //   * `end_date` is the max-lease ceiling (often create-time + days),
+    //     NOT the actual termination time. We must NOT treat `end_date`
+    //     being set as proof the instance ran.
+    //   * `start_date` is the reservation time, which can be set before the
+    //     workload is actually billable.
+    //
+    // So: we only bill when `actual_status === 'running'`, and we always
+    // measure elapsed time from the locally-tracked create timestamp up to
+    // "now" (capped by Vast's `start_date` when later than local — i.e. the
+    // workload only started after some queue time).
+    if (inst.actual_status !== 'running') {
+      return { accumulatedUsd: 0, nativeAmount: 0, nativeCurrency: 'USD' }
+    }
+
     let effectiveStartMs: number | null = local?.startDateMs ?? null
     if (typeof inst.start_date === 'number' && inst.start_date > 0) {
       const apiStartMs = inst.start_date * 1000
+      // If the API claims the run started later than our create call (queued
+      // for a while), trust the API. Otherwise stick with the create call as
+      // the upper bound.
       effectiveStartMs = effectiveStartMs == null ? apiStartMs : Math.max(apiStartMs, effectiveStartMs)
     }
     if (effectiveStartMs == null) {
       return { accumulatedUsd: 0, nativeAmount: 0, nativeCurrency: 'USD' }
     }
 
-    const endMs = typeof inst.end_date === 'number' && inst.end_date > 0 ? inst.end_date * 1000 : Date.now()
-    const elapsedHours = Math.max(0, (endMs - effectiveStartMs) / 3_600_000)
-
-    // Only bill for time spent in `running` (or after, if Vast set end_date).
-    // Pre-running time costs nothing on Vast.ai's side; matching that here
-    // keeps reconciliation simple.
-    const billable = inst.actual_status === 'running' || typeof inst.end_date === 'number'
-    const cost = billable ? inst.dph_total * elapsedHours : 0
+    const elapsedHours = Math.max(0, (Date.now() - effectiveStartMs) / 3_600_000)
+    const cost = inst.dph_total * elapsedHours
 
     return {
       accumulatedUsd: cost,

@@ -173,19 +173,48 @@ describe('VastAiAdapter — live mode lifecycle', () => {
     expect(cost.nativeCurrency).toBe('USD')
   })
 
-  it('getDeploymentCost: returns $0 when instance never reached running (regression for inflated start_date)', async () => {
-    // Vast.ai sometimes returns a `start_date` set to the *reservation* time
-    // (which can be days earlier). Without guards, this produces wildly
-    // inflated cost numbers. Verify pre-running instances bill at $0.
-    const startDate = Math.floor(Date.now() / 1000) - 86_400 * 10 // 10 days ago
+  it('getDeploymentCost: returns $0 when actual_status is null (loading/queued instance)', async () => {
+    // Vast.ai sets start_date to the reservation time (days earlier than
+    // actual run start) and end_date to a future max-lease ceiling. Both
+    // signals are misleading — only actual_status === "running" means the
+    // workload is billable.
+    const startDate = Math.floor(Date.now() / 1000) - 86_400 * 10
+    const endDate = Math.floor(Date.now() / 1000) + 86_400 * 10
     const { fn } = makeFetchMock(() =>
       jsonResponse({
         instances: {
           id: 1,
           dph_total: 2.4,
           start_date: startDate,
+          end_date: endDate,
+          cur_state: 'running',
           actual_status: null,
           intended_status: 'running',
+        },
+      })
+    )
+    globalThis.fetch = fn as unknown as typeof fetch
+
+    const adapter = new VastAiAdapter({ enabled: true, simulationMode: false, apiKey: API_KEY })
+    const cost = await adapter.getDeploymentCost('1')
+    expect(cost.accumulatedUsd).toBe(0)
+  })
+
+  it('getDeploymentCost: returns $0 when end_date is set but actual_status is not running (regression for $356 bug)', async () => {
+    // Production canary observed Vast.ai returning end_date set to a future
+    // max-lease ceiling immediately after create, even though actual_status
+    // was null. Earlier code treated end_date as proof the instance ran and
+    // produced an inflated cost. Now end_date is irrelevant for billability.
+    const startDate = Math.floor(Date.now() / 1000) - 86_400 * 10
+    const endDate = Math.floor(Date.now() / 1000) + 86_400 * 10
+    const { fn } = makeFetchMock(() =>
+      jsonResponse({
+        instances: {
+          id: 1,
+          dph_total: 1.5,
+          start_date: startDate,
+          end_date: endDate,
+          actual_status: null,
         },
       })
     )
