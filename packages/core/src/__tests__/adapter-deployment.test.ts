@@ -141,19 +141,30 @@ describe.each(CASES)('$name deployment methods (simulation)', ({ make, expectedM
 })
 
 describe('live mode (simulation disabled)', () => {
-  it('each adapter throws a credentials-pending error from every deployment method', async () => {
-    const adapters: ExternalMarketAdapter[] = [
+  it('Akash and IO.net still throw the credentials-pending placeholder', async () => {
+    const stillStubbed: ExternalMarketAdapter[] = [
       new AkashAdapter({ enabled: true, simulationMode: false }),
       new IONetAdapter({ enabled: true, simulationMode: false }),
-      new VastAiAdapter({ enabled: true, simulationMode: false }),
     ]
 
-    for (const adapter of adapters) {
+    for (const adapter of stillStubbed) {
       await expect(adapter.createDeployment({ nodeId: 'n', gpuTier: 'H100' })).rejects.toThrow(/live mode not implemented/)
       await expect(adapter.getDeploymentStatus('any')).rejects.toThrow(/live mode not implemented/)
       await expect(adapter.terminateDeployment('any')).rejects.toThrow(/live mode not implemented/)
       await expect(adapter.getDeploymentLogs('any')).rejects.toThrow(/live mode not implemented/)
       await expect(adapter.getDeploymentCost('any')).rejects.toThrow(/live mode not implemented/)
     }
+  })
+
+  it('Vast.ai live mode requires an API key and routes through the API path', async () => {
+    const adapter = new VastAiAdapter({ enabled: true, simulationMode: false })
+
+    // No api key configured → required-credentials guard kicks in for every
+    // method that would otherwise hit the live API.
+    await expect(adapter.createDeployment({ nodeId: 'n', gpuTier: 'H100' })).rejects.toThrow(/VASTAI_API_KEY/)
+    await expect(adapter.getDeploymentStatus('any')).rejects.toThrow(/VASTAI_API_KEY/)
+    await expect(adapter.terminateDeployment('any')).rejects.toThrow(/VASTAI_API_KEY/)
+    await expect(adapter.getDeploymentLogs('any')).rejects.toThrow(/VASTAI_API_KEY/)
+    await expect(adapter.getDeploymentCost('any')).rejects.toThrow(/VASTAI_API_KEY/)
   })
 })

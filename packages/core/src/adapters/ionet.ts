@@ -24,7 +24,7 @@ export class IONetAdapter implements ExternalMarketAdapter {
   ) {
     this.enabled = options.enabled ?? (process.env.IONET_ENABLED === 'true')
     this.apiEndpoint = options.apiEndpoint ?? process.env.IONET_API_ENDPOINT ?? ''
-    this.simulationMode = options.simulationMode ?? isSimulationMode()
+    this.simulationMode = options.simulationMode ?? isSimulationMode('IONET')
     this.store = this.simulationMode ? new SimulationStore() : null
   }
 
