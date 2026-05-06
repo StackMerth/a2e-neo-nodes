@@ -242,7 +242,7 @@ export class AkashAdapter implements ExternalMarketAdapter {
       hash: manifestHash,
       deposit: {
         amount: { denom: 'uakt', amount: DEFAULT_DEPOSIT_UAKT.toString() },
-        sources: [], // Empty = self-funded from wallet balance (default).
+        sources: [1], // [Source.balance] — pay from wallet balance.
       },
       reclamation: undefined,
     })
