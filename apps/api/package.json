@@ -9,7 +9,9 @@
     "test": "vitest",
     "lint": "eslint src/",
     "clean": "rm -rf dist",
-    "seed:test": "tsx scripts/seed-test-data.ts"
+    "seed:test": "tsx scripts/seed-test-data.ts",
+    "seed:test:keep-alive": "tsx scripts/seed-test-data.ts --keep-alive",
+    "seed:keep-alive-only": "tsx scripts/seed-test-data.ts --keep-alive-only"
   },
   "dependencies": {
     "@a2e/core": "workspace:*",
