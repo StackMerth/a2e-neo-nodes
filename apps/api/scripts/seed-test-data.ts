@@ -94,10 +94,12 @@ async function ensureUser(
   role: 'NODE_RUNNER' | 'COMPUTE_BUYER' | 'ADMIN',
 ) {
   const passwordHash = await bcrypt.hash(password, 12)
+  // Reset password on every run so the test-credentials doc stays authoritative;
+  // re-running the seed is also a "reset test passwords" tool.
   return prisma.user.upsert({
     where: { email },
     create: { email, passwordHash, role, emailVerified: true },
-    update: { role, emailVerified: true },
+    update: { passwordHash, role, emailVerified: true },
   })
 }
 
