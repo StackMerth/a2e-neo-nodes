@@ -13,6 +13,7 @@
     "db:generate": "pnpm --filter @a2e/database generate",
     "db:migrate": "pnpm --filter @a2e/database migrate",
     "db:studio": "pnpm --filter @a2e/database studio",
+    "seed:test": "pnpm --filter @a2e/api seed:test",
     "clean": "turbo clean && rm -rf node_modules"
   },
   "devDependencies": {
