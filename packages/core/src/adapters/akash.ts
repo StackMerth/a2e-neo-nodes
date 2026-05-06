@@ -69,8 +69,9 @@ const GPU_TIER_TO_AKASH: Record<GpuTier, string[]> = {
 
 const SIM_AKT_USD_PRICE = 3.5
 
-// 5 AKT min deposit for a new deployment, in uakt.
-const DEFAULT_DEPOSIT_UAKT = 5_000_000n
+// Akash mainnet min deposit is 500_000 uakt (0.5 AKT). We pay slightly above
+// to give a comfortable runway for the canary lifecycle.
+const DEFAULT_DEPOSIT_UAKT = 1_000_000n
 // Akash block time is roughly 6 seconds, giving 600 blocks/hour.
 const BLOCKS_PER_HOUR = 600
 // Bid polling: max 60s, 5s between polls.
@@ -241,7 +242,7 @@ export class AkashAdapter implements ExternalMarketAdapter {
       hash: manifestHash,
       deposit: {
         amount: { denom: 'uakt', amount: DEFAULT_DEPOSIT_UAKT.toString() },
-        sources: [1], // Source.balance
+        sources: [], // Empty = self-funded from wallet balance (default).
       },
       reclamation: undefined,
     })
