@@ -47,8 +47,12 @@ export async function publishCertificate(
   owner: string,
   pem: CertificatePem
 ): Promise<{ txHash: string }> {
-  const certBytes = pemBodyToBytes(pem.cert)
-  const pubKeyBytes = pemBodyToBytes(pem.publicKey)
+  // Akash chain expects the FULL PEM strings (with BEGIN/END markers) as
+  // UTF-8 bytes — NOT the base64-decoded DER body. The validator parses
+  // them as PEM. This is the same shape `akash tx cert publish-client`
+  // produces when fed PEM files from disk.
+  const certBytes = new TextEncoder().encode(pem.cert)
+  const pubKeyBytes = new TextEncoder().encode(pem.publicKey)
 
   await sdk.akash.cert.v1.createCertificate({
     owner,
@@ -56,8 +60,6 @@ export async function publishCertificate(
     pubkey: pubKeyBytes,
   })
 
-  // chain-sdk wraps signing/broadcast; if it didn't throw, the tx succeeded.
-  // Downstream callers can re-query via queryWalletCertificates() to confirm.
   return { txHash: '(broadcast via chain-sdk — verify via queryWalletCertificates)' }
 }
 
@@ -86,11 +88,3 @@ export async function ensureCertificate(
   return { alreadyExisted: false, pem, txHash }
 }
 
-/** Strip PEM armour and base64-decode. Returns DER bytes. */
-function pemBodyToBytes(pem: string): Uint8Array {
-  const body = pem
-    .replace(/-----BEGIN [^-]+-----/g, '')
-    .replace(/-----END [^-]+-----/g, '')
-    .replace(/\s+/g, '')
-  return Uint8Array.from(Buffer.from(body, 'base64'))
-}
