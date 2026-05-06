@@ -32,6 +32,15 @@ describe('mapLeaseStateToInternal', () => {
     expect(mapLeaseStateToInternal(0)).toBe('PENDING')
     expect(mapLeaseStateToInternal(99)).toBe('PENDING')
   })
+
+  it('also accepts the REST string forms', () => {
+    expect(mapLeaseStateToInternal('active')).toBe('ACTIVE')
+    expect(mapLeaseStateToInternal('ACTIVE')).toBe('ACTIVE')
+    expect(mapLeaseStateToInternal('insufficient_funds')).toBe('FAILED')
+    expect(mapLeaseStateToInternal('closed')).toBe('TERMINATED')
+    expect(mapLeaseStateToInternal('invalid')).toBe('PENDING')
+    expect(mapLeaseStateToInternal('')).toBe('PENDING')
+  })
 })
 
 describe('AkashAdapter — simulation mode preserved', () => {

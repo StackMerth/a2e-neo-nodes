@@ -34,12 +34,11 @@ import { isSimulationMode } from '../external-simulation-config'
 import { SimulationStore } from './simulation'
 import { generateManifest, generateManifestVersion, validateSDL } from '@akashnetwork/chain-sdk'
 import type { GroupSpec } from '@akashnetwork/chain-sdk/private-types/akash.v1beta4'
-import { Deployment_State } from '@akashnetwork/chain-sdk/private-types/akash.v1'
-import { Bid_State } from '@akashnetwork/chain-sdk/private-types/akash.v1beta5'
 import { buildSdl } from './akash-sdl'
 import { createAkashSigner, type AkashSigner } from './akash-signer'
 import { ensureCertificate } from './akash-cert'
 import { getAktUsdRate } from './akash-rate'
+import { queryBidsREST, queryLeaseREST } from './akash-rest'
 
 interface AkashGpuPricing {
   model: string
@@ -292,31 +291,27 @@ export class AkashAdapter implements ExternalMarketAdapter {
   }
 
   private async pollForCheapestBid(
-    signer: AkashSigner,
+    _signer: AkashSigner,
     owner: string,
     dseq: bigint
   ): Promise<{ gseq: number; oseq: number; provider: string; bseq: number; priceUakt: bigint } | null> {
     const deadline = Date.now() + BID_POLL_TIMEOUT_MS
     while (Date.now() < deadline) {
-      const response = await signer.sdk.akash.market.v1beta5.getBids({
-        filters: { owner, dseq, state: 'open' },
-      })
-      const openBids = (response.bids ?? []).filter((b) => b.bid?.state === Bid_State.open)
-      if (openBids.length > 0) {
-        // Pick the cheapest bid (smallest priceUakt).
+      // Query via REST — chain-sdk's gRPC-Web transport is unreliable against
+      // public Akash endpoints. The REST API is stable and returns the same data.
+      const bids = await queryBidsREST({ owner, dseq: dseq.toString(), state: 'open' })
+      if (bids.length > 0) {
         let best: { gseq: number; oseq: number; provider: string; bseq: number; priceUakt: bigint } | null = null
-        for (const b of openBids) {
-          const id = b.bid?.id
-          const price = b.bid?.price
-          if (!id || !price || !price.amount) continue
-          // DecCoin amount can be a fractional string like "12345.000000000000000000" — parse and round.
-          const priceUakt = BigInt(Math.round(Number(price.amount)))
+        for (const b of bids) {
+          // DecCoin amount can be a fractional string ("12345.000000000000000000") — parse + round.
+          const priceUakt = BigInt(Math.round(Number(b.priceUakt)))
+          if (priceUakt <= 0n) continue
           if (!best || priceUakt < best.priceUakt) {
             best = {
-              gseq: id.gseq ?? 0,
-              oseq: id.oseq ?? 0,
-              provider: id.provider ?? '',
-              bseq: id.bseq ?? 0,
+              gseq: b.gseq,
+              oseq: b.oseq,
+              provider: b.provider,
+              bseq: b.bseq,
               priceUakt,
             }
           }
@@ -333,23 +328,22 @@ export class AkashAdapter implements ExternalMarketAdapter {
     if (!rec) {
       return { externalId, status: 'TERMINATED', message: 'no local record (likely closed)' }
     }
-    const signer = await this.getSigner()
     try {
-      const lease = await signer.sdk.akash.market.v1beta5.getLease({
-        id: {
-          owner: rec.owner,
-          dseq: rec.dseq,
-          gseq: rec.gseq,
-          oseq: rec.oseq,
-          provider: rec.provider,
-        },
+      const lease = await queryLeaseREST({
+        owner: rec.owner,
+        dseq: rec.dseq.toString(),
+        gseq: rec.gseq,
+        oseq: rec.oseq,
+        provider: rec.provider,
       })
-      const status = mapLeaseStateToInternal(lease.lease?.state)
-      return { externalId, status, message: `lease state: ${lease.lease?.state}` }
+      if (!lease) {
+        return { externalId, status: 'TERMINATED', message: 'lease not found' }
+      }
+      const status = mapLeaseStateToInternal(lease.state)
+      return { externalId, status, message: `lease state: ${lease.state}` }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      // Lease not found → was probably closed
-      if (/not.*found/i.test(msg)) {
+      if (/404|not.*found/i.test(msg)) {
         return { externalId, status: 'TERMINATED', message: 'lease not found' }
       }
       return { externalId, status: 'PENDING', message: `status query error: ${msg}` }
@@ -439,16 +433,28 @@ export class AkashAdapter implements ExternalMarketAdapter {
   }
 }
 
-export function mapLeaseStateToInternal(state: number | undefined): DeploymentStatus {
-  // akash.market.v1beta5 Lease_State: invalid=0, active=1, insufficient_funds=2, closed=3
+/**
+ * Map Akash lease state to our internal DeploymentStatus enum.
+ *
+ * Accepts both the chain-sdk numeric enum (Lease_State: invalid=0, active=1,
+ * insufficient_funds=2, closed=3) and the REST string form ("active",
+ * "insufficient_funds", "closed", "invalid"). Anything unrecognised maps to
+ * PENDING — safer to assume "still working" than incorrectly mark
+ * TERMINATED.
+ */
+export function mapLeaseStateToInternal(state: number | string | undefined): DeploymentStatus {
+  if (typeof state === 'string') {
+    switch (state.toLowerCase()) {
+      case 'active': return 'ACTIVE'
+      case 'insufficient_funds': return 'FAILED'
+      case 'closed': return 'TERMINATED'
+      default: return 'PENDING'
+    }
+  }
   switch (state) {
-    case 1:
-      return 'ACTIVE'
-    case 2:
-      return 'FAILED'
-    case 3:
-      return 'TERMINATED'
-    default:
-      return 'PENDING'
+    case 1: return 'ACTIVE'
+    case 2: return 'FAILED'
+    case 3: return 'TERMINATED'
+    default: return 'PENDING'
   }
 }
