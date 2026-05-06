@@ -108,20 +108,31 @@ async function ensureUser(
 async function seedNodeRunnerWithNodes() {
   const user = await ensureUser(NR_EMAIL, NR_PASSWORD, 'NODE_RUNNER')
 
-  const nodeRunner = await prisma.nodeRunner.upsert({
-    where: { walletAddress: NR_WALLET },
-    create: {
-      id: 'seed-noderunner-1',
-      name: 'Seed Test Runner',
-      email: NR_EMAIL,
-      walletAddress: NR_WALLET,
-      userId: user.id,
-      payoutThreshold: 10,
-      payoutFrequency: 'WEEKLY',
-      payoutDayOfWeek: 1,
-    },
-    update: { userId: user.id, email: NR_EMAIL },
-  })
+  // NodeRunner has a 1-1 relation to User via unique userId. If one already
+  // exists for this user (real registration on a deployed env), reuse it
+  // rather than creating a second.
+  let nodeRunner = await prisma.nodeRunner.findUnique({ where: { userId: user.id } })
+  if (!nodeRunner) {
+    nodeRunner = await prisma.nodeRunner.upsert({
+      where: { walletAddress: NR_WALLET },
+      create: {
+        id: 'seed-noderunner-1',
+        name: 'Seed Test Runner',
+        email: NR_EMAIL,
+        walletAddress: NR_WALLET,
+        userId: user.id,
+        payoutThreshold: 10,
+        payoutFrequency: 'WEEKLY',
+        payoutDayOfWeek: 1,
+      },
+      update: { userId: user.id, email: NR_EMAIL },
+    })
+  } else if (!nodeRunner.email) {
+    nodeRunner = await prisma.nodeRunner.update({
+      where: { id: nodeRunner.id },
+      data: { email: NR_EMAIL },
+    })
+  }
 
   // Status distribution to cover filters + delete-flow + pagination
   const distribution: Array<{
