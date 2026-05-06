@@ -32,13 +32,13 @@ import type {
 } from '../rate-provider'
 import { isSimulationMode } from '../external-simulation-config'
 import { SimulationStore } from './simulation'
-import { generateManifest, generateManifestVersion, validateSDL } from '@akashnetwork/chain-sdk'
-import type { GroupSpec } from '@akashnetwork/chain-sdk/private-types/akash.v1beta4'
+import { validateSDL } from '@akashnetwork/chain-sdk'
 import { buildSdl } from './akash-sdl'
-import { createAkashSigner, type AkashSigner } from './akash-signer'
+import { createAkashSigner, type AkashSigner, deriveAkashAddress } from './akash-signer'
 import { ensureCertificate } from './akash-cert'
 import { getAktUsdRate } from './akash-rate'
 import { queryBidsREST, queryLeaseREST } from './akash-rest'
+import { cliCloseDeployment, cliCreateDeployment, cliCreateLease } from './akash-cli'
 
 interface AkashGpuPricing {
   model: string
@@ -214,64 +214,46 @@ export class AkashAdapter implements ExternalMarketAdapter {
   /* ────────────────────────── live mode internals ────────────────────────── */
 
   private async createLiveDeployment(input: CreateDeploymentInput): Promise<CreateDeploymentResult> {
-    const signer = await this.getSigner()
-
     // Step 1: ensure the wallet has a published mTLS cert. One-time per wallet.
+    // The cert publish path uses chain-sdk (proven to work — cert is already
+    // on-chain for the canary wallet).
+    const signer = await this.getSigner()
     await ensureCertificate(signer.sdk, signer.address)
+    const owner = signer.address
 
-    // Step 2: build SDL for the requested tier and validate it.
-    const { document } = buildSdl({ nodeId: input.nodeId, gpuTier: input.gpuTier })
+    // Step 2: build SDL and sanity-check it.
+    const { document, yaml } = buildSdl({ nodeId: input.nodeId, gpuTier: input.gpuTier })
     const validation = validateSDL(document as never)
     if (validation && validation.length > 0) {
       throw new Error(`Akash SDL validation failed: ${JSON.stringify(validation).slice(0, 300)}`)
     }
 
-    // Step 3: convert SDL → manifest groups + content hash.
-    const manifestResult = generateManifest(document as never)
-    if (!manifestResult.ok) {
-      throw new Error(`Akash manifest generation failed: ${JSON.stringify(manifestResult.value).slice(0, 300)}`)
-    }
-    const groupSpecs: GroupSpec[] = manifestResult.value.groupSpecs
-    const manifestHash = await generateManifestVersion(manifestResult.value.groups)
+    // Step 3: submit MsgCreateDeployment via the akash CLI. The CLI handles
+    // the deposit shape correctly across chain upgrades (chain-sdk's typed
+    // proto for Deposit is currently out of sync with mainnet validation).
+    const { dseq } = await cliCreateDeployment(yaml, DEFAULT_DEPOSIT_UAKT)
 
-    // Step 4: submit MsgCreateDeployment.
-    const dseq = BigInt(Math.floor(Date.now() / 1000))
-    await signer.sdk.akash.deployment.v1beta4.createDeployment({
-      id: { owner: signer.address, dseq },
-      groups: groupSpecs,
-      hash: manifestHash,
-      deposit: {
-        amount: { denom: 'uakt', amount: DEFAULT_DEPOSIT_UAKT.toString() },
-        sources: [1], // [Source.balance] — pay from wallet balance.
-      },
-      reclamation: undefined,
-    })
-
-    // Step 5: poll for bids until one arrives or timeout.
-    const winningBid = await this.pollForCheapestBid(signer, signer.address, dseq)
+    // Step 4: poll for bids via REST until one arrives or timeout.
+    const winningBid = await this.pollForCheapestBidREST(owner, dseq)
     if (!winningBid) {
       // No bids — close the deployment to recover the escrow before throwing.
-      await this.safeCloseDeployment(signer, signer.address, dseq).catch(() => {})
+      await cliCloseDeployment(dseq).catch(() => {})
       throw new Error(`Akash: no bids received within ${BID_POLL_TIMEOUT_MS / 1000}s for dseq=${dseq}`)
     }
 
-    // Step 6: accept the bid via MsgCreateLease.
-    await signer.sdk.akash.market.v1beta5.createLease({
-      bidId: {
-        owner: signer.address,
-        dseq,
-        gseq: winningBid.gseq,
-        oseq: winningBid.oseq,
-        provider: winningBid.provider,
-        bseq: winningBid.bseq,
-      },
+    // Step 5: accept the bid via MsgCreateLease (CLI).
+    await cliCreateLease({
+      dseq,
+      gseq: winningBid.gseq,
+      oseq: winningBid.oseq,
+      provider: winningBid.provider,
     })
 
-    // Step 7: book-keeping + return.
-    const externalId = `${signer.address}/${dseq}/${winningBid.gseq}/${winningBid.oseq}/${winningBid.provider}`
+    // Step 6: book-keeping + return.
+    const externalId = `${owner}/${dseq}/${winningBid.gseq}/${winningBid.oseq}/${winningBid.provider}`
     this.liveDeployments.set(externalId, {
       externalId,
-      owner: signer.address,
+      owner,
       dseq,
       gseq: winningBid.gseq,
       oseq: winningBid.oseq,
@@ -291,30 +273,20 @@ export class AkashAdapter implements ExternalMarketAdapter {
     }
   }
 
-  private async pollForCheapestBid(
-    _signer: AkashSigner,
+  private async pollForCheapestBidREST(
     owner: string,
     dseq: bigint
   ): Promise<{ gseq: number; oseq: number; provider: string; bseq: number; priceUakt: bigint } | null> {
     const deadline = Date.now() + BID_POLL_TIMEOUT_MS
     while (Date.now() < deadline) {
-      // Query via REST — chain-sdk's gRPC-Web transport is unreliable against
-      // public Akash endpoints. The REST API is stable and returns the same data.
       const bids = await queryBidsREST({ owner, dseq: dseq.toString(), state: 'open' })
       if (bids.length > 0) {
         let best: { gseq: number; oseq: number; provider: string; bseq: number; priceUakt: bigint } | null = null
         for (const b of bids) {
-          // DecCoin amount can be a fractional string ("12345.000000000000000000") — parse + round.
           const priceUakt = BigInt(Math.round(Number(b.priceUakt)))
           if (priceUakt <= 0n) continue
           if (!best || priceUakt < best.priceUakt) {
-            best = {
-              gseq: b.gseq,
-              oseq: b.oseq,
-              provider: b.provider,
-              bseq: b.bseq,
-              priceUakt,
-            }
+            best = { gseq: b.gseq, oseq: b.oseq, provider: b.provider, bseq: b.bseq, priceUakt }
           }
         }
         if (best) return best
@@ -354,22 +326,17 @@ export class AkashAdapter implements ExternalMarketAdapter {
   private async terminateLiveDeployment(externalId: string): Promise<void> {
     const rec = this.liveDeployments.get(externalId)
     if (!rec) return
-    const signer = await this.getSigner()
-    await this.safeCloseDeployment(signer, rec.owner, rec.dseq)
-    this.liveDeployments.delete(externalId)
-  }
-
-  private async safeCloseDeployment(signer: AkashSigner, owner: string, dseq: bigint): Promise<void> {
     try {
-      await signer.sdk.akash.deployment.v1beta4.closeDeployment({
-        id: { owner, dseq },
-      })
+      await cliCloseDeployment(rec.dseq)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      // Already closed → fine, idempotent.
-      if (/closed|not.*found/i.test(msg)) return
-      throw err
+      if (/already.*closed|not.*found|closed/i.test(msg)) {
+        // Idempotent — already gone.
+      } else {
+        throw err
+      }
     }
+    this.liveDeployments.delete(externalId)
   }
 
   private async getLiveDeploymentCost(externalId: string): Promise<DeploymentCostResult> {
