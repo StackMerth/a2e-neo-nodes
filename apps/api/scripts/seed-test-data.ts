@@ -56,6 +56,42 @@ const EARNINGS_DAYS = 30
 const GPU_TIERS = ['H100', 'H200', 'B200', 'B300', 'GB300'] as const
 const MARKETS = ['INTERNAL', 'AKASH', 'IONET', 'VASTAI'] as const
 
+// Status distribution drives both initial seed and the keep-alive loop, which
+// needs to know which seed-node-* IDs the node-health watcher will demote so it
+// can keep their lastHeartbeat fresh.
+type LiveStatus = 'ONLINE' | 'DEGRADED'
+type SeededStatus = LiveStatus | 'OFFLINE' | 'PAUSED' | 'MAINTENANCE'
+const NODE_DISTRIBUTION: Array<{
+  status: SeededStatus
+  count: number
+  pendingDeletion?: boolean
+}> = [
+  { status: 'ONLINE', count: 8 },
+  { status: 'OFFLINE', count: 5 },
+  { status: 'PAUSED', count: 4 },
+  { status: 'DEGRADED', count: 3 },
+  { status: 'MAINTENANCE', count: 3 },
+  { status: 'ONLINE', count: 1, pendingDeletion: true },
+  { status: 'OFFLINE', count: 1, pendingDeletion: true },
+]
+
+const LIVE_NODE_INTENT: Array<{ id: string; status: LiveStatus }> = (() => {
+  const out: Array<{ id: string; status: LiveStatus }> = []
+  let i = 0
+  for (const slot of NODE_DISTRIBUTION) {
+    for (let j = 0; j < slot.count; j++) {
+      i++
+      if (slot.status === 'ONLINE' || slot.status === 'DEGRADED') {
+        out.push({
+          id: `seed-node-${String(i).padStart(3, '0')}`,
+          status: slot.status,
+        })
+      }
+    }
+  }
+  return out
+})()
+
 // Hourly yields per tier (matches CLAUDE.md rate sheet)
 const HOURLY_RATE: Record<(typeof GPU_TIERS)[number], number> = {
   H100: 5.84,
@@ -136,24 +172,9 @@ async function seedNodeRunnerWithNodes() {
     })
   }
 
-  // Status distribution to cover filters + delete-flow + pagination
-  const distribution: Array<{
-    status: 'ONLINE' | 'OFFLINE' | 'PAUSED' | 'DEGRADED' | 'MAINTENANCE'
-    count: number
-    pendingDeletion?: boolean
-  }> = [
-    { status: 'ONLINE', count: 8 },
-    { status: 'OFFLINE', count: 5 },
-    { status: 'PAUSED', count: 4 },
-    { status: 'DEGRADED', count: 3 },
-    { status: 'MAINTENANCE', count: 3 },
-    { status: 'ONLINE', count: 1, pendingDeletion: true },
-    { status: 'OFFLINE', count: 1, pendingDeletion: true },
-  ]
-
   const nodes: Array<{ id: string; status: string; gpuTier: string }> = []
   let i = 0
-  for (const slot of distribution) {
+  for (const slot of NODE_DISTRIBUTION) {
     for (let j = 0; j < slot.count; j++) {
       i++
       const id = `seed-node-${String(i).padStart(3, '0')}`
@@ -675,10 +696,81 @@ async function seedNotifications(userId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Keep-alive loop
+// ---------------------------------------------------------------------------
+
+const KEEP_ALIVE_INTERVAL_MS = 30_000
+
+async function keepAliveTick() {
+  const now = new Date()
+  for (const live of LIVE_NODE_INTENT) {
+    await prisma.node.update({
+      where: { id: live.id },
+      data: {
+        status: live.status,
+        lastHeartbeat: now,
+        missedBeats: 0,
+      },
+    })
+    await prisma.heartbeat.create({
+      data: {
+        nodeId: live.id,
+        gpuUtilization: 30 + rnd() * 60,
+        gpuTemperature: 55 + rnd() * 20,
+        gpuMemoryUsed: 20 + rnd() * 30,
+        gpuMemoryTotal: 80,
+        timestamp: now,
+      },
+    })
+  }
+}
+
+async function runKeepAliveLoop() {
+  console.log(
+    `\nKeep-alive started: bumping ${LIVE_NODE_INTENT.length} live seed nodes ` +
+      `every ${KEEP_ALIVE_INTERVAL_MS / 1000}s. Ctrl-C to stop.`,
+  )
+
+  let stop = false
+  process.on('SIGINT', () => {
+    console.log('\nKeep-alive: SIGINT received, exiting after this tick.')
+    stop = true
+  })
+  process.on('SIGTERM', () => {
+    console.log('\nKeep-alive: SIGTERM received, exiting after this tick.')
+    stop = true
+  })
+
+  // Periodically prune accumulated heartbeats so the table doesn't grow
+  // unbounded over a long-running keep-alive session.
+  let tickCount = 0
+  while (!stop) {
+    try {
+      await keepAliveTick()
+      tickCount++
+      if (tickCount % 60 === 0) {
+        const cutoff = new Date(Date.now() - 60 * 60_000) // keep last hour
+        await prisma.heartbeat.deleteMany({
+          where: {
+            nodeId: { in: LIVE_NODE_INTENT.map((l) => l.id) },
+            timestamp: { lt: cutoff },
+          },
+        })
+      }
+      const stamp = new Date().toISOString()
+      process.stdout.write(`[${stamp}] keep-alive tick #${tickCount}\n`)
+    } catch (err) {
+      console.error('Keep-alive tick failed:', err)
+    }
+    await new Promise((resolve) => setTimeout(resolve, KEEP_ALIVE_INTERVAL_MS))
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
-async function main() {
+async function seed() {
   console.log('Seeding test fixtures...')
   console.log(`Target DB: ${dbUrl.replace(/\/\/[^@]*@/, '//***@')}`)
 
@@ -707,6 +799,22 @@ async function main() {
   console.log('✓ Notifications for activity feed')
 
   console.log('\nDone. Re-run any time — script is idempotent.')
+}
+
+async function main() {
+  const args = process.argv.slice(2)
+  const keepAliveOnly = args.includes('--keep-alive-only')
+  const keepAlive = keepAliveOnly || args.includes('--keep-alive')
+
+  if (!keepAliveOnly) {
+    await seed()
+  } else {
+    console.log('Skipping seed (keep-alive-only mode).')
+  }
+
+  if (keepAlive) {
+    await runKeepAliveLoop()
+  }
 }
 
 main()

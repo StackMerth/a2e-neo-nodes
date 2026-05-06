@@ -14,6 +14,7 @@
     "db:migrate": "pnpm --filter @a2e/database migrate",
     "db:studio": "pnpm --filter @a2e/database studio",
     "seed:test": "pnpm --filter @a2e/api seed:test",
+    "seed:keep-alive": "pnpm --filter @a2e/api seed:keep-alive-only",
     "clean": "turbo clean && rm -rf node_modules"
   },
   "devDependencies": {
