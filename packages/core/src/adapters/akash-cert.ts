@@ -5,15 +5,13 @@
  * certificate on-chain — providers verify it when serving status/logs. The
  * cert is one-time per wallet; subsequent deployments reuse it.
  *
- * Provided helpers:
- *   - generateCertificate(address)        — off-chain PEM (free)
- *   - queryWalletCertificates(sdk, owner) — typed query (free)
- *   - publishCertificate(...)             — on-chain submit (~0.05 AKT gas)
- *   - ensureCertificate(...)              — query first, publish only if needed
+ * Queries go through Akash REST (stable, reliable). Transactions go through
+ * cosmjs Stargate via chain-sdk's createStargateClient (uses the RPC
+ * endpoint that works).
  */
 
 import { CertificateManager, type CertificatePem, type ChainNodeSDK } from '@akashnetwork/chain-sdk'
-import { Cert_State } from '@akashnetwork/chain-sdk/private-types/akash.v1'
+import { queryWalletCertificatesREST } from './akash-rest'
 
 export interface CertificateInfo {
   serial: string
@@ -27,20 +25,17 @@ export async function generateCertificate(address: string): Promise<CertificateP
   return cm.generatePEM(address)
 }
 
-/** Query the chain for valid certs published by `owner`. Free, read-only. */
+/**
+ * Query the chain (via REST) for valid certs published by `owner`. Free,
+ * read-only. Returns an array of cert metadata (typically 0 or 1 entries).
+ */
 export async function queryWalletCertificates(
-  sdk: ChainNodeSDK,
-  owner: string
+  _sdk: ChainNodeSDK,
+  owner: string,
+  options: { restUrl?: string } = {}
 ): Promise<CertificateInfo[]> {
-  const response = await sdk.akash.cert.v1.getCertificates({
-    filter: { owner, serial: '', state: '' },
-  })
-  return (response.certificates ?? [])
-    .filter((c) => c.certificate?.state === Cert_State.valid)
-    .map((c) => ({
-      serial: c.serial ?? '',
-      state: 'valid',
-    }))
+  const certs = await queryWalletCertificatesREST(owner, options.restUrl)
+  return certs.map((c) => ({ serial: c.serial, state: c.state }))
 }
 
 /**
@@ -55,36 +50,33 @@ export async function publishCertificate(
   const certBytes = pemBodyToBytes(pem.cert)
   const pubKeyBytes = pemBodyToBytes(pem.publicKey)
 
-  const response = await sdk.akash.cert.v1.createCertificate({
+  await sdk.akash.cert.v1.createCertificate({
     owner,
     cert: certBytes,
     pubkey: pubKeyBytes,
   })
 
-  // chain-sdk returns the typed Msg response; the surrounding tx is signed
-  // and broadcast by the SDK. If it failed the call would throw, so reaching
-  // here means success — but we don't get the raw txHash from this surface.
-  // For our needs the response object's presence is enough; downstream code
-  // queries getCertificates() to verify.
-  void response
-  return { txHash: '(via chain-sdk; verify with queryWalletCertificates)' }
+  // chain-sdk wraps signing/broadcast; if it didn't throw, the tx succeeded.
+  // Downstream callers can re-query via queryWalletCertificates() to confirm.
+  return { txHash: '(broadcast via chain-sdk — verify via queryWalletCertificates)' }
 }
 
 /**
- * Ensure the wallet has a valid published cert. Queries first, publishes
- * only if missing. Idempotent across restarts because the chain is the
- * source of truth.
+ * Ensure the wallet has a valid published cert. Queries first via REST,
+ * publishes only if missing. Idempotent across restarts (chain is the
+ * source of truth).
  */
 export async function ensureCertificate(
   sdk: ChainNodeSDK,
-  owner: string
+  owner: string,
+  options: { restUrl?: string } = {}
 ): Promise<{
   alreadyExisted: boolean
   pem?: CertificatePem
   serial?: string
   txHash?: string
 }> {
-  const existing = await queryWalletCertificates(sdk, owner)
+  const existing = await queryWalletCertificatesREST(owner, options.restUrl)
   if (existing.length > 0) {
     return { alreadyExisted: true, serial: existing[0]!.serial }
   }
