@@ -52,6 +52,9 @@ function getKeyName(options: CliOptions = {}): string {
 }
 
 function getCommonFlags(options: CliOptions = {}): string[] {
+  // The akash CLI rejects --gas-prices + --fees together. We pick a fixed
+  // --fees that's plenty for a single tx (~$0.003) and let auto-gas estimate
+  // the gas amount itself.
   return [
     '--node', options.nodeRpc ?? process.env.AKASH_RPC_URL ?? DEFAULT_NODE_RPC,
     '--chain-id', options.chainId ?? process.env.AKASH_CHAIN_ID ?? DEFAULT_CHAIN_ID,
@@ -59,7 +62,6 @@ function getCommonFlags(options: CliOptions = {}): string[] {
     '--from', getKeyName(options),
     '--gas', 'auto',
     '--gas-adjustment', '1.5',
-    '--gas-prices', options.gasPrices ?? DEFAULT_GAS_PRICES,
     '--fees', options.fees ?? DEFAULT_FEES,
     '-y',
     '-o', 'json',
