@@ -7,7 +7,7 @@
 
 import type { FastifyInstance, FastifyPluginCallback } from 'fastify'
 import fp from 'fastify-plugin'
-import { AdapterRegistry, AkashAdapter, IONetAdapter, VastAiAdapter } from '@a2e/core'
+import { AdapterRegistry, IONetAdapter, VastAiAdapter } from '@a2e/core'
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -15,9 +15,13 @@ declare module 'fastify' {
   }
 }
 
+// Akash adapter is intentionally not registered here. The @akashnetwork/chain-sdk
+// dependency tree has unresolved ESM/CJS issues that crash module load.
+// Re-enable by importing AkashAdapter directly from
+// '@a2e/core/dist/adapters/akash' (or via a lazy loader) once upstream
+// stabilises. AKASH_ENABLED env var is also false by default.
 const overflowRegistryPluginImpl: FastifyPluginCallback = async (fastify: FastifyInstance) => {
   const registry = new AdapterRegistry()
-  registry.register(new AkashAdapter())
   registry.register(new IONetAdapter())
   registry.register(new VastAiAdapter())
   registry.start()
