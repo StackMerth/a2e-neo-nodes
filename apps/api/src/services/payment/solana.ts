@@ -16,6 +16,7 @@ import {
   getAccount,
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token'
+import bs58 from 'bs58'
 import crypto from 'crypto'
 
 export interface PaymentResult {
@@ -72,19 +73,50 @@ function generateDevTxHash(): string {
   return bytes.toString('base64').replace(/[+/=]/g, '').substring(0, 88)
 }
 
+/**
+ * Parses a Solana secret key supplied as a string. Accepts:
+ *   1. JSON array — `[1,2,3,...64 bytes]` (Solana CLI export format)
+ *   2. Base58     — `5urdR4z2yf...` (Phantom export, default in most wallets)
+ *   3. Base64     — `AQID...` (legacy fallback)
+ *
+ * Result is the 64-byte Ed25519 expanded secret key, ready for
+ * `Keypair.fromSecretKey()`.
+ */
 function parsePrivateKey(privateKeyString: string): Uint8Array {
-  // Support both base58 and JSON array formats
-  try {
-    // Try JSON array format first [1,2,3,...]
-    if (privateKeyString.startsWith('[')) {
-      const parsed = JSON.parse(privateKeyString)
-      return Uint8Array.from(parsed)
+  const trimmed = privateKeyString.trim()
+
+  // 1. JSON array
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (Array.isArray(parsed) && parsed.length === 64) {
+        return Uint8Array.from(parsed)
+      }
+    } catch {
+      // fall through
     }
-    // Try base64 format
-    return Uint8Array.from(Buffer.from(privateKeyString, 'base64'))
-  } catch {
-    throw new Error('Invalid private key format. Use JSON array or base64.')
   }
+
+  // 2. Base58 (canonical Solana wallet export). Solana secret keys are
+  //    always 64 bytes; in base58 that's an 87–88 char string.
+  if (/^[1-9A-HJ-NP-Za-km-z]+$/.test(trimmed)) {
+    try {
+      const bytes = bs58.decode(trimmed)
+      if (bytes.length === 64) return Uint8Array.from(bytes)
+    } catch {
+      // fall through
+    }
+  }
+
+  // 3. Base64 fallback (older configs)
+  try {
+    const bytes = Uint8Array.from(Buffer.from(trimmed, 'base64'))
+    if (bytes.length === 64) return bytes
+  } catch {
+    // fall through
+  }
+
+  throw new Error('Invalid private key format. Expected JSON array, base58, or base64 (64 bytes).')
 }
 
 function getUsdcMint(config: SolanaConfig): PublicKey {
