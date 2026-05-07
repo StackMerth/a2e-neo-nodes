@@ -46,12 +46,16 @@ services:
     # Render's default NODE_ENV=production. We need them at build time
     # for prisma (CLI for `prisma generate`) and typescript (`tsc`),
     # and at runtime for prisma (CLI for `prisma migrate deploy`).
+    #
+    # The `@a2e/api...` filter (note the trailing ellipsis) tells pnpm
+    # to also include all workspace packages that @a2e/api depends on
+    # (shared, core, database) and build them in correct topological
+    # order. Without this, tsc on @a2e/api fails with TS2307 because
+    # the dist directories of the upstream packages do not exist yet.
     buildCommand: |
       npm install -g pnpm@8.15.0 &&
       pnpm install --frozen-lockfile --prod=false &&
-      pnpm --filter=@a2e/database generate &&
-      pnpm --filter=@a2e/database build &&
-      pnpm --filter=@a2e/api build
+      pnpm --filter "@a2e/api..." build
     startCommand: |
       npm install -g pnpm@8.15.0 &&
       pnpm --filter=@a2e/database migrate:prod &&
