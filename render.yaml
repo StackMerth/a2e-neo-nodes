@@ -1,0 +1,114 @@
+# Render Blueprint for the A2E Engine API.
+# Deploy by going to https://dashboard.render.com/blueprints, clicking
+# "New Blueprint", and pointing at this repo. Render will read this file
+# and provision the Postgres database, Redis instance, and API web service
+# in one go.
+#
+# After provisioning, set the secrets that have `sync: false` below
+# (API_KEY and any external market keys you intend to enable) via the
+# Render dashboard, then trigger a redeploy.
+
+databases:
+  - name: a2e-postgres
+    plan: starter
+    databaseName: a2e
+    user: a2e
+    postgresMajorVersion: 16
+
+services:
+  # Redis instance used for BullMQ job queues and route-rate caching.
+  - type: redis
+    name: a2e-redis
+    plan: starter
+    maxmemoryPolicy: noeviction
+    ipAllowList: [] # internal connections only
+
+  # The Fastify API plus all 11 BullMQ workers. They run in one Node
+  # process, so a single web service is sufficient. Scale the plan up
+  # before scaling instance count - duplicating workers across instances
+  # would cause double execution of cron jobs.
+  - type: web
+    name: a2e-api
+    runtime: node
+    plan: standard
+    region: oregon # change if your buyers/operators are mostly EU/APAC
+    healthCheckPath: /v1/health
+    autoDeploy: true
+    buildCommand: |
+      corepack enable && corepack prepare pnpm@8.15.0 --activate &&
+      pnpm install --frozen-lockfile &&
+      pnpm --filter=@a2e/database generate &&
+      pnpm --filter=@a2e/database build &&
+      pnpm --filter=@a2e/api build
+    startCommand: |
+      pnpm --filter=@a2e/database migrate:prod &&
+      pnpm --filter=@a2e/api start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: HOST
+        value: 0.0.0.0
+      - key: LOG_LEVEL
+        value: info
+
+      # Auto-wired by Render from the database + redis blocks above.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: a2e-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: a2e-redis
+          type: redis
+          property: connectionString
+
+      # Auto-generated 64-char secret for portal JWT signing.
+      - key: JWT_SECRET
+        generateValue: true
+
+      # Admin authentication. CHANGE THESE BEFORE GOING LIVE.
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+
+      # Agent-to-API auth key. Generate a long random string.
+      - key: API_KEY
+        sync: false
+
+      # Heartbeat timing (matches .env.example defaults).
+      - key: HEARTBEAT_TIMEOUT_MS
+        value: 90000
+      - key: HEARTBEAT_CHECK_INTERVAL_MS
+        value: 10000
+      - key: RATE_CACHE_TTL_MS
+        value: 60000
+      - key: RATE_FETCH_INTERVAL_MS
+        value: 60000
+
+      # External market adapters - leave disabled until Phase 1
+      # completion item (live credentials integration) lands.
+      - key: AKASH_ENABLED
+        value: false
+      - key: AKASH_API_ENDPOINT
+        value: https://api.cloudmos.io
+      - key: AKASH_MNEMONIC
+        sync: false
+      - key: IONET_ENABLED
+        value: false
+      - key: IONET_API_ENDPOINT
+        sync: false
+      - key: VASTAI_ENABLED
+        value: false
+      - key: VASTAI_API_KEY
+        sync: false
+
+      # Solana settlement. Start in dev mode (simulated tx hashes); flip
+      # to live after the payer wallet is funded and the Phase 1
+      # completion item ships.
+      - key: PAYMENT_MODE
+        value: dev
+      - key: SOLANA_RPC_URL
+        value: https://api.mainnet-beta.solana.com
