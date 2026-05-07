@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@scure/base': 1.2.6
+
 importers:
 
   .:
@@ -461,7 +464,7 @@ packages:
   /@cosmjs/encoding@0.38.1:
     resolution: {integrity: sha512-i5jGgJhiXs7boePGA48xzYxnCbf3MS5nT/R2HvnvSQyVAG2A99NyL96lBgmz6etOJSGOiwVrB8uh1Qp5bq6WKQ==}
     dependencies:
-      '@scure/base': 2.2.0
+      '@scure/base': 1.2.6
       base64-js: 1.5.1
       readonly-date-esm: 2.0.0
     dev: false
@@ -469,7 +472,7 @@ packages:
   /@cosmjs/encoding@0.39.0:
     resolution: {integrity: sha512-+poEaeM8YjGNVtrHLQNWqkhEeDxapjrdpnPCT+JCRh8YNbeHEdftzZLCH5VCBSOtvo7PF0gK1B7sbQbBl6q5pQ==}
     dependencies:
-      '@scure/base': 2.2.0
+      '@scure/base': 1.2.6
       base64-js: 1.5.1
       readonly-date-esm: 2.0.0
     dev: false
@@ -2021,10 +2024,6 @@ packages:
     resolution: {integrity: sha512-g/nm5FgUa//MCj1gV09zTJTaM6KBAHqLN907YVQqf7zC49+DcO4B1so4ZX07Ef10Twr6nuqYEH9GEggFXA4Fmg==}
     dev: false
 
-  /@scure/base@2.2.0:
-    resolution: {integrity: sha512-b8XEupJibegiXV+tDUseI8oLQc8ei3d/4Jkb2RpbHh3MfE054ov3uIz2dhFkB3FI8iwYkEh0gGCApkrYggkPNg==}
-    dev: false
-
   /@scure/bip39@1.6.0:
     resolution: {integrity: sha512-+lF0BbLiJNwVlev4eKelw1WWLaiKXw7sSl8T6FvBlWkdX+94aGJ4o8XjUdlyhTCjd8c+B3KT3JfS8P0bLRNU6A==}
     dependencies:
@@ -2036,7 +2035,7 @@ packages:
     resolution: {integrity: sha512-T/Bj/YvYMNkIPq6EENO6/rcs2e7qTNuyoUXf0KBFDmp0ZDu0H2X4Lq6yC3i0c8PcWkov5EbW+yQZZbdMmk154A==}
     dependencies:
       '@noble/hashes': 2.2.0
-      '@scure/base': 2.2.0
+      '@scure/base': 1.2.6
     dev: false
 
   /@sinclair/typebox@0.27.10:
