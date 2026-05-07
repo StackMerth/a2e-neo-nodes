@@ -41,9 +41,14 @@ services:
     # writes to a user-space prefix that is on PATH for both build and
     # runtime. Re-installing in startCommand is cheap (~10s) and ensures
     # pnpm is available in the runtime container too.
+    #
+    # --prod=false forces pnpm to install devDependencies despite
+    # Render's default NODE_ENV=production. We need them at build time
+    # for prisma (CLI for `prisma generate`) and typescript (`tsc`),
+    # and at runtime for prisma (CLI for `prisma migrate deploy`).
     buildCommand: |
       npm install -g pnpm@8.15.0 &&
-      pnpm install --frozen-lockfile &&
+      pnpm install --frozen-lockfile --prod=false &&
       pnpm --filter=@a2e/database generate &&
       pnpm --filter=@a2e/database build &&
       pnpm --filter=@a2e/api build
@@ -52,6 +57,12 @@ services:
       pnpm --filter=@a2e/database migrate:prod &&
       pnpm --filter=@a2e/api start
     envVars:
+      # Pin to Node 20 LTS. The package.json says >=20, and Render
+      # otherwise picks the newest available (currently 26.x) which
+      # has v8 API changes that break some native bindings (e.g. ssh2).
+      # Node 20 is what the code was developed against.
+      - key: NODE_VERSION
+        value: "20.18.0"
       - key: NODE_ENV
         value: production
       - key: PORT
