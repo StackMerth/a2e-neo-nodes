@@ -34,7 +34,7 @@ services:
     runtime: node
     plan: standard
     region: oregon # change if your buyers/operators are mostly EU/APAC
-    healthCheckPath: /v1/health
+    healthCheckPath: /health
     autoDeploy: true
     # Render's build container has /usr/bin read-only, so corepack
     # cannot symlink pnpm there. We install pnpm via npm instead, which
