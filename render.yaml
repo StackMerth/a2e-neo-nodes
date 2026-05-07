@@ -10,18 +10,20 @@
 
 databases:
   - name: a2e-postgres
-    plan: starter
+    plan: basic-256mb # ~$6/mo. Bump to basic-1gb when DB grows past ~150MB.
     databaseName: a2e
     user: a2e
-    postgresMajorVersion: 16
+    postgresMajorVersion: "16"
 
 services:
-  # Redis instance used for BullMQ job queues and route-rate caching.
-  - type: redis
+  # Key Value (Redis-compatible) instance used for BullMQ job queues
+  # and route-rate caching. Render renamed the old `type: redis` to
+  # `type: keyvalue`; the wire protocol is still Redis.
+  - type: keyvalue
     name: a2e-redis
     plan: starter
     maxmemoryPolicy: noeviction
-    ipAllowList: [] # internal connections only
+    ipAllowList: [] # empty = internal-only, no public IPs accepted
 
   # The Fastify API plus all 11 BullMQ workers. They run in one Node
   # process, so a single web service is sufficient. Scale the plan up
@@ -61,7 +63,7 @@ services:
       - key: REDIS_URL
         fromService:
           name: a2e-redis
-          type: redis
+          type: keyvalue
           property: connectionString
 
       # Auto-generated 64-char secret for portal JWT signing.
