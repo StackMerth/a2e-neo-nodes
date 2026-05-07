@@ -2,12 +2,17 @@ import type { FastifyInstance } from 'fastify'
 import { getEmailHealth } from '../services/email/sender.js'
 
 export async function healthRoutes(fastify: FastifyInstance) {
-  fastify.get('/health', async () => {
-    return {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-    }
+  // Liveness check. Both paths return the same response so Render, load
+  // balancers, monitoring tools, and the rest of the v1 API surface can all
+  // reach it consistently. /health is the historical Phase 1 path; /v1/health
+  // matches the convention used by every other route file.
+  const livenessHandler = async () => ({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
   })
+
+  fastify.get('/health', livenessHandler)
+  fastify.get('/v1/health', livenessHandler)
 
   fastify.get(
     '/health/detailed',
