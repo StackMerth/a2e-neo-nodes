@@ -38,7 +38,7 @@ describe('Money flows — earnings calculation', () => {
     id: 'job-1',
     nodeId: 'node-h100-a',
     market: 'INTERNAL',
-    ratePerHour: 5.84, // H100 retail rate from CLAUDE.md
+    ratePerHour: 5.84, // H100 retail rate from the project rate sheet
     durationSeconds: 3600,
     earnings: null,
     status: 'COMPLETED',

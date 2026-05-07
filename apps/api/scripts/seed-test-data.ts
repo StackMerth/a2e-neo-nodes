@@ -92,7 +92,7 @@ const LIVE_NODE_INTENT: Array<{ id: string; status: LiveStatus }> = (() => {
   return out
 })()
 
-// Hourly yields per tier (matches CLAUDE.md rate sheet)
+// Hourly yields per tier (matches the project rate sheet)
 const HOURLY_RATE: Record<(typeof GPU_TIERS)[number], number> = {
   H100: 5.84,
   H200: 7.49,
