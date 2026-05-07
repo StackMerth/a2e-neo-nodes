@@ -27,6 +27,7 @@ interface ComputeRequestDetail {
   gpuTier: string
   gpuCount: number
   durationDays: number
+  ratePerDay: number
   totalCost: number
   status: string
   purpose?: string
@@ -123,6 +124,72 @@ function TimeRemaining({ expiresAt }: { expiresAt: string }) {
 
   return (
     <span className="text-lg font-bold" style={{ color: 'var(--primary)' }}>{remaining}</span>
+  )
+}
+
+/**
+ * Live cost meter — displays the buyer's burn rate updating every second.
+ * Computed client-side from activatedAt + ratePerDay + gpuCount + totalCost
+ * (no extra server load; no extra API calls). Caps at totalCost so the
+ * meter never displays more than what was paid up-front.
+ */
+function LiveCostMeter({
+  activatedAt,
+  ratePerDay,
+  gpuCount,
+  totalCost,
+}: {
+  activatedAt: string
+  ratePerDay: number
+  gpuCount: number
+  totalCost: number
+}) {
+  const [accruedUsd, setAccruedUsd] = useState(0)
+
+  useEffect(() => {
+    const ratePerSecond = (ratePerDay * gpuCount) / 86400
+    const startMs = new Date(activatedAt).getTime()
+    const update = () => {
+      const elapsedSec = Math.max(0, (Date.now() - startMs) / 1000)
+      const accrued = Math.min(elapsedSec * ratePerSecond, totalCost)
+      setAccruedUsd(accrued)
+    }
+    update()
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [activatedAt, ratePerDay, gpuCount, totalCost])
+
+  const pct = totalCost > 0 ? Math.min(100, (accruedUsd / totalCost) * 100) : 0
+  const ratePerHour = (ratePerDay * gpuCount) / 24
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-2">
+        <div>
+          <div className="text-2xl font-bold tabular-nums" style={{ color: 'var(--primary)' }}>
+            ${accruedUsd.toFixed(4)}
+          </div>
+          <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            accrued of ${totalCost.toFixed(2)} ({pct.toFixed(1)}%)
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-sm font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+            ${ratePerHour.toFixed(4)}/hr
+          </div>
+          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>burn rate</div>
+        </div>
+      </div>
+      <div
+        className="h-2 rounded-full overflow-hidden"
+        style={{ background: 'rgba(255,255,255,0.06)' }}
+      >
+        <div
+          className="h-full transition-all duration-1000 ease-linear"
+          style={{ width: `${pct}%`, background: 'var(--primary)' }}
+        />
+      </div>
+    </div>
   )
 }
 
@@ -375,6 +442,27 @@ export default function RequestDetailPage() {
               <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Time Remaining</h3>
             </div>
             <TimeRemaining expiresAt={data.expiresAt} />
+          </div>
+        </motion.div>
+      )}
+
+      {/* Live Cost Meter (only when ACTIVE) */}
+      {data.status === 'ACTIVE' && data.activatedAt && data.ratePerDay && (
+        <motion.div variants={itemVariants}>
+          <div
+            className="rounded-xl p-6"
+            style={{ background: 'rgba(229,57,53,0.04)', border: '1px solid rgba(229,57,53,0.18)' }}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <DollarSign size={16} style={{ color: 'var(--primary)' }} />
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Live Cost</h3>
+            </div>
+            <LiveCostMeter
+              activatedAt={data.activatedAt}
+              ratePerDay={data.ratePerDay}
+              gpuCount={data.gpuCount}
+              totalCost={data.totalCost}
+            />
           </div>
         </motion.div>
       )}

@@ -14,6 +14,33 @@ interface SmtpConfig {
 let transporter: Nodemailer.Transporter | null = null
 let lastConfigHash = ''
 
+/**
+ * In-memory health state for the email transport. Surfaced on
+ * /health/detailed so admins can see at a glance whether emails are
+ * actually being delivered. Reset on process restart.
+ */
+interface EmailHealth {
+  configured: boolean
+  lastSendSucceededAt: Date | null
+  lastSendFailedAt: Date | null
+  lastFailureReason: string | null
+  consecutiveFailures: number
+  totalSent: number
+  totalFailed: number
+  warningLogged: boolean
+}
+
+const health: EmailHealth = {
+  configured: false,
+  lastSendSucceededAt: null,
+  lastSendFailedAt: null,
+  lastFailureReason: null,
+  consecutiveFailures: 0,
+  totalSent: 0,
+  totalFailed: 0,
+  warningLogged: false,
+}
+
 async function getSmtpConfig(): Promise<SmtpConfig | null> {
   const configs = await prisma.config.findMany({
     where: { key: { startsWith: 'smtp_' } },
@@ -49,15 +76,32 @@ function getTransporter(config: SmtpConfig): Nodemailer.Transporter {
 
 export async function isEmailConfigured(): Promise<boolean> {
   const config = await getSmtpConfig()
+  health.configured = config !== null
   return config !== null
 }
 
 export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
   const config = await getSmtpConfig()
   if (!config) {
-    console.warn('[email] SMTP not configured, skipping email')
+    health.configured = false
+    health.totalFailed++
+    health.consecutiveFailures++
+    health.lastSendFailedAt = new Date()
+    health.lastFailureReason = 'SMTP not configured (smtp_host or smtp_from missing in Config table)'
+
+    // Log only once per process so we don't flood pm2 logs every notification.
+    if (!health.warningLogged) {
+      console.error(
+        '[email] SMTP unconfigured. Add smtp_host, smtp_from (and optionally smtp_user/smtp_pass/smtp_port/smtp_secure) ' +
+          'to the Config table or via the admin settings page. Email notifications will not be delivered until then. ' +
+          'See /health/detailed for current state.',
+      )
+      health.warningLogged = true
+    }
     return false
   }
+
+  health.configured = true
 
   try {
     const transport = getTransporter(config)
@@ -67,12 +111,72 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
       subject,
       html: wrapTemplate(subject, html),
     })
+    health.totalSent++
+    health.consecutiveFailures = 0
+    health.lastSendSucceededAt = new Date()
+    health.lastFailureReason = null
     console.log(`[email] Sent to ${to}: ${subject}`)
     return true
   } catch (error) {
-    console.error(`[email] Failed to send to ${to}:`, error)
+    const message = error instanceof Error ? error.message : 'unknown SMTP error'
+    health.totalFailed++
+    health.consecutiveFailures++
+    health.lastSendFailedAt = new Date()
+    health.lastFailureReason = message
+
+    // Always log delivery failures at error level — these mean an email
+    // actually didn't reach the recipient, which is more serious than
+    // "SMTP not configured at all".
+    console.error(`[email] Delivery failed to ${to} (subject: "${subject}"): ${message}`)
     return false
   }
+}
+
+/**
+ * Snapshot of the email transport health. Consumed by the
+ * /health/detailed endpoint so admins can surface email-delivery state
+ * in operational dashboards.
+ */
+export function getEmailHealth(): {
+  status: 'ok' | 'unconfigured' | 'degraded'
+  configured: boolean
+  consecutiveFailures: number
+  totalSent: number
+  totalFailed: number
+  lastSendSucceededAt: string | null
+  lastSendFailedAt: string | null
+  lastFailureReason: string | null
+} {
+  let status: 'ok' | 'unconfigured' | 'degraded'
+  if (!health.configured) {
+    status = 'unconfigured'
+  } else if (health.consecutiveFailures >= 3) {
+    status = 'degraded'
+  } else {
+    status = 'ok'
+  }
+  return {
+    status,
+    configured: health.configured,
+    consecutiveFailures: health.consecutiveFailures,
+    totalSent: health.totalSent,
+    totalFailed: health.totalFailed,
+    lastSendSucceededAt: health.lastSendSucceededAt?.toISOString() ?? null,
+    lastSendFailedAt: health.lastSendFailedAt?.toISOString() ?? null,
+    lastFailureReason: health.lastFailureReason,
+  }
+}
+
+/** Test-only — reset the health snapshot between unit tests. */
+export function _resetEmailHealthForTests(): void {
+  health.configured = false
+  health.lastSendSucceededAt = null
+  health.lastSendFailedAt = null
+  health.lastFailureReason = null
+  health.consecutiveFailures = 0
+  health.totalSent = 0
+  health.totalFailed = 0
+  health.warningLogged = false
 }
 
 function wrapTemplate(title: string, content: string): string {

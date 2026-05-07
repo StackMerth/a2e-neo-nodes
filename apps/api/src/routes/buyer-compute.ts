@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { createNotification } from '../services/notification/service.js'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
+import { checkIdempotencyKey, storeIdempotencyResponse } from '../services/idempotency/keys.js'
 
 const GPU_DAILY_RATES: Record<string, number> = {
   H100: 140.15, H200: 179.85, B200: 321.10, B300: 431.75, GB300: 499.35,
@@ -77,7 +78,15 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
   })
 
   /**
-   * POST /v1/buyer/compute/request — Submit compute request
+   * POST /v1/buyer/compute/request — Submit compute request.
+   *
+   * Idempotency: two layers of protection against accidental double-submit.
+   *   1. Standard `Idempotency-Key` header — if a buyer client sets one, we
+   *      replay the cached response on retry (same as /v1/payments/process).
+   *   2. txHash dedup — even without the header, a Solana payment tx hash
+   *      is a one-shot financial event. If the same userId already has a
+   *      compute request with this txHash we return that one instead of
+   *      creating a duplicate. Defends against double-clicking submit.
    */
   fastify.post('/v1/buyer/compute/request', async (request, reply) => {
     const parsed = requestSchema.safeParse(request.body)
@@ -89,17 +98,63 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     const ratePerDay = GPU_DAILY_RATES[gpuTier] ?? 140.15
     const totalCost = ratePerDay * gpuCount * durationDays
     const isTestTx = txHash.startsWith('test_')
+    const userId = request.user!.userId
+
+    // Layer 1: Idempotency-Key header replay.
+    const idempotencyKey = request.headers['idempotency-key'] as string | undefined
+    if (idempotencyKey) {
+      try {
+        const idempotencyResult = await checkIdempotencyKey(
+          fastify.prisma,
+          idempotencyKey,
+          '/v1/buyer/compute/request',
+          request.body,
+        )
+        if (!idempotencyResult.isNew && idempotencyResult.cachedResponse) {
+          return reply
+            .code(idempotencyResult.cachedResponse.statusCode)
+            .header('X-Idempotency-Replay', 'true')
+            .send(idempotencyResult.cachedResponse.body)
+        }
+      } catch (err) {
+        return reply.code(409).send({
+          error: 'Idempotency Conflict',
+          message: err instanceof Error ? err.message : 'Idempotency key reused with different body',
+        })
+      }
+    }
+
+    // Layer 2: txHash dedup. If this user already submitted a compute
+    // request with this txHash, return the existing one rather than
+    // creating a duplicate. Solana tx hashes are one-shot financial
+    // events; reusing one across two compute requests would always be a
+    // bug regardless of idempotency-key handling.
+    const storedTxHash = isTestTx ? `TEST:${txHash}` : txHash
+    const existing = await fastify.prisma.computeRequest.findFirst({
+      where: { userId, txHash: storedTxHash },
+    })
+    if (existing) {
+      return reply.code(200).header('X-Idempotency-Replay', 'tx-hash').send({
+        id: existing.id,
+        gpuTier: existing.gpuTier,
+        gpuCount: existing.gpuCount,
+        durationDays: existing.durationDays,
+        ratePerDay: existing.ratePerDay,
+        totalCost: existing.totalCost,
+        status: existing.status,
+      })
+    }
 
     const computeRequest = await fastify.prisma.computeRequest.create({
       data: {
-        userId: request.user!.userId,
+        userId,
         gpuTier: gpuTier as import('@a2e/database').GpuTier,
         gpuCount,
         durationDays,
         purpose,
         ratePerDay,
         totalCost,
-        txHash: isTestTx ? `TEST:${txHash}` : txHash,
+        txHash: storedTxHash,
         txConfirmed: true,
         status: 'PENDING',
       },
@@ -112,12 +167,26 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         `${gpuCount}x ${gpuTier} for ${durationDays} days ($${totalCost.toFixed(2)})`)
     }
 
-    reply.code(201).send({
+    const responseBody = {
       id: computeRequest.id,
       gpuTier, gpuCount, durationDays,
       ratePerDay, totalCost,
       status: computeRequest.status,
-    })
+    }
+
+    // Cache for idempotency-key replay
+    if (idempotencyKey) {
+      await storeIdempotencyResponse(
+        fastify.prisma,
+        idempotencyKey,
+        '/v1/buyer/compute/request',
+        request.body,
+        201,
+        responseBody,
+      )
+    }
+
+    reply.code(201).send(responseBody)
   })
 
   /**
