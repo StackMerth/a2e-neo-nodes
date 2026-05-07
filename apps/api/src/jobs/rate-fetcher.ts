@@ -1,6 +1,6 @@
 import { Queue, Worker, Job, type ConnectionOptions } from 'bullmq'
 import type { PrismaClient, GpuTier, Market } from '@a2e/database'
-import { AkashAdapter, IONetAdapter, VastAiAdapter } from '@a2e/core'
+import { IONetAdapter, VastAiAdapter } from '@a2e/core'
 import type { Server as SocketServer } from 'socket.io'
 
 const GPU_TIERS: GpuTier[] = ['H100', 'H200', 'B200', 'B300', 'GB300']
@@ -30,10 +30,10 @@ export function createRateFetcherQueue(redis: ConnectionOptions): Queue {
 export function createRateFetcherWorker(deps: RateFetcherDeps): Worker {
   const { redis, prisma, io } = deps
 
-  const akashAdapter = new AkashAdapter()
+  // Akash adapter intentionally omitted. See packages/core/src/index.ts for context.
   const ionetAdapter = new IONetAdapter()
   // VASTAI MarketConfig rows are created on-demand via the admin /v1/config/markets
-  // upsert endpoint — no bootstrap seed is required here.
+  // upsert endpoint, no bootstrap seed is required here.
   const vastaiAdapter = new VastAiAdapter()
 
   const worker = new Worker(
@@ -55,21 +55,6 @@ export function createRateFetcherWorker(deps: RateFetcherDeps): Worker {
       }> = []
 
       for (const gpuTier of GPU_TIERS) {
-        if (akashAdapter.isEnabled()) {
-          try {
-            const akashRate = await akashAdapter.getRate(gpuTier)
-            results.push({
-              market: 'AKASH',
-              gpuTier,
-              ratePerHour: akashRate.ratePerHour,
-              ratePerDay: akashRate.ratePerDay,
-              available: akashRate.available,
-            })
-          } catch (err) {
-            jobLogger.error(`Failed to fetch Akash rate for ${gpuTier}`, err)
-          }
-        }
-
         if (ionetAdapter.isEnabled()) {
           try {
             const ionetRate = await ionetAdapter.getRate(gpuTier)
