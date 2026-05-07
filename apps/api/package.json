@@ -24,6 +24,7 @@
     "@solana/spl-token": "^0.4.0",
     "@solana/web3.js": "^1.91.0",
     "bcryptjs": "^3.0.3",
+    "bs58": "^6.0.0",
     "bullmq": "^5.1.0",
     "fastify": "^4.26.0",
     "fastify-plugin": "^4.5.0",
