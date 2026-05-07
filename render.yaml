@@ -36,13 +36,19 @@ services:
     region: oregon # change if your buyers/operators are mostly EU/APAC
     healthCheckPath: /v1/health
     autoDeploy: true
+    # Render's build container has /usr/bin read-only, so corepack
+    # cannot symlink pnpm there. We install pnpm via npm instead, which
+    # writes to a user-space prefix that is on PATH for both build and
+    # runtime. Re-installing in startCommand is cheap (~10s) and ensures
+    # pnpm is available in the runtime container too.
     buildCommand: |
-      corepack enable && corepack prepare pnpm@8.15.0 --activate &&
+      npm install -g pnpm@8.15.0 &&
       pnpm install --frozen-lockfile &&
       pnpm --filter=@a2e/database generate &&
       pnpm --filter=@a2e/database build &&
       pnpm --filter=@a2e/api build
     startCommand: |
+      npm install -g pnpm@8.15.0 &&
       pnpm --filter=@a2e/database migrate:prod &&
       pnpm --filter=@a2e/api start
     envVars:
