@@ -194,32 +194,48 @@ export default function OnboardingPage() {
   )
 }
 
+const VERIFY_TIMEOUT_SEC = 90
+const VERIFY_POLL_SEC = 5
+
 function VerifyStep({ onBack }: { onBack: () => void }) {
   const [checking, setChecking] = useState(true)
   const [found, setFound] = useState(false)
+  const [elapsedSec, setElapsedSec] = useState(0)
+
+  const runCheck = async () => {
+    try {
+      const data = await nodeRunner.nodes()
+      if (data.nodes.length > 0) {
+        setFound(true)
+        setChecking(false)
+        return true
+      }
+    } catch {
+      /* network errors retry on next tick */
+    }
+    return false
+  }
 
   useEffect(() => {
-    const check = async () => {
-      try {
-        const data = await nodeRunner.nodes()
-        if (data.nodes.length > 0) {
-          setFound(true)
-          setChecking(false)
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-    check()
-    const interval = setInterval(check, 5000)
+    if (!checking) return
+    void runCheck()
+    const tick = setInterval(() => {
+      setElapsedSec((s) => s + 1)
+    }, 1000)
+    const poll = setInterval(() => {
+      void runCheck()
+    }, VERIFY_POLL_SEC * 1000)
     const timeout = setTimeout(() => {
       setChecking(false)
-    }, 120000)
+    }, VERIFY_TIMEOUT_SEC * 1000)
     return () => {
-      clearInterval(interval)
+      clearInterval(tick)
+      clearInterval(poll)
       clearTimeout(timeout)
     }
-  }, [])
+  }, [checking])
+
+  const remainingSec = Math.max(0, VERIFY_TIMEOUT_SEC - elapsedSec)
 
   return (
     <motion.div
@@ -240,10 +256,21 @@ function VerifyStep({ onBack }: { onBack: () => void }) {
               <Loader2 size={32} className="animate-spin" style={{ color: 'var(--primary)' }} />
             </div>
             <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Waiting for your node...</h2>
-            <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-sm mb-2" style={{ color: 'var(--text-muted)' }}>
               We&apos;re checking for your node registration. This usually takes 30-60 seconds after
-              installation.
+              installation completes.
             </p>
+            <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
+              Elapsed: {elapsedSec}s &middot; Will stop checking in {remainingSec}s
+            </p>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                void runCheck()
+              }}
+            >
+              Check now
+            </Button>
           </>
         ) : found ? (
           <>
@@ -269,25 +296,34 @@ function VerifyStep({ onBack }: { onBack: () => void }) {
             >
               <AlertCircle size={32} style={{ color: 'var(--warning)' }} />
             </div>
-            <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Node not found yet</h2>
-            <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
-              Make sure the agent is installed and running. Check{' '}
-              <code
-                className="text-xs px-1.5 py-0.5 rounded"
-                style={{ color: 'var(--primary)', background: 'rgba(34,197,94,0.1)' }}
-              >
-                systemctl status a2e-agent
-              </code>{' '}
-              on your server.
+            <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Node not detected</h2>
+            <p className="text-sm mb-3" style={{ color: 'var(--text-muted)' }}>
+              We waited {VERIFY_TIMEOUT_SEC} seconds and did not see a node register. Common causes:
             </p>
+            <ul
+              className="text-xs text-left mx-auto mb-6 space-y-1.5 max-w-md"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <li>&bull; The install command was not run on your GPU server yet.</li>
+              <li>&bull; The agent installed but is not running. On the server, check{' '}
+                <code
+                  className="text-xs px-1.5 py-0.5 rounded"
+                  style={{ color: 'var(--primary)', background: 'rgba(34,197,94,0.1)' }}
+                >
+                  systemctl status a2e-agent
+                </code>.
+              </li>
+              <li>&bull; The server cannot reach the A2E API (firewall blocking outbound HTTPS).</li>
+            </ul>
             <Button
               variant="secondary"
               onClick={() => {
                 setChecking(true)
                 setFound(false)
+                setElapsedSec(0)
               }}
             >
-              Retry
+              Try again
             </Button>
           </>
         )}

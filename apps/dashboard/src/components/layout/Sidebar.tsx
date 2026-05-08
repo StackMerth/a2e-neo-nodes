@@ -237,6 +237,7 @@ export function Sidebar() {
                 <Link
                   key={item.path}
                   href={item.path}
+                  onClick={() => setSidebarOpen(false)}
                   className={`nav-item ${isActive ? 'active' : ''}`}
                   title={!sidebarOpen ? item.label : undefined}
                 >
