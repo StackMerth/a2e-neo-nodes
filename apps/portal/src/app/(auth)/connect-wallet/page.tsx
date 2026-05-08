@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { ArrowLeft } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/components/ui/Toast'
 import { auth as authApi } from '@/lib/api'
@@ -54,6 +55,13 @@ export default function ConnectWalletPage() {
 
   return (
     <Card className="p-8">
+      <Link
+        href="/login"
+        className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary transition-colors mb-4"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Back to sign in
+      </Link>
       <h1 className="text-2xl font-bold text-text-primary mb-2">Connect Wallet</h1>
       <p className="text-text-secondary text-sm mb-6">
         {step === 'select'
@@ -64,7 +72,14 @@ export default function ConnectWalletPage() {
       {step === 'signing' ? (
         <div className="flex flex-col items-center py-8">
           <div className="animate-spin w-10 h-10 border-2 border-accent border-t-transparent rounded-full mb-4" />
-          <p className="text-text-secondary text-sm">Waiting for signature...</p>
+          <p className="text-text-secondary text-sm mb-4">Waiting for signature...</p>
+          <button
+            type="button"
+            onClick={() => setStep('select')}
+            className="text-sm text-text-muted hover:text-text-primary transition-colors"
+          >
+            Cancel
+          </button>
         </div>
       ) : (
         <div className="space-y-3">
