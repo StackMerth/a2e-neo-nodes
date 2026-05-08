@@ -1,7 +1,25 @@
 // API Client for A²E Engine
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
+// Legacy fallback API key. Used only if no Bearer token is available
+// (e.g. before login completes). Real admin requests authenticate with
+// the HMAC token stored in localStorage by useAuth on successful login.
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'a2e-dev-key-2026'
+const TOKEN_KEY = 'a2e_admin_token'
+
+/**
+ * Returns the auth headers to include on outgoing API requests.
+ * Prefers the Bearer token from localStorage (set by useAuth.login).
+ * Falls back to the X-API-Key header so unauthenticated public
+ * endpoints (e.g. /health) still work and SSR contexts do not crash.
+ */
+function getAuthHeaders(): Record<string, string> {
+  if (typeof window !== 'undefined') {
+    const token = window.localStorage.getItem(TOKEN_KEY)
+    if (token) return { Authorization: `Bearer ${token}` }
+  }
+  return { 'X-API-Key': API_KEY }
+}
 
 interface FetchOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>
@@ -29,7 +47,7 @@ async function apiFetch<T>(endpoint: string, options: FetchOptions = {}): Promis
     ...fetchOptions,
     headers: {
       ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
-      'X-API-Key': API_KEY,
+      ...getAuthHeaders(),
       ...fetchOptions.headers,
     },
   })
@@ -90,7 +108,7 @@ export const api = {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': API_KEY,
+          ...getAuthHeaders(),
         },
       })
       // 404 is acceptable for delete - node may have been deleted via heartbeat
@@ -784,7 +802,7 @@ export const api = {
 
     downloadCSV: async (type: 'earnings' | 'settlements' | 'jobs' | 'nodes') => {
       const response = await fetch(`${API_BASE}/v1/reports/${type}/csv`, {
-        headers: { 'X-API-Key': API_KEY },
+        headers: getAuthHeaders(),
       })
       if (!response.ok) throw new Error('Failed to download CSV')
       const blob = await response.blob()
@@ -807,7 +825,7 @@ export const api = {
       const url = `${API_BASE}/v1/reports/${type}/pdf${queryString ? `?${queryString}` : ''}`
 
       const response = await fetch(url, {
-        headers: { 'X-API-Key': API_KEY },
+        headers: getAuthHeaders(),
       })
       if (!response.ok) throw new Error('Failed to download PDF')
       const blob = await response.blob()
@@ -830,7 +848,7 @@ export const api = {
       const url = `${API_BASE}/v1/reports/statement/${nodeId}${queryString ? `?${queryString}` : ''}`
 
       const response = await fetch(url, {
-        headers: { 'X-API-Key': API_KEY },
+        headers: getAuthHeaders(),
       })
       if (!response.ok) throw new Error('Failed to generate statement')
       const html = await response.text()
@@ -1026,7 +1044,7 @@ export const api = {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': API_KEY,
+          ...getAuthHeaders(),
         },
       })
       if (!response.ok) {

@@ -5,6 +5,21 @@ import { io, Socket } from 'socket.io-client'
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'a2e-dev-key-2026'
+const TOKEN_KEY = 'a2e_admin_token'
+
+/**
+ * Build the Socket.IO auth payload. Prefers the Bearer token issued
+ * by useAuth.login (matches the auth-plugin's HMAC verifier) and
+ * falls back to the legacy API_KEY for environments where login has
+ * not yet completed.
+ */
+function getSocketAuth(): { token?: string; apiKey?: string } {
+  if (typeof window !== 'undefined') {
+    const token = window.localStorage.getItem(TOKEN_KEY)
+    if (token) return { token }
+  }
+  return { apiKey: API_KEY }
+}
 
 export interface SocketEvent {
   id: string
@@ -73,7 +88,7 @@ export function useWebSocket(): UseWebSocketReturn {
   useEffect(() => {
     // Initialize socket connection
     const socket = io(SOCKET_URL, {
-      auth: { apiKey: API_KEY },
+      auth: getSocketAuth(),
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 10,
