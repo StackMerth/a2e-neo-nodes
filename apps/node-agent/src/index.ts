@@ -189,7 +189,7 @@ async function runConfigure(outputPath?: string): Promise<void> {
   console.log('\n=== A²E Node Agent Configuration Wizard ===\n');
 
   // API URL
-  const apiUrl = await prompt('A²E API URL', 'https://a2e.byredstone.com');
+  const apiUrl = await prompt('A²E API URL', 'https://a2e-api.onrender.com');
 
   // API Key
   const apiKey = await prompt('API Key');

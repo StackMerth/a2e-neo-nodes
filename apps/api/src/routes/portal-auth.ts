@@ -47,7 +47,7 @@ const verifyEmailSchema = z.object({
   token: z.string().min(1),
 })
 
-const PORTAL_URL = process.env.PORTAL_URL || 'https://a2e.byredstone.com/portal'
+const PORTAL_URL = process.env.PORTAL_URL || 'https://a2e-user.stackforgelab.tech'
 
 export async function portalAuthRoutes(fastify: FastifyInstance) {
 

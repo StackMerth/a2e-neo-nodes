@@ -164,7 +164,7 @@ export default function LoginPage() {
             A²E Arbitrage & Orchestration Engine
           </p>
           <a
-            href="https://a2e.byredstone.com/health"
+            href={`${process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'}/health`}
             target="_blank"
             rel="noopener"
             className="inline-flex items-center gap-1.5 text-xs hover:opacity-80 transition-opacity"

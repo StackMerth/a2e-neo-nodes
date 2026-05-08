@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { io, Socket } from 'socket.io-client'
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e.byredstone.com'
+const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'a2e-dev-key-2026'
 
 export interface SocketEvent {

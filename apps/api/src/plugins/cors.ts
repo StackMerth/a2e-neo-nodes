@@ -9,7 +9,9 @@ const corsPlugin: FastifyPluginCallback = async (fastify: FastifyInstance) => {
   const allowedOrigins = process.env.CORS_ORIGINS?.split(',') ?? [
     'http://localhost:3000',
     'http://localhost:3001',
-    'https://a2e.byredstone.com',
+    'http://localhost:3002',
+    'https://a2e-admin.stackforgelab.tech',
+    'https://a2e-user.stackforgelab.tech',
     'https://compute.tokenos.ai',
   ]
 

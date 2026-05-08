@@ -50,7 +50,7 @@ export class NodeProvisioner extends EventEmitter {
     super()
     this.prisma = prisma
     this.provisionId = provisionId
-    this.apiUrl = process.env.A2E_API_URL || 'https://a2e.byredstone.com'
+    this.apiUrl = process.env.A2E_API_URL || 'https://a2e-api.onrender.com'
     this.apiKey = apiKey
   }
 
@@ -599,7 +599,7 @@ security:
     await this.log('info', 'Installing systemd service...')
     const serviceContent = `[Unit]
 Description=A²E Node Agent - GPU Compute Orchestration
-Documentation=https://a2e.byredstone.com/docs
+Documentation=https://a2e-admin.stackforgelab.tech/docs
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
