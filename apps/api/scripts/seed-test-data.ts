@@ -25,8 +25,10 @@ if (!dbUrl) {
   process.exit(1)
 }
 const looksProd =
-  /a2e\.byredstone\.com|prod|production/i.test(dbUrl) ||
-  /\.byredstone\.com/i.test(dbUrl) ||
+  /prod|production/i.test(dbUrl) ||
+  /\.onrender\.com/i.test(dbUrl) ||
+  /\.stackforgelab\.tech/i.test(dbUrl) ||
+  /a2e\.byredstone\.com|\.byredstone\.com/i.test(dbUrl) || // legacy Phase 1 hosts
   process.env.NODE_ENV === 'production'
 if (looksProd && process.env.ALLOW_PROD_SEED !== '1') {
   console.error(

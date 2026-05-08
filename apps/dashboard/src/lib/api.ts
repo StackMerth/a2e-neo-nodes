@@ -1,6 +1,6 @@
 // API Client for A²E Engine
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://a2e.byredstone.com'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'a2e-dev-key-2026'
 
 interface FetchOptions extends RequestInit {
