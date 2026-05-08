@@ -1,9 +1,34 @@
 // WebSocket Server Setup
 // Real-time event broadcasting via Socket.io
 
+import crypto from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { Server as SocketServer, Socket } from 'socket.io'
 import { verifyAccessToken } from '../services/auth/jwt.js'
+
+/**
+ * Verify the legacy admin HMAC token issued by POST /v1/auth/login.
+ * Same algorithm used by the auth plugin's Bearer-token path. Kept
+ * inline here to avoid a circular import with the plugin module.
+ * Will be replaced in M1 by a unified admin JWT.
+ */
+function verifyAdminHmacToken(token: string): boolean {
+  try {
+    const [data, signature] = token.split('.')
+    if (!data || !signature) return false
+    const JWT_SECRET = process.env.JWT_SECRET ?? 'a2e-jwt-secret-change-in-production'
+    const expectedSignature = crypto
+      .createHmac('sha256', JWT_SECRET)
+      .update(data)
+      .digest('base64')
+    if (signature !== expectedSignature) return false
+    const payload = JSON.parse(Buffer.from(data, 'base64').toString()) as { exp?: number }
+    if (typeof payload.exp !== 'number' || payload.exp < Date.now()) return false
+    return true
+  } catch {
+    return false
+  }
+}
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -104,23 +129,28 @@ export function setupWebSocket(fastify: FastifyInstance): SocketServer {
     path: '/socket.io',
   })
 
-  // Authentication middleware — supports API key or JWT Bearer token
+  // Authentication middleware — supports admin API key, portal JWT,
+  // or admin HMAC Bearer token issued by /v1/auth/login.
   io.use((socket: Socket, next) => {
-    // Try API key first (dashboard)
+    // 1. Admin API key (legacy, kept for backwards compatibility)
     const apiKey = socket.handshake.auth?.apiKey ?? socket.handshake.headers['x-api-key']
     if (apiKey && apiKey === validApiKey) {
       return next()
     }
 
-    // Try JWT token (portal)
+    // 2. Portal JWT (compute buyers, node runners) or admin HMAC token
     const token = socket.handshake.auth?.token
     if (token) {
       try {
         verifyAccessToken(token)
         return next()
       } catch {
-        return next(new Error('Authentication failed: Invalid token'))
+        // Not a portal JWT, fall through to admin HMAC check
       }
+      if (verifyAdminHmacToken(token)) {
+        return next()
+      }
+      return next(new Error('Authentication failed: Invalid token'))
     }
 
     return next(new Error('Authentication failed: No credentials provided'))
