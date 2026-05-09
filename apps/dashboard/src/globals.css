@@ -1188,7 +1188,11 @@ textarea:focus {
 /* Stat Blocks (KPI Row) */
 .stat-blocks {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  /* 220px lets labels like "Active Nodes" and "Earnings Today" sit on a
+     single line. Previously 160px forced two-line wraps at tablet width
+     because the 40px icon + gap left less than 100px for text. auto-fit
+     still collapses to fewer columns on smaller screens. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--space-md);
 }
 
