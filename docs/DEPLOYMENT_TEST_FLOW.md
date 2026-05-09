@@ -39,11 +39,14 @@ Both flows have a **Test Mode** checkbox in the UI. When enabled:
 - Provisioner skips the SSH connection entirely.
 - Skips OS detection, Docker installation, NVIDIA driver checks.
 - Skips the binary download and systemd unit setup.
-- Generates a mock node with the configured tier and region.
-- Marks the ProvisionJob as COMPLETED instantly.
-- The node row appears in the database as ONLINE with simulated heartbeats.
+- Simulates each of the 7 steps with a brief delay so the progress UI animates.
+- Creates a real Node row in Postgres (status `ONLINE`, marked with agent version `test-mode-1.0.0`) attached to the same node runner as the source investment.
+- Marks the ProvisionJob as COMPLETED.
+- Flips the linked Investment to `PROVISIONED`.
 
-This lets you exercise every UI surface without needing a real GPU server.
+Total wall time: ~3 seconds. This lets you exercise every UI surface without needing a real GPU server.
+
+> **Note for older builds (pre-commit `9404f7b`):** Test Mode previously only skipped GPU verification but still tried to SSH to whatever host you typed, which would hang on connect indefinitely with a fake address. If you see a deploy stuck on `CONNECTING` for more than 30 seconds, your build is older than that commit. Update Render to the latest deploy.
 
 ## How to test the admin-approval side
 
