@@ -23,6 +23,7 @@ import {
   Globe,
 } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
+import { A2ELoader } from '@/components/ui/A2ELoader'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useToast } from '@/components/ui/Toast'
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -197,21 +198,7 @@ export default function DashboardPage() {
   /* ---- Loading state ---- */
 
   if (loading) {
-    return (
-      <div className="space-y-6 animate-fadeIn">
-        <Skeleton className="h-14 w-full" />
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Skeleton key={i} className="h-28" />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Skeleton className="h-72" />
-          <Skeleton className="h-72" />
-        </div>
-        <Skeleton className="h-80 w-full" />
-      </div>
-    )
+    return <A2ELoader fullScreen={false} message="Loading your dashboard" />
   }
 
   /* ---- Stat block definitions ---- */

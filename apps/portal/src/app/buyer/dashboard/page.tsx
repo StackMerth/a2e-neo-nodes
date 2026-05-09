@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { A2ELoader } from '@/components/ui/A2ELoader'
 
 interface BuyerDashboardData {
   activeCompute: number
@@ -124,18 +125,7 @@ export default function BuyerDashboardPage() {
   }, [loadData])
 
   if (loading) {
-    return (
-      <div className="space-y-6 animate-fadeIn">
-        <Skeleton className="h-14 w-full" />
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-28" />
-          ))}
-        </div>
-        <Skeleton className="h-60 w-full" />
-        <Skeleton className="h-60 w-full" />
-      </div>
-    )
+    return <A2ELoader fullScreen={false} message="Loading your dashboard" />
   }
 
   const stats = [
