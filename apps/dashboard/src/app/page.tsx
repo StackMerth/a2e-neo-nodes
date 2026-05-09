@@ -17,6 +17,7 @@ import {
 import { api } from '@/lib/api'
 import { SystemHealth } from '@/components/dashboard/SystemHealth'
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
+import { A2ELoader } from '@/components/ui/A2ELoader'
 
 /* -----------------------------------------------
    Types
@@ -211,7 +212,7 @@ export default function OverviewPage() {
   /* -- Loading state -- */
 
   if (loading) {
-    return <LoadingSkeleton />
+    return <A2ELoader fullScreen={false} message="Loading engine overview" />
   }
 
   /* -- Error state -- */
