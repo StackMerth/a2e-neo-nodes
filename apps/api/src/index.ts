@@ -71,6 +71,14 @@ import {
   createEarningsRollupWorker,
   scheduleEarningsRollup,
 } from './jobs/earnings-rollup'
+import {
+  createHeartbeatRetentionQueue,
+  createHeartbeatRetentionWorker,
+  scheduleHeartbeatRetention,
+  createRateHistoryRetentionQueue,
+  createRateHistoryRetentionWorker,
+  scheduleRateHistoryRetention,
+} from './jobs/retention'
 
 const server = Fastify({
   logger: {
@@ -180,6 +188,15 @@ async function start() {
     // Earnings rollup worker (calculates uptime earnings every 5 minutes)
     createEarningsRollupWorker({ redis: redisConnection, prisma: server.prisma })
     scheduleEarningsRollup(earningsRollupQueue)
+
+    // M1 retention workers: purge old Heartbeat and MarketRateHistory rows
+    // daily so Postgres growth stays bounded under sustained traffic.
+    const heartbeatRetentionQueue = createHeartbeatRetentionQueue(redisConnection)
+    const rateHistoryRetentionQueue = createRateHistoryRetentionQueue(redisConnection)
+    createHeartbeatRetentionWorker({ redis: redisConnection, prisma: server.prisma })
+    createRateHistoryRetentionWorker({ redis: redisConnection, prisma: server.prisma })
+    await scheduleHeartbeatRetention(heartbeatRetentionQueue)
+    await scheduleRateHistoryRetention(rateHistoryRetentionQueue)
 
     await scheduleRateFetcher(rateFetcherQueue)
     await scheduleReconciliation(reconciliationQueue, 5)

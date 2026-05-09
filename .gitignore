@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Test
+coverage/
+
+# Env / secrets — only commit .env.example
+.env
+.env.local
+.env.production
+.env.development
+.env.test
+.env*.local
+
+# Wallet keys / certs — never commit these
+*.pem
+*.key
+*.crt
+wallet*.json
+keypair*.json
+*.priv
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local dev databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Claude Code local cache (per-developer, not shared)
+.claude/
