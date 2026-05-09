@@ -88,9 +88,9 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
 
 // Auth API
 export const auth = {
-  register: (email: string, password: string) =>
+  register: (email: string, password: string, role?: 'NODE_RUNNER' | 'COMPUTE_BUYER') =>
     apiFetch<{ user: { id: string; email: string; role: string }; accessToken: string; refreshToken: string }>(
-      '/v1/portal/auth/register', { method: 'POST', body: { email, password } }
+      '/v1/portal/auth/register', { method: 'POST', body: { email, password, ...(role ? { role } : {}) } }
     ),
   login: (email: string, password: string) =>
     apiFetch<{ user: { id: string; email: string | null; walletAddress: string | null; role: string; nodeRunnerId: string | null }; accessToken: string; refreshToken: string }>(
