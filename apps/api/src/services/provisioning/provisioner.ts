@@ -124,6 +124,23 @@ export class NodeProvisioner extends EventEmitter {
   }
 
   async provision(config: ProvisionConfig): Promise<void> {
+    // Test mode short-circuits the entire SSH flow. Used for QA and demos
+    // where there is no real GPU server reachable. Simulates each of the 7
+    // steps with brief delays so the UI animation still runs, then creates
+    // a real Node row in the database tagged as a mock so the rest of the
+    // platform (heartbeats, dashboards, routing) can exercise it.
+    if (config.testMode) {
+      try {
+        await this.simulateProvision(config)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error'
+        await this.log('error', `Test-mode provisioning failed: ${message}`)
+        await this.markFailed(message)
+        throw error
+      }
+      return
+    }
+
     const credentials: SSHCredentials = {
       host: config.host,
       port: config.port,
@@ -185,6 +202,93 @@ export class NodeProvisioner extends EventEmitter {
     } finally {
       this.sshClient?.disconnect()
     }
+  }
+
+  /**
+   * Test-mode provisioning: simulate the 7-step flow without any SSH I/O,
+   * then create a real Node row in Postgres so the rest of the platform
+   * can exercise it. Total wall time ~3 seconds.
+   */
+  private async simulateProvision(config: ProvisionConfig): Promise<void> {
+    const stepDelayMs = 400 // Short delay per step so the UI shows progress
+
+    await this.log('info', 'TEST MODE: skipping all SSH operations')
+    await this.log('warn', 'This node will not actually run jobs. For QA only.')
+
+    for (let i = 0; i < PROVISION_STEPS.length; i++) {
+      const step = PROVISION_STEPS[i]
+      await this.updateStatus(step.status, i + 1, step.action)
+      await this.log('info', `[test-mode] ${step.action} (simulated)`)
+      await new Promise((r) => setTimeout(r, stepDelayMs))
+    }
+
+    // Find the provision job to discover any linked investment, so we can
+    // attach the new node to the same node runner. If there's no link
+    // (admin-direct-add flow), the node is created without an owner and the
+    // admin can assign one later.
+    const provisionJob = await this.prisma.provisionJob.findUnique({
+      where: { id: this.provisionId },
+      select: { id: true, gpuTier: true, region: true, nodeName: true },
+    })
+    if (!provisionJob) {
+      throw new Error('Provision job not found')
+    }
+
+    // An investment may be linked back to this provisionJob via
+    // Investment.provisionJobId. If so, use its nodeRunnerId.
+    const investment = await this.prisma.investment.findFirst({
+      where: { provisionJobId: this.provisionId },
+      select: { nodeRunnerId: true },
+    })
+
+    // Create the Node row. Wallet address must be unique; generate a
+    // distinct test wallet derived from the provisionId.
+    const walletAddress = `TEST${this.provisionId.toUpperCase().slice(0, 28)}`.padEnd(44, 'x')
+
+    const node = await this.prisma.node.create({
+      data: {
+        walletAddress,
+        gpuTier: config.gpuTier,
+        nodeType: 'PROVISIONED',
+        status: 'ONLINE',
+        region: config.region ?? null,
+        nodeRunnerId: investment?.nodeRunnerId ?? null,
+        apiKey: this.apiKey,
+        agentVersion: 'test-mode-1.0.0',
+        lastHeartbeat: new Date(),
+        missedBeats: 0,
+        customGpuModel: config.customGpuModel ?? null,
+        customRatePerDay: config.customRatePerDay ?? null,
+      },
+    })
+
+    // Seed a single heartbeat so the node-detail page has data immediately.
+    await this.prisma.heartbeat.create({
+      data: {
+        nodeId: node.id,
+        gpuUtilization: 0,
+        gpuTemperature: 45,
+        gpuMemoryUsed: 0,
+        gpuMemoryTotal: 80,
+        timestamp: new Date(),
+      },
+    })
+
+    // If this provision came from an investment, flip the investment status
+    // and stamp provisionedAt so the runner portal reflects it.
+    if (investment) {
+      await this.prisma.investment.updateMany({
+        where: { provisionJobId: this.provisionId },
+        data: {
+          status: 'PROVISIONED',
+          nodeId: node.id,
+          provisionedAt: new Date(),
+        },
+      })
+    }
+
+    await this.markCompleted(node.id)
+    await this.log('info', `Test-mode node created: ${node.id}`)
   }
 
   private async verifyPrerequisites(expectedGpuTier: GpuTier, testMode?: boolean): Promise<void> {
