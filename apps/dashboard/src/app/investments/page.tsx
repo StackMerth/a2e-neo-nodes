@@ -304,6 +304,7 @@ export default function InvestmentsPage() {
             </button>
           )}
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-surface-hover">
             <tr>
@@ -420,6 +421,7 @@ export default function InvestmentsPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Confirm Payment Modal */}

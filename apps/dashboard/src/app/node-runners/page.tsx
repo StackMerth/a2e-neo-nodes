@@ -217,6 +217,7 @@ export default function NodeRunnersPage() {
 
       {/* Node Runners Table */}
       <motion.div variants={item} className="rounded-xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+        <div className="overflow-x-auto">
         <table className="w-full">
           <thead style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border-color)' }}>
             <tr>
@@ -310,6 +311,7 @@ export default function NodeRunnersPage() {
             )}
           </tbody>
         </table>
+        </div>
       </motion.div>
 
       {/* Create Modal */}

@@ -281,6 +281,7 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
         <div className="px-6 py-4 border-b border-border">
           <h2 className="text-lg font-semibold text-text-primary">Nodes ({runner.nodes.length})</h2>
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-surface-hover">
             <tr>
@@ -343,6 +344,7 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Investment History */}
@@ -356,6 +358,7 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
             + Add Investment
           </button>
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-surface-hover">
             <tr>
@@ -426,6 +429,7 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Add Investment Modal */}
