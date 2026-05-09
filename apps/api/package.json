@@ -21,6 +21,7 @@
     "@fastify/swagger": "^8.14.0",
     "@fastify/swagger-ui": "^3.0.0",
     "@fastify/websocket": "^10.0.0",
+    "@sentry/node": "^8.55.0",
     "@solana/spl-token": "^0.4.0",
     "@solana/web3.js": "^1.91.0",
     "bcryptjs": "^3.0.3",
