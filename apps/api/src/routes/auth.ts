@@ -1,58 +1,78 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import crypto from 'crypto'
+import jwt from 'jsonwebtoken'
+import bcrypt from 'bcryptjs'
+import { prisma } from '@a2e/database'
+import { verifyAccessToken, type AccessTokenPayload } from '../services/auth/jwt.js'
 
-// Simple admin credentials - in production, use proper user management
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin'
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'a2e-admin-2026'
-const JWT_SECRET = process.env.JWT_SECRET || 'a2e-jwt-secret-change-in-production'
+/**
+ * Admin authentication routes.
+ *
+ * The previous Phase 1 implementation used a hand-rolled HMAC-signed
+ * token (commented as "for demo purposes" in source) which was not
+ * compatible with the auth plugin's main JWT verifier. M1.4 migrates
+ * admin auth to the same JWT scheme as portal users so a single
+ * code path validates all Bearer tokens.
+ *
+ * Admin credentials come from env vars (ADMIN_USERNAME, ADMIN_PASSWORD).
+ * On successful login, we upsert a sentinel User row with
+ * email='admin@a2e.local' and role='ADMIN' so the JWT has a real
+ * userId to reference, and the rest of the User-table integrations
+ * (refresh tokens, audit logs) work without special-casing admin.
+ *
+ * Access token expiry is 8 hours (vs 15 min for portal users) since
+ * admins typically have long sessions and the dashboard does not
+ * implement refresh-on-401 yet. M2 can tighten this if desired.
+ */
 
-// Simple JWT-like token generation (for demo purposes)
-function generateToken(username: string): string {
-  const payload = {
-    username,
-    exp: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-    iat: Date.now(),
-  }
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64')
-  const signature = crypto
-    .createHmac('sha256', JWT_SECRET)
-    .update(data)
-    .digest('base64')
-  return `${data}.${signature}`
-}
+const JWT_SECRET = process.env.JWT_SECRET ?? 'a2e-dev-secret-change-in-production'
+const ADMIN_ACCESS_TOKEN_EXPIRY_HOURS = 8
+const ADMIN_USER_EMAIL = 'admin@a2e.local'
 
-function verifyToken(token: string): { valid: boolean; username?: string; expired?: boolean } {
-  try {
-    const [data, signature] = token.split('.')
-    if (!data || !signature) return { valid: false }
-
-    const expectedSignature = crypto
-      .createHmac('sha256', JWT_SECRET)
-      .update(data)
-      .digest('base64')
-
-    if (signature !== expectedSignature) return { valid: false }
-
-    const payload = JSON.parse(Buffer.from(data, 'base64').toString())
-
-    if (payload.exp < Date.now()) {
-      return { valid: false, expired: true }
-    }
-
-    return { valid: true, username: payload.username }
-  } catch {
-    return { valid: false }
-  }
-}
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME ?? 'admin'
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'a2e-admin-2026'
 
 const loginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
 })
 
+/**
+ * Ensure a sentinel User row exists for admin sessions. Idempotent.
+ * Returns the User.id which the JWT will reference.
+ */
+async function ensureAdminUser(): Promise<string> {
+  // Hash the env password each login so a rotation in env vars is
+  // reflected in the User row (the password hash itself is not used
+  // for login validation - that's done against the env var directly -
+  // but storing it keeps the User table consistent for future flows).
+  const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10)
+
+  const user = await prisma.user.upsert({
+    where: { email: ADMIN_USER_EMAIL },
+    create: {
+      email: ADMIN_USER_EMAIL,
+      passwordHash,
+      role: 'ADMIN',
+      emailVerified: true,
+    },
+    update: {
+      passwordHash,
+      role: 'ADMIN',
+    },
+  })
+  return user.id
+}
+
 export async function authRoutes(fastify: FastifyInstance) {
-  // Login endpoint
+  /**
+   * POST /v1/auth/login - Admin login.
+   *
+   * Validates username/password against env vars (ADMIN_USERNAME /
+   * ADMIN_PASSWORD), upserts the admin User row, and returns a real
+   * JWT access token. Returns the same response shape as the legacy
+   * route so the dashboard does not need changes.
+   */
   fastify.post('/v1/auth/login', async (request, reply) => {
     const parseResult = loginSchema.safeParse(request.body)
 
@@ -65,7 +85,6 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     const { username, password } = parseResult.data
 
-    // Validate credentials
     if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
       return reply.code(401).send({
         error: 'Unauthorized',
@@ -73,8 +92,17 @@ export async function authRoutes(fastify: FastifyInstance) {
       })
     }
 
-    // Generate token
-    const token = generateToken(username)
+    // Make sure the admin User row exists so the JWT userId is real.
+    const userId = await ensureAdminUser()
+
+    const payload: AccessTokenPayload = {
+      userId,
+      role: 'ADMIN',
+      type: 'access',
+    }
+    const token = jwt.sign(payload, JWT_SECRET, {
+      expiresIn: `${ADMIN_ACCESS_TOKEN_EXPIRY_HOURS}h`,
+    })
 
     reply.send({
       success: true,
@@ -83,11 +111,15 @@ export async function authRoutes(fastify: FastifyInstance) {
         username,
         role: 'admin',
       },
-      expiresIn: 24 * 60 * 60, // 24 hours in seconds
+      expiresIn: ADMIN_ACCESS_TOKEN_EXPIRY_HOURS * 60 * 60,
     })
   })
 
-  // Verify token endpoint
+  /**
+   * POST /v1/auth/verify - Validate a token without mutating state.
+   * Used by the dashboard's useAuth hook on initial load to determine
+   * whether the localStorage token is still valid.
+   */
   fastify.post('/v1/auth/verify', async (request, reply) => {
     const authHeader = request.headers.authorization
 
@@ -99,28 +131,40 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
 
     const token = authHeader.substring(7)
-    const result = verifyToken(token)
 
-    if (!result.valid) {
+    try {
+      const payload = verifyAccessToken(token)
+      if (payload.role !== 'ADMIN') {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Token is not an admin token',
+        })
+      }
+      reply.send({
+        valid: true,
+        user: {
+          username: ADMIN_USERNAME,
+          role: 'admin',
+        },
+      })
+    } catch (err) {
+      const expired = err instanceof Error && /jwt expired|TokenExpiredError/i.test(err.message)
       return reply.code(401).send({
         error: 'Unauthorized',
-        message: result.expired ? 'Token expired' : 'Invalid token',
-        expired: result.expired,
+        message: expired ? 'Token expired' : 'Invalid token',
+        expired,
       })
     }
-
-    reply.send({
-      valid: true,
-      user: {
-        username: result.username,
-        role: 'admin',
-      },
-    })
   })
 
-  // Logout endpoint (client-side token removal, but we can log it)
-  fastify.post('/v1/auth/logout', async (request, reply) => {
-    // In a real implementation, you might blacklist the token
+  /**
+   * POST /v1/auth/logout - Stateless. The dashboard discards the
+   * token client-side. We log the event for the audit trail but
+   * don't blacklist the token; admin tokens are 8h max anyway and
+   * adding revocation requires a refresh-token table integration
+   * which is portal-only today.
+   */
+  fastify.post('/v1/auth/logout', async (_request, reply) => {
     reply.send({
       success: true,
       message: 'Logged out successfully',
