@@ -56,16 +56,22 @@ services:
       npm install -g pnpm@8.15.0 &&
       pnpm install --frozen-lockfile --prod=false &&
       pnpm --filter "@a2e/api..." build
-    # NOTE: prisma db push is used here instead of prisma migrate deploy
-    # because the inherited migrations folder lacks an initial baseline
-    # (the original Phase 1 schema was bootstrapped with db push and
-    # migrations only cover incremental changes after that). db push
-    # syncs schema.prisma directly to the database in one go, idempotent
-    # on subsequent deploys.
+    # M1.6 status: a clean baseline migration was committed at
+    # packages/database/prisma/migrations/0_init. The active deploy
+    # path still uses `prisma db push` because the live database's
+    # _prisma_migrations tracking table still references the old
+    # incomplete migrations and has not yet been reset to the new
+    # baseline. Switching to `migrate deploy` requires the one-time
+    # operator action documented at docs/MIGRATION_SWITCHOVER.md.
     #
-    # FOLLOW-UP (first task of M1): regenerate a clean initial migration,
-    # reset the migrations folder, mark the baseline as applied, then
-    # switch this back to `prisma migrate deploy` for proper history.
+    # AFTER the switchover steps are run on the live DB, change the
+    # body of this command from
+    #   prisma db push --skip-generate --accept-data-loss
+    # to
+    #   prisma migrate deploy
+    # and the next deploy will be a no-op (0_init already applied),
+    # with all future schema changes applied incrementally and
+    # tracked in _prisma_migrations.
     startCommand: |
       npm install -g pnpm@8.15.0 &&
       cd packages/database && pnpm exec prisma db push --skip-generate --accept-data-loss && cd ../.. &&
