@@ -38,13 +38,7 @@ export default function LoginPage() {
   return (
     <Card className="p-8">
       <h1 className="text-2xl font-bold text-text-primary mb-2">Welcome Back</h1>
-      <p className="text-text-secondary text-sm mb-2">
-        Sign in to your A²E account
-      </p>
-      <p className="text-text-muted text-xs mb-6">
-        One sign-in for everyone. We&apos;ll route you to the right dashboard automatically:
-        node runners go to GPU management, compute buyers go to rentals.
-      </p>
+      <p className="text-text-secondary text-sm mb-6">Sign in to your A²E account</p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
@@ -94,33 +88,12 @@ export default function LoginPage() {
         </Button>
       </Link>
 
-      <div className="mt-6 pt-6 border-t border-border text-center">
-        <p className="text-sm text-text-muted mb-3">Don&apos;t have an account yet?</p>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left text-sm">
-          <div className="rounded-lg p-3 bg-surface-hover border border-border">
-            <p className="font-medium text-text-primary mb-0.5">Node Runner</p>
-            <p className="text-text-muted text-xs mb-2">earn by hosting GPUs</p>
-            <Link href="/register" className="text-accent hover:underline text-xs block">
-              Sign up with email
-            </Link>
-            <Link href="/connect-wallet" className="text-accent hover:underline text-xs block">
-              Sign up with wallet
-            </Link>
-          </div>
-
-          <div className="rounded-lg p-3 bg-surface-hover border border-border">
-            <p className="font-medium text-text-primary mb-0.5">Compute Buyer</p>
-            <p className="text-text-muted text-xs mb-2">rent GPUs for AI workloads</p>
-            <Link href="/register?role=buyer" className="text-accent hover:underline text-xs block">
-              Sign up with email
-            </Link>
-            <Link href="/connect-wallet?role=buyer" className="text-accent hover:underline text-xs block">
-              Sign up with wallet
-            </Link>
-          </div>
-        </div>
-      </div>
+      <p className="text-sm text-text-muted text-center mt-6">
+        Don&apos;t have an account?{' '}
+        <Link href="/signup" className="text-accent hover:underline">
+          Sign up
+        </Link>
+      </p>
     </Card>
   )
 }
