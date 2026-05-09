@@ -14,23 +14,20 @@ export async function healthRoutes(fastify: FastifyInstance) {
   fastify.get('/health', livenessHandler)
   fastify.get('/v1/health', livenessHandler)
 
-  // Debug endpoint for verifying Sentry pipeline. Returns 500 on
-  // purpose. Admin-auth gated so it can't be abused, and only
-  // active when SENTRY_DSN is set (otherwise just returns 503).
-  // Hit it once per environment after wiring Sentry to confirm
-  // errors are flowing into the right project.
-  fastify.get(
-    '/v1/admin/sentry-test',
-    { preHandler: [fastify.authenticate] },
-    async () => {
-      if (!process.env.SENTRY_DSN) {
-        const err = new Error('Sentry not configured (SENTRY_DSN env var missing)') as Error & { statusCode?: number }
-        err.statusCode = 503
-        throw err
-      }
-      throw new Error(`Sentry pipeline test from API at ${new Date().toISOString()}`)
+  // Debug endpoint for verifying the Sentry pipeline. Returns 500
+  // on purpose so the error-handler forwards it to Sentry. NOT
+  // auth-gated so a quick browser visit works for verification;
+  // the worst case is a Sentry spam attack which Sentry dedupes
+  // by stack trace anyway. Only active when SENTRY_DSN is set
+  // (otherwise returns 503 to avoid fake noise).
+  fastify.get('/v1/admin/sentry-test', async () => {
+    if (!process.env.SENTRY_DSN) {
+      const err = new Error('Sentry not configured (SENTRY_DSN env var missing)') as Error & { statusCode?: number }
+      err.statusCode = 503
+      throw err
     }
-  )
+    throw new Error(`Sentry pipeline test from API at ${new Date().toISOString()}`)
+  })
 
   fastify.get(
     '/health/detailed',
