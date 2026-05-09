@@ -1,0 +1,139 @@
+/*
+ * A2E Design Tokens (CSS variables)
+ *
+ * Single source of truth that mirrors src/tokens.ts. Apps import
+ * this file at the top of their globals.css so the variables are
+ * available everywhere. The existing per-app globals.css can keep
+ * its current --bg-card / --text-primary names; those become
+ * aliases that point at these canonical tokens.
+ *
+ * Two reasons we ship CSS variables AND TypeScript constants:
+ *   1. Tailwind / static CSS rules need the variable form.
+ *   2. Component code that does inline styles or computed colors
+ *      benefits from the typed TS constants.
+ */
+
+:root {
+  /* -----------------------------------------------------------------
+     Brand
+     ----------------------------------------------------------------- */
+  --a2e-green-50:  #f0fdf4;
+  --a2e-green-100: #dcfce7;
+  --a2e-green-200: #bbf7d0;
+  --a2e-green-300: #86efac;
+  --a2e-green-400: #4ade80;
+  --a2e-green-500: #22c55e; /* primary */
+  --a2e-green-600: #16a34a;
+  --a2e-green-700: #15803d;
+
+  --a2e-primary: var(--a2e-green-500);
+  --a2e-primary-hover: var(--a2e-green-600);
+
+  /* -----------------------------------------------------------------
+     Status
+     ----------------------------------------------------------------- */
+  --a2e-success: #22c55e;
+  --a2e-success-bg: rgba(34, 197, 94, 0.10);
+  --a2e-success-text: #86efac;
+
+  --a2e-warning: #eab308;
+  --a2e-warning-bg: rgba(234, 179, 8, 0.10);
+  --a2e-warning-text: #fde047;
+
+  --a2e-error: #ef4444;
+  --a2e-error-bg: rgba(239, 68, 68, 0.10);
+  --a2e-error-text: #fca5a5;
+
+  --a2e-info: #3b82f6;
+  --a2e-info-bg: rgba(59, 130, 246, 0.10);
+  --a2e-info-text: #93c5fd;
+
+  /* -----------------------------------------------------------------
+     Surface (dark theme primary)
+     ----------------------------------------------------------------- */
+  --a2e-bg-dark: #0a0a0f;
+  --a2e-bg-base: #111118;
+  --a2e-bg-card: #16161e;
+  --a2e-bg-card-hover: #1d1d27;
+  --a2e-glass-bg: rgba(22, 22, 30, 0.7);
+  --a2e-glass-border: rgba(255, 255, 255, 0.06);
+
+  /* -----------------------------------------------------------------
+     Text
+     ----------------------------------------------------------------- */
+  --a2e-text-primary: #ffffff;
+  --a2e-text-secondary: #cbd5e1;
+  --a2e-text-muted: #64748b;
+  --a2e-text-on-accent: #0a0a0f;
+
+  /* -----------------------------------------------------------------
+     Border
+     ----------------------------------------------------------------- */
+  --a2e-border: rgba(255, 255, 255, 0.08);
+  --a2e-border-light: rgba(255, 255, 255, 0.14);
+  --a2e-border-strong: rgba(255, 255, 255, 0.22);
+
+  /* -----------------------------------------------------------------
+     Spacing (4px base)
+     ----------------------------------------------------------------- */
+  --a2e-space-xs: 0.25rem;
+  --a2e-space-sm: 0.5rem;
+  --a2e-space-md: 1rem;
+  --a2e-space-lg: 1.5rem;
+  --a2e-space-xl: 2rem;
+  --a2e-space-2xl: 3rem;
+  --a2e-space-3xl: 4rem;
+
+  /* -----------------------------------------------------------------
+     Radius
+     ----------------------------------------------------------------- */
+  --a2e-radius-sm: 0.375rem;
+  --a2e-radius-md: 0.5rem;
+  --a2e-radius-lg: 0.75rem;
+  --a2e-radius-xl: 1rem;
+  --a2e-radius-2xl: 1.25rem;
+  --a2e-radius-full: 9999px;
+
+  /* -----------------------------------------------------------------
+     Typography
+     ----------------------------------------------------------------- */
+  --a2e-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --a2e-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+
+  --a2e-text-xs: 0.75rem;
+  --a2e-text-sm: 0.875rem;
+  --a2e-text-base: 1rem;
+  --a2e-text-lg: 1.125rem;
+  --a2e-text-xl: 1.25rem;
+  --a2e-text-2xl: 1.5rem;
+  --a2e-text-3xl: 1.875rem;
+  --a2e-text-4xl: 2.25rem;
+
+  /* -----------------------------------------------------------------
+     Shadow
+     ----------------------------------------------------------------- */
+  --a2e-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --a2e-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --a2e-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --a2e-shadow-brand: 0 12px 32px rgba(34, 197, 94, 0.35), 0 0 0 1px rgba(34, 197, 94, 0.2);
+
+  /* -----------------------------------------------------------------
+     Z-index
+     ----------------------------------------------------------------- */
+  --a2e-z-base: 0;
+  --a2e-z-raised: 10;
+  --a2e-z-sidebar: 20;
+  --a2e-z-dropdown: 30;
+  --a2e-z-modal: 40;
+  --a2e-z-toast: 50;
+  --a2e-z-loader: 60;
+
+  /* -----------------------------------------------------------------
+     Motion
+     ----------------------------------------------------------------- */
+  --a2e-motion-fast: 150ms;
+  --a2e-motion-base: 250ms;
+  --a2e-motion-slow: 350ms;
+  --a2e-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --a2e-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+}
