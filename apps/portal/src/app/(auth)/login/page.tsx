@@ -94,17 +94,31 @@ export default function LoginPage() {
         </Button>
       </Link>
 
-      <div className="mt-6 pt-6 border-t border-border space-y-2 text-center">
-        <p className="text-sm text-text-muted">Don&apos;t have an account yet?</p>
-        <div className="flex flex-col gap-1.5 text-sm">
-          <Link href="/register" className="text-accent hover:underline">
-            Sign up as Node Runner
-          </Link>
-          <span className="text-text-muted text-xs">earn by hosting GPUs</span>
-          <Link href="/register?role=buyer" className="text-accent hover:underline mt-1">
-            Sign up as Compute Buyer
-          </Link>
-          <span className="text-text-muted text-xs">rent GPUs for AI workloads</span>
+      <div className="mt-6 pt-6 border-t border-border text-center">
+        <p className="text-sm text-text-muted mb-3">Don&apos;t have an account yet?</p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left text-sm">
+          <div className="rounded-lg p-3 bg-surface-hover border border-border">
+            <p className="font-medium text-text-primary mb-0.5">Node Runner</p>
+            <p className="text-text-muted text-xs mb-2">earn by hosting GPUs</p>
+            <Link href="/register" className="text-accent hover:underline text-xs block">
+              Sign up with email
+            </Link>
+            <Link href="/connect-wallet" className="text-accent hover:underline text-xs block">
+              Sign up with wallet
+            </Link>
+          </div>
+
+          <div className="rounded-lg p-3 bg-surface-hover border border-border">
+            <p className="font-medium text-text-primary mb-0.5">Compute Buyer</p>
+            <p className="text-text-muted text-xs mb-2">rent GPUs for AI workloads</p>
+            <Link href="/register?role=buyer" className="text-accent hover:underline text-xs block">
+              Sign up with email
+            </Link>
+            <Link href="/connect-wallet?role=buyer" className="text-accent hover:underline text-xs block">
+              Sign up with wallet
+            </Link>
+          </div>
         </div>
       </div>
     </Card>

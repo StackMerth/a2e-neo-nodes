@@ -28,6 +28,9 @@ const walletAuthSchema = z.object({
   address: z.string().min(32).max(64),
   signature: z.string().min(1),
   nonce: z.string().min(1),
+  // Role hint used only when creating a brand-new user. Returning
+  // wallets keep their stored role regardless of this field.
+  role: z.enum(['NODE_RUNNER', 'COMPUTE_BUYER']).optional(),
 })
 
 const refreshSchema = z.object({
@@ -161,7 +164,7 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
       })
     }
 
-    const { address, signature, nonce } = parsed.data
+    const { address, signature, nonce, role } = parsed.data
 
     // Verify the signature
     const valid = verifyWalletSignature(address, signature, nonce)
@@ -172,8 +175,8 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
       })
     }
 
-    // Find or create user
-    const user = await findOrCreateUserByWallet(address)
+    // Find or create user. Role only applies to brand-new users.
+    const user = await findOrCreateUserByWallet(address, role)
     const accessToken = generateAccessToken(user.id, user.role)
     const refreshToken = await generateRefreshToken(user.id)
 

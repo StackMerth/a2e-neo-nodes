@@ -2,18 +2,21 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/components/ui/Toast'
 import { auth as authApi } from '@/lib/api'
-import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 
 export default function ConnectWalletPage() {
   const { walletLogin } = useAuth()
   const { toast } = useToast()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isBuyer = searchParams.get('role') === 'buyer'
+  const role: 'NODE_RUNNER' | 'COMPUTE_BUYER' = isBuyer ? 'COMPUTE_BUYER' : 'NODE_RUNNER'
+
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'select' | 'signing'>('select')
 
@@ -41,10 +44,12 @@ export default function ConnectWalletPage() {
       const { signature } = await phantom.signMessage(encodedMessage, 'utf8')
       const signatureBase64 = Buffer.from(signature).toString('base64')
 
-      // Authenticate
-      await walletLogin(address, signatureBase64, nonce)
+      // Authenticate. Role is a hint for new wallets only; returning
+      // wallets keep their stored role and the redirect uses what the
+      // API actually returns.
+      const user = await walletLogin(address, signatureBase64, nonce, role)
       toast('success', 'Wallet connected successfully')
-      router.push('/dashboard')
+      router.push(user.role === 'COMPUTE_BUYER' ? '/buyer/dashboard' : '/dashboard')
     } catch (error) {
       toast('error', error instanceof Error ? error.message : 'Wallet connection failed')
       setStep('select')
@@ -52,6 +57,13 @@ export default function ConnectWalletPage() {
       setLoading(false)
     }
   }
+
+  const heading = isBuyer ? 'Connect Wallet to Buy Compute' : 'Connect Wallet'
+  const subline = isBuyer
+    ? 'Connect your Solana wallet to rent GPU compute and pay in USDC'
+    : 'Connect your Solana wallet to access the node runner portal'
+  const otherRoleHref = isBuyer ? '/connect-wallet' : '/connect-wallet?role=buyer'
+  const otherRoleLabel = isBuyer ? 'Sign in as Node Runner instead' : 'Sign in as Compute Buyer instead'
 
   return (
     <Card className="p-8">
@@ -62,12 +74,16 @@ export default function ConnectWalletPage() {
         <ArrowLeft className="w-4 h-4" />
         Back to sign in
       </Link>
-      <h1 className="text-2xl font-bold text-text-primary mb-2">Connect Wallet</h1>
-      <p className="text-text-secondary text-sm mb-6">
-        {step === 'select'
-          ? 'Connect your Solana wallet to access the portal'
-          : 'Please sign the message in your wallet to verify ownership'}
+      <h1 className="text-2xl font-bold text-text-primary mb-2">{heading}</h1>
+      <p className="text-text-secondary text-sm mb-2">
+        {step === 'select' ? subline : 'Please sign the message in your wallet to verify ownership'}
       </p>
+      {step === 'select' && (
+        <p className="text-text-muted text-xs mb-6">
+          Returning users are sent to the dashboard for the role on file. The choice above only
+          applies to first-time wallet sign-ups.
+        </p>
+      )}
 
       {step === 'signing' ? (
         <div className="flex flex-col items-center py-8">
@@ -112,12 +128,17 @@ export default function ConnectWalletPage() {
         </div>
       )}
 
-      <p className="text-sm text-text-muted text-center mt-6">
-        Prefer email?{' '}
-        <Link href="/login" className="text-accent hover:underline">
-          Sign in with email
+      <div className="mt-6 pt-6 border-t border-border space-y-2 text-center text-sm">
+        <Link href={otherRoleHref} className="text-accent hover:underline">
+          {otherRoleLabel}
         </Link>
-      </p>
+        <p className="text-text-muted">
+          Prefer email?{' '}
+          <Link href="/login" className="text-accent hover:underline">
+            Sign in with email
+          </Link>
+        </p>
+      </div>
     </Card>
   )
 }
