@@ -1,3 +1,25 @@
+// Sentry must be initialised before any other module that we want
+// instrumented. Doing it at the very top ensures Fastify routes,
+// Prisma queries, and BullMQ workers are auto-traced.
+import * as Sentry from '@sentry/node'
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV ?? 'development',
+    // Sample 10% of transactions in production, 100% in dev. Tracing
+    // adds latency, so we keep it modest in production. Adjust via
+    // SENTRY_TRACES_SAMPLE_RATE env if needed.
+    tracesSampleRate: parseFloat(
+      process.env.SENTRY_TRACES_SAMPLE_RATE
+        ?? (process.env.NODE_ENV === 'production' ? '0.1' : '1.0')
+    ),
+    // Release tag pulled from RENDER_GIT_COMMIT (Render sets this
+    // automatically) so Sentry groups errors by deploy.
+    release: process.env.RENDER_GIT_COMMIT ?? undefined,
+  })
+  console.log('[sentry] Initialised for environment:', process.env.NODE_ENV)
+}
+
 import Fastify from 'fastify'
 import './types' // Type augmentations
 import { prismaPlugin, redisPlugin, authPlugin, corsPlugin, overflowRegistryPlugin } from './plugins'

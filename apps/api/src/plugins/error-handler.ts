@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyError, FastifyRequest, FastifyReply } from 'fastify'
 import fp from 'fastify-plugin'
+import * as Sentry from '@sentry/node'
 
 interface ErrorResponse {
   error: string
@@ -36,6 +37,19 @@ async function errorHandlerPlugin(fastify: FastifyInstance) {
 
       // Determine status code
       const statusCode = error.statusCode ?? 500
+
+      // Forward 5xx errors to Sentry. 4xx are client errors (validation,
+      // auth, not-found) and would create noise in Sentry without value.
+      if (statusCode >= 500 && process.env.SENTRY_DSN) {
+        Sentry.withScope((scope) => {
+          scope.setTag('request_id', requestId)
+          scope.setTag('method', request.method)
+          scope.setTag('url', request.url)
+          scope.setExtra('status_code', statusCode)
+          if (request.authType) scope.setTag('auth_type', request.authType)
+          Sentry.captureException(error)
+        })
+      }
 
       // Build error response
       const errorResponse: ErrorResponse = {
