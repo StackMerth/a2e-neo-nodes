@@ -215,9 +215,13 @@ export class NodeProvisioner extends EventEmitter {
     await this.log('info', 'TEST MODE: skipping all SSH operations')
     await this.log('warn', 'This node will not actually run jobs. For QA only.')
 
-    for (let i = 0; i < PROVISION_STEPS.length; i++) {
-      const step = PROVISION_STEPS[i]
-      await this.updateStatus(step.status, i + 1, step.action)
+    // for-of so TypeScript narrows `step` to non-undefined.
+    // PROVISION_STEPS is `as const` so length and items are statically typed,
+    // but indexing by number under strict mode still yields `T | undefined`.
+    let stepNumber = 0
+    for (const step of PROVISION_STEPS) {
+      stepNumber += 1
+      await this.updateStatus(step.status, stepNumber, step.action)
       await this.log('info', `[test-mode] ${step.action} (simulated)`)
       await new Promise((r) => setTimeout(r, stepDelayMs))
     }
