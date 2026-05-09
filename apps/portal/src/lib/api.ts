@@ -98,9 +98,17 @@ export const auth = {
     ),
   walletNonce: (address: string) =>
     apiFetch<{ nonce: string; message: string }>(`/v1/portal/auth/wallet/nonce?address=${address}`),
-  walletAuth: (address: string, signature: string, nonce: string) =>
+  walletAuth: (
+    address: string,
+    signature: string,
+    nonce: string,
+    role?: 'NODE_RUNNER' | 'COMPUTE_BUYER'
+  ) =>
     apiFetch<{ user: { id: string; walletAddress: string | null; role: string; nodeRunnerId: string | null }; accessToken: string; refreshToken: string }>(
-      '/v1/portal/auth/wallet', { method: 'POST', body: { address, signature, nonce } }
+      '/v1/portal/auth/wallet', {
+        method: 'POST',
+        body: { address, signature, nonce, ...(role ? { role } : {}) },
+      }
     ),
   me: () => apiFetch<{ id: string; email: string | null; walletAddress: string | null; role: string; nodeRunnerId: string | null; createdAt: string }>(
     '/v1/portal/auth/me'

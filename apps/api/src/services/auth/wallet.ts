@@ -70,9 +70,21 @@ export function verifyWalletSignature(
 
 /**
  * Find or create a User by wallet address.
- * Also auto-links to existing NodeRunner if one exists with the same wallet.
+ *
+ * Returning users keep whatever role is already in the DB (the role
+ * argument is ignored). New users get the requested role, defaulting
+ * to NODE_RUNNER for backward compatibility with the original wallet
+ * flow.
+ *
+ * For new NODE_RUNNER users we still auto-link any pre-existing
+ * NodeRunner row created via the admin dashboard. For COMPUTE_BUYER
+ * users we never connect a NodeRunner relation; the buyer entity is
+ * the User row itself plus their ComputeRequest history.
  */
-export async function findOrCreateUserByWallet(walletAddress: string) {
+export async function findOrCreateUserByWallet(
+  walletAddress: string,
+  role: 'NODE_RUNNER' | 'COMPUTE_BUYER' = 'NODE_RUNNER'
+) {
   // Check if user already exists
   let user = await prisma.user.findUnique({
     where: { walletAddress },
@@ -83,16 +95,17 @@ export async function findOrCreateUserByWallet(walletAddress: string) {
     return user;
   }
 
-  // Check if a NodeRunner exists with this wallet (created via admin dashboard)
-  const existingNodeRunner = await prisma.nodeRunner.findUnique({
-    where: { walletAddress },
-  });
+  // Only NODE_RUNNER signups inherit an existing NodeRunner row.
+  // Buyers never auto-link.
+  const existingNodeRunner =
+    role === 'NODE_RUNNER'
+      ? await prisma.nodeRunner.findUnique({ where: { walletAddress } })
+      : null;
 
-  // Create user + link to NodeRunner in a transaction
   user = await prisma.user.create({
     data: {
       walletAddress,
-      role: 'NODE_RUNNER',
+      role,
       nodeRunner: existingNodeRunner
         ? { connect: { id: existingNodeRunner.id } }
         : undefined,

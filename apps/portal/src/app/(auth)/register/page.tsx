@@ -102,13 +102,11 @@ export default function RegisterPage() {
         </div>
       </div>
 
-      {!isBuyer && (
-        <Link href="/connect-wallet">
-          <Button variant="secondary" className="w-full">
-            Connect Wallet Instead
-          </Button>
-        </Link>
-      )}
+      <Link href={isBuyer ? '/connect-wallet?role=buyer' : '/connect-wallet'}>
+        <Button variant="secondary" className="w-full">
+          Connect Wallet Instead
+        </Button>
+      </Link>
 
       <p className="text-sm text-text-muted text-center mt-4">
         {isBuyer ? (
