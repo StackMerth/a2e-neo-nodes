@@ -36,9 +36,10 @@ export default function RegisterPage() {
 
     setLoading(true)
     try {
-      const user = await register(email, password)
+      const role = isBuyer ? 'COMPUTE_BUYER' : 'NODE_RUNNER'
+      const user = await register(email, password, role)
       toast('success', 'Account created successfully')
-      if (isBuyer || user.role === 'COMPUTE_BUYER') {
+      if (user.role === 'COMPUTE_BUYER') {
         router.push('/buyer/dashboard')
       } else {
         router.push('/dashboard')

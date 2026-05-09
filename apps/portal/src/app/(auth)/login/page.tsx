@@ -38,7 +38,13 @@ export default function LoginPage() {
   return (
     <Card className="p-8">
       <h1 className="text-2xl font-bold text-text-primary mb-2">Welcome Back</h1>
-      <p className="text-text-secondary text-sm mb-6">Sign in to manage your GPU nodes and earnings</p>
+      <p className="text-text-secondary text-sm mb-2">
+        Sign in to your A²E account
+      </p>
+      <p className="text-text-muted text-xs mb-6">
+        One sign-in for everyone. We&apos;ll route you to the right dashboard automatically:
+        node runners go to GPU management, compute buyers go to rentals.
+      </p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
@@ -88,12 +94,19 @@ export default function LoginPage() {
         </Button>
       </Link>
 
-      <p className="text-sm text-text-muted text-center mt-6">
-        Don&apos;t have an account?{' '}
-        <Link href="/register" className="text-accent hover:underline">
-          Create one
-        </Link>
-      </p>
+      <div className="mt-6 pt-6 border-t border-border space-y-2 text-center">
+        <p className="text-sm text-text-muted">Don&apos;t have an account yet?</p>
+        <div className="flex flex-col gap-1.5 text-sm">
+          <Link href="/register" className="text-accent hover:underline">
+            Sign up as Node Runner
+          </Link>
+          <span className="text-text-muted text-xs">earn by hosting GPUs</span>
+          <Link href="/register?role=buyer" className="text-accent hover:underline mt-1">
+            Sign up as Compute Buyer
+          </Link>
+          <span className="text-text-muted text-xs">rent GPUs for AI workloads</span>
+        </div>
+      </div>
     </Card>
   )
 }
