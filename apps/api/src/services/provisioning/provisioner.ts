@@ -99,6 +99,23 @@ export class NodeProvisioner extends EventEmitter {
     this.emit('status', { status, step, action })
   }
 
+  /**
+   * Poll the ProvisionJob row to see if an admin cancelled this run.
+   * Called between SSH steps. Throwing here is caught by the outer
+   * try/catch in provision(), which routes to markFailed() and the
+   * job ends cleanly. The error message is preserved so the admin's
+   * cancel reason shows up in the failure log.
+   */
+  private async checkCancellation(): Promise<void> {
+    const row = await this.prisma.provisionJob.findUnique({
+      where: { id: this.provisionId },
+      select: { status: true, error: true },
+    })
+    if (row?.status === 'CANCELLED') {
+      throw new Error(row.error ?? 'Provisioning cancelled by admin')
+    }
+  }
+
   private async markFailed(error: string): Promise<void> {
     await this.prisma.provisionJob.update({
       where: { id: this.provisionId },
@@ -153,6 +170,7 @@ export class NodeProvisioner extends EventEmitter {
 
     try {
       // Step 1: Connect
+      await this.checkCancellation()
       await this.updateStatus('CONNECTING', 1, PROVISION_STEPS[0].action)
       await this.log('info', `Connecting to ${config.host}:${config.port}...`)
 
@@ -167,26 +185,32 @@ export class NodeProvisioner extends EventEmitter {
       await this.detectRootUser()
 
       // Step 2: Verify prerequisites
+      await this.checkCancellation()
       await this.updateStatus('VERIFYING', 2, PROVISION_STEPS[1].action)
       await this.verifyPrerequisites(config.gpuTier, config.testMode)
 
       // Step 3: Download agent
+      await this.checkCancellation()
       await this.updateStatus('DOWNLOADING', 3, PROVISION_STEPS[2].action)
       await this.downloadAgent()
 
       // Step 4: Install agent
+      await this.checkCancellation()
       await this.updateStatus('INSTALLING', 4, PROVISION_STEPS[3].action)
       await this.installAgent()
 
       // Step 5: Configure agent
+      await this.checkCancellation()
       await this.updateStatus('CONFIGURING', 5, PROVISION_STEPS[4].action)
       await this.configureAgent(config)
 
       // Step 6: Start service
+      await this.checkCancellation()
       await this.updateStatus('STARTING', 6, PROVISION_STEPS[5].action)
       await this.startService()
 
       // Step 7: Wait for registration
+      await this.checkCancellation()
       await this.updateStatus('WAITING_REGISTRATION', 7, PROVISION_STEPS[6].action)
       const nodeId = await this.waitForRegistration(config.host)
 
@@ -220,6 +244,7 @@ export class NodeProvisioner extends EventEmitter {
     // but indexing by number under strict mode still yields `T | undefined`.
     let stepNumber = 0
     for (const step of PROVISION_STEPS) {
+      await this.checkCancellation()
       stepNumber += 1
       await this.updateStatus(step.status, stepNumber, step.action)
       await this.log('info', `[test-mode] ${step.action} (simulated)`)

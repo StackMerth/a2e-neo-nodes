@@ -168,7 +168,19 @@ export async function adminDeploymentRoutes(fastify: FastifyInstance) {
   })
 
   /**
-   * PATCH /v1/admin/deployments/:id/cancel — Cancel a deployment request
+   * PATCH /v1/admin/deployments/:id/cancel — Cancel a deployment request.
+   *
+   * Cancels at three levels:
+   *   1. Investment.status -> CANCELLED
+   *   2. Linked ProvisionJob.status -> CANCELLED (so the in-flight worker
+   *      sees the change on its next poll and aborts)
+   *   3. BullMQ job removal (so a queued-but-not-started job never runs)
+   *
+   * The provisioner polls ProvisionJob.status between each SSH step and
+   * throws on CANCELLED, which causes markFailed to fire and the worker
+   * to release the job cleanly. Worst case the worker is mid-SSH-call
+   * when cancel happens; the SSH timeout (30s connect, 120s exec) will
+   * unblock it within seconds to two minutes.
    */
   fastify.patch('/v1/admin/deployments/:id/cancel', async (request, reply) => {
     const { id } = request.params as { id: string }
@@ -184,10 +196,43 @@ export async function adminDeploymentRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Cannot cancel', message: `Status is ${deployment.status}` })
     }
 
-    await fastify.prisma.investment.update({
-      where: { id },
-      data: { status: 'CANCELLED' },
+    // Step 1 + 2: cancel the investment and any linked provision job atomically.
+    await fastify.prisma.$transaction(async (tx) => {
+      await tx.investment.update({
+        where: { id },
+        data: { status: 'CANCELLED' },
+      })
+
+      if (deployment.provisionJobId) {
+        await tx.provisionJob.updateMany({
+          where: {
+            id: deployment.provisionJobId,
+            status: { notIn: ['COMPLETED', 'FAILED', 'CANCELLED'] },
+          },
+          data: {
+            status: 'CANCELLED',
+            error: reason ?? 'Cancelled by admin',
+            completedAt: new Date(),
+          },
+        })
+      }
     })
+
+    // Step 3: remove from BullMQ queue. Job ID matches ProvisionJob.id
+    // (set in submitProvisionJob via { jobId: provisionJob.id }).
+    if (deployment.provisionJobId && fastify.provisionQueue) {
+      try {
+        const queuedJob = await fastify.provisionQueue.getJob(deployment.provisionJobId)
+        if (queuedJob) {
+          await queuedJob.remove()
+          fastify.log.info({ provisionId: deployment.provisionJobId }, 'BullMQ job removed on cancel')
+        }
+      } catch (err) {
+        // Removal failure is non-fatal: the worker will still see the
+        // CANCELLED status from step 2 on its next poll and abort.
+        fastify.log.warn({ err, provisionId: deployment.provisionJobId }, 'Could not remove BullMQ job, will rely on status poll')
+      }
+    }
 
     // Notify node runner
     if (deployment.nodeRunner?.userId) {
@@ -199,7 +244,59 @@ export async function adminDeploymentRoutes(fastify: FastifyInstance) {
       )
     }
 
-    reply.send({ id, status: 'CANCELLED' })
+    fastify.io?.emit('deployment:statusChange', {
+      investmentId: id,
+      oldStatus: deployment.status,
+      newStatus: 'CANCELLED',
+      nodeRunnerId: deployment.nodeRunnerId,
+      timestamp: new Date().toISOString(),
+    })
+
+    reply.send({ id, status: 'CANCELLED', provisionJobCancelled: !!deployment.provisionJobId })
+  })
+
+  /**
+   * POST /v1/admin/deployments/force-cancel-stuck — Force-cancel any
+   * provisioning jobs older than the threshold (default 10 minutes) that
+   * are stuck in non-terminal states. Use when a job won't respond to a
+   * normal cancel because the worker is wedged on a low-level SSH call.
+   *
+   * Body: { thresholdMinutes?: number }
+   */
+  fastify.post('/v1/admin/deployments/force-cancel-stuck', async (request, reply) => {
+    const body = (request.body as { thresholdMinutes?: number }) || {}
+    const thresholdMin = body.thresholdMinutes ?? 10
+    const cutoff = new Date(Date.now() - thresholdMin * 60 * 1000)
+
+    const result = await fastify.prisma.provisionJob.updateMany({
+      where: {
+        status: { notIn: ['COMPLETED', 'FAILED', 'CANCELLED'] },
+        createdAt: { lt: cutoff },
+      },
+      data: {
+        status: 'CANCELLED',
+        error: `Force-cancelled by admin (job older than ${thresholdMin} minutes)`,
+        completedAt: new Date(),
+      },
+    })
+
+    // Best-effort BullMQ cleanup. We can't enumerate by status easily so we
+    // rely on the worker hitting the CANCELLED status on its next poll and
+    // failing out cleanly; orphan queue entries will be cleaned by BullMQ's
+    // own removeOnFail / removeOnComplete config.
+
+    // Also revert any DEPLOYING investments so they go back to
+    // DEPLOYMENT_REQUESTED and admin can retry from a clean state.
+    const investmentResult = await fastify.prisma.investment.updateMany({
+      where: { status: 'DEPLOYING' },
+      data: { status: 'DEPLOYMENT_REQUESTED', provisionJobId: null },
+    })
+
+    reply.send({
+      provisionJobsCancelled: result.count,
+      investmentsReverted: investmentResult.count,
+      thresholdMinutes: thresholdMin,
+    })
   })
 
   /**
