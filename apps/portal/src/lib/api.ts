@@ -160,7 +160,16 @@ export const nodeRunner = {
 // Buyer API
 export const buyer = {
   dashboard: () => apiFetch('/v1/buyer/dashboard'),
-  requestCompute: (data: { gpuTier: string; gpuCount: number; durationDays: number; purpose?: string; txHash: string }) =>
+  requestCompute: (data: {
+    gpuTier: string
+    gpuCount: number
+    durationDays: number
+    purpose?: string
+    txHash: string
+    // M3: pricing tier + optional commitment (RESERVED only)
+    tier?: 'ON_DEMAND' | 'SPOT' | 'RESERVED'
+    commitmentDays?: number
+  }) =>
     apiFetch('/v1/buyer/compute/request', { method: 'POST', body: data }),
   requests: (params?: Record<string, string>) => {
     const qs = params ? '?' + new URLSearchParams(params).toString() : ''

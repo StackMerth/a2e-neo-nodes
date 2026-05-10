@@ -24,7 +24,35 @@ const requestSchema = z.object({
   durationDays: z.number().int().min(1).max(365).default(7),
   purpose: z.string().max(500).optional(),
   txHash: z.string().min(1, 'Transaction hash is required'),
-})
+  // M3: pricing tier (default ON_DEMAND keeps existing flows working).
+  //   ON_DEMAND — full price, never preempted, no commitment
+  //   SPOT      — discounted (default 40% off via SPOT_DISCOUNT_PCT),
+  //               preemptible with 90s notice
+  //   RESERVED  — 10% off, exempt from preemption, requires
+  //               commitmentDays in {7, 30, 90}
+  tier: z.enum(['ON_DEMAND', 'SPOT', 'RESERVED']).default('ON_DEMAND'),
+  commitmentDays: z.number().int().refine(d => [7, 30, 90].includes(d), {
+    message: 'commitmentDays must be 7, 30, or 90',
+  }).optional(),
+}).refine(
+  data => data.tier !== 'RESERVED' || data.commitmentDays !== undefined,
+  { message: 'commitmentDays required for RESERVED tier', path: ['commitmentDays'] },
+).refine(
+  data => data.tier === 'RESERVED' || data.commitmentDays === undefined,
+  { message: 'commitmentDays only allowed on RESERVED tier', path: ['commitmentDays'] },
+)
+
+// M3 pricing modifiers. ON_DEMAND = full price baseline. SPOT and
+// RESERVED apply discounts. Tunable so the operator can dial without
+// a redeploy when market prices shift.
+const SPOT_DISCOUNT_PCT = parseFloat(process.env.SPOT_DISCOUNT_PCT ?? '0.4')         // 40% off
+const RESERVED_DISCOUNT_PCT = parseFloat(process.env.RESERVED_DISCOUNT_PCT ?? '0.1') // 10% off
+
+function tierPricingMultiplier(tier: 'ON_DEMAND' | 'SPOT' | 'RESERVED'): number {
+  if (tier === 'SPOT') return 1 - SPOT_DISCOUNT_PCT
+  if (tier === 'RESERVED') return 1 - RESERVED_DISCOUNT_PCT
+  return 1
+}
 
 const listSchema = z.object({
   page: z.coerce.number().min(1).default(1),
@@ -104,9 +132,20 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
     }
 
-    const { gpuTier, gpuCount, durationDays, purpose, txHash } = parsed.data
-    const ratePerDay = GPU_DAILY_RATES[gpuTier] ?? 140.15
-    const totalCost = ratePerDay * gpuCount * durationDays
+    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays } = parsed.data
+    const baseRatePerDay = GPU_DAILY_RATES[gpuTier] ?? 140.15
+    // M3: tier discount applied to ratePerDay so all downstream
+    // calculations (totalCost, ratePerMinute set by allocator, refund
+    // math) automatically inherit the tier pricing.
+    const ratePerDay = baseRatePerDay * tierPricingMultiplier(tier)
+    // For RESERVED, the rental's effective duration is the commitment
+    // period (always >= durationDays). Buyer locks in commitmentDays;
+    // we overwrite durationDays so ACTIVE rentals' expiresAt is set
+    // correctly by the allocator.
+    const effectiveDurationDays = tier === 'RESERVED' && commitmentDays
+      ? commitmentDays
+      : durationDays
+    const totalCost = ratePerDay * gpuCount * effectiveDurationDays
     const isTestTx = txHash.startsWith('test_')
     const userId = request.user!.userId
 
@@ -160,13 +199,18 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         userId,
         gpuTier: gpuTier as import('@a2e/database').GpuTier,
         gpuCount,
-        durationDays,
+        durationDays: effectiveDurationDays,
         purpose,
         ratePerDay,
         totalCost,
         txHash: storedTxHash,
         txConfirmed: true,
         status: 'PENDING',
+        // M3: persist tier so the routing engine + preemption worker
+        // can read it. commitmentDays only stored for RESERVED rentals
+        // (refund logic checks this when buyer terminates early).
+        tier,
+        commitmentDays: tier === 'RESERVED' ? commitmentDays ?? null : null,
       },
     })
 
@@ -326,7 +370,14 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       Number((finalMinutes * ratePerMinute).toFixed(4)),
       cr.totalCost,
     )
-    const refundAmount = Math.max(0, Number((cr.totalCost - finalAccrued).toFixed(4)))
+    // M3: RESERVED tier rentals are non-refundable on early termination
+    // (commitment is the commitment, like AWS Reserved Instances). Buyer
+    // chose the discount in exchange for locking in the duration; if
+    // they leave early, they paid for the full commitment regardless.
+    // ON_DEMAND and SPOT both refund the unused portion as before.
+    const refundAmount = cr.tier === 'RESERVED'
+      ? 0
+      : Math.max(0, Number((cr.totalCost - finalAccrued).toFixed(4)))
 
     // Refund flow: only attempt if the user has a payable wallet on file.
     // We pull from User.walletAddress; buyers can set this in /v1/buyer/settings.
@@ -336,10 +387,15 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     })
 
     let refundTxHash: string | null = null
-    let refundStatus: 'SENT' | 'SKIPPED_NO_WALLET' | 'SKIPPED_ZERO' | 'FAILED' = 'SKIPPED_ZERO'
+    let refundStatus: 'SENT' | 'SKIPPED_NO_WALLET' | 'SKIPPED_ZERO' | 'SKIPPED_RESERVED' | 'FAILED' = 'SKIPPED_ZERO'
     let refundError: string | null = null
 
-    if (refundAmount <= 0) {
+    if (cr.tier === 'RESERVED') {
+      // Distinct status from SKIPPED_ZERO so the buyer notification +
+      // admin note explain the commitment-forfeit semantics, not just
+      // "no refund due."
+      refundStatus = 'SKIPPED_RESERVED'
+    } else if (refundAmount <= 0) {
       refundStatus = 'SKIPPED_ZERO'
     } else if (!user?.walletAddress) {
       refundStatus = 'SKIPPED_NO_WALLET'
@@ -400,7 +456,9 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         ? `Your rental ended. Refund of $${refundAmount.toFixed(2)} sent to your wallet.`
         : refundStatus === 'SKIPPED_NO_WALLET'
           ? `Your rental ended. Add a wallet address in settings to receive future refunds.`
-          : `Your rental ended. ${refundStatus === 'SKIPPED_ZERO' ? 'No refund due.' : 'Refund failed — admin notified.'}`,
+          : refundStatus === 'SKIPPED_RESERVED'
+            ? `Your RESERVED rental ended early. Per your ${cr.commitmentDays}-day commitment, no refund applies.`
+            : `Your rental ended. ${refundStatus === 'SKIPPED_ZERO' ? 'No refund due.' : 'Refund failed — admin notified.'}`,
     )
 
     // Notify all admins so the bell + the dashboard's notification feed

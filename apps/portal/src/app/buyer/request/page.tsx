@@ -84,6 +84,26 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 }
 
+// M3 pricing tier metadata. Discounts mirror SPOT_DISCOUNT_PCT and
+// RESERVED_DISCOUNT_PCT defaults on the API; if those env vars change,
+// update the UI labels here too. The 'preemptible' / 'commitment'
+// copy explains the trade-off so buyers understand the discount.
+type RentalTier = 'ON_DEMAND' | 'SPOT' | 'RESERVED'
+const TIER_OPTIONS: Array<{
+  id: RentalTier
+  label: string
+  discount: number
+  multiplier: number
+  pitch: string
+  caveat: string
+}> = [
+  { id: 'ON_DEMAND', label: 'On-Demand', discount: 0,    multiplier: 1.0, pitch: 'Full price, no commitment', caveat: 'Highest reliability — never preempted' },
+  { id: 'SPOT',      label: 'Spot',      discount: 0.4,  multiplier: 0.6, pitch: '40% off',                  caveat: 'Preemptible with 90s notice when On-Demand demand spikes' },
+  { id: 'RESERVED',  label: 'Reserved',  discount: 0.1,  multiplier: 0.9, pitch: '10% off + lock in capacity', caveat: 'Pick a 7/30/90-day commitment. Non-refundable on early terminate.' },
+]
+
+const COMMITMENT_OPTIONS = [7, 30, 90] as const
+
 export default function RequestComputePage() {
   const router = useRouter()
   const { toast } = useToast()
@@ -93,10 +113,18 @@ export default function RequestComputePage() {
   const [purpose, setPurpose] = useState('')
   const [txHash, setTxHash] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // M3: pricing tier + commitment slider for RESERVED
+  const [rentalTier, setRentalTier] = useState<RentalTier>('ON_DEMAND')
+  const [commitmentDays, setCommitmentDays] = useState<number>(30)
 
   const hourlyRate = selectedTier ? HOURLY_RATES[selectedTier] ?? 0 : 0
-  const dailyRate = hourlyRate * 24
-  const totalCost = dailyRate * gpuCount * duration
+  const tierMultiplier = TIER_OPTIONS.find(t => t.id === rentalTier)?.multiplier ?? 1
+  const dailyRate = hourlyRate * 24 * tierMultiplier
+  // RESERVED rentals always lock in commitmentDays as the duration —
+  // the API enforces this server-side, the UI just mirrors it for the
+  // cost preview.
+  const effectiveDuration = rentalTier === 'RESERVED' ? commitmentDays : duration
+  const totalCost = dailyRate * gpuCount * effectiveDuration
 
   async function handleSubmit() {
     if (!selectedTier || !txHash.trim()) {
@@ -109,9 +137,11 @@ export default function RequestComputePage() {
       const result = await buyer.requestCompute({
         gpuTier: selectedTier,
         gpuCount,
-        durationDays: duration,
+        durationDays: effectiveDuration,
         purpose: purpose.trim() || undefined,
         txHash: txHash.trim(),
+        tier: rentalTier,
+        commitmentDays: rentalTier === 'RESERVED' ? commitmentDays : undefined,
       }) as { id: string }
       toast('success', 'Compute request submitted successfully')
       router.push(`/buyer/requests/${result.id}`)
@@ -192,6 +222,69 @@ export default function RequestComputePage() {
             )
           })}
         </div>
+      </motion.div>
+
+      {/* M3: Pricing Tier selector */}
+      <motion.div variants={item}>
+        <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Pricing Tier</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {TIER_OPTIONS.map(t => {
+            const isSelected = rentalTier === t.id
+            const accent = t.id === 'SPOT' ? '#f59e0b' : t.id === 'RESERVED' ? '#3b82f6' : '#22c55e'
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setRentalTier(t.id)}
+                className="text-left rounded-xl p-4 transition-all duration-200"
+                style={isSelected
+                  ? { background: `${accent}15`, border: `1px solid ${accent}66`, boxShadow: `0 0 16px ${accent}22` }
+                  : { background: 'var(--bg-card)', border: '1px solid var(--border-color)' }
+                }
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{t.label}</span>
+                  {t.discount > 0 && (
+                    <span
+                      className="text-xs font-bold px-2 py-0.5 rounded"
+                      style={{ background: `${accent}33`, color: accent }}
+                    >
+                      -{Math.round(t.discount * 100)}%
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>{t.pitch}</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{t.caveat}</p>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* RESERVED commitment slider — only shown when RESERVED is picked */}
+        {rentalTier === 'RESERVED' && (
+          <div className="mt-4 p-4 rounded-xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+            <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Commitment Period</h3>
+            <div className="flex gap-3 flex-wrap">
+              {COMMITMENT_OPTIONS.map(d => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setCommitmentDays(d)}
+                  className="px-4 h-11 rounded-lg font-medium transition-all duration-200"
+                  style={commitmentDays === d
+                    ? { background: '#3b82f6', color: '#fff' }
+                    : { background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }
+                  }
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+            <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
+              Locked-in capacity for {commitmentDays} days. Non-refundable on early terminate.
+            </p>
+          </div>
+        )}
       </motion.div>
 
       {/* GPU Count */}
