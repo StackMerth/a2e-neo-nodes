@@ -76,6 +76,58 @@ const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
   { label: 'Rejected', value: 'REJECTED' },
 ]
 
+// Friendly explanations for every eligibility flag the auto-allocator
+// can write. Keys are the raw flag values from the API; values are
+// admin-facing explanations shown in the Details modal so admins don't
+// have to memorize what each flag means.
+const FLAG_DESCRIPTIONS: Record<string, { kind: 'hold' | 'pass' | 'info'; title: string; desc: string }> = {
+  HOLD_FIRST_TIME_OVER_CEILING: {
+    kind: 'hold',
+    title: 'First-time buyer over spend ceiling',
+    desc: 'This buyer has zero successful rentals AND the request totalCost exceeds $500 (default ALLOCATOR_FIRST_TIME_CEILING_USD). Held to give the team a chance to review unfamiliar buyers spending real money on their first rental.',
+  },
+  HOLD_DAILY_SPEND_EXCEEDED: {
+    kind: 'hold',
+    title: 'Daily spend cap exceeded',
+    desc: 'This buyer\'s last 24h of requests + this new request would exceed their per-day spend cap (default $10,000, tunable per buyer via User.maxDailySpendUsd).',
+  },
+  HOLD_CONCURRENT_LIMIT: {
+    kind: 'hold',
+    title: 'Concurrent rental limit',
+    desc: 'This buyer is already at their maxConcurrentRentals cap (default 10). One of their existing rentals must end before this one allocates.',
+  },
+  HOLD_UNVERIFIED_EMAIL: {
+    kind: 'hold',
+    title: 'Email not verified',
+    desc: 'This buyer hasn\'t clicked the verification email yet. Trust signal — verified email is a basic eligibility check.',
+  },
+  PASS_FAST_TRACK: {
+    kind: 'pass',
+    title: 'Fast-tracked',
+    desc: 'Buyer has 3+ successful rentals (ALLOCATOR_TRUSTED_RENTAL_COUNT). Skipped the first-time ceiling check.',
+  },
+  PASS_NORMAL: {
+    kind: 'pass',
+    title: 'Normal eligibility pass',
+    desc: 'All eligibility rules passed without holds.',
+  },
+  PASS_MANUAL_REVIEW: {
+    kind: 'pass',
+    title: 'Manually reviewed by admin',
+    desc: 'Admin clicked Release Hold on this request. The eligibility engine bypassed re-evaluation so the request can proceed.',
+  },
+  MANUAL_REVIEW_PASSED: {
+    kind: 'info',
+    title: 'Manual review marker',
+    desc: 'Internal flag carried on the row so subsequent allocator ticks recognize the bypass. Persists across capacity-wait re-evaluations.',
+  },
+  WAITING_ON_CAPACITY: {
+    kind: 'info',
+    title: 'Waiting on capacity',
+    desc: 'Allocator ran but found no idle nodes matching the requested GPU tier. The request stays PENDING and retries on the next 10s tick. Will allocate as soon as a matching node frees up.',
+  },
+}
+
 export default function ComputeRequestsPage() {
   const [requests, setRequests] = useState<ComputeRequest[]>([])
   const [counts, setCounts] = useState<Counts>({ pending: 0, approved: 0, allocated: 0, active: 0, completed: 0, cancelled: 0, rejected: 0, waitlisted: 0 })
@@ -112,6 +164,11 @@ export default function ComputeRequestsPage() {
   // Reject form
   const [rejectReason, setRejectReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  // Details modal — opened from yellow flag chip OR info icon next to status.
+  // Single surface for "tell me everything about this row" (admin note + every
+  // eligibility flag with a friendly description).
+  const [detailsRequest, setDetailsRequest] = useState<ComputeRequest | null>(null)
 
   const loadData = useCallback(async () => {
     try {
@@ -594,7 +651,24 @@ export default function ComputeRequestsPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      {getStatusBadge(req.status)}
+                      <div className="flex items-center gap-2">
+                        {getStatusBadge(req.status)}
+                        {/* Info icon on rows with an adminNote — clicking
+                            opens the Details modal so admins can read
+                            'Buyer terminated. Refund $X sent: DEV_...' or
+                            'Auto-completed: rental term reached' without
+                            digging into the API. */}
+                        {req.adminNote && (
+                          <button
+                            type="button"
+                            onClick={() => setDetailsRequest(req)}
+                            title={`Note: ${req.adminNote.slice(0, 80)}${req.adminNote.length > 80 ? '…' : ''}`}
+                            className="w-5 h-5 rounded-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 flex items-center justify-center text-xs font-bold transition-colors cursor-pointer"
+                          >
+                            i
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-text-muted text-sm">
                       {new Date(req.requestedAt).toLocaleDateString()}
@@ -603,20 +677,22 @@ export default function ComputeRequestsPage() {
                       <div className="flex items-center justify-end gap-2 flex-wrap">
                         {req.status === 'PENDING' && (
                           <>
-                            {/* Show flag chip on PENDING rows when WAITING_ON_CAPACITY
-                                or other non-hold flags are present (e.g. after admin
-                                released the hold). Tooltip lists every flag. */}
+                            {/* Click-through flag chip — opens Details modal
+                                with friendly descriptions of every flag plus
+                                the adminNote. Hover tooltip kept as a hint. */}
                             {req.eligibilityFlags && req.eligibilityFlags.length > 0 && (
-                              <span
-                                className="px-2 py-1 text-xs rounded bg-accent/10 text-accent font-mono whitespace-nowrap"
-                                title={req.eligibilityFlags.join(', ')}
+                              <button
+                                type="button"
+                                onClick={() => setDetailsRequest(req)}
+                                className="px-2 py-1 text-xs rounded bg-accent/10 text-accent font-mono whitespace-nowrap hover:bg-accent/20 transition-colors cursor-pointer"
+                                title="Click for details"
                               >
                                 {req.eligibilityFlags.includes('WAITING_ON_CAPACITY')
                                   ? 'waiting on capacity'
                                   : req.eligibilityFlags.includes('MANUAL_REVIEW_PASSED')
                                     ? 'reviewed'
                                     : `${req.eligibilityFlags.length} flag(s)`}
-                              </span>
+                              </button>
                             )}
                             <button
                               onClick={() => handleApprove(req.id)}
@@ -643,12 +719,14 @@ export default function ComputeRequestsPage() {
                         {req.status === 'WAITLISTED' && (
                           <>
                             {req.eligibilityFlags && req.eligibilityFlags.length > 0 && (
-                              <span
-                                className="px-2 py-1 text-xs rounded bg-warning/10 text-warning font-mono whitespace-nowrap"
-                                title={req.eligibilityFlags.join(', ')}
+                              <button
+                                type="button"
+                                onClick={() => setDetailsRequest(req)}
+                                className="px-2 py-1 text-xs rounded bg-warning/10 text-warning font-mono whitespace-nowrap hover:bg-warning/20 transition-colors cursor-pointer"
+                                title="Click to see why this request is held"
                               >
-                                {req.eligibilityFlags.filter(f => f.startsWith('HOLD_')).length} flag(s)
-                              </span>
+                                {req.eligibilityFlags.filter(f => f.startsWith('HOLD_')).length} flag(s) ⓘ
+                              </button>
                             )}
                             <button
                               onClick={() => handleReleaseHold(req.id)}
@@ -980,6 +1058,97 @@ export default function ComputeRequestsPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Details modal — shows adminNote + every eligibility flag with a
+          friendly description. Triggered by either the yellow flag chip
+          or the small 'i' info icon next to the status badge. */}
+      <Modal
+        open={!!detailsRequest}
+        onClose={() => setDetailsRequest(null)}
+        title="Request Details"
+      >
+        {detailsRequest && (
+          <div className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 gap-3 pb-4 border-b border-border">
+              <div>
+                <p className="text-xs text-text-muted uppercase tracking-wide">Buyer</p>
+                <p className="text-text-primary">{detailsRequest.user?.email ?? '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-text-muted uppercase tracking-wide">Status</p>
+                <p>{getStatusBadge(detailsRequest.status)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-text-muted uppercase tracking-wide">GPU</p>
+                <p className="text-text-primary">{detailsRequest.gpuCount}× {detailsRequest.gpuTier}</p>
+              </div>
+              <div>
+                <p className="text-xs text-text-muted uppercase tracking-wide">Total Cost</p>
+                <p className="text-text-primary">${detailsRequest.totalCost.toLocaleString()}</p>
+              </div>
+            </div>
+
+            {detailsRequest.adminNote && (
+              <div>
+                <p className="text-xs text-text-muted uppercase tracking-wide mb-2">Admin Note</p>
+                <div className="rounded-lg p-3 bg-blue-500/5 border border-blue-500/20 text-text-primary text-xs font-mono break-all">
+                  {detailsRequest.adminNote}
+                </div>
+              </div>
+            )}
+
+            {detailsRequest.eligibilityFlags && detailsRequest.eligibilityFlags.length > 0 && (
+              <div>
+                <p className="text-xs text-text-muted uppercase tracking-wide mb-2">
+                  Eligibility Flags ({detailsRequest.eligibilityFlags.length})
+                </p>
+                <div className="space-y-2">
+                  {detailsRequest.eligibilityFlags.map(flag => {
+                    const meta = FLAG_DESCRIPTIONS[flag]
+                    const colors = meta?.kind === 'hold'
+                      ? { bg: 'bg-warning/10', border: 'border-warning/30', text: 'text-warning' }
+                      : meta?.kind === 'pass'
+                        ? { bg: 'bg-success/10', border: 'border-success/30', text: 'text-success' }
+                        : { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400' }
+                    return (
+                      <div
+                        key={flag}
+                        className={`rounded-lg p-3 ${colors.bg} border ${colors.border}`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-xs font-mono font-semibold ${colors.text}`}>{flag}</span>
+                          {meta && (
+                            <span className={`text-xs ${colors.text} opacity-80`}>· {meta.title}</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-text-secondary">
+                          {meta?.desc ?? 'No description available for this flag.'}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {!detailsRequest.adminNote && (!detailsRequest.eligibilityFlags || detailsRequest.eligibilityFlags.length === 0) && (
+              <p className="text-xs text-text-muted italic text-center py-4">
+                No additional notes or eligibility flags on this request.
+              </p>
+            )}
+
+            <div className="pt-3 border-t border-border flex justify-end">
+              <button
+                type="button"
+                onClick={() => setDetailsRequest(null)}
+                className="px-4 py-2 text-sm bg-surface text-text-secondary hover:text-text-primary rounded-lg transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </motion.div>
   )
