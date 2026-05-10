@@ -389,24 +389,43 @@ export default function ActiveComputePage() {
                     )
                   })()}
 
-                  {/* Terminate (early termination + prorated refund) */}
-                  <div className="mt-4 flex justify-end">
+                  {/* Terminate — full-width destructive CTA so buyers never
+                      have to hunt for it. Red border + red text on the
+                      darker neutral background calls attention without being
+                      so loud it gets accidental clicks (we still have a
+                      browser confirm dialog as the second guard). */}
+                  <div className="mt-5">
                     <button
                       type="button"
                       onClick={() => handleTerminate(alloc)}
                       disabled={terminatingId === alloc.id}
-                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold transition-all"
                       style={{
-                        background: 'transparent',
-                        border: '1px solid var(--border-color)',
-                        color: 'var(--text-secondary)',
-                        opacity: terminatingId === alloc.id ? 0.5 : 1,
+                        background: terminatingId === alloc.id
+                          ? 'rgba(239, 68, 68, 0.05)'
+                          : 'rgba(239, 68, 68, 0.1)',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        color: '#ef4444',
+                        opacity: terminatingId === alloc.id ? 0.6 : 1,
                         cursor: terminatingId === alloc.id ? 'not-allowed' : 'pointer',
                       }}
+                      onMouseEnter={(e) => {
+                        if (terminatingId !== alloc.id) {
+                          e.currentTarget.style.background = 'rgba(239, 68, 68, 0.18)'
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (terminatingId !== alloc.id) {
+                          e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'
+                        }
+                      }}
                     >
-                      <XCircle size={12} />
-                      {terminatingId === alloc.id ? 'Terminating...' : 'Terminate Early'}
+                      <XCircle size={16} />
+                      {terminatingId === alloc.id ? 'Terminating...' : 'Terminate Rental'}
                     </button>
+                    <p className="text-xs text-center mt-2" style={{ color: 'var(--text-muted)' }}>
+                      Refund any unused time. Returns ${remainingCost.toFixed(2)} to your wallet.
+                    </p>
                   </div>
                 </div>
               </motion.div>
