@@ -193,10 +193,11 @@ export default function RequestComputePage() {
       {/* GPU Count */}
       <motion.div variants={item}>
         <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Number of GPUs</h2>
-        <div className="flex gap-3 flex-wrap">
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+        <div className="flex gap-3 flex-wrap items-center">
+          {[1, 2, 4, 8].map(n => (
             <button
               key={n}
+              type="button"
               onClick={() => setGpuCount(n)}
               className="w-14 h-14 rounded-xl font-bold text-lg transition-all duration-200"
               style={gpuCount === n
@@ -207,7 +208,48 @@ export default function RequestComputePage() {
               {n}
             </button>
           ))}
+          {/* Custom count: anything from 1 to 64. Picks 9+ go straight here
+              since the quick-pick covers the common 1/2/4/8 sizes. >64
+              requires an admin-side enterprise quote (see API cap). */}
+          <div
+            className="flex items-center gap-2 px-4 h-14 rounded-xl"
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <label
+              htmlFor="custom-gpu-count"
+              className="text-sm"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Custom
+            </label>
+            <input
+              id="custom-gpu-count"
+              type="number"
+              min={1}
+              max={64}
+              step={1}
+              value={gpuCount}
+              onChange={(e) => {
+                const raw = parseInt(e.target.value, 10)
+                if (Number.isNaN(raw)) return
+                const clamped = Math.max(1, Math.min(64, raw))
+                setGpuCount(clamped)
+              }}
+              className="w-20 h-9 px-2 rounded-lg text-center font-bold"
+              style={{
+                background: 'var(--bg-tertiary)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+              }}
+            />
+          </div>
         </div>
+        <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+          Need more than 64 GPUs? Contact us for an enterprise quote.
+        </p>
       </motion.div>
 
       {/* Duration */}

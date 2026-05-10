@@ -11,7 +11,12 @@ const GPU_DAILY_RATES: Record<string, number> = {
 
 const requestSchema = z.object({
   gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300']),
-  gpuCount: z.number().int().min(1).max(10).default(1),
+  // gpuCount cap: 64 covers single-rack NVL72 / NVL36 cluster requests
+  // with headroom. >64 requires an admin-side enterprise quote — keeps
+  // a single self-serve buyer from accidentally requesting half the
+  // available H100 inventory in one click. Bump again later if real
+  // demand pushes against this ceiling.
+  gpuCount: z.number().int().min(1).max(64).default(1),
   durationDays: z.number().int().min(7).max(365).default(30),
   purpose: z.string().max(500).optional(),
   txHash: z.string().min(1, 'Transaction hash is required'),
