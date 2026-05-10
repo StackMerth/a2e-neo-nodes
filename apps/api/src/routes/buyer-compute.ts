@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createNotification } from '../services/notification/service.js'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import { checkIdempotencyKey, storeIdempotencyResponse } from '../services/idempotency/keys.js'
+import { getSolanaConfig, processPayment } from '../services/payment/solana.js'
 
 const GPU_DAILY_RATES: Record<string, number> = {
   H100: 140.15, H200: 179.85, B200: 321.10, B300: 431.75, GB300: 499.35,
@@ -263,6 +264,143 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     })
 
     reply.send({ id, status: 'CANCELLED' })
+  })
+
+  /**
+   * POST /v1/buyer/compute/requests/:id/terminate
+   *
+   * Buyer-initiated early termination for an ACTIVE rental. Computes
+   * the prorated refund (totalCost - accruedCost), attempts to refund
+   * via the configured Solana payer (dev mode returns a DEV_ tx hash;
+   * live mode requires the payer key — see SOLANA_LIVE_SETUP.md), and
+   * transitions the rental to COMPLETED. Releases the assigned nodes.
+   *
+   * Why a separate route from /cancel: cancel is for PENDING (no money
+   * has moved yet); terminate is for ACTIVE rentals where minutes have
+   * already accrued and a refund needs to flow back.
+   */
+  fastify.post('/v1/buyer/compute/requests/:id/terminate', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const userId = request.user!.userId
+
+    const cr = await fastify.prisma.computeRequest.findFirst({
+      where: { id, userId },
+    })
+    if (!cr) return reply.code(404).send({ error: 'Request not found' })
+    if (cr.status !== 'ACTIVE') {
+      return reply.code(400).send({ error: `Cannot terminate: status is ${cr.status}` })
+    }
+
+    // Final accrual snapshot. The meter (60s tick) may not have caught
+    // up to wall-clock-now yet; recompute on the spot so the refund
+    // reflects the exact second the buyer clicked terminate.
+    const ratePerMinute = cr.ratePerMinute ?? (cr.ratePerDay * cr.gpuCount) / (24 * 60)
+    const elapsedMs = cr.activatedAt ? Date.now() - cr.activatedAt.getTime() : 0
+    const elapsedMinutes = Math.floor(elapsedMs / 60000)
+    const maxMinutes = cr.durationDays * 24 * 60
+    const finalMinutes = Math.min(elapsedMinutes, maxMinutes)
+    const finalAccrued = Math.min(
+      Number((finalMinutes * ratePerMinute).toFixed(4)),
+      cr.totalCost,
+    )
+    const refundAmount = Math.max(0, Number((cr.totalCost - finalAccrued).toFixed(4)))
+
+    // Refund flow: only attempt if the user has a payable wallet on file.
+    // We pull from User.walletAddress; buyers can set this in /v1/buyer/settings.
+    const user = await fastify.prisma.user.findUnique({
+      where: { id: userId },
+      select: { walletAddress: true },
+    })
+
+    let refundTxHash: string | null = null
+    let refundStatus: 'SENT' | 'SKIPPED_NO_WALLET' | 'SKIPPED_ZERO' | 'FAILED' = 'SKIPPED_ZERO'
+    let refundError: string | null = null
+
+    if (refundAmount <= 0) {
+      refundStatus = 'SKIPPED_ZERO'
+    } else if (!user?.walletAddress) {
+      refundStatus = 'SKIPPED_NO_WALLET'
+    } else {
+      try {
+        const solanaConfig = await getSolanaConfig(fastify.prisma)
+        const result = await processPayment(solanaConfig, user.walletAddress, refundAmount, 'USDC')
+        if (result.success && result.txHash) {
+          refundTxHash = result.txHash
+          refundStatus = 'SENT'
+        } else {
+          refundStatus = 'FAILED'
+          refundError = result.error ?? 'Unknown payment failure'
+        }
+      } catch (err) {
+        refundStatus = 'FAILED'
+        refundError = err instanceof Error ? err.message : 'Refund processing error'
+        fastify.log.error({ err, requestId: id }, 'Refund failed during terminate')
+      }
+    }
+
+    // Atomically: mark COMPLETED, freeze final accrual, release nodes,
+    // bump trust signals so the eligibility engine learns this buyer
+    // followed through. Refund tx hash recorded in adminNote so the
+    // operator can audit later.
+    const completedAt = new Date()
+    await fastify.prisma.$transaction([
+      fastify.prisma.computeRequest.update({
+        where: { id },
+        data: {
+          status: 'COMPLETED',
+          completedAt,
+          minutesUsed: finalMinutes,
+          accruedCost: finalAccrued,
+          adminNote: refundTxHash
+            ? `Buyer terminated. Refund $${refundAmount} sent: ${refundTxHash}`
+            : `Buyer terminated. Refund status: ${refundStatus}${refundError ? ` (${refundError})` : ''}`,
+          // Clear ephemeral SSH so leaked credentials become useless.
+          sshSessionToken: null,
+          sshSessionTokenExpiresAt: null,
+        },
+      }),
+      fastify.prisma.node.updateMany({
+        where: { assignedComputeRequestId: id },
+        data: { assignedComputeRequestId: null },
+      }),
+      fastify.prisma.user.update({
+        where: { id: userId },
+        data: { successfulRentalCount: { increment: 1 }, lastRentalAt: completedAt },
+      }),
+    ])
+
+    void createNotification(
+      userId,
+      'COMPUTE_COMPLETED',
+      'Rental Ended',
+      refundStatus === 'SENT'
+        ? `Your rental ended. Refund of $${refundAmount.toFixed(2)} sent to your wallet.`
+        : refundStatus === 'SKIPPED_NO_WALLET'
+          ? `Your rental ended. Add a wallet address in settings to receive future refunds.`
+          : `Your rental ended. ${refundStatus === 'SKIPPED_ZERO' ? 'No refund due.' : 'Refund failed — admin notified.'}`,
+    )
+
+    fastify.io?.emit('compute:terminated', {
+      requestId: id,
+      userId,
+      finalMinutes,
+      finalAccrued,
+      refundAmount,
+      refundStatus,
+      refundTxHash,
+      timestamp: completedAt.toISOString(),
+    })
+
+    reply.send({
+      id,
+      status: 'COMPLETED',
+      finalMinutes,
+      finalAccrued,
+      refundAmount,
+      refundStatus,
+      refundTxHash,
+      refundError,
+    })
   })
 
   /**
