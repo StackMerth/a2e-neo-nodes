@@ -202,6 +202,7 @@ export default function RequestDetailPage() {
   const [data, setData] = useState<ComputeRequestDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [cancelling, setCancelling] = useState(false)
+  const [terminating, setTerminating] = useState(false)
 
   const loadData = useCallback(async () => {
     try {
@@ -238,6 +239,36 @@ export default function RequestDetailPage() {
       toast('error', e instanceof Error ? e.message : 'Failed to cancel request')
     } finally {
       setCancelling(false)
+    }
+  }
+
+  // Terminate ACTIVE rentals with prorated refund. Builds a confirm
+  // dialog with the live numbers so the buyer sees what they're giving
+  // up before clicking. The browser confirm is a second guard on top
+  // of the prominent button styling.
+  const handleTerminate = async () => {
+    if (!data) return
+    const ratePerMin = (data.ratePerDay * data.gpuCount) / (24 * 60)
+    const elapsedMs = data.activatedAt ? Date.now() - new Date(data.activatedAt).getTime() : 0
+    const elapsedMin = Math.max(0, Math.floor(elapsedMs / 60000))
+    const accruedNow = Math.min(elapsedMin * ratePerMin, data.totalCost)
+    const refundEst = Math.max(0, data.totalCost - accruedNow)
+    const ok = window.confirm(
+      `Terminate this rental now?\n\n` +
+      `Accrued so far: $${accruedNow.toFixed(2)}\n` +
+      `Refund estimate: $${refundEst.toFixed(2)}\n\n` +
+      `Refund will be sent to the wallet on your account settings.`,
+    )
+    if (!ok) return
+    setTerminating(true)
+    try {
+      await buyer.terminateRequest(id)
+      toast('success', 'Rental terminated')
+      loadData()
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Failed to terminate rental')
+    } finally {
+      setTerminating(false)
     }
   }
 
@@ -520,7 +551,42 @@ export default function RequestDetailPage() {
         </motion.div>
       )}
 
-      {/* Cancel Button */}
+      {/* Terminate Rental — full-width destructive CTA, shown only when
+          ACTIVE. Calls the same /terminate route as the Active Compute
+          list page. Refund estimate is computed client-side from
+          activatedAt + ratePerDay + gpuCount so the buyer sees what
+          they're getting back BEFORE confirming. */}
+      {data.status === 'ACTIVE' && (
+        <motion.div variants={itemVariants}>
+          <button
+            type="button"
+            onClick={handleTerminate}
+            disabled={terminating}
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold transition-all"
+            style={{
+              background: terminating ? 'rgba(239, 68, 68, 0.05)' : 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              color: '#ef4444',
+              opacity: terminating ? 0.6 : 1,
+              cursor: terminating ? 'not-allowed' : 'pointer',
+            }}
+            onMouseEnter={(e) => {
+              if (!terminating) e.currentTarget.style.background = 'rgba(239, 68, 68, 0.18)'
+            }}
+            onMouseLeave={(e) => {
+              if (!terminating) e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'
+            }}
+          >
+            <XCircle size={16} />
+            {terminating ? 'Terminating...' : 'Terminate Rental'}
+          </button>
+          <p className="text-xs text-center mt-2" style={{ color: 'var(--text-muted)' }}>
+            End your rental now and refund any unused time to the wallet on your account settings.
+          </p>
+        </motion.div>
+      )}
+
+      {/* Cancel Button (only for PENDING/APPROVED — not yet allocated) */}
       {canCancel && (
         <motion.div variants={itemVariants} className="flex justify-end">
           <Button
