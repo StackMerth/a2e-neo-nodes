@@ -156,11 +156,18 @@ async function processRequest(
   //      → PLATINUM (90+) operators picked over BRONZE (<60)
   //   2. Most recent heartbeat wins (existing M2 behavior)
   //
-  // Nodes without a NodeRunner (BYOG admin-onboarded) sort to the end
-  // since their reputationScore comes through as null. That's the
-  // correct behavior — known operators with track records beat
-  // unattributed inventory all else equal.
-  const idleNodes = await prisma.node.findMany({
+  // Implementation note: Prisma 5's orderBy only accepts the
+  // {sort,nulls} form on direct scalar fields, not relation hops.
+  // And Postgres's default NULLS FIRST for DESC would put nodes
+  // without a NodeRunner at the top — exactly the wrong order.
+  //
+  // Workaround: fetch a wider candidate pool ordered by heartbeat
+  // freshness (the cheap-to-index sort), then sort by reputation
+  // in JS with explicit nulls-last handling, then slice to the
+  // count we need. Pool size of max(gpuCount * 5, 20) gives enough
+  // headroom that the top-N picks are still the truly best nodes.
+  const PICK_POOL = Math.max(cr.gpuCount * 5, 20)
+  const candidates = await prisma.node.findMany({
     where: {
       gpuTier: cr.gpuTier,
       status: 'ONLINE',
@@ -170,17 +177,26 @@ async function processRequest(
       agentVersion: { not: null },
       lastHeartbeat: { gte: new Date(Date.now() - HEARTBEAT_FRESH_MS) },
     },
-    orderBy: [
-      { nodeRunner: { reputationScore: { sort: 'desc', nulls: 'last' } } },
-      { lastHeartbeat: 'desc' },
-    ],
-    take: cr.gpuCount,
+    orderBy: { lastHeartbeat: 'desc' },
+    take: PICK_POOL,
     select: {
       id: true,
       walletAddress: true,
+      lastHeartbeat: true,
       nodeRunner: { select: { id: true, reputationTier: true, reputationScore: true } },
     },
   })
+
+  // M3 sort: reputation desc (nulls last) -> heartbeat desc
+  const idleNodes = candidates
+    .sort((a, b) => {
+      // -Infinity for null score so it always sorts AFTER any real score
+      const aScore = a.nodeRunner?.reputationScore ?? -Infinity
+      const bScore = b.nodeRunner?.reputationScore ?? -Infinity
+      if (aScore !== bScore) return bScore - aScore
+      return b.lastHeartbeat.getTime() - a.lastHeartbeat.getTime()
+    })
+    .slice(0, cr.gpuCount)
 
   if (idleNodes.length < cr.gpuCount) {
     // Insufficient supply — stay in PENDING, retry next tick. We don't
