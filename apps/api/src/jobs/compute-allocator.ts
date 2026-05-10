@@ -150,6 +150,16 @@ async function processRequest(
   }
 
   // Step 2: pick idle nodes matching the tier
+  //
+  // M3: soft tiebreak chain when multiple nodes pass the hard filter:
+  //   1. Higher operator reputationScore wins (NodeRunner relation)
+  //      → PLATINUM (90+) operators picked over BRONZE (<60)
+  //   2. Most recent heartbeat wins (existing M2 behavior)
+  //
+  // Nodes without a NodeRunner (BYOG admin-onboarded) sort to the end
+  // since their reputationScore comes through as null. That's the
+  // correct behavior — known operators with track records beat
+  // unattributed inventory all else equal.
   const idleNodes = await prisma.node.findMany({
     where: {
       gpuTier: cr.gpuTier,
@@ -160,9 +170,16 @@ async function processRequest(
       agentVersion: { not: null },
       lastHeartbeat: { gte: new Date(Date.now() - HEARTBEAT_FRESH_MS) },
     },
-    orderBy: { lastHeartbeat: 'desc' },
+    orderBy: [
+      { nodeRunner: { reputationScore: { sort: 'desc', nulls: 'last' } } },
+      { lastHeartbeat: 'desc' },
+    ],
     take: cr.gpuCount,
-    select: { id: true, walletAddress: true },
+    select: {
+      id: true,
+      walletAddress: true,
+      nodeRunner: { select: { id: true, reputationTier: true, reputationScore: true } },
+    },
   })
 
   if (idleNodes.length < cr.gpuCount) {
