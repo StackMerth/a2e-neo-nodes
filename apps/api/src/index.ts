@@ -101,6 +101,11 @@ import {
   createRateHistoryRetentionWorker,
   scheduleRateHistoryRetention,
 } from './jobs/retention'
+import {
+  createComputeAllocatorQueue,
+  createComputeAllocatorWorker,
+  scheduleComputeAllocator,
+} from './jobs/compute-allocator'
 
 const server = Fastify({
   logger: {
@@ -219,6 +224,14 @@ async function start() {
     createRateHistoryRetentionWorker({ redis: redisConnection, prisma: server.prisma })
     await scheduleHeartbeatRetention(heartbeatRetentionQueue)
     await scheduleRateHistoryRetention(rateHistoryRetentionQueue)
+
+    // M2 auto-allocator (B1): polls PENDING+txConfirmed compute requests,
+    // runs eligibility rules, picks idle nodes, mints ephemeral SSH and
+    // transitions to ALLOCATED. Single-flight, 10s tick by default.
+    const computeAllocatorQueue = createComputeAllocatorQueue(redisConnection)
+    createComputeAllocatorWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
+    await scheduleComputeAllocator(computeAllocatorQueue)
+    server.log.info('Compute allocator initialized (10s tick)')
 
     await scheduleRateFetcher(rateFetcherQueue)
     await scheduleReconciliation(reconciliationQueue, 5)
