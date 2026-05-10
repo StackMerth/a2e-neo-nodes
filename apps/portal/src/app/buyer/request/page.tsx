@@ -69,7 +69,11 @@ const TIER_STYLES: Record<string, { border: string; bg: string; text: string; gl
   },
 }
 
-const DURATION_OPTIONS = [7, 14, 30, 60, 90]
+// M2: short durations live alongside the longer enterprise commitments.
+// 1d / 3d cover quick experiments where per-minute billing matters most;
+// 7d-90d are the longer commitments. 'Custom' input handles anything in
+// between (1-365 days, matching the API cap).
+const DURATION_OPTIONS = [1, 3, 7, 14, 30, 60, 90]
 
 const container = {
   hidden: { opacity: 0 },
@@ -255,10 +259,11 @@ export default function RequestComputePage() {
       {/* Duration */}
       <motion.div variants={item}>
         <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Duration</h2>
-        <div className="flex gap-3 flex-wrap">
+        <div className="flex gap-3 flex-wrap items-center">
           {DURATION_OPTIONS.map(d => (
             <button
               key={d}
+              type="button"
               onClick={() => setDuration(d)}
               className="px-5 h-14 rounded-xl font-bold text-lg transition-all duration-200"
               style={duration === d
@@ -269,6 +274,43 @@ export default function RequestComputePage() {
               {d}d
             </button>
           ))}
+          {/* Custom duration: any value 1-365 days, matching the API cap. */}
+          <div
+            className="flex items-center gap-2 px-4 h-14 rounded-xl"
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <label
+              htmlFor="custom-duration"
+              className="text-sm"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Custom
+            </label>
+            <input
+              id="custom-duration"
+              type="number"
+              min={1}
+              max={365}
+              step={1}
+              value={duration}
+              onChange={(e) => {
+                const raw = parseInt(e.target.value, 10)
+                if (Number.isNaN(raw)) return
+                const clamped = Math.max(1, Math.min(365, raw))
+                setDuration(clamped)
+              }}
+              className="w-20 h-9 px-2 rounded-lg text-center font-bold"
+              style={{
+                background: 'var(--bg-tertiary)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+              }}
+            />
+            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>d</span>
+          </div>
         </div>
       </motion.div>
 
