@@ -118,6 +118,12 @@ import {
   createRentalExpiryWorker,
   scheduleRentalExpiry,
 } from './jobs/rental-expiry'
+import {
+  createSeedKeepAliveQueue,
+  createSeedKeepAliveWorker,
+  scheduleSeedKeepAlive,
+  isSeedKeepAliveEnabled,
+} from './jobs/seed-keep-alive'
 
 const server = Fastify({
   logger: {
@@ -261,6 +267,20 @@ async function start() {
     createRentalExpiryWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleRentalExpiry(rentalExpiryQueue)
     server.log.info('Rental expiry worker initialized (60s tick)')
+
+    // Test-only: seed-node keep-alive (env-gated). When
+    // SEED_KEEP_ALIVE_ENABLED=1, every 30s bumps every `seed-node-*` row
+    // back to ONLINE with a fresh heartbeat so the allocator can keep
+    // finding inventory. Replaces the need to leave a Render shell tab
+    // open running the legacy --keep-alive-only script. Set the env to
+    // anything other than '1' (or unset entirely) to disable in
+    // production once real node-agents are providing real heartbeats.
+    if (isSeedKeepAliveEnabled()) {
+      const seedKeepAliveQueue = createSeedKeepAliveQueue(redisConnection)
+      createSeedKeepAliveWorker({ redis: redisConnection, prisma: server.prisma })
+      await scheduleSeedKeepAlive(seedKeepAliveQueue)
+      server.log.warn('Seed-node keep-alive ENABLED (test-only — disable in production)')
+    }
 
     await scheduleRateFetcher(rateFetcherQueue)
     await scheduleReconciliation(reconciliationQueue, 5)
