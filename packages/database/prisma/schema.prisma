@@ -148,6 +148,7 @@ model User {
   refreshTokens    RefreshToken[]
   computeRequests  ComputeRequest[]
   apiKeys          ApiKey[]
+  ratingsGiven     Rating[]
 
   @@index([role])
 }
@@ -217,6 +218,21 @@ model NodeRunner {
   payoutDayOfWeek  Int?     // 0=Sunday, 1=Monday, etc. (for WEEKLY)
   payoutDayOfMonth Int?     // 1-28 (for MONTHLY)
 
+  // M3: reputation. reputationScore is 0-100, recomputed daily by the
+  // reputation-scorer worker from uptime + ratings + completed jobs.
+  // Tier is derived from score (BRONZE/SILVER/GOLD/PLATINUM thresholds).
+  // availableAsSpot: opt-in to the SPOT tier marketplace (lower revenue
+  // per minute, but higher utilization since SPOT requests can preempt
+  // ON_DEMAND inventory shortages).
+  reputationScore  Float           @default(0)
+  reputationTier   ReputationTier  @default(BRONZE)
+  availableAsSpot  Boolean         @default(false)
+  lastScoreUpdate  DateTime?
+
+  // M3: URL-safe slug for the public vanity profile page.
+  // marketplace.tokenos.ai/operator/<slug>. Auto-generated from name.
+  slug             String?  @unique
+
   // Timestamps
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -225,9 +241,22 @@ model NodeRunner {
   nodes              Node[]
   investments        Investment[]
   withdrawalRequests WithdrawalRequest[]
+  ratings            Rating[]
 
   @@index([walletAddress])
   @@index([userId])
+  @@index([reputationScore])
+  @@index([slug])
+}
+
+// M3: reputation tier ladder. Ordered low to high. Tier-mapping
+// thresholds (env-tunable in the scorer worker):
+//   PLATINUM >= 90, GOLD >= 80, SILVER >= 60, else BRONZE.
+enum ReputationTier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
 }
 
 model Investment {
@@ -917,6 +946,29 @@ model ComputeRequest {
   templateId      String?
   template        Template?            @relation(fields: [templateId], references: [id])
 
+  // M3: pricing tier for the rental.
+  //   ON_DEMAND (default) — full price, never preempted, no commitment
+  //   SPOT                — discounted (default 40% off via SPOT_DISCOUNT_PCT
+  //                         env var), preemptible with 90s notice when
+  //                         ON_DEMAND demand needs the capacity
+  //   RESERVED            — buyer commits 7/30/90 days, gets 10% discount,
+  //                         exempt from preemption, early-terminate refund
+  //                         covers only minutes used (not remaining commit)
+  tier             ComputeRequestTier  @default(ON_DEMAND)
+  // M3: required for RESERVED tier; null for ON_DEMAND/SPOT.
+  // Mirrors durationDays for RESERVED but is the thing buyer locked in.
+  commitmentDays   Int?
+
+  // M3: checkpoint workspace snapshot pointers. lastCheckpointId references
+  // the most recent CheckpointJob row; checkpointBucketUrl is the S3-style
+  // path the agent uploads workspace tarballs to. Buyers pass an existing
+  // checkpointId on a fresh rental to restore prior workspace state.
+  checkpointBucketUrl String?
+  lastCheckpointId    String?
+
+  // M3: ratings (one per rental, post-completion).
+  rating          Rating?
+
   // Timestamps
   requestedAt     DateTime             @default(now())
   approvedAt      DateTime?
@@ -930,6 +982,7 @@ model ComputeRequest {
   @@index([requestedAt])
   @@index([expiresAt])
   @@index([templateId])
+  @@index([tier])
 }
 
 enum ComputeRequestStatus {
@@ -941,6 +994,55 @@ enum ComputeRequestStatus {
   CANCELLED      // Buyer cancelled
   REJECTED       // Admin rejected
   WAITLISTED     // M2: held by eligibility rules; admin must approve before allocation
+}
+
+// M3: pricing tier for compute requests. Three discrete options buyers
+// pick at request time. The routing engine treats tier as a soft tiebreak
+// (preferring matching tier on operator inventory); the preemption worker
+// uses tier as a hard rule (SPOT preemptible, RESERVED exempt).
+enum ComputeRequestTier {
+  ON_DEMAND   // default; full price, no preemption, no commitment
+  SPOT        // discounted, preemptible with 90s notice
+  RESERVED    // commitment-based, preemption-exempt
+}
+
+// ============================================================================
+// RATINGS (M3 - Operator Trust)
+// ============================================================================
+// Buyers rate the operator (NodeRunner) after a rental completes. One
+// rating per rental (unique on computeRequestId). Default moderation
+// status is PENDING; admins approve/reject before the rating influences
+// the operator's reputation score or appears on their public profile.
+
+model Rating {
+  id                String                 @id @default(cuid())
+  computeRequestId  String                 @unique
+  computeRequest    ComputeRequest         @relation(fields: [computeRequestId], references: [id])
+
+  buyerId           String
+  buyer             User                   @relation(fields: [buyerId], references: [id])
+
+  nodeRunnerId      String
+  nodeRunner        NodeRunner             @relation(fields: [nodeRunnerId], references: [id])
+
+  score             Int                    // 1-5 stars (validated at API)
+  comment           String?                // optional, ≤500 chars (validated at API)
+  moderationStatus  RatingModerationStatus @default(PENDING)
+  moderationNote    String?                // admin's note when rejecting
+
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  moderatedAt       DateTime?
+
+  @@index([nodeRunnerId, moderationStatus])
+  @@index([buyerId])
+  @@index([moderationStatus])
+}
+
+enum RatingModerationStatus {
+  PENDING    // default; awaiting admin review
+  APPROVED   // visible on operator profile, counted in reputation score
+  REJECTED   // hidden, NOT counted in reputation score (kept for audit)
 }
 
 // ============================================================================
