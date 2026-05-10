@@ -11,6 +11,7 @@ import {
   Terminal,
   XCircle,
   DollarSign,
+  Save,
 } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -457,6 +458,37 @@ export default function ActiveComputePage() {
                       </div>
                     )
                   })()}
+
+                  {/* M3: Checkpoint button — triggers workspace snapshot.
+                      Less prominent than Terminate (smaller, neutral color).
+                      The actual S3 upload happens agent-side; the API just
+                      flags REQUESTED for the agent to pick up. */}
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await buyer.checkpoint(alloc.id)
+                          // toast wired via parent; for simplicity just alert here
+                          window.alert('Checkpoint requested. Agent will package + upload your workspace shortly.')
+                        } catch (err) {
+                          window.alert(err instanceof Error ? err.message : 'Checkpoint failed')
+                        }
+                      }}
+                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                      style={{
+                        background: 'rgba(59, 130, 246, 0.1)',
+                        border: '1px solid rgba(59, 130, 246, 0.3)',
+                        color: '#3b82f6',
+                      }}
+                    >
+                      <Save size={14} />
+                      Checkpoint Workspace
+                    </button>
+                    <p className="text-xs text-center mt-2" style={{ color: 'var(--text-muted)' }}>
+                      Snapshot your workspace so you can restore it on a future rental.
+                    </p>
+                  </div>
 
                   {/* Terminate — full-width destructive CTA so buyers never
                       have to hunt for it. Red border + red text on the

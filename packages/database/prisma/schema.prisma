@@ -959,12 +959,27 @@ model ComputeRequest {
   // Mirrors durationDays for RESERVED but is the thing buyer locked in.
   commitmentDays   Int?
 
-  // M3: checkpoint workspace snapshot pointers. lastCheckpointId references
-  // the most recent CheckpointJob row; checkpointBucketUrl is the S3-style
-  // path the agent uploads workspace tarballs to. Buyers pass an existing
-  // checkpointId on a fresh rental to restore prior workspace state.
-  checkpointBucketUrl String?
-  lastCheckpointId    String?
+  // M3: checkpoint workspace snapshot. Single checkpoint per rental
+  // for now (re-triggering overwrites). checkpointBucketUrl is set
+  // by the agent after a successful S3 upload; lastCheckpointId is
+  // a cuid that can be passed as restoreCheckpointId on a fresh
+  // rental to restore the workspace state.
+  //
+  // Lifecycle:
+  //   NONE       - no checkpoint requested (default)
+  //   REQUESTED  - buyer clicked Checkpoint, agent hasn't picked it up
+  //   UPLOADING  - agent is packaging + uploading to S3
+  //   READY      - upload complete, restorable
+  //   FAILED     - last attempt errored (checkpointError has detail)
+  checkpointBucketUrl  String?
+  lastCheckpointId     String?
+  checkpointStatus     CheckpointStatus @default(NONE)
+  checkpointRequestedAt DateTime?
+  checkpointReadyAt     DateTime?
+  checkpointError       String?
+  // Optional: passed at request creation to restore from a prior
+  // rental's checkpoint. Allocator forwards this to the agent.
+  restoreCheckpointId   String?
 
   // M3: ratings (one per rental, post-completion).
   rating          Rating?
@@ -1004,6 +1019,17 @@ enum ComputeRequestTier {
   ON_DEMAND   // default; full price, no preemption, no commitment
   SPOT        // discounted, preemptible with 90s notice
   RESERVED    // commitment-based, preemption-exempt
+}
+
+// M3: checkpoint workspace lifecycle. See ComputeRequest.checkpointStatus
+// for transitions. Single checkpoint per rental; re-checkpointing
+// overwrites the previous one.
+enum CheckpointStatus {
+  NONE
+  REQUESTED
+  UPLOADING
+  READY
+  FAILED
 }
 
 // ============================================================================

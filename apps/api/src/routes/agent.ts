@@ -761,4 +761,78 @@ export async function agentRoutes(fastify: FastifyInstance) {
       })
     }
   )
+
+  // -------------------------------------------------------------------------
+  // M3 / Checkpoint API — agent reports checkpoint state transitions
+  // -------------------------------------------------------------------------
+  // Single endpoint covers all agent-side state changes:
+  //   - status=UPLOADING when agent starts packaging
+  //   - status=READY    when S3 upload complete (sets bucketUrl + checkpointId)
+  //   - status=FAILED   on error (sets error message)
+  //
+  // Agent discovers pending checkpoints via the existing job poll
+  // (extended to also return any ComputeRequest assigned to this node
+  // with checkpointStatus=REQUESTED — Project 2 work).
+
+  const checkpointReportSchema = z.object({
+    computeRequestId: z.string().min(1),
+    status: z.enum(['UPLOADING', 'READY', 'FAILED']),
+    bucketUrl: z.string().optional(),  // S3 URL, required when status=READY
+    checkpointId: z.string().optional(), // unique id, required when status=READY
+    error: z.string().max(2000).optional(), // required when status=FAILED
+  })
+
+  fastify.post('/v1/agent/checkpoints', async (request, reply) => {
+    const parsed = checkpointReportSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'Validation Error',
+        message: parsed.error.errors.map((e) => e.message).join(', '),
+      })
+    }
+    const { computeRequestId, status, bucketUrl, checkpointId, error } = parsed.data
+
+    if (status === 'READY' && (!bucketUrl || !checkpointId)) {
+      return reply.code(400).send({
+        error: 'bucketUrl and checkpointId required when status=READY',
+      })
+    }
+    if (status === 'FAILED' && !error) {
+      return reply.code(400).send({ error: 'error required when status=FAILED' })
+    }
+
+    const cr = await fastify.prisma.computeRequest.findUnique({
+      where: { id: computeRequestId },
+      select: { id: true, userId: true, checkpointStatus: true },
+    })
+    if (!cr) return reply.code(404).send({ error: 'ComputeRequest not found' })
+
+    // Idempotent updates: agent retry of UPLOADING when already UPLOADING
+    // is a no-op; READY/FAILED can transition from any state because the
+    // agent is the source of truth.
+    const data: Record<string, unknown> = { checkpointStatus: status }
+    if (status === 'READY') {
+      data.checkpointBucketUrl = bucketUrl
+      data.lastCheckpointId = checkpointId
+      data.checkpointReadyAt = new Date()
+      data.checkpointError = null
+    } else if (status === 'FAILED') {
+      data.checkpointError = error
+    }
+
+    await fastify.prisma.computeRequest.update({
+      where: { id: computeRequestId },
+      data,
+    })
+
+    fastify.io?.emit('checkpoint:status', {
+      requestId: computeRequestId,
+      userId: cr.userId,
+      status,
+      checkpointId: status === 'READY' ? checkpointId : null,
+      timestamp: new Date().toISOString(),
+    })
+
+    return reply.send({ ok: true, status })
+  })
 }
