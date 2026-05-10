@@ -59,6 +59,15 @@ interface ComputeAllocatedEvent {
   nodeIds: string[]
 }
 
+interface ComputeTerminatedEvent {
+  requestId: string
+  userId: string
+  gpuTier?: string
+  gpuCount?: number
+  refundAmount: number
+  refundStatus: string
+}
+
 export function WebSocketNotifier() {
   const { on, off, connected } = useSocket()
   const { addToast } = useToast()
@@ -141,6 +150,20 @@ export function WebSocketNotifier() {
       })
     })
 
+    on<ComputeTerminatedEvent>('compute:terminated', (data) => {
+      // Distinguish the two completion paths so admin sees what
+      // actually happened: buyer-initiated terminate vs auto-expiry.
+      const isAutoExpiry = data.refundStatus === 'SKIPPED_FULL_TERM'
+      const tier = data.gpuTier ? `${data.gpuCount ?? 1}x ${data.gpuTier}` : 'rental'
+      addToast({
+        type: isAutoExpiry ? 'info' : 'warning',
+        title: isAutoExpiry ? 'Rental Auto-Completed' : 'Rental Terminated',
+        message: isAutoExpiry
+          ? `${tier} reached end of term`
+          : `${tier} terminated early — refund $${data.refundAmount.toFixed(2)} (${data.refundStatus})`,
+      })
+    })
+
     return () => {
       off('node:registered')
       off('node:offline')
@@ -149,6 +172,7 @@ export function WebSocketNotifier() {
       off('compute:request:new')
       off('compute:waitlisted')
       off('compute:allocated')
+      off('compute:terminated')
     }
   }, [on, off, addToast])
 

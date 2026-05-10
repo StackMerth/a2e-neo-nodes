@@ -37,6 +37,14 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
       // separately so the admin dashboard can show a "Needs Review"
       // chip with a real count.
       waitlisted: await fastify.prisma.computeRequest.count({ where: { status: 'WAITLISTED' } }),
+      // M2: 'terminated' is the subset of COMPLETED rentals that ended
+      // via buyer-initiated early terminate (vs auto-expiry). Identified
+      // by the adminNote prefix the terminate route writes. Lets the
+      // admin dashboard show a 'Terminated' filter pill with a real
+      // count without doing a second API round-trip.
+      terminated: await fastify.prisma.computeRequest.count({
+        where: { status: 'COMPLETED', adminNote: { startsWith: 'Buyer terminated' } },
+      }),
     }
 
     reply.send({ requests, counts })
