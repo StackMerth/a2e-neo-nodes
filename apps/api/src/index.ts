@@ -129,6 +129,11 @@ import {
   createReputationScorerWorker,
   scheduleReputationScorer,
 } from './jobs/reputation-scorer'
+import {
+  createSpotPreemptionQueue,
+  createSpotPreemptionWorker,
+  scheduleSpotPreemption,
+} from './jobs/spot-preemption'
 
 const server = Fastify({
   logger: {
@@ -295,6 +300,15 @@ async function start() {
     createReputationScorerWorker({ redis: redisConnection, prisma: server.prisma })
     await scheduleReputationScorer(reputationScorerQueue)
     server.log.info('Reputation scorer initialized (24h tick)')
+
+    // M3 SPOT preemption (B6): 30s tick. Detects ON_DEMAND demand
+    // pressure on a tier and schedules SPOT victims with a 90s grace
+    // notice; terminates them when grace expires. Refunds prorated
+    // unused minutes. RESERVED rentals are exempt (commitment honored).
+    const spotPreemptionQueue = createSpotPreemptionQueue(redisConnection)
+    createSpotPreemptionWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
+    await scheduleSpotPreemption(spotPreemptionQueue)
+    server.log.info('SPOT preemption worker initialized (30s tick, 90s grace)')
 
     await scheduleRateFetcher(rateFetcherQueue)
     await scheduleReconciliation(reconciliationQueue, 5)
