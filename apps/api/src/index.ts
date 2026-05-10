@@ -124,6 +124,11 @@ import {
   scheduleSeedKeepAlive,
   isSeedKeepAliveEnabled,
 } from './jobs/seed-keep-alive'
+import {
+  createReputationScorerQueue,
+  createReputationScorerWorker,
+  scheduleReputationScorer,
+} from './jobs/reputation-scorer'
 
 const server = Fastify({
   logger: {
@@ -281,6 +286,15 @@ async function start() {
       await scheduleSeedKeepAlive(seedKeepAliveQueue)
       server.log.warn('Seed-node keep-alive ENABLED (test-only — disable in production)')
     }
+
+    // M3 reputation scorer (C1): daily worker that recomputes every
+    // NodeRunner's reputationScore + reputationTier from uptime,
+    // ratings, and completed-job count. Tunable via REPUTATION_*
+    // env vars. Manual trigger: `pnpm --filter @a2e/api reputation:recompute`
+    const reputationScorerQueue = createReputationScorerQueue(redisConnection)
+    createReputationScorerWorker({ redis: redisConnection, prisma: server.prisma })
+    await scheduleReputationScorer(reputationScorerQueue)
+    server.log.info('Reputation scorer initialized (24h tick)')
 
     await scheduleRateFetcher(rateFetcherQueue)
     await scheduleReconciliation(reconciliationQueue, 5)
