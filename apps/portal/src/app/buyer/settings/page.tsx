@@ -2,10 +2,15 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { User, Bell, Shield, Lock, KeyRound } from 'lucide-react'
+import { User, Bell, Shield, Lock, KeyRound, Wallet } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { buyer } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
+
+// Loose Solana address validation: base58 alphabet, 32-44 chars.
+// Stricter on-chain validity is enforced by the API route + Solana SDK.
+const SOL_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
 
 const container = {
   hidden: { opacity: 0 },
@@ -27,9 +32,39 @@ export default function BuyerSettingsPage() {
     computeExpired: true,
   })
 
+  // Wallet edit state. currentWallet tracks what the API last accepted
+  // so the display stays correct after save without needing the global
+  // auth context to re-fetch. walletInput is what the user is typing.
+  const [currentWallet, setCurrentWallet] = useState<string | null>(user?.walletAddress ?? null)
+  const [walletInput, setWalletInput] = useState('')
+  const [savingWallet, setSavingWallet] = useState(false)
+
   const togglePref = (key: keyof typeof prefs) => {
     setPrefs(prev => ({ ...prev, [key]: !prev[key] }))
     toast('success', 'Preference updated')
+  }
+
+  const handleSaveWallet = async () => {
+    const value = walletInput.trim()
+    if (!value) {
+      toast('error', 'Wallet address required')
+      return
+    }
+    if (!SOL_ADDRESS_RE.test(value)) {
+      toast('error', 'Not a valid Solana address (32-44 base58 chars)')
+      return
+    }
+    setSavingWallet(true)
+    try {
+      const result = (await buyer.settings({ walletAddress: value })) as { walletAddress: string | null }
+      setCurrentWallet(result.walletAddress ?? value)
+      setWalletInput('')
+      toast('success', 'Wallet address saved')
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Failed to save wallet')
+    } finally {
+      setSavingWallet(false)
+    }
   }
 
   return (
@@ -59,12 +94,6 @@ export default function BuyerSettingsPage() {
               <span style={{ color: 'var(--text-muted)' }}>Email</span>
               <span style={{ color: 'var(--text-primary)' }}>{user?.email ?? 'Not set'}</span>
             </div>
-            <div className="flex justify-between py-2" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Wallet</span>
-              <span className="font-mono text-xs" style={{ color: 'var(--text-primary)' }}>
-                {user?.walletAddress ? `${user.walletAddress.slice(0, 6)}...${user.walletAddress.slice(-4)}` : 'Not connected'}
-              </span>
-            </div>
             <div className="flex justify-between py-2">
               <span style={{ color: 'var(--text-muted)' }}>Role</span>
               <span
@@ -75,6 +104,61 @@ export default function BuyerSettingsPage() {
               </span>
             </div>
           </div>
+        </div>
+      </motion.div>
+
+      {/* Wallet — editable. Used for receiving prorated refunds when a
+          rental is terminated early, and (later) for wallet-based login. */}
+      <motion.div variants={item}>
+        <div
+          className="rounded-xl p-6"
+          style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <Wallet size={16} style={{ color: 'var(--text-secondary)' }} />
+            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Solana Wallet Address</h2>
+          </div>
+          <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+            We send prorated refunds here when you terminate a rental early. Required for refunds.
+          </p>
+
+          <div className="mb-3 py-2" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+            <div className="flex items-center justify-between">
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Current</span>
+              <span className="font-mono text-xs" style={{ color: currentWallet ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                {currentWallet
+                  ? `${currentWallet.slice(0, 6)}...${currentWallet.slice(-6)}`
+                  : 'Not connected'}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Paste your Solana wallet address"
+              value={walletInput}
+              onChange={(e) => setWalletInput(e.target.value)}
+              disabled={savingWallet}
+              className="flex-1 px-3 py-2 rounded-lg text-xs font-mono"
+              style={{
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+              }}
+            />
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleSaveWallet}
+              disabled={savingWallet || !walletInput.trim()}
+            >
+              {savingWallet ? 'Saving...' : currentWallet ? 'Update' : 'Save'}
+            </Button>
+          </div>
+          <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+            Tip: 32-44 characters, starts with a letter or digit. Valid Solana addresses are base58-encoded.
+          </p>
         </div>
       </motion.div>
 
