@@ -113,6 +113,11 @@ import {
   createPerMinuteMeterWorker,
   schedulePerMinuteMeter,
 } from './jobs/per-minute-meter'
+import {
+  createRentalExpiryQueue,
+  createRentalExpiryWorker,
+  scheduleRentalExpiry,
+} from './jobs/rental-expiry'
 
 const server = Fastify({
   logger: {
@@ -249,6 +254,13 @@ async function start() {
     createPerMinuteMeterWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await schedulePerMinuteMeter(perMinuteMeterQueue)
     server.log.info('Per-minute meter initialized (60s tick)')
+
+    // M2: rental expiry worker — auto-completes ACTIVE rentals when
+    // their term passes so nodes don't stay locked forever. 60s tick.
+    const rentalExpiryQueue = createRentalExpiryQueue(redisConnection)
+    createRentalExpiryWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
+    await scheduleRentalExpiry(rentalExpiryQueue)
+    server.log.info('Rental expiry worker initialized (60s tick)')
 
     await scheduleRateFetcher(rateFetcherQueue)
     await scheduleReconciliation(reconciliationQueue, 5)
