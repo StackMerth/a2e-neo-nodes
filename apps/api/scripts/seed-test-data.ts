@@ -46,6 +46,14 @@ const NR_EMAIL = 'noderunner@tokenos.ai'
 const NR_PASSWORD = 'NodeRunner2026'
 const NR_WALLET = 'SEEDsoLNRwallet1111111111111111111111111111'
 
+// M3: a second NodeRunner with hardcoded GOLD reputation so the routing
+// tiebreak test (M3.5) has tier-diverse inventory to act on. Owns one
+// extra H100 ONLINE node placed in the same tier as the bronze runner's
+// inventory, so the allocator must use reputationTier as the tiebreak.
+const NR_GOLD_EMAIL = 'noderunner-gold@tokenos.ai'
+const NR_GOLD_PASSWORD = 'NodeRunner2026'
+const NR_GOLD_WALLET = 'SEEDsoLNRgoldWallet22222222222222222222222'
+
 const BUYER1_EMAIL = 'buyer@tokenos.ai'
 const BUYER1_PASSWORD = 'Buyer2026!!'
 
@@ -595,6 +603,198 @@ async function seedComputeRequests() {
 }
 
 // ---------------------------------------------------------------------------
+// M3: gold-tier runner + ratings + extra H100 inventory for routing tiebreak
+// ---------------------------------------------------------------------------
+// Adds a second NodeRunner with hardcoded GOLD reputation, an extra H100
+// ONLINE node owned by them, plus a few APPROVED ratings so the M3.2
+// scorer recompute has interesting input AND the M3.5 routing engine
+// can pick between two tier-diverse H100s. Idempotent.
+async function seedReputationData() {
+  // Bronze runner (the existing seed runner) — explicitly set BRONZE so
+  // the routing tiebreak vs gold is unambiguous and re-running the seed
+  // doesn't drift.
+  await prisma.nodeRunner.update({
+    where: { id: 'seed-noderunner-1' },
+    data: {
+      reputationScore: 45,
+      reputationTier: 'BRONZE',
+      slug: 'seed-bronze-runner',
+    },
+  })
+
+  // Gold runner — separate user + NodeRunner.
+  const goldUser = await ensureUser(NR_GOLD_EMAIL, NR_GOLD_PASSWORD, 'NODE_RUNNER')
+  let goldRunner = await prisma.nodeRunner.findUnique({ where: { userId: goldUser.id } })
+  if (!goldRunner) {
+    goldRunner = await prisma.nodeRunner.upsert({
+      where: { walletAddress: NR_GOLD_WALLET },
+      create: {
+        id: 'seed-noderunner-gold',
+        name: 'Seed Gold Runner',
+        email: NR_GOLD_EMAIL,
+        walletAddress: NR_GOLD_WALLET,
+        userId: goldUser.id,
+        payoutThreshold: 10,
+        payoutFrequency: 'WEEKLY',
+        payoutDayOfWeek: 1,
+        reputationScore: 88,
+        reputationTier: 'GOLD',
+        slug: 'seed-gold-runner',
+        availableAsSpot: true,
+      },
+      update: {
+        userId: goldUser.id,
+        email: NR_GOLD_EMAIL,
+        reputationScore: 88,
+        reputationTier: 'GOLD',
+        slug: 'seed-gold-runner',
+        availableAsSpot: true,
+      },
+    })
+  } else {
+    goldRunner = await prisma.nodeRunner.update({
+      where: { id: goldRunner.id },
+      data: {
+        reputationScore: 88,
+        reputationTier: 'GOLD',
+        slug: 'seed-gold-runner',
+        availableAsSpot: true,
+      },
+    })
+  }
+
+  // Extra H100 ONLINE node owned by the gold runner. Same tier + fresh
+  // heartbeat as the bronze runner's seed-node-005, so the allocator
+  // sees them as equally valid candidates and the only differentiator
+  // is reputationTier.
+  await prisma.node.upsert({
+    where: { id: 'seed-node-gold-h100' },
+    create: {
+      id: 'seed-node-gold-h100',
+      walletAddress: 'SEEDgoldNodeWallet11111111111111111111111111',
+      gpuTier: 'H100',
+      nodeType: 'BYOG',
+      status: 'ONLINE',
+      region: 'us-east-1',
+      nodeRunnerId: goldRunner.id,
+      apiKey: 'seed-apikey-node-gold-h100',
+      pendingDeletion: false,
+      agentVersion: '1.4.2',
+      lastHeartbeat: new Date(Date.now() - 30_000),
+      missedBeats: 0,
+    },
+    update: {
+      status: 'ONLINE',
+      lastHeartbeat: new Date(Date.now() - 30_000),
+      missedBeats: 0,
+      pendingDeletion: false,
+    },
+  })
+
+  // Add 3 extra COMPLETED ComputeRequests to anchor 3 ratings for the
+  // gold runner. Buyer1 is the rater. Each Rating row needs a unique
+  // computeRequestId.
+  const buyer1 = await prisma.user.findUnique({ where: { email: BUYER1_EMAIL } })
+  if (!buyer1) return // shouldn't happen — seedComputeRequests creates buyer1 first
+
+  const ratingRequests = [
+    { id: 'seed-cr-rating-anchor-1', score: 5, comment: 'Fast SSH access, GPU performed as advertised. Rented for 7 days, zero downtime.' },
+    { id: 'seed-cr-rating-anchor-2', score: 5, comment: 'Excellent uptime. Operator was responsive on a temp throttle question.' },
+    { id: 'seed-cr-rating-anchor-3', score: 4, comment: 'Solid host. One minor disk i/o blip mid-rental but otherwise great.' },
+  ]
+
+  for (const r of ratingRequests) {
+    await prisma.computeRequest.upsert({
+      where: { id: r.id },
+      create: {
+        id: r.id,
+        userId: buyer1.id,
+        gpuTier: 'H100',
+        gpuCount: 1,
+        durationDays: 7,
+        ratePerDay: 140.15,
+        totalCost: 140.15 * 7,
+        currency: 'USD',
+        txHash: `test_${r.id}`,
+        txConfirmed: true,
+        status: 'COMPLETED',
+        completedAt: daysAgo(Math.floor(rnd() * 20) + 1),
+      } as Prisma.ComputeRequestUncheckedCreateInput,
+      update: {},
+    })
+
+    await prisma.rating.upsert({
+      where: { computeRequestId: r.id },
+      create: {
+        computeRequestId: r.id,
+        buyerId: buyer1.id,
+        nodeRunnerId: goldRunner.id,
+        score: r.score,
+        comment: r.comment,
+        moderationStatus: 'APPROVED',
+        moderatedAt: new Date(),
+      },
+      update: {
+        score: r.score,
+        moderationStatus: 'APPROVED',
+      },
+    })
+  }
+
+  // Add 1 APPROVED rating + 1 PENDING rating for the bronze runner so
+  // the M3.3 admin moderation queue has at least one row to review.
+  await prisma.rating.upsert({
+    where: { computeRequestId: 'seed-cr-buyer1-completed' },
+    create: {
+      computeRequestId: 'seed-cr-buyer1-completed',
+      buyerId: buyer1.id,
+      nodeRunnerId: 'seed-noderunner-1',
+      score: 3,
+      comment: 'OK rental. Some intermittent latency.',
+      moderationStatus: 'APPROVED',
+      moderatedAt: new Date(),
+    },
+    update: { score: 3, moderationStatus: 'APPROVED' },
+  })
+
+  // PENDING rating anchor: needs another COMPLETED request to attach to.
+  await prisma.computeRequest.upsert({
+    where: { id: 'seed-cr-pending-rating' },
+    create: {
+      id: 'seed-cr-pending-rating',
+      userId: buyer1.id,
+      gpuTier: 'H100',
+      gpuCount: 1,
+      durationDays: 3,
+      ratePerDay: 140.15,
+      totalCost: 140.15 * 3,
+      currency: 'USD',
+      txHash: 'test_pending_rating',
+      txConfirmed: true,
+      status: 'COMPLETED',
+      completedAt: daysAgo(1),
+    } as Prisma.ComputeRequestUncheckedCreateInput,
+    update: {},
+  })
+
+  await prisma.rating.upsert({
+    where: { computeRequestId: 'seed-cr-pending-rating' },
+    create: {
+      computeRequestId: 'seed-cr-pending-rating',
+      buyerId: buyer1.id,
+      nodeRunnerId: 'seed-noderunner-1',
+      score: 2,
+      comment: 'Disconnected unexpectedly twice during my rental.',
+      moderationStatus: 'PENDING',
+    },
+    update: {
+      score: 2,
+      moderationStatus: 'PENDING',
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
 // External deployments (M7)
 // ---------------------------------------------------------------------------
 
@@ -793,6 +993,9 @@ async function seed() {
 
   await seedComputeRequests()
   console.log('✓ Compute requests for both buyers')
+
+  await seedReputationData()
+  console.log('✓ M3 reputation data: gold runner + extra H100 + 5 ratings (4 APPROVED, 1 PENDING)')
 
   await seedExternalDeployments(nodes)
   console.log('✓ External deployments (AKASH ACTIVE, IONET PENDING, VASTAI TERMINATING)')
