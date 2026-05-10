@@ -1317,6 +1317,7 @@ export const api = {
           cancelled: number
           rejected: number
           waitlisted: number
+          terminated: number
         }
         total: number
       }>('/v1/admin/compute/requests', { params: status ? { status } : undefined }),

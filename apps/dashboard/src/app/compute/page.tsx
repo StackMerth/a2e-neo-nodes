@@ -60,9 +60,13 @@ interface Counts {
   cancelled: number
   rejected: number
   waitlisted: number
+  terminated: number
 }
 
-type StatusFilter = 'all' | 'PENDING' | 'APPROVED' | 'ALLOCATED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'REJECTED' | 'WAITLISTED'
+// 'TERMINATED' isn't a real DB status — it's a derived view of COMPLETED
+// rows where adminNote indicates a buyer-initiated early terminate (vs
+// auto-expiry). Filtering happens client-side after fetching COMPLETED.
+type StatusFilter = 'all' | 'PENDING' | 'APPROVED' | 'ALLOCATED' | 'ACTIVE' | 'COMPLETED' | 'TERMINATED' | 'CANCELLED' | 'REJECTED' | 'WAITLISTED'
 
 const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
   { label: 'All', value: 'all' },
@@ -72,9 +76,18 @@ const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
   { label: 'Allocated', value: 'ALLOCATED' },
   { label: 'Active', value: 'ACTIVE' },
   { label: 'Completed', value: 'COMPLETED' },
+  { label: 'Terminated', value: 'TERMINATED' },
   { label: 'Cancelled', value: 'CANCELLED' },
   { label: 'Rejected', value: 'REJECTED' },
 ]
+
+// Predicate: a row counts as "terminated early" if its adminNote starts
+// with 'Buyer terminated'. Auto-expired rows have 'Auto-completed: ...'
+// so they fall outside this filter (still appear in 'Completed').
+const isTerminatedRow = (req: { status: string; adminNote: string | null }) =>
+  req.status === 'COMPLETED' &&
+  typeof req.adminNote === 'string' &&
+  req.adminNote.startsWith('Buyer terminated')
 
 // Friendly explanations for every eligibility flag the auto-allocator
 // can write. Keys are the raw flag values from the API; values are
@@ -130,7 +143,7 @@ const FLAG_DESCRIPTIONS: Record<string, { kind: 'hold' | 'pass' | 'info'; title:
 
 export default function ComputeRequestsPage() {
   const [requests, setRequests] = useState<ComputeRequest[]>([])
-  const [counts, setCounts] = useState<Counts>({ pending: 0, approved: 0, allocated: 0, active: 0, completed: 0, cancelled: 0, rejected: 0, waitlisted: 0 })
+  const [counts, setCounts] = useState<Counts>({ pending: 0, approved: 0, allocated: 0, active: 0, completed: 0, cancelled: 0, rejected: 0, waitlisted: 0, terminated: 0 })
   const [availability, setAvailability] = useState<TierAvailability[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -173,13 +186,23 @@ export default function ComputeRequestsPage() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const status = filter !== 'all' ? filter : undefined
+      // 'TERMINATED' is a derived client-side view of COMPLETED rows —
+      // ask the API for COMPLETED and filter on the client. 'all' fetches
+      // everything. Otherwise pass the status straight through.
+      const apiStatus = filter === 'all'
+        ? undefined
+        : filter === 'TERMINATED'
+          ? 'COMPLETED'
+          : filter
       const [requestsData, availData] = await Promise.all([
-        api.compute.list(status),
+        api.compute.list(apiStatus),
         api.compute.availability(),
       ])
-      setRequests(requestsData.requests || [])
-      setCounts(requestsData.counts || { pending: 0, approved: 0, allocated: 0, active: 0, completed: 0, cancelled: 0, rejected: 0, waitlisted: 0 })
+      const allRows = requestsData.requests || []
+      // Apply the TERMINATED predicate client-side so we don't show
+      // auto-expired rentals here; those stay under 'Completed'.
+      setRequests(filter === 'TERMINATED' ? allRows.filter(isTerminatedRow) : allRows)
+      setCounts(requestsData.counts || { pending: 0, approved: 0, allocated: 0, active: 0, completed: 0, cancelled: 0, rejected: 0, waitlisted: 0, terminated: 0 })
       // Convert availability object to array
       const availObj = (availData as { availability: Record<string, { total: number; idle: number; busy: number }> }).availability || {}
       setAvailability(Object.entries(availObj).map(([tier, data]) => ({ tier, ...data })))
@@ -421,6 +444,7 @@ export default function ComputeRequestsPage() {
       case 'CANCELLED': return counts.cancelled
       case 'REJECTED': return counts.rejected
       case 'WAITLISTED': return counts.waitlisted
+      case 'TERMINATED': return counts.terminated
       default: return 0
     }
   }

@@ -403,9 +403,31 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
           : `Your rental ended. ${refundStatus === 'SKIPPED_ZERO' ? 'No refund due.' : 'Refund failed — admin notified.'}`,
     )
 
+    // Notify all admins so the bell + the dashboard's notification feed
+    // surface the termination. The compute:terminated WS event below
+    // also triggers a toast on any open admin tab in real-time.
+    const admins = await fastify.prisma.user.findMany({
+      where: { role: 'ADMIN' },
+      select: { id: true },
+    })
+    const buyerLabel = user?.walletAddress
+      ? `${user.walletAddress.slice(0, 6)}...${user.walletAddress.slice(-4)}`
+      : 'a buyer'
+    for (const admin of admins) {
+      void createNotification(
+        admin.id,
+        'COMPUTE_COMPLETED',
+        'Rental Terminated',
+        `${buyerLabel} terminated their ${cr.gpuCount}x ${cr.gpuTier} rental early. ` +
+          `Accrued $${finalAccrued.toFixed(2)}, refund $${refundAmount.toFixed(2)} (${refundStatus}).`,
+      )
+    }
+
     fastify.io?.emit('compute:terminated', {
       requestId: id,
       userId,
+      gpuTier: cr.gpuTier,
+      gpuCount: cr.gpuCount,
       finalMinutes,
       finalAccrued,
       refundAmount,
