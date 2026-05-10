@@ -61,12 +61,20 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: `Cannot release hold: status is ${cr.status}` })
     }
 
+    // Append MANUAL_REVIEW_PASSED so the allocator's eligibility check
+    // bypasses the same HOLD_ rules that fired here. Without this, the
+    // very next 10s tick would re-fire the rules (buyer is still
+    // first-time, totalCost still > ceiling) and bounce the request
+    // straight back to WAITLISTED — making Release Hold useless.
+    const existingFlags = (cr.eligibilityFlags ?? []).filter(f => !f.startsWith('HOLD_'))
+    const newFlags = Array.from(new Set([...existingFlags, 'MANUAL_REVIEW_PASSED']))
+
     await fastify.prisma.computeRequest.update({
       where: { id },
       data: {
         status: 'PENDING',
+        eligibilityFlags: newFlags,
         adminNote: note ?? `Released from hold by admin at ${new Date().toISOString()}`,
-        // Keep eligibilityFlags so we have audit history of why it was held.
       },
     })
 
