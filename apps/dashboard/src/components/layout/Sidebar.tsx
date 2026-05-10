@@ -29,6 +29,7 @@ import {
   PanelLeftOpen,
   PanelLeftClose,
   Globe,
+  Star,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -66,6 +67,7 @@ const navGroups: NavGroup[] = [
     title: 'DEMAND',
     items: [
       { path: '/compute', icon: Monitor, label: 'Compute', badgeKey: 'compute' },
+      { path: '/ratings', icon: Star, label: 'Ratings', badgeKey: 'ratings' },
     ],
   },
   {
@@ -120,16 +122,18 @@ export function Sidebar() {
   // The list API returns counts for every status; we read both buckets.
   const fetchBadges = useCallback(async () => {
     try {
-      const [deployData, computeData, withdrawalData] = await Promise.all([
+      const [deployData, computeData, withdrawalData, ratingsData] = await Promise.all([
         api.deployments.list('DEPLOYMENT_REQUESTED').catch(() => null),
         api.compute.list().catch(() => null), // no status filter -> get counts.{pending,waitlisted}
         api.withdrawals.list('PENDING').catch(() => null),
+        api.ratings.list('PENDING').catch(() => null),
       ])
       const computeCounts = (computeData as { counts?: { pending?: number; waitlisted?: number } } | null)?.counts
       setBadges({
         deployments: (deployData as { deployments?: unknown[] })?.deployments?.length ?? 0,
         compute: (computeCounts?.pending ?? 0) + (computeCounts?.waitlisted ?? 0),
         withdrawals: (withdrawalData as { withdrawals?: unknown[] })?.withdrawals?.length ?? 0,
+        ratings: (ratingsData as { counts?: { pending?: number } } | null)?.counts?.pending ?? 0,
       })
     } catch { /* ignore */ }
   }, [])
@@ -150,11 +154,14 @@ export function Sidebar() {
     on('compute:waitlisted', fetchBadges)
     on('compute:allocated', fetchBadges)
     on('compute:terminated', fetchBadges)
+    // M3: rating events also bump the Ratings sidebar badge
+    on('rating:new', fetchBadges)
     return () => {
       off('compute:request:new')
       off('compute:waitlisted')
       off('compute:allocated')
       off('compute:terminated')
+      off('rating:new')
     }
   }, [on, off, fetchBadges])
 

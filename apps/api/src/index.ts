@@ -57,6 +57,7 @@ import {
   externalRoutes,
   webhooksSolanaRoutes,
   templateRoutes,
+  adminRatingsRoutes,
 } from './routes'
 import { setupWebSocket } from './websocket'
 import { setNotificationSocket } from './services/notification/service.js'
@@ -194,6 +195,7 @@ async function start() {
     await server.register(externalRoutes)
     await server.register(webhooksSolanaRoutes)
     await server.register(templateRoutes)
+    await server.register(adminRatingsRoutes)
 
     const redisConnection = server.redis as unknown as import('bullmq').ConnectionOptions
     const rateFetcherQueue = createRateFetcherQueue(redisConnection)

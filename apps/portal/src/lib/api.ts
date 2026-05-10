@@ -179,6 +179,12 @@ export const buyer = {
   activeCompute: () => apiFetch('/v1/buyer/compute/active'),
   cancelRequest: (id: string) => apiFetch(`/v1/buyer/compute/requests/${id}/cancel`, { method: 'PATCH' }),
   terminateRequest: (id: string) => apiFetch(`/v1/buyer/compute/requests/${id}/terminate`, { method: 'POST' }),
+  rate: (id: string, data: { score: number; comment?: string }) =>
+    apiFetch(`/v1/buyer/compute/requests/${id}/rate`, { method: 'POST', body: data }),
+  getRating: (id: string) =>
+    apiFetch<{ rating: { id: string; score: number; comment: string | null; moderationStatus: string; createdAt: string } | null }>(
+      `/v1/buyer/compute/requests/${id}/rating`,
+    ),
   settings: (data: unknown) => apiFetch('/v1/buyer/settings', { method: 'PATCH', body: data }),
   billing: () => apiFetch('/v1/buyer/billing'),
   invoiceUrl: (requestId: string) => `${API_URL}/v1/buyer/billing/invoice/${requestId}`,
