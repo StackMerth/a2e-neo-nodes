@@ -48,6 +48,15 @@ interface TickPayload {
   remainingCost: number
 }
 
+// M3: SPOT preemption notice. Fired by the spot-preemption worker when
+// a SPOT rental is scheduled for eviction with a 90-second grace window.
+interface PreemptionPayload {
+  requestId: string
+  preemptAt: string
+  graceMs: number
+  reason: string
+}
+
 const TIER_COLORS: Record<string, string> = {
   H100: '#22c55e',
   H200: '#3b82f6',
@@ -130,6 +139,41 @@ function TimeRemainingBar({ expiresAt, activatedAt }: { expiresAt: string; activ
   )
 }
 
+// M3: SPOT preemption banner — full-width red strip across the top of
+// an affected rental card. Live countdown to the eviction time.
+function PreemptionBanner({ preemption }: { preemption: PreemptionPayload }) {
+  const [secondsLeft, setSecondsLeft] = useState(0)
+  useEffect(() => {
+    const update = () => {
+      const ms = new Date(preemption.preemptAt).getTime() - Date.now()
+      setSecondsLeft(Math.max(0, Math.ceil(ms / 1000)))
+    }
+    update()
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [preemption.preemptAt])
+
+  return (
+    <div
+      className="rounded-lg p-3 mb-4 flex items-center gap-3"
+      style={{
+        background: 'rgba(239, 68, 68, 0.12)',
+        border: '1px solid rgba(239, 68, 68, 0.4)',
+      }}
+    >
+      <XCircle size={18} style={{ color: '#ef4444' }} />
+      <div className="flex-1">
+        <p className="text-sm font-semibold" style={{ color: '#ef4444' }}>
+          SPOT preemption in {secondsLeft}s
+        </p>
+        <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+          Capacity needed for On-Demand demand. Save your work now. Unused minutes will be refunded.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export default function ActiveComputePage() {
   const [allocations, setAllocations] = useState<ActiveAllocation[]>([])
   const [loading, setLoading] = useState(true)
@@ -139,6 +183,10 @@ export default function ActiveComputePage() {
   // websocket event (every 60s from the API meter). Clearing an entry
   // means we fall back to the value from the last loadData() pull.
   const [ticks, setTicks] = useState<Record<string, TickPayload>>({})
+  // M3: preemption notices, keyed by request id. Set when worker emits
+  // 'compute:preemption-notice' (90s before terminating a SPOT victim).
+  // Cleared when terminate event fires.
+  const [preemptions, setPreemptions] = useState<Record<string, PreemptionPayload>>({})
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -170,7 +218,19 @@ export default function ActiveComputePage() {
       if (!payload?.requestId) return
       // Drop the row immediately for responsive UI; refetch confirms.
       setAllocations(prev => prev.filter(a => a.id !== payload.requestId && a.requestId !== payload.requestId))
+      // Clear any preemption notice (the rental is gone now)
+      setPreemptions(prev => {
+        const next = { ...prev }
+        delete next[payload.requestId]
+        return next
+      })
       void loadData()
+    },
+    // M3: SPOT preemption — show countdown banner on the affected card
+    'compute:preemption-notice': (data: unknown) => {
+      const payload = data as PreemptionPayload
+      if (!payload?.requestId) return
+      setPreemptions(prev => ({ ...prev, [payload.requestId]: payload }))
     },
   }), [loadData])
 
@@ -245,6 +305,8 @@ export default function ActiveComputePage() {
             const totalCost = alloc.totalCost ?? 0
             const remainingCost = Math.max(0, totalCost - accruedCost)
             const minutesUsed = tick?.minutesUsed ?? alloc.minutesUsed ?? 0
+            // M3: preemption notice for this card, if any
+            const preemption = preemptions[alloc.id] ?? preemptions[alloc.requestId]
             return (
               <motion.div key={alloc.id} variants={itemVariants}>
                 <div
@@ -254,6 +316,13 @@ export default function ActiveComputePage() {
                     border: `1px solid ${tierColor}30`,
                   }}
                 >
+                  {/* M3: SPOT preemption banner — appears when this card's
+                      rental has been scheduled for eviction. Shows a live
+                      countdown so the buyer knows exactly when to save work. */}
+                  {preemption && (
+                    <PreemptionBanner preemption={preemption} />
+                  )}
+
                   {/* Header Row */}
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
