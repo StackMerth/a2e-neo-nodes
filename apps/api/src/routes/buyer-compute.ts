@@ -166,12 +166,26 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       },
     })
 
-    // Notify admins
+    // Notify admins (DB row + global notification:new WS event per admin)
     const admins = await fastify.prisma.user.findMany({ where: { role: 'ADMIN' }, select: { id: true } })
     for (const admin of admins) {
       void createNotification(admin.id, 'COMPUTE_REQUEST_NEW', 'New Compute Request',
         `${gpuCount}x ${gpuTier} for ${durationDays} days ($${totalCost.toFixed(2)})`)
     }
+
+    // Real-time event so the admin dashboard can show a toast and bump
+    // the sidebar badge without waiting for the next 30s poll. Distinct
+    // from notification:new so the dashboard can subscribe just to
+    // compute events without filtering every notification type.
+    fastify.io?.emit('compute:request:new', {
+      requestId: computeRequest.id,
+      userId,
+      gpuTier,
+      gpuCount,
+      durationDays,
+      totalCost,
+      timestamp: new Date().toISOString(),
+    })
 
     const responseBody = {
       id: computeRequest.id,
