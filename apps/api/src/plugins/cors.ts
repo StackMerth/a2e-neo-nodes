@@ -7,16 +7,15 @@ import cors from '@fastify/cors'
 
 const corsPlugin: FastifyPluginCallback = async (fastify: FastifyInstance) => {
   const allowedOrigins = process.env.CORS_ORIGINS?.split(',') ?? [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:3002',
-    // M3 marketplace dev port
-    'http://localhost:3003',
+    // Local dev ports
+    'http://localhost:3000', // dashboard
+    'http://localhost:3001', // api (rare; included for local cross-port testing)
+    'http://localhost:3002', // portal
+    'http://localhost:3003', // marketplace (M3)
+    // Production subdomains
     'https://a2e-admin.stackforgelab.tech',
     'https://a2e-user.stackforgelab.tech',
-    'https://compute.tokenos.ai',
-    // M3 marketplace production (update with real custom domain when set)
-    'https://marketplace.tokenos.ai',
+    'https://marketplace.stackforgelab.tech', // M3
   ]
 
   await fastify.register(cors, {
