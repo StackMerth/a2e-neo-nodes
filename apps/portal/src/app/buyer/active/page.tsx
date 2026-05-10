@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import {
   Server,
@@ -9,8 +9,11 @@ import {
   Check,
   Clock,
   Terminal,
+  XCircle,
+  DollarSign,
 } from 'lucide-react'
 import { buyer } from '@/lib/api'
+import { useWebSocket } from '@/hooks/useWebSocket'
 import { Skeleton } from '@/components/ui/Skeleton'
 import Link from 'next/link'
 
@@ -25,6 +28,17 @@ interface ActiveAllocation {
   sshPassword?: string
   activatedAt: string
   expiresAt: string
+  totalCost?: number
+  accruedCost?: number
+  minutesUsed?: number
+  ratePerMinute?: number
+}
+
+interface TickPayload {
+  requestId: string
+  minutesUsed: number
+  accruedCost: number
+  remainingCost: number
 }
 
 const TIER_COLORS: Record<string, string> = {
@@ -113,6 +127,11 @@ export default function ActiveComputePage() {
   const [allocations, setAllocations] = useState<ActiveAllocation[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [terminatingId, setTerminatingId] = useState<string | null>(null)
+  // Live tick state, keyed by request id. Updated on each compute:tick
+  // websocket event (every 60s from the API meter). Clearing an entry
+  // means we fall back to the value from the last loadData() pull.
+  const [ticks, setTicks] = useState<Record<string, TickPayload>>({})
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -132,6 +151,47 @@ export default function ActiveComputePage() {
     const interval = setInterval(() => loadData(), 30_000)
     return () => clearInterval(interval)
   }, [loadData])
+
+  const wsEvents = useMemo(() => ({
+    'compute:tick': (data: unknown) => {
+      const payload = data as TickPayload
+      if (!payload?.requestId) return
+      setTicks(prev => ({ ...prev, [payload.requestId]: payload }))
+    },
+    'compute:terminated': (data: unknown) => {
+      const payload = data as { requestId: string }
+      if (!payload?.requestId) return
+      // Drop the row immediately for responsive UI; refetch confirms.
+      setAllocations(prev => prev.filter(a => a.id !== payload.requestId && a.requestId !== payload.requestId))
+      void loadData()
+    },
+  }), [loadData])
+
+  useWebSocket({ events: wsEvents })
+
+  const handleTerminate = async (alloc: ActiveAllocation) => {
+    const tick = ticks[alloc.id] ?? ticks[alloc.requestId]
+    const accrued = tick?.accruedCost ?? alloc.accruedCost ?? 0
+    const refund = Math.max(0, (alloc.totalCost ?? 0) - accrued)
+    const ok = window.confirm(
+      `Terminate this rental now?\n\n` +
+      `Accrued so far: $${accrued.toFixed(2)}\n` +
+      `Refund estimate: $${refund.toFixed(2)}\n\n` +
+      `Refund will be sent to the wallet on your account settings.`,
+    )
+    if (!ok) return
+    setTerminatingId(alloc.id)
+    try {
+      await buyer.terminateRequest(alloc.id)
+      // The compute:terminated websocket event drives the UI update.
+      // If the socket is offline, also refresh manually.
+      void loadData()
+    } catch (err) {
+      window.alert(`Termination failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setTerminatingId(null)
+    }
+  }
 
   if (loading) {
     return (
@@ -173,6 +233,11 @@ export default function ActiveComputePage() {
         <motion.div className="space-y-4" variants={containerVariants}>
           {allocations.map((alloc) => {
             const tierColor = TIER_COLORS[alloc.gpuTier] ?? 'var(--primary)'
+            const tick = ticks[alloc.id] ?? ticks[alloc.requestId]
+            const accruedCost = tick?.accruedCost ?? alloc.accruedCost ?? 0
+            const totalCost = alloc.totalCost ?? 0
+            const remainingCost = Math.max(0, totalCost - accruedCost)
+            const minutesUsed = tick?.minutesUsed ?? alloc.minutesUsed ?? 0
             return (
               <motion.div key={alloc.id} variants={itemVariants}>
                 <div
@@ -205,6 +270,32 @@ export default function ActiveComputePage() {
                   <div className="mb-4">
                     <TimeRemainingBar expiresAt={alloc.expiresAt} activatedAt={alloc.activatedAt} />
                   </div>
+
+                  {/* Live cost ticker (updated via compute:tick websocket event) */}
+                  {totalCost > 0 && (
+                    <div
+                      className="rounded-lg p-3 mb-4 flex items-center justify-between"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <DollarSign size={14} style={{ color: tierColor }} />
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {minutesUsed} min used
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-mono" style={{ color: 'var(--text-primary)' }}>
+                          ${accruedCost.toFixed(2)}
+                          <span className="text-xs ml-1" style={{ color: 'var(--text-muted)' }}>
+                            / ${totalCost.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          ${remainingCost.toFixed(2)} refund if terminated now
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* SSH Details */}
                   <div
@@ -247,6 +338,26 @@ export default function ActiveComputePage() {
                         <CopyButton text={`ssh ${alloc.sshUser}@${alloc.sshHost} -p ${alloc.sshPort}`} />
                       </div>
                     </div>
+                  </div>
+
+                  {/* Terminate (early termination + prorated refund) */}
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => handleTerminate(alloc)}
+                      disabled={terminatingId === alloc.id}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid var(--border-color)',
+                        color: 'var(--text-secondary)',
+                        opacity: terminatingId === alloc.id ? 0.5 : 1,
+                        cursor: terminatingId === alloc.id ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      <XCircle size={12} />
+                      {terminatingId === alloc.id ? 'Terminating...' : 'Terminate Early'}
+                    </button>
                   </div>
                 </div>
               </motion.div>
