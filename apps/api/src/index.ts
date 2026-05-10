@@ -107,6 +107,11 @@ import {
   createComputeAllocatorWorker,
   scheduleComputeAllocator,
 } from './jobs/compute-allocator'
+import {
+  createPerMinuteMeterQueue,
+  createPerMinuteMeterWorker,
+  schedulePerMinuteMeter,
+} from './jobs/per-minute-meter'
 
 const server = Fastify({
   logger: {
@@ -234,6 +239,14 @@ async function start() {
     createComputeAllocatorWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleComputeAllocator(computeAllocatorQueue)
     server.log.info('Compute allocator initialized (10s tick)')
+
+    // M2 per-minute billing meter (B3): rolls elapsed minutes onto each
+    // ACTIVE ComputeRequest's minutesUsed + accruedCost so the buyer
+    // dashboard ticker stays current. 60s tick. Idempotent.
+    const perMinuteMeterQueue = createPerMinuteMeterQueue(redisConnection)
+    createPerMinuteMeterWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
+    await schedulePerMinuteMeter(perMinuteMeterQueue)
+    server.log.info('Per-minute meter initialized (60s tick)')
 
     await scheduleRateFetcher(rateFetcherQueue)
     await scheduleReconciliation(reconciliationQueue, 5)
