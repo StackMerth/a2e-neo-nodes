@@ -600,9 +600,24 @@ export default function ComputeRequestsPage() {
                       {new Date(req.requestedAt).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-2 flex-wrap">
                         {req.status === 'PENDING' && (
                           <>
+                            {/* Show flag chip on PENDING rows when WAITING_ON_CAPACITY
+                                or other non-hold flags are present (e.g. after admin
+                                released the hold). Tooltip lists every flag. */}
+                            {req.eligibilityFlags && req.eligibilityFlags.length > 0 && (
+                              <span
+                                className="px-2 py-1 text-xs rounded bg-accent/10 text-accent font-mono whitespace-nowrap"
+                                title={req.eligibilityFlags.join(', ')}
+                              >
+                                {req.eligibilityFlags.includes('WAITING_ON_CAPACITY')
+                                  ? 'waiting on capacity'
+                                  : req.eligibilityFlags.includes('MANUAL_REVIEW_PASSED')
+                                    ? 'reviewed'
+                                    : `${req.eligibilityFlags.length} flag(s)`}
+                              </span>
+                            )}
                             <button
                               onClick={() => handleApprove(req.id)}
                               disabled={actionLoading === req.id}
@@ -629,7 +644,7 @@ export default function ComputeRequestsPage() {
                           <>
                             {req.eligibilityFlags && req.eligibilityFlags.length > 0 && (
                               <span
-                                className="px-2 py-1 text-xs rounded bg-warning/10 text-warning font-mono"
+                                className="px-2 py-1 text-xs rounded bg-warning/10 text-warning font-mono whitespace-nowrap"
                                 title={req.eligibilityFlags.join(', ')}
                               >
                                 {req.eligibilityFlags.filter(f => f.startsWith('HOLD_')).length} flag(s)

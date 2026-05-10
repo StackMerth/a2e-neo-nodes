@@ -39,6 +39,8 @@ const TRUSTED_RENTAL_COUNT = parseInt(process.env.ALLOCATOR_TRUSTED_RENTAL_COUNT
 export type EligibilityFlag =
   | 'PASS_FAST_TRACK'
   | 'PASS_NORMAL'
+  | 'PASS_MANUAL_REVIEW' // admin released the hold; allocator bypasses HOLD_ rules
+  | 'MANUAL_REVIEW_PASSED' // marker carried on the row so subsequent ticks see the bypass
   | 'HOLD_FIRST_TIME_OVER_CEILING'
   | 'HOLD_DAILY_SPEND_EXCEEDED'
   | 'HOLD_CONCURRENT_LIMIT'
@@ -50,6 +52,11 @@ export interface EligibilityVerdict {
   reason: string
 }
 
+// Marker flag set by the admin Release Hold action. When present on the
+// row's eligibilityFlags, evaluateEligibility short-circuits to approved
+// so the allocator doesn't immediately re-hold the same request.
+export const MANUAL_REVIEW_FLAG = 'MANUAL_REVIEW_PASSED' as const
+
 /**
  * Evaluate a ComputeRequest against the buyer's profile.
  *
@@ -59,9 +66,25 @@ export interface EligibilityVerdict {
  */
 export async function evaluateEligibility(
   prisma: PrismaClient,
-  request: Pick<ComputeRequest, 'id' | 'userId' | 'totalCost' | 'gpuCount' | 'gpuTier'>,
+  request: Pick<ComputeRequest, 'id' | 'userId' | 'totalCost' | 'gpuCount' | 'gpuTier' | 'eligibilityFlags'>,
   user: Pick<User, 'id' | 'emailVerified' | 'maxConcurrentRentals' | 'maxDailySpendUsd' | 'successfulRentalCount'>,
 ): Promise<EligibilityVerdict> {
+  // Short-circuit: admin already reviewed and released this from a hold.
+  // Re-running the rules would just re-fire the same HOLD_ flags and
+  // bounce the request back to WAITLISTED on the next tick. Admin
+  // override wins; we still record the bypass in flags for audit.
+  if (request.eligibilityFlags?.includes(MANUAL_REVIEW_FLAG)) {
+    // Preserve the marker so subsequent ticks (including a capacity-
+    // wait tick that overwrites flags) continue to recognize the
+    // bypass. Without this, the marker would be lost next tick and
+    // the request would re-hold.
+    return {
+      approved: true,
+      flags: ['PASS_MANUAL_REVIEW', MANUAL_REVIEW_FLAG],
+      reason: 'Bypassed: admin manually approved',
+    }
+  }
+
   const flags: EligibilityFlag[] = []
 
   if (!user.emailVerified) {
