@@ -38,6 +38,27 @@ interface RateUpdatedEvent {
   ratePerDay: number
 }
 
+interface ComputeRequestNewEvent {
+  requestId: string
+  userId: string
+  gpuTier: string
+  gpuCount: number
+  durationDays: number
+  totalCost: number
+}
+
+interface ComputeWaitlistedEvent {
+  requestId: string
+  userId: string
+  flags: string[]
+}
+
+interface ComputeAllocatedEvent {
+  requestId: string
+  userId: string
+  nodeIds: string[]
+}
+
 export function WebSocketNotifier() {
   const { on, off, connected } = useSocket()
   const { addToast } = useToast()
@@ -93,11 +114,41 @@ export function WebSocketNotifier() {
     // Rate updates are silent - they happen frequently and would be noisy
     // The rates page will show current values
 
+    // M2: compute lifecycle. Loud for new buyer requests (admin should
+    // notice immediately), quieter for downstream transitions.
+    on<ComputeRequestNewEvent>('compute:request:new', (data) => {
+      addToast({
+        type: 'info',
+        title: 'New Compute Request',
+        message: `${data.gpuCount}x ${data.gpuTier} for ${data.durationDays}d ($${data.totalCost.toFixed(0)})`,
+      })
+    })
+
+    on<ComputeWaitlistedEvent>('compute:waitlisted', (data) => {
+      const holdCount = data.flags.filter(f => f.startsWith('HOLD_')).length
+      addToast({
+        type: 'warning',
+        title: 'Request Held for Review',
+        message: `${holdCount} eligibility flag${holdCount === 1 ? '' : 's'} — see Compute > Needs Review`,
+      })
+    })
+
+    on<ComputeAllocatedEvent>('compute:allocated', (data) => {
+      addToast({
+        type: 'success',
+        title: 'Compute Allocated',
+        message: `${data.nodeIds.length} node${data.nodeIds.length === 1 ? '' : 's'} assigned`,
+      })
+    })
+
     return () => {
       off('node:registered')
       off('node:offline')
       off('job:routed')
       off('job:failed')
+      off('compute:request:new')
+      off('compute:waitlisted')
+      off('compute:allocated')
     }
   }, [on, off, addToast])
 

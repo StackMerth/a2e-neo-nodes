@@ -70,6 +70,41 @@ interface RateUpdatedEvent {
   ratePerDay: number
 }
 
+// M2: compute lifecycle events the admin dashboard reacts to in real time.
+// New requests bump the sidebar Compute badge and fire a toast; allocator
+// transitions keep the badge in sync without a 30s poll wait.
+interface ComputeRequestNewEvent {
+  requestId: string
+  userId: string
+  gpuTier: string
+  gpuCount: number
+  durationDays: number
+  totalCost: number
+  timestamp: string
+}
+
+interface ComputeWaitlistedEvent {
+  requestId: string
+  userId: string
+  flags: string[]
+  timestamp: string
+}
+
+interface ComputeAllocatedEvent {
+  requestId: string
+  userId: string
+  nodeIds: string[]
+  timestamp: string
+}
+
+interface ComputeTerminatedEvent {
+  requestId: string
+  userId: string
+  refundAmount: number
+  refundStatus: string
+  timestamp: string
+}
+
 export interface UseWebSocketReturn {
   connected: boolean
   events: SocketEvent[]
@@ -142,6 +177,27 @@ export function useWebSocket(): UseWebSocketReturn {
     socket.on('rate:updated', (data: RateUpdatedEvent) => {
       addEvent('rate:updated', data)
       notifyListeners('rate:updated', data)
+    })
+
+    // M2: compute lifecycle events
+    socket.on('compute:request:new', (data: ComputeRequestNewEvent) => {
+      addEvent('compute:request:new', data)
+      notifyListeners('compute:request:new', data)
+    })
+
+    socket.on('compute:waitlisted', (data: ComputeWaitlistedEvent) => {
+      addEvent('compute:waitlisted', data)
+      notifyListeners('compute:waitlisted', data)
+    })
+
+    socket.on('compute:allocated', (data: ComputeAllocatedEvent) => {
+      addEvent('compute:allocated', data)
+      notifyListeners('compute:allocated', data)
+    })
+
+    socket.on('compute:terminated', (data: ComputeTerminatedEvent) => {
+      addEvent('compute:terminated', data)
+      notifyListeners('compute:terminated', data)
     })
 
     return () => {

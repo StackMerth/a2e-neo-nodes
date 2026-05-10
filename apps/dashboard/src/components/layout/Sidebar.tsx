@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/hooks/useAuth'
 import { useSidebar } from './SidebarContext'
+import { useSocket } from '@/hooks/useWebSocket'
 import { api } from '@/lib/api'
 import {
   LayoutDashboard,
@@ -112,27 +113,50 @@ export function Sidebar() {
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen } = useSidebar()
   const [badges, setBadges] = useState<Record<string, number>>({})
+  const { on, off } = useSocket()
 
-  // Fetch pending counts for badge indicators
+  // Compute badge counts. compute = PENDING + WAITLISTED so the admin
+  // sees the full review backlog, not just the unallocated PENDING set.
+  // The list API returns counts for every status; we read both buckets.
+  const fetchBadges = useCallback(async () => {
+    try {
+      const [deployData, computeData, withdrawalData] = await Promise.all([
+        api.deployments.list('DEPLOYMENT_REQUESTED').catch(() => null),
+        api.compute.list().catch(() => null), // no status filter -> get counts.{pending,waitlisted}
+        api.withdrawals.list('PENDING').catch(() => null),
+      ])
+      const computeCounts = (computeData as { counts?: { pending?: number; waitlisted?: number } } | null)?.counts
+      setBadges({
+        deployments: (deployData as { deployments?: unknown[] })?.deployments?.length ?? 0,
+        compute: (computeCounts?.pending ?? 0) + (computeCounts?.waitlisted ?? 0),
+        withdrawals: (withdrawalData as { withdrawals?: unknown[] })?.withdrawals?.length ?? 0,
+      })
+    } catch { /* ignore */ }
+  }, [])
+
   useEffect(() => {
-    const fetchBadges = async () => {
-      try {
-        const [deployData, computeData, withdrawalData] = await Promise.all([
-          api.deployments.list('DEPLOYMENT_REQUESTED').catch(() => null),
-          api.compute.list('PENDING').catch(() => null),
-          api.withdrawals.list('PENDING').catch(() => null),
-        ])
-        setBadges({
-          deployments: (deployData as { deployments?: unknown[] })?.deployments?.length ?? 0,
-          compute: (computeData as { requests?: unknown[] })?.requests?.length ?? 0,
-          withdrawals: (withdrawalData as { withdrawals?: unknown[] })?.withdrawals?.length ?? 0,
-        })
-      } catch { /* ignore */ }
-    }
     fetchBadges()
+    // 30s poll as a backstop; WebSocket below is the primary path.
     const interval = setInterval(fetchBadges, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [fetchBadges])
+
+  // Real-time badge updates: any compute lifecycle event triggers a
+  // re-fetch so the badge stays exact (no drift from manual increments).
+  // Re-fetch is cheap (single list call) and runs only on events, not
+  // on every tick. This is what makes the badge feel live.
+  useEffect(() => {
+    on('compute:request:new', fetchBadges)
+    on('compute:waitlisted', fetchBadges)
+    on('compute:allocated', fetchBadges)
+    on('compute:terminated', fetchBadges)
+    return () => {
+      off('compute:request:new')
+      off('compute:waitlisted')
+      off('compute:allocated')
+      off('compute:terminated')
+    }
+  }, [on, off, fetchBadges])
 
   const handleLogout = () => {
     logout()
