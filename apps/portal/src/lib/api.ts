@@ -181,6 +181,12 @@ export const buyer = {
   terminateRequest: (id: string) => apiFetch(`/v1/buyer/compute/requests/${id}/terminate`, { method: 'POST' }),
   rate: (id: string, data: { score: number; comment?: string }) =>
     apiFetch(`/v1/buyer/compute/requests/${id}/rate`, { method: 'POST', body: data }),
+  // M3: trigger a workspace checkpoint mid-rental
+  checkpoint: (id: string) =>
+    apiFetch<{ id: string; checkpointStatus: string; message: string }>(
+      `/v1/buyer/compute/requests/${id}/checkpoint`,
+      { method: 'POST' },
+    ),
   getRating: (id: string) =>
     apiFetch<{ rating: { id: string; score: number; comment: string | null; moderationStatus: string; createdAt: string } | null }>(
       `/v1/buyer/compute/requests/${id}/rating`,
