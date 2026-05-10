@@ -124,6 +124,20 @@ model User {
   passwordResetToken  String?
   passwordResetExpiry DateTime?
 
+  // M2: buyer quotas. Cap concurrent active rentals and daily spend so a
+  // compromised account can't drain inventory or burn the buyer's wallet.
+  // Defaults are generous enough to be invisible for legitimate users;
+  // admin can tune per-user from the dashboard.
+  maxConcurrentRentals  Int     @default(10)
+  maxDailySpendUsd      Float   @default(10000)
+
+  // M2: trust score for the auto-allocator. Increments on every successfully
+  // completed rental (full cycle, no chargeback). Used by the eligibility
+  // rules engine to decide whether a request auto-approves or holds for
+  // admin review.
+  successfulRentalCount Int     @default(0)
+  lastRentalAt          DateTime?
+
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -874,7 +888,33 @@ model ComputeRequest {
   sshHost         String?
   sshPort         Int?
   sshUsername      String?
+  // sshPassword stays for legacy rentals provisioned before M2 ephemeral
+  // sessions. New rentals must use sshSessionToken below; the password
+  // column is kept nullable so existing rows still load. Will be dropped
+  // once all pre-M2 rentals are completed or migrated.
   sshPassword     String?
+
+  // M2: ephemeral SSH session token. Issued at allocation, rotated on
+  // session end or expiry. Replaces persistent sshPassword for new rentals.
+  sshSessionToken          String?
+  sshSessionTokenExpiresAt DateTime?
+
+  // M2: per-minute billing accumulators. Heartbeat meter rolls minutes into
+  // minutesUsed; accruedCost = minutesUsed * ratePerMinute, recomputed on
+  // each heartbeat so the buyer dashboard ticker is honest.
+  minutesUsed     Int                  @default(0)
+  ratePerMinute   Float?
+  accruedCost     Float                @default(0)
+
+  // M2: auto-allocator eligibility flags. The rules engine writes flags like
+  // "FIRST_TIME_OVER_CEILING" or "DAILY_SPEND_EXCEEDED" so admins can read
+  // the hold reason from the Needs Review queue without rerunning the rules.
+  eligibilityFlags String[]            @default([])
+
+  // M2: optional template the buyer launched. Pre-warmed on idle nodes so
+  // launch-to-Jupyter is sub-30s on warm nodes.
+  templateId      String?
+  template        Template?            @relation(fields: [templateId], references: [id])
 
   // Timestamps
   requestedAt     DateTime             @default(now())
@@ -888,6 +928,7 @@ model ComputeRequest {
   @@index([status])
   @@index([requestedAt])
   @@index([expiresAt])
+  @@index([templateId])
 }
 
 enum ComputeRequestStatus {
@@ -898,6 +939,39 @@ enum ComputeRequestStatus {
   COMPLETED      // Lease expired or manually completed
   CANCELLED      // Buyer cancelled
   REJECTED       // Admin rejected
+  WAITLISTED     // M2: held by eligibility rules; admin must approve before allocation
+}
+
+// ============================================================================
+// TEMPLATES (M2 - Buyer Self-Serve)
+// ============================================================================
+// Pre-built environments the buyer can launch in one click. Admins curate
+// the catalog; node-agent pre-warms the top-N most-used images during idle
+// time so launch latency stays low. Buyer's selected template is stored on
+// ComputeRequest.templateId.
+
+model Template {
+  id              String    @id @default(cuid())
+  slug            String    @unique // e.g. "pytorch-cuda12.1-jupyter"
+  name            String              // human-readable label shown in the picker
+  description     String?
+  dockerImage     String              // e.g. "pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime"
+  defaultPort     Int?                // primary service port (Jupyter, Gradio, etc.)
+  exposedPorts    Int[]               @default([])
+  envVars         Json?               // optional default env vars for this template
+  startupCommand  String?             // command run inside the container on launch
+  iconUrl         String?
+  category        String?             // "training" | "inference" | "blank" | etc.
+  popularity      Int       @default(0) // increments on each launch; drives prewarm ranking
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  computeRequests ComputeRequest[]
+
+  @@index([isActive])
+  @@index([category])
+  @@index([popularity])
 }
 
 // ============================================================================
