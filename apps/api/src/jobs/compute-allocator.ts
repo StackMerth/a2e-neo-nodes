@@ -203,6 +203,21 @@ async function processRequest(
     select: { sshHost: true, sshPort: true, sshUsername: true },
   })
 
+  // M2 self-serve: the allocator transitions PENDING straight to ACTIVE
+  // (skipping ALLOCATED) because everything the buyer needs is in place
+  // at this point — node assigned, ephemeral SSH minted, rate computed.
+  // The Phase 1 admin "review SSH details and click Activate" step was
+  // a holdover from the data-center provisioning model where a human
+  // confirmed the rack was up. With seeded ephemeral credentials it's
+  // dead weight and breaks the sub-15s pay-to-prompt promise.
+  //
+  // Manual admin allocate routes (Manual Allocate + Activate from the
+  // dashboard) still set status=ALLOCATED -> ACTIVE in two steps, so
+  // the legacy flow is preserved for cases where an operator wants to
+  // intervene.
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + cr.durationDays * 86400000)
+
   // Use a transaction so node assignment and request transition land
   // together. If the request status guard fails (someone else won the
   // race), the node update is rolled back too.
@@ -210,9 +225,11 @@ async function processRequest(
     const updated = await tx.computeRequest.updateMany({
       where: { id: cr.id, status: 'PENDING' },
       data: {
-        status: 'ALLOCATED',
-        approvedAt: cr.approvedAt ?? new Date(),
-        allocatedAt: new Date(),
+        status: 'ACTIVE',
+        approvedAt: cr.approvedAt ?? now,
+        allocatedAt: now,
+        activatedAt: now,
+        expiresAt,
         allocatedNodeIds: nodeIds,
         allocationMethod: 'auto',
         eligibilityFlags: verdict.flags,
@@ -245,17 +262,24 @@ async function processRequest(
 
   if (!allocated) return
 
+  // M2: rental is now ACTIVE — buyer can SSH in, meter starts ticking
+  // on the next 60s tick. Notification reflects "live" not just "allocated".
   void createNotification(
     cr.userId,
-    'COMPUTE_ALLOCATED',
-    'Compute Allocated',
+    'COMPUTE_ACTIVE',
+    'Compute is Live',
     `Your ${cr.gpuCount}x ${cr.gpuTier} compute is ready. SSH details are in your dashboard.`,
   )
 
-  io.emit('compute:allocated', {
+  // Emit both events so existing dashboard subscribers (e.g. the toast for
+  // 'compute:allocated' that already exists) keep working, and any new
+  // subscribers can listen on the more accurate 'compute:active' name.
+  const payload = {
     requestId: cr.id,
     userId: cr.userId,
     nodeIds,
-    timestamp: new Date().toISOString(),
-  })
+    timestamp: now.toISOString(),
+  }
+  io.emit('compute:allocated', payload)
+  io.emit('compute:active', payload)
 }
