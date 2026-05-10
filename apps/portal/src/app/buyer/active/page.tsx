@@ -22,16 +22,23 @@ interface ActiveAllocation {
   requestId: string
   gpuTier: string
   gpuCount: number
-  sshHost: string
-  sshPort: number
-  sshUser: string
-  sshPassword?: string
+  // SSH connection details. sshHost is null for seed/test nodes (no
+  // real datacenter machine behind them). sshUsername is the unix
+  // account the agent creates per session. The credential is either
+  // sshSessionToken (M2 ephemeral) or sshPassword (legacy/Phase 1).
+  sshHost: string | null
+  sshPort: number | null
+  sshUsername: string | null
+  sshPassword?: string | null
+  sshSessionToken?: string | null
+  sshSessionTokenExpiresAt?: string | null
   activatedAt: string
   expiresAt: string
   totalCost?: number
   accruedCost?: number
   minutesUsed?: number
   ratePerMinute?: number
+  allocatedNodeIds?: string[]
 }
 
 interface TickPayload {
@@ -298,47 +305,89 @@ export default function ActiveComputePage() {
                   )}
 
                   {/* SSH Details */}
-                  <div
-                    className="rounded-lg p-4"
-                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
-                  >
-                    <div className="flex items-center gap-2 mb-3">
-                      <Terminal size={14} style={{ color: tierColor }} />
-                      <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>SSH Access</span>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center text-xs">
-                        <span style={{ color: 'var(--text-muted)', minWidth: 70 }}>Host</span>
-                        <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{alloc.sshHost}</span>
-                        <CopyButton text={alloc.sshHost} />
-                      </div>
-                      <div className="flex items-center text-xs">
-                        <span style={{ color: 'var(--text-muted)', minWidth: 70 }}>Port</span>
-                        <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{alloc.sshPort}</span>
-                        <CopyButton text={String(alloc.sshPort)} />
-                      </div>
-                      <div className="flex items-center text-xs">
-                        <span style={{ color: 'var(--text-muted)', minWidth: 70 }}>User</span>
-                        <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{alloc.sshUser}</span>
-                        <CopyButton text={alloc.sshUser} />
-                      </div>
-                      {alloc.sshPassword && (
-                        <div className="flex items-center text-xs">
-                          <span style={{ color: 'var(--text-muted)', minWidth: 70 }}>Password</span>
-                          <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{'*'.repeat(12)}</span>
-                          <CopyButton text={alloc.sshPassword} />
+                  {(() => {
+                    const sshHost = alloc.sshHost ?? null
+                    const sshPort = alloc.sshPort ?? 22
+                    const sshUsername = alloc.sshUsername ?? 'a2e-buyer'
+                    const sshCredential = alloc.sshSessionToken ?? alloc.sshPassword ?? null
+                    const credentialLabel = alloc.sshSessionToken ? 'Session Token' : 'Password'
+                    const isTestMode =
+                      !sshHost ||
+                      (alloc.allocatedNodeIds ?? []).some(id => id.startsWith('seed-node-'))
+
+                    return (
+                      <div
+                        className="rounded-lg p-4"
+                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
+                      >
+                        <div className="flex items-center gap-2 mb-3">
+                          <Terminal size={14} style={{ color: tierColor }} />
+                          <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                            SSH Access
+                          </span>
                         </div>
-                      )}
-                    </div>
-                    <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border-color)' }}>
-                      <div className="flex items-center text-xs">
-                        <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>
-                          ssh {alloc.sshUser}@{alloc.sshHost} -p {alloc.sshPort}
-                        </span>
-                        <CopyButton text={`ssh ${alloc.sshUser}@${alloc.sshHost} -p ${alloc.sshPort}`} />
+
+                        {/* Test-mode banner — shown when the rental was assigned
+                            to a seed-node or has no real host. The session token
+                            is real and the rest of the M2 lifecycle (meter,
+                            terminate, refund, expiry) all work; the only missing
+                            piece is a real datacenter machine to connect to. */}
+                        {isTestMode && (
+                          <div
+                            className="rounded-md p-3 mb-3 text-xs"
+                            style={{
+                              background: 'rgba(245, 158, 11, 0.1)',
+                              border: '1px solid rgba(245, 158, 11, 0.3)',
+                              color: 'var(--warning, #f59e0b)',
+                            }}
+                          >
+                            <strong>Test mode rental.</strong> This rental was assigned to a
+                            test/seed node — the SSH credentials below are real and
+                            ephemeral, but there&rsquo;s no live GPU machine behind this host.
+                            Real production rentals connect to actual datacenter hardware.
+                          </div>
+                        )}
+
+                        <div className="space-y-2">
+                          <div className="flex items-center text-xs">
+                            <span style={{ color: 'var(--text-muted)', minWidth: 100 }}>Host</span>
+                            <span className="font-mono" style={{ color: 'var(--text-primary)' }}>
+                              {sshHost ?? <em style={{ color: 'var(--text-muted)' }}>not assigned (test node)</em>}
+                            </span>
+                            {sshHost && <CopyButton text={sshHost} />}
+                          </div>
+                          <div className="flex items-center text-xs">
+                            <span style={{ color: 'var(--text-muted)', minWidth: 100 }}>Port</span>
+                            <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{sshPort}</span>
+                            <CopyButton text={String(sshPort)} />
+                          </div>
+                          <div className="flex items-center text-xs">
+                            <span style={{ color: 'var(--text-muted)', minWidth: 100 }}>Username</span>
+                            <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{sshUsername}</span>
+                            <CopyButton text={sshUsername} />
+                          </div>
+                          {sshCredential && (
+                            <div className="flex items-center text-xs">
+                              <span style={{ color: 'var(--text-muted)', minWidth: 100 }}>{credentialLabel}</span>
+                              <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{'*'.repeat(12)}</span>
+                              <CopyButton text={sshCredential} />
+                            </div>
+                          )}
+                        </div>
+
+                        {sshHost && (
+                          <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border-color)' }}>
+                            <div className="flex items-center text-xs">
+                              <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>
+                                ssh {sshUsername}@{sshHost} -p {sshPort}
+                              </span>
+                              <CopyButton text={`ssh ${sshUsername}@${sshHost} -p ${sshPort}`} />
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  </div>
+                    )
+                  })()}
 
                   {/* Terminate (early termination + prorated refund) */}
                   <div className="mt-4 flex justify-end">
