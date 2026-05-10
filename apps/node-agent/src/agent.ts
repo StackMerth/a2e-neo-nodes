@@ -11,6 +11,7 @@ import { HeartbeatService } from './heartbeat/sender.js';
 import { HealthServer } from './health/server.js';
 import { StateManager } from './recovery/state.js';
 import { initDockerClient, type DockerClient } from './docker/client.js';
+import { ImagePrewarmService } from './docker/image-prewarm.js';
 import { JobRecoveryManager } from './recovery/job-recovery.js';
 import { ConnectionRecoveryManager } from './recovery/reconnect.js';
 import { JobReporter } from './jobs/reporter.js';
@@ -76,6 +77,7 @@ export class Agent extends EventEmitter {
   private connectionRecovery: ConnectionRecoveryManager | null = null;
   private currentJobId: string | null = null;
   private startTime: number = 0;
+  private imagePrewarm: ImagePrewarmService | null = null;
 
   constructor(config: Config) {
     super();
@@ -473,6 +475,18 @@ export class Agent extends EventEmitter {
       // Set state to online
       this.setState('ONLINE');
 
+      // M2: image prewarm (only if Docker is available — no-op for mock GPU
+      // or air-gapped runners). Pulls top-N popular template images during
+      // idle time so buyer launches are warm.
+      if (this.dockerClient) {
+        this.imagePrewarm = new ImagePrewarmService(
+          this.dockerClient,
+          this.config,
+          () => this.state === 'ONLINE' && this.currentJobId === null,
+        );
+        this.imagePrewarm.start();
+      }
+
       log.info({ nodeId: this.nodeId }, 'Agent started successfully');
     } catch (error) {
       log.error({ error }, 'Failed to start agent');
@@ -487,6 +501,11 @@ export class Agent extends EventEmitter {
   async stop(): Promise<void> {
     log.info('Stopping agent');
     this.setState('STOPPING');
+
+    // 0. Stop image prewarm so an in-flight pull doesn't block shutdown.
+    if (this.imagePrewarm) {
+      this.imagePrewarm.stop();
+    }
 
     // 1. Stop job poller first (no new jobs accepted)
     if (this.jobPoller) {
