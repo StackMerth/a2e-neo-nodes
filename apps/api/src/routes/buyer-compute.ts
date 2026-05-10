@@ -17,7 +17,11 @@ const requestSchema = z.object({
   // available H100 inventory in one click. Bump again later if real
   // demand pushes against this ceiling.
   gpuCount: z.number().int().min(1).max(64).default(1),
-  durationDays: z.number().int().min(7).max(365).default(30),
+  // M2: 1-day minimum. The 7-day Phase 1 minimum predates per-minute
+  // billing and contradicted its core value (try a few hours, pay for
+  // exactly what you used). 1-day floor gives the meter a sane window
+  // to operate over while keeping the form simple.
+  durationDays: z.number().int().min(1).max(365).default(7),
   purpose: z.string().max(500).optional(),
   txHash: z.string().min(1, 'Transaction hash is required'),
 })
