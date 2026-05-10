@@ -122,7 +122,7 @@ export default function ComputeRequestsPage() {
         api.compute.availability(),
       ])
       setRequests(requestsData.requests || [])
-      setCounts(requestsData.counts || { pending: 0, approved: 0, allocated: 0, active: 0, completed: 0, cancelled: 0, rejected: 0 })
+      setCounts(requestsData.counts || { pending: 0, approved: 0, allocated: 0, active: 0, completed: 0, cancelled: 0, rejected: 0, waitlisted: 0 })
       // Convert availability object to array
       const availObj = (availData as { availability: Record<string, { total: number; idle: number; busy: number }> }).availability || {}
       setAvailability(Object.entries(availObj).map(([tier, data]) => ({ tier, ...data })))
