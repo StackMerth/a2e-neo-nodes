@@ -1088,9 +1088,10 @@ export default function ComputeRequestsPage() {
           friendly description. Triggered by either the yellow flag chip
           or the small 'i' info icon next to the status badge. */}
       <Modal
-        open={!!detailsRequest}
+        isOpen={!!detailsRequest}
         onClose={() => setDetailsRequest(null)}
         title="Request Details"
+        size="lg"
       >
         {detailsRequest && (
           <div className="space-y-4 text-sm">
