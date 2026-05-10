@@ -1390,6 +1390,42 @@ export const api = {
       }),
   },
 
+  // M3 admin ratings moderation
+  ratings: {
+    list: (status?: string) =>
+      apiFetch<{
+        ratings: Array<{
+          id: string
+          score: number
+          comment: string | null
+          moderationStatus: 'PENDING' | 'APPROVED' | 'REJECTED'
+          moderationNote: string | null
+          createdAt: string
+          buyer: { id: string; email: string | null; walletAddress: string | null } | null
+          nodeRunner: { id: string; name: string; slug: string | null }
+          computeRequest: {
+            id: string
+            gpuTier: string
+            gpuCount: number
+            durationDays: number
+            totalCost: number
+            tier: string
+            completedAt: string | null
+          }
+        }>
+        counts: { pending: number; approved: number; rejected: number }
+      }>(`/v1/admin/ratings${status ? `?status=${status}` : ''}`),
+    approve: (id: string) =>
+      apiFetch<{ id: string; moderationStatus: string }>(`/v1/admin/ratings/${id}/approve`, {
+        method: 'PATCH',
+      }),
+    reject: (id: string, note?: string) =>
+      apiFetch<{ id: string; moderationStatus: string }>(`/v1/admin/ratings/${id}/reject`, {
+        method: 'PATCH',
+        body: JSON.stringify({ note }),
+      }),
+  },
+
   // Withdrawals
   withdrawals: {
     list: (status?: string) =>

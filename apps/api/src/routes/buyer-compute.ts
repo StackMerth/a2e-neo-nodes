@@ -507,6 +507,125 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
   })
 
   /**
+   * POST /v1/buyer/compute/requests/:id/rate — M3
+   *
+   * Buyer rates the operator after a rental completes. Score 1-5 stars +
+   * optional comment ≤500 chars. One rating per rental (unique on
+   * computeRequestId). Default moderationStatus = PENDING; admin
+   * moderates before the rating influences operator's reputation score
+   * or appears on their public vanity profile.
+   */
+  fastify.post('/v1/buyer/compute/requests/:id/rate', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const userId = request.user!.userId
+
+    const ratingSchema = z.object({
+      score: z.number().int().min(1).max(5),
+      comment: z.string().max(500).optional(),
+    })
+    const parsed = ratingSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'Validation Error',
+        message: parsed.error.errors.map(e => e.message).join(', '),
+      })
+    }
+
+    const cr = await fastify.prisma.computeRequest.findFirst({
+      where: { id, userId },
+      select: { id: true, status: true, allocatedNodeIds: true },
+    })
+    if (!cr) return reply.code(404).send({ error: 'Request not found' })
+    if (cr.status !== 'COMPLETED') {
+      return reply.code(400).send({ error: `Can only rate COMPLETED rentals (current: ${cr.status})` })
+    }
+
+    // Find the operator (NodeRunner) via the first allocated node.
+    // If allocatedNodeIds is empty (rejected/cancelled paths), there's
+    // no operator to rate — should never happen for COMPLETED rentals.
+    const headNodeId = cr.allocatedNodeIds[0]
+    if (!headNodeId) {
+      return reply.code(400).send({ error: 'Cannot rate a rental with no allocated node' })
+    }
+    const node = await fastify.prisma.node.findUnique({
+      where: { id: headNodeId },
+      select: { nodeRunnerId: true },
+    })
+    if (!node?.nodeRunnerId) {
+      return reply.code(400).send({ error: 'Allocated node has no operator (BYOG admin-onboarded)' })
+    }
+
+    // Upsert: re-rating overwrites + resets to PENDING for re-moderation
+    const rating = await fastify.prisma.rating.upsert({
+      where: { computeRequestId: id },
+      create: {
+        computeRequestId: id,
+        buyerId: userId,
+        nodeRunnerId: node.nodeRunnerId,
+        score: parsed.data.score,
+        comment: parsed.data.comment,
+        moderationStatus: 'PENDING',
+      },
+      update: {
+        score: parsed.data.score,
+        comment: parsed.data.comment,
+        moderationStatus: 'PENDING',
+        moderatedAt: null,
+        moderationNote: null,
+      },
+    })
+
+    // Notify all admins so the moderation queue gets attention promptly.
+    const admins = await fastify.prisma.user.findMany({
+      where: { role: 'ADMIN' },
+      select: { id: true },
+    })
+    for (const admin of admins) {
+      void createNotification(
+        admin.id,
+        'COMPUTE_COMPLETED',
+        'New Rating Pending Review',
+        `${parsed.data.score}-star rating submitted for an operator. Review in Ratings queue.`,
+      )
+    }
+
+    fastify.io?.emit('rating:new', {
+      ratingId: rating.id,
+      computeRequestId: id,
+      score: rating.score,
+      timestamp: new Date().toISOString(),
+    })
+
+    return reply.code(201).send({
+      id: rating.id,
+      score: rating.score,
+      moderationStatus: rating.moderationStatus,
+    })
+  })
+
+  /**
+   * GET /v1/buyer/compute/requests/:id/rating — fetch existing rating
+   * for a rental (so the buyer rate page can show "you've already rated
+   * this" instead of letting them re-rate by default).
+   */
+  fastify.get('/v1/buyer/compute/requests/:id/rating', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const userId = request.user!.userId
+
+    const cr = await fastify.prisma.computeRequest.findFirst({
+      where: { id, userId },
+      select: { id: true },
+    })
+    if (!cr) return reply.code(404).send({ error: 'Request not found' })
+
+    const rating = await fastify.prisma.rating.findUnique({
+      where: { computeRequestId: id },
+      select: { id: true, score: true, comment: true, moderationStatus: true, createdAt: true },
+    })
+    return reply.send({ rating })
+  })
+
+  /**
    * PATCH /v1/buyer/settings
    */
   fastify.patch('/v1/buyer/settings', async (request, reply) => {
