@@ -138,15 +138,27 @@ function verifyWebhookAuth(request: FastifyRequest): boolean {
     return false
   }
 
-  const provided = request.headers['x-webhook-secret']
-  if (!provided || typeof provided !== 'string') return false
+  // Accept three header conventions so the endpoint works with any
+  // common webhook provider out of the box:
+  //   1. x-webhook-secret: <secret>            (curl tests / custom integrations)
+  //   2. Authorization: Bearer <secret>        (Helius / Stripe / GitHub style)
+  //   3. Authorization: <secret>               (raw token, also valid)
+  // Constant-time comparison isn't strictly necessary at 256-bit
+  // entropy — guessing the token itself is far cheaper than timing
+  // any one of these comparisons.
 
-  // Constant-time comparison would be ideal here, but Node's
-  // crypto.timingSafeEqual requires equal-length buffers and the secret
-  // length is itself a known value, so a naive === is acceptable. The
-  // attacker cost of guessing a 256-bit token by timing alone is
-  // astronomically more than guessing the token itself.
-  return provided === expected
+  const xSecret = request.headers['x-webhook-secret']
+  if (typeof xSecret === 'string' && xSecret === expected) return true
+
+  const authHeader = request.headers['authorization']
+  if (typeof authHeader === 'string') {
+    const value = authHeader.startsWith('Bearer ')
+      ? authHeader.slice('Bearer '.length).trim()
+      : authHeader.trim()
+    if (value === expected) return true
+  }
+
+  return false
 }
 
 function normalizePayload(body: unknown): HeliusTxLike[] {
