@@ -33,9 +33,51 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
       approved: await fastify.prisma.computeRequest.count({ where: { status: 'APPROVED' } }),
       active: await fastify.prisma.computeRequest.count({ where: { status: 'ACTIVE' } }),
       completed: await fastify.prisma.computeRequest.count({ where: { status: 'COMPLETED' } }),
+      // M2: WAITLISTED is the auto-allocator's hold queue. Surfaced
+      // separately so the admin dashboard can show a "Needs Review"
+      // chip with a real count.
+      waitlisted: await fastify.prisma.computeRequest.count({ where: { status: 'WAITLISTED' } }),
     }
 
     reply.send({ requests, counts })
+  })
+
+  /**
+   * POST /v1/admin/compute/requests/:id/release-hold
+   *
+   * M2: admin-side override that flips a WAITLISTED request back to
+   * PENDING so the auto-allocator picks it up on the next 10s tick.
+   * Use this when the admin reviewed the eligibility flags and
+   * decided the buyer can proceed (e.g. cleared a "first-time over
+   * ceiling" hold after vetting them).
+   */
+  fastify.post('/v1/admin/compute/requests/:id/release-hold', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { note } = (request.body as { note?: string }) || {}
+
+    const cr = await fastify.prisma.computeRequest.findUnique({ where: { id } })
+    if (!cr) return reply.code(404).send({ error: 'Request not found' })
+    if (cr.status !== 'WAITLISTED') {
+      return reply.code(400).send({ error: `Cannot release hold: status is ${cr.status}` })
+    }
+
+    await fastify.prisma.computeRequest.update({
+      where: { id },
+      data: {
+        status: 'PENDING',
+        adminNote: note ?? `Released from hold by admin at ${new Date().toISOString()}`,
+        // Keep eligibilityFlags so we have audit history of why it was held.
+      },
+    })
+
+    void createNotification(
+      cr.userId,
+      'COMPUTE_REQUEST_APPROVED',
+      'Request Reviewed',
+      'Your compute request has been reviewed and is now being allocated.',
+    )
+
+    reply.send({ id, status: 'PENDING' })
   })
 
   /**
@@ -279,7 +321,9 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
 
     const cr = await fastify.prisma.computeRequest.findUnique({ where: { id } })
     if (!cr) return reply.code(404).send({ error: 'Request not found' })
-    if (cr.status !== 'PENDING') return reply.code(400).send({ error: `Cannot reject: status is ${cr.status}` })
+    if (!['PENDING', 'WAITLISTED'].includes(cr.status)) {
+      return reply.code(400).send({ error: `Cannot reject: status is ${cr.status}` })
+    }
 
     await fastify.prisma.computeRequest.update({
       where: { id },

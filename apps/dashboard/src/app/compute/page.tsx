@@ -39,6 +39,9 @@ interface ComputeRequest {
   allocatedNodeIds?: string[]
   adminNote: string | null
   requestedAt: string
+  // M2: eligibility flags written by the auto-allocator. Present on
+  // WAITLISTED rows so the admin can see why a request was held.
+  eligibilityFlags?: string[]
 }
 
 interface TierAvailability {
@@ -56,12 +59,14 @@ interface Counts {
   completed: number
   cancelled: number
   rejected: number
+  waitlisted: number
 }
 
-type StatusFilter = 'all' | 'PENDING' | 'APPROVED' | 'ALLOCATED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'REJECTED'
+type StatusFilter = 'all' | 'PENDING' | 'APPROVED' | 'ALLOCATED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'REJECTED' | 'WAITLISTED'
 
 const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
   { label: 'All', value: 'all' },
+  { label: 'Needs Review', value: 'WAITLISTED' },
   { label: 'Pending', value: 'PENDING' },
   { label: 'Approved', value: 'APPROVED' },
   { label: 'Allocated', value: 'ALLOCATED' },
@@ -73,7 +78,7 @@ const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
 
 export default function ComputeRequestsPage() {
   const [requests, setRequests] = useState<ComputeRequest[]>([])
-  const [counts, setCounts] = useState<Counts>({ pending: 0, approved: 0, allocated: 0, active: 0, completed: 0, cancelled: 0, rejected: 0 })
+  const [counts, setCounts] = useState<Counts>({ pending: 0, approved: 0, allocated: 0, active: 0, completed: 0, cancelled: 0, rejected: 0, waitlisted: 0 })
   const [availability, setAvailability] = useState<TierAvailability[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -157,6 +162,19 @@ export default function ComputeRequestsPage() {
       await loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to approve request')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  async function handleReleaseHold(id: string) {
+    try {
+      setActionLoading(id)
+      await api.compute.releaseHold(id)
+      setToast('Hold released — auto-allocator will pick this up within 10s')
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to release hold')
     } finally {
       setActionLoading(null)
     }
@@ -345,6 +363,7 @@ export default function ComputeRequestsPage() {
       case 'COMPLETED': return counts.completed
       case 'CANCELLED': return counts.cancelled
       case 'REJECTED': return counts.rejected
+      case 'WAITLISTED': return counts.waitlisted
       default: return 0
     }
   }
@@ -597,6 +616,31 @@ export default function ComputeRequestsPage() {
                               className="px-3 py-1.5 text-sm bg-accent/10 text-accent hover:bg-accent/20 rounded-lg transition-colors disabled:opacity-50"
                             >
                               Auto Allocate
+                            </button>
+                            <button
+                              onClick={() => openRejectModal(req)}
+                              className="px-3 py-1.5 text-sm text-error/70 hover:text-error transition-colors"
+                            >
+                              Reject
+                            </button>
+                          </>
+                        )}
+                        {req.status === 'WAITLISTED' && (
+                          <>
+                            {req.eligibilityFlags && req.eligibilityFlags.length > 0 && (
+                              <span
+                                className="px-2 py-1 text-xs rounded bg-warning/10 text-warning font-mono"
+                                title={req.eligibilityFlags.join(', ')}
+                              >
+                                {req.eligibilityFlags.filter(f => f.startsWith('HOLD_')).length} flag(s)
+                              </span>
+                            )}
+                            <button
+                              onClick={() => handleReleaseHold(req.id)}
+                              disabled={actionLoading === req.id}
+                              className="px-3 py-1.5 text-sm bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                              {actionLoading === req.id ? <Loader2 size={14} className="animate-spin" /> : 'Release Hold'}
                             </button>
                             <button
                               onClick={() => openRejectModal(req)}

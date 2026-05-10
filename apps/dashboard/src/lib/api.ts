@@ -1351,6 +1351,14 @@ export const api = {
         body: JSON.stringify({ note }),
       }),
 
+    // M2: flip a WAITLISTED request back to PENDING so the auto-allocator
+    // picks it up on the next 10s tick.
+    releaseHold: (id: string, note?: string) =>
+      apiFetch<{ id: string; status: string }>(`/v1/admin/compute/requests/${id}/release-hold`, {
+        method: 'POST',
+        body: JSON.stringify({ note }),
+      }),
+
     autoAllocate: (id: string) =>
       apiFetch<{ id: string; status: string; nodesAllocated: number; message: string }>(`/v1/admin/compute/requests/${id}/auto-allocate`, {
         method: 'POST',
