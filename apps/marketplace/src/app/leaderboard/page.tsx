@@ -130,7 +130,7 @@ export default async function LeaderboardPage({
           {tab === 'reputation' ? (
             <ReputationTable data={data as ReputationResponse} />
           ) : (
-            <ReferrersPlaceholder data={data as ReferrersResponse} />
+            <ReferrersTable data={data as ReferrersResponse} />
           )}
         </div>
       </section>
@@ -217,13 +217,60 @@ function ReputationTable({ data }: { data: ReputationResponse }) {
   )
 }
 
-function ReferrersPlaceholder({ data }: { data: ReferrersResponse }) {
+function ReferrersTable({ data }: { data: ReferrersResponse }) {
+  if (data.rows.length === 0) {
+    return (
+      <div className="py-24 text-center max-w-xl mx-auto">
+        <p className="font-display text-3xl text-foreground mb-4">No referrers yet.</p>
+        <p className="text-muted-foreground leading-relaxed">
+          {data.notice ?? 'Operators earn 10 percent of their referees first 365 days of network earnings. The first referrer who accrues commission lands here.'}
+        </p>
+      </div>
+    )
+  }
+
   return (
-    <div className="py-24 text-center max-w-xl mx-auto">
-      <p className="font-display text-3xl text-foreground mb-4">Coming with M5.7.</p>
-      <p className="text-muted-foreground leading-relaxed">
-        {data.notice ?? 'The referral leaderboard launches alongside the operator referral program. Existing operators will get a unique invite code and ten percent commission on their referees first twelve months.'}
-      </p>
+    <div>
+      {/* Header row */}
+      <div className="grid grid-cols-12 gap-4 pb-4 border-b border-foreground/10 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+        <div className="col-span-1">Rank</div>
+        <div className="col-span-6">Operator</div>
+        <div className="col-span-2 text-right md:text-left">Referees</div>
+        <div className="col-span-3 text-right">Lifetime commission</div>
+      </div>
+
+      <ul className="divide-y divide-foreground/10">
+        {data.rows.map((r) => (
+          <li key={r.operatorSlug}>
+            <Link
+              href={`/operator/${r.operatorSlug}`}
+              className="grid grid-cols-12 gap-4 items-baseline py-5 px-2 hover-lift hover:bg-foreground/[0.015] transition-colors"
+            >
+              <div className="col-span-1 font-mono text-base text-muted-foreground">
+                {String(r.rank).padStart(2, '0')}
+              </div>
+              <div className="col-span-6">
+                <p className="font-display text-xl text-foreground">{r.operatorName}</p>
+                <p className="font-mono text-[11px] text-muted-foreground mt-1">
+                  /operator/{r.operatorSlug}
+                </p>
+              </div>
+              <div className="col-span-2 text-right md:text-left">
+                <p className="font-mono text-base text-foreground">{r.refereeCount}</p>
+                <p className="font-mono text-[11px] text-muted-foreground">
+                  {r.refereeCount === 1 ? 'operator' : 'operators'}
+                </p>
+              </div>
+              <div className="col-span-3 text-right">
+                <p className="font-display text-2xl text-foreground">
+                  ${r.lifetimeCommission.toFixed(2)}
+                </p>
+                <p className="font-mono text-[11px] text-muted-foreground">accrued</p>
+              </div>
+            </Link>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
