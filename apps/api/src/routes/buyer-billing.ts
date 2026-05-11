@@ -17,19 +17,21 @@ export async function buyerBillingRoutes(fastify: FastifyInstance) {
         id: true, gpuTier: true, gpuCount: true, durationDays: true,
         ratePerDay: true, totalCost: true, status: true, txHash: true,
         currency: true, requestedAt: true, activatedAt: true, expiresAt: true, completedAt: true,
+        co2Grams: true,
       },
     })
 
     // Group by month
-    const byMonth: Record<string, { month: string; requests: typeof requests; total: number }> = {}
+    const byMonth: Record<string, { month: string; requests: typeof requests; total: number; co2Grams: number }> = {}
     for (const req of requests) {
       const date = new Date(req.requestedAt)
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
       const label = date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' })
-      if (!byMonth[key]) byMonth[key] = { month: label, requests: [], total: 0 }
+      if (!byMonth[key]) byMonth[key] = { month: label, requests: [], total: 0, co2Grams: 0 }
       byMonth[key].requests.push(req)
       if (['ACTIVE', 'COMPLETED'].includes(req.status)) {
         byMonth[key].total += req.totalCost
+        byMonth[key].co2Grams += req.co2Grams ?? 0
       }
     }
 
@@ -37,11 +39,17 @@ export async function buyerBillingRoutes(fastify: FastifyInstance) {
       .filter(r => ['ACTIVE', 'COMPLETED'].includes(r.status))
       .reduce((sum, r) => sum + r.totalCost, 0)
 
+    // M5.8 / D3: lifetime CO2 emitted across this buyer's rentals.
+    const totalCo2Grams = requests
+      .filter(r => ['ACTIVE', 'COMPLETED'].includes(r.status))
+      .reduce((sum, r) => sum + (r.co2Grams ?? 0), 0)
+
     const activeCount = requests.filter(r => r.status === 'ACTIVE').length
     const totalRequests = requests.length
 
     reply.send({
       totalSpent,
+      totalCo2Grams: Number(totalCo2Grams.toFixed(2)),
       activeSubscriptions: activeCount,
       totalRequests,
       currency: 'USD',

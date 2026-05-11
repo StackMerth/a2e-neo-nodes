@@ -48,6 +48,11 @@ interface ActiveAllocation {
   minutesUsed?: number
   ratePerMinute?: number
   allocatedNodeIds?: string[]
+  // M5.8 / D3: estimated grams of CO2 emitted by this rental so far,
+  // recomputed each meter tick from (gpuTier TDP, gpuCount,
+  // minutesUsed, region grid intensity). Surfaced on the card with the
+  // formula footnote linked from /buyer/billing.
+  co2Grams?: number | null
 }
 
 interface TickPayload {
@@ -55,6 +60,7 @@ interface TickPayload {
   minutesUsed: number
   accruedCost: number
   remainingCost: number
+  co2Grams?: number
 }
 
 // M3: SPOT preemption notice. Fired by the spot-preemption worker when
@@ -314,6 +320,9 @@ export default function ActiveComputePage() {
             const totalCost = alloc.totalCost ?? 0
             const remainingCost = Math.max(0, totalCost - accruedCost)
             const minutesUsed = tick?.minutesUsed ?? alloc.minutesUsed ?? 0
+            // M5.8 / D3: live CO2 grams. Prefer the websocket tick, fall
+            // back to whatever the rental row had when we last fetched.
+            const co2Grams = tick?.co2Grams ?? alloc.co2Grams ?? null
             // M3: preemption notice for this card. Source priority:
             //   1. Live WS event (if received during this session)
             //   2. adminNote on the row parsed for 'PREEMPT_AT:<iso>|...'
@@ -426,6 +435,25 @@ export default function ActiveComputePage() {
                           ${remainingCost.toFixed(2)} refund if terminated now
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {/* M5.8 / D3: CO2 estimate per rental. Honest
+                      approximation from GPU TDP times region grid
+                      intensity. Formula footnoted on the billing page. */}
+                  {co2Grams != null && co2Grams > 0 && (
+                    <div
+                      className="rounded-lg p-3 mb-4 flex items-center justify-between"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
+                    >
+                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        Carbon emitted (estimate)
+                      </span>
+                      <span className="text-sm font-mono" style={{ color: 'var(--text-primary)' }}>
+                        {co2Grams >= 1000
+                          ? `${(co2Grams / 1000).toFixed(2)} kg CO2`
+                          : `${co2Grams.toFixed(0)} g CO2`}
+                      </span>
                     </div>
                   )}
 

@@ -1032,6 +1032,16 @@ model ComputeRequest {
   // M3: ratings (one per rental, post-completion).
   rating          Rating?
 
+  // M5.8 / D3: estimated CO2 grams emitted by this rental.
+  // Computed by the per-minute meter as
+  //   (gpuTier TDP watts * gpuCount * minutesUsed / 60 / 1000)
+  //     * region grid intensity (g CO2 / kWh)
+  // Region intensity comes from a static lookup table in
+  // packages/core/src/carbon-estimator.ts. Honestly approximate,
+  // documented inline. Surfaces on the buyer dashboard and monthly
+  // billing aggregate; never a paid offset claim.
+  co2Grams        Float?
+
   // Timestamps
   requestedAt     DateTime             @default(now())
   approvedAt      DateTime?
