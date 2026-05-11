@@ -155,6 +155,7 @@ export const nodeRunner = {
     apiFetch('/v1/portal/node-runner/deploy', { method: 'POST', body: data }),
   deployments: () => apiFetch('/v1/portal/node-runner/deployments'),
   deployment: (id: string) => apiFetch(`/v1/portal/node-runner/deployments/${id}`),
+  referral: () => apiFetch('/v1/portal/referral'),
 }
 
 // Buyer API

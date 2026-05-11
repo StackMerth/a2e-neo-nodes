@@ -233,6 +233,11 @@ model NodeRunner {
   // marketplace.tokenos.ai/operator/<slug>. Auto-generated from name.
   slug             String?  @unique
 
+  // M5.7 / D2: 8-character invite code (base32, ambiguous-char-free).
+  // Auto-generated on first NodeRunner creation. Other operators can
+  // sign up with ?ref=<this-code> to attribute commission for 365 days.
+  referralCode     String?  @unique
+
   // Timestamps
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -242,11 +247,18 @@ model NodeRunner {
   investments        Investment[]
   withdrawalRequests WithdrawalRequest[]
   ratings            Rating[]
+  // M5.7: referral edges. `referralsMade` lists referees whose signups
+  // attributed back to this runner. `referralReceived` is the single
+  // (optional) Referral row pointing at the operator that referred this
+  // runner in the first place.
+  referralsMade      Referral[] @relation("ReferrerEdge")
+  referralReceived   Referral?  @relation("RefereeEdge")
 
   @@index([walletAddress])
   @@index([userId])
   @@index([reputationScore])
   @@index([slug])
+  @@index([referralCode])
 }
 
 // M3: reputation tier ladder. Ordered low to high. Tier-mapping
@@ -257,6 +269,42 @@ enum ReputationTier {
   SILVER
   GOLD
   PLATINUM
+}
+
+// M5.7 / D2: operator referral program.
+// One row per (referrer, referee) edge. status=ACTIVE during the
+// 365-day commission window. After expiresAt, the daily worker stops
+// accruing and the row stays for audit.
+model Referral {
+  id                       String          @id @default(cuid())
+  code                     String          // copy of NodeRunner.referralCode at attribution time
+  referrerNodeRunnerId     String
+  referrer                 NodeRunner      @relation("ReferrerEdge", fields: [referrerNodeRunnerId], references: [id], onDelete: Cascade)
+  refereeNodeRunnerId      String          @unique
+  referee                  NodeRunner      @relation("RefereeEdge", fields: [refereeNodeRunnerId], references: [id], onDelete: Cascade)
+
+  status                   ReferralStatus  @default(ACTIVE)
+
+  // Window during which earnings on the referee accrue commission to the
+  // referrer. Default is 365 days from createdAt; we keep this explicit
+  // on the row so future policy changes do not retroactively shorten or
+  // extend existing referrals.
+  expiresAt                DateTime
+  totalCommissionAccrued   Float           @default(0)
+  lastSettledAt            DateTime?       // marks the most recent commission tick processed
+
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+
+  @@index([referrerNodeRunnerId])
+  @@index([code])
+  @@index([status, expiresAt])
+}
+
+enum ReferralStatus {
+  ACTIVE       // accruing commission
+  EXPIRED      // 365-day window elapsed
+  REVOKED      // admin-revoked (abuse, dispute, sock-puppet)
 }
 
 model Investment {

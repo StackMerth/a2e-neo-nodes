@@ -153,16 +153,45 @@ export async function publicLeaderboardRoutes(fastify: FastifyInstance) {
     }
 
     if (tab === 'referrers') {
-      // M5.7 will populate this. The shape is fixed now so the frontend
-      // tab can render its empty state without code changes when the
-      // referral worker starts writing rows.
+      // Aggregate commission and referee count per referrer. groupBy on
+      // referrerNodeRunnerId, sort by commission desc, hydrate operator
+      // identity from a second batched findMany.
+      const grouped = await fastify.prisma.referral.groupBy({
+        by: ['referrerNodeRunnerId'],
+        _sum: { totalCommissionAccrued: true },
+        _count: { _all: true },
+        orderBy: { _sum: { totalCommissionAccrued: 'desc' } },
+        take: limit,
+      })
+
+      const runnerIds = grouped.map(g => g.referrerNodeRunnerId)
+      const runners = await fastify.prisma.nodeRunner.findMany({
+        where: { id: { in: runnerIds }, slug: { not: null } },
+        select: { id: true, name: true, slug: true },
+      })
+      const runnerById = new Map(runners.map(r => [r.id, r]))
+
       const rows: ReferrerRow[] = []
+      for (const g of grouped) {
+        const r = runnerById.get(g.referrerNodeRunnerId)
+        if (!r || !r.slug) continue
+        rows.push({
+          rank: rows.length + 1,
+          operatorSlug: r.slug,
+          operatorName: r.name,
+          refereeCount: g._count._all,
+          lifetimeCommission: Number((g._sum.totalCommissionAccrued ?? 0).toFixed(2)),
+        })
+      }
+
       return reply.send({
         tab: 'referrers',
         limit,
-        total: 0,
+        total: rows.length,
         rows,
-        notice: 'Referral leaderboard launches with the operator referral program (M5.7).',
+        ...(rows.length === 0
+          ? { notice: 'No referral commission accrued yet. Operators earn 10 percent of their referees first 365 days.' }
+          : {}),
       })
     }
 
