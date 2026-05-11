@@ -1,19 +1,21 @@
-/**
+/*
  * M3 / D1 (preview): public vanity profile for a node-runner operator.
  *
- * No auth required. Server-rendered with Next.js's `revalidate` cache
- * so a refresh from the API is at most 60s old. Fetches reputation,
- * uptime, region distribution, and recent APPROVED ratings from the
- * public-operators API route.
- *
- * The full marketplace browsing experience (filterable catalog +
- * leaderboard + OG cards + SEO) lands in M5. This page is the M3
- * deliverable: one route, one operator at a time.
+ * No auth required. Server-rendered with Next.js's `revalidate` cache so a
+ * refresh from the API is at most 60s old. Reputation, uptime, region
+ * distribution, and recent APPROVED ratings come from the public-operators
+ * API route. Visual treatment follows the M5 editorial design system: cream
+ * background, Instrument Serif display headings, monospace numerics. No
+ * decorative badges; the reputation tier is shown as a small serif word.
  */
 
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { Star, Server, MapPin, Clock, Shield } from 'lucide-react'
+import { Star } from 'lucide-react'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
+import { cn } from '@/lib/utils'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
 
@@ -38,13 +40,6 @@ interface OperatorPublicData {
   }>
 }
 
-const TIER_COLORS: Record<ReputationTier, { bg: string; text: string; ring: string }> = {
-  BRONZE:   { bg: 'rgba(180, 83, 9, 0.15)',   text: '#fb923c', ring: 'rgba(180, 83, 9, 0.4)' },
-  SILVER:   { bg: 'rgba(148, 163, 184, 0.15)', text: '#cbd5e1', ring: 'rgba(148, 163, 184, 0.4)' },
-  GOLD:     { bg: 'rgba(234, 179, 8, 0.15)',   text: '#facc15', ring: 'rgba(234, 179, 8, 0.4)' },
-  PLATINUM: { bg: 'rgba(168, 85, 247, 0.15)',  text: '#c084fc', ring: 'rgba(168, 85, 247, 0.4)' },
-}
-
 async function fetchOperator(slug: string): Promise<OperatorPublicData | null> {
   try {
     const res = await fetch(`${API_URL}/v1/public/operators/${slug}`, {
@@ -59,10 +54,10 @@ async function fetchOperator(slug: string): Promise<OperatorPublicData | null> {
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
   const op = await fetchOperator(params.slug)
-  if (!op) return { title: 'Operator not found · A²E' }
+  if (!op) return { title: 'Operator not found' }
   return {
-    title: `${op.name} · A²E Operator (${op.reputationTier})`,
-    description: `${op.name} operates ${op.nodes.length} GPU node${op.nodes.length === 1 ? '' : 's'} on the A²E network with a ${op.reputationTier} reputation tier.`,
+    title: `${op.name} on A2E`,
+    description: `${op.name} operates ${op.nodes.length} GPU node${op.nodes.length === 1 ? '' : 's'} on the A2E network. Reputation tier ${op.reputationTier.toLowerCase()}.`,
   }
 }
 
@@ -70,147 +65,140 @@ export default async function OperatorPage({ params }: { params: { slug: string 
   const op = await fetchOperator(params.slug)
   if (!op) notFound()
 
-  const tier = TIER_COLORS[op.reputationTier]
   const regions = Array.from(new Set(op.nodes.map((n) => n.region).filter(Boolean) as string[]))
   const tierBreakdown = op.nodes.reduce<Record<string, number>>((acc, n) => {
     acc[n.gpuTier] = (acc[n.gpuTier] || 0) + 1
     return acc
   }, {})
+  const tierLabel = op.reputationTier.charAt(0) + op.reputationTier.slice(1).toLowerCase()
 
   return (
-    <main className="min-h-screen px-6 py-12">
-      <div className="max-w-4xl mx-auto space-y-8">
+    <main className="min-h-screen px-6 py-16 md:py-24">
+      <div className="max-w-4xl mx-auto space-y-16">
+        {/* Breadcrumb */}
+        <nav className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+          <Link href="/" className="hover:text-foreground transition-colors">
+            Marketplace
+          </Link>
+          <span className="mx-2">/</span>
+          <span className="text-foreground">Operator</span>
+        </nav>
+
         {/* Header */}
-        <header className="flex items-start justify-between gap-6">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold" style={{ color: 'var(--text-primary)' }}>
-              {op.name}
-            </h1>
-            <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>
-              GPU compute operator · A²E network
-            </p>
-          </div>
-          <div
-            className="rounded-xl px-5 py-3 flex items-center gap-3"
-            style={{ background: tier.bg, border: `1px solid ${tier.ring}` }}
-          >
-            <Shield size={20} style={{ color: tier.text }} />
-            <div>
-              <div className="text-xs uppercase tracking-wider" style={{ color: tier.text, opacity: 0.7 }}>
-                Reputation
-              </div>
-              <div className="font-bold" style={{ color: tier.text }}>{op.reputationTier}</div>
-            </div>
-          </div>
+        <header className="space-y-6">
+          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            {tierLabel} tier, score {op.reputationScore.toFixed(1)} of 100
+          </p>
+          <h1 className="font-display text-5xl md:text-7xl leading-[1.05] text-foreground">
+            {op.name}
+          </h1>
+          <p className="text-base text-muted-foreground max-w-2xl leading-relaxed">
+            {op.totalCompletedJobs.toLocaleString()} completed rentals
+            {op.uptimePercent30d != null ? `, ${op.uptimePercent30d.toFixed(1)}% uptime over the last 30 days` : ''}
+            {op.availableAsSpot ? ', accepts spot inventory' : ''}.
+          </p>
         </header>
 
-        {/* Stats grid */}
-        <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard icon={<Star size={18} />} label="Reputation Score" value={op.reputationScore.toFixed(1)} sub="out of 100" />
-          <StatCard icon={<Clock size={18} />} label="Uptime (30d)" value={op.uptimePercent30d != null ? `${op.uptimePercent30d.toFixed(1)}%` : '—'} sub="last 30 days" />
-          <StatCard icon={<Server size={18} />} label="GPU Nodes" value={String(op.nodes.length)} sub={`${tierBreakdown ? Object.keys(tierBreakdown).join(', ') : 'mixed'}`} />
-          <StatCard icon={<MapPin size={18} />} label="Regions" value={String(regions.length)} sub={regions.slice(0, 3).join(', ') || 'unspecified'} />
+        <Separator />
+
+        {/* Stats */}
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-10">
+          <Stat label="Reputation" value={op.reputationScore.toFixed(1)} unit="of 100" />
+          <Stat
+            label="Uptime 30d"
+            value={op.uptimePercent30d != null ? op.uptimePercent30d.toFixed(1) : 'n/a'}
+            unit={op.uptimePercent30d != null ? 'percent' : ''}
+          />
+          <Stat label="GPU nodes" value={String(op.nodes.length)} unit={op.nodes.length === 1 ? 'machine' : 'machines'} />
+          <Stat label="Regions" value={String(regions.length)} unit={regions.slice(0, 2).join(', ') || 'unspecified'} />
         </section>
 
         {/* GPU breakdown */}
         {Object.keys(tierBreakdown).length > 0 && (
-          <section
-            className="rounded-xl p-6"
-            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-          >
-            <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-              GPU Inventory
+          <section className="space-y-4">
+            <h2 className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              GPU inventory
             </h2>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-x-8 gap-y-3 font-mono text-base text-foreground">
               {Object.entries(tierBreakdown).map(([tier, count]) => (
-                <span
-                  key={tier}
-                  className="px-3 py-1.5 rounded-lg text-sm font-mono"
-                  style={{ background: 'rgba(34, 197, 94, 0.1)', color: '#22c55e' }}
-                >
-                  {count}× {tier}
+                <span key={tier}>
+                  <span className="text-foreground">{count}</span>
+                  <span className="text-muted-foreground"> × </span>
+                  <span className="text-foreground">{tier}</span>
                 </span>
               ))}
             </div>
           </section>
         )}
 
+        <Separator />
+
         {/* Recent ratings */}
-        <section
-          className="rounded-xl p-6"
-          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-        >
-          <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-            Recent Buyer Ratings
+        <section className="space-y-6">
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            Recent buyer ratings
           </h2>
           {op.ratings.length === 0 ? (
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              No public ratings yet. After a buyer's rental completes, their rating appears here once moderated.
+            <p className="text-sm text-muted-foreground italic">
+              No public ratings yet. Once a rental completes and the rating is moderated, it appears here.
             </p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-6">
               {op.ratings.map((r) => (
-                <div
-                  key={r.id}
-                  className="rounded-lg p-4"
-                  style={{ background: 'var(--surface-hover)', border: '1px solid var(--border)' }}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-1">
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <Star
-                          key={n}
-                          size={14}
-                          fill={n <= r.score ? '#facc15' : 'transparent'}
-                          style={{ color: n <= r.score ? '#facc15' : 'var(--text-muted)' }}
-                        />
-                      ))}
-                    </div>
-                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                <Card key={r.id} className="shadow-none">
+                  <CardHeader className="flex-row items-center justify-between pb-3">
+                    <Stars score={r.score} />
+                    <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                       {new Date(r.createdAt).toLocaleDateString()} · {r.buyerLabel}
                     </span>
-                  </div>
+                  </CardHeader>
                   {r.comment && (
-                    <p className="text-sm italic" style={{ color: 'var(--text-secondary)' }}>
-                      &ldquo;{r.comment}&rdquo;
-                    </p>
+                    <CardContent className="pt-0">
+                      <p className="font-display text-lg leading-relaxed text-foreground">
+                        &ldquo;{r.comment}&rdquo;
+                      </p>
+                    </CardContent>
                   )}
-                </div>
+                </Card>
               ))}
             </div>
           )}
         </section>
 
-        <footer className="text-center pt-8" style={{ color: 'var(--text-muted)' }}>
-          <p className="text-xs">A²E Compute Marketplace · operator profile</p>
+        <Separator />
+
+        <footer className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground text-center">
+          A2E Compute Marketplace · operator profile
         </footer>
       </div>
     </main>
   )
 }
 
-function StatCard({
-  icon,
-  label,
-  value,
-  sub,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-  sub: string
-}) {
+function Stat({ label, value, unit }: { label: string; value: string; unit: string }) {
   return (
-    <div
-      className="rounded-xl p-4"
-      style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-    >
-      <div className="flex items-center gap-2 mb-2" style={{ color: 'var(--text-muted)' }}>
-        {icon}
-        <span className="text-xs uppercase tracking-wider">{label}</span>
-      </div>
-      <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{value}</div>
-      <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{sub}</div>
+    <div className="space-y-2">
+      <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </p>
+      <p className="font-display text-4xl leading-none text-foreground">{value}</p>
+      {unit && <p className="font-mono text-xs text-muted-foreground">{unit}</p>}
+    </div>
+  )
+}
+
+function Stars({ score }: { score: number }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Star
+          key={n}
+          size={14}
+          className={cn(
+            n <= score ? 'fill-foreground text-foreground' : 'fill-transparent text-muted-foreground',
+          )}
+        />
+      ))}
     </div>
   )
 }
