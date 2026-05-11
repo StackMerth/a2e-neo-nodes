@@ -59,6 +59,7 @@ import {
   templateRoutes,
   adminRatingsRoutes,
   publicOperatorsRoutes,
+  publicListingsRoutes,
 } from './routes'
 import { setupWebSocket } from './websocket'
 import { setNotificationSocket } from './services/notification/service.js'
@@ -198,6 +199,7 @@ async function start() {
     await server.register(templateRoutes)
     await server.register(adminRatingsRoutes)
     await server.register(publicOperatorsRoutes)
+    await server.register(publicListingsRoutes)
 
     const redisConnection = server.redis as unknown as import('bullmq').ConnectionOptions
     const rateFetcherQueue = createRateFetcherQueue(redisConnection)
