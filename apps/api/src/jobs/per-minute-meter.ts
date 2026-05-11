@@ -37,6 +37,7 @@ import { Queue, Worker } from 'bullmq'
 import type { ConnectionOptions } from 'bullmq'
 import type { PrismaClient } from '@a2e/database'
 import type { Server as SocketServer } from 'socket.io'
+import { estimateCo2Grams } from '@a2e/core'
 
 const QUEUE_NAME = 'per-minute-meter'
 const TICK_INTERVAL_MS = parseInt(process.env.METER_TICK_MS ?? '60000', 10)
@@ -96,6 +97,11 @@ export async function runMeterTick(prisma: PrismaClient, io: SocketServer): Prom
       durationDays: true,
       totalCost: true,
       minutesUsed: true,
+      // M5.8 inputs for the CO2 estimator. allocatedNodeIds gives us
+      // the region(s); we use the first allocated node's region.
+      gpuTier: true,
+      gpuCount: true,
+      allocatedNodeIds: true,
     },
   })
 
@@ -119,9 +125,28 @@ export async function runMeterTick(prisma: PrismaClient, io: SocketServer): Prom
       cr.totalCost,
     )
 
+    // M5.8 / D3: recompute CO2 grams from the (gpuTier, count, minutes,
+    // region) inputs. Region comes from the first allocated node; if
+    // multi-region cluster, this undercounts very slightly because we
+    // pick one. Good enough for v1 since clusters are tier-uniform.
+    let region: string | null = null
+    if (cr.allocatedNodeIds.length > 0) {
+      const firstNode = await prisma.node.findUnique({
+        where: { id: cr.allocatedNodeIds[0] },
+        select: { region: true },
+      })
+      region = firstNode?.region ?? null
+    }
+    const co2Grams = estimateCo2Grams({
+      gpuTier: cr.gpuTier,
+      gpuCount: cr.gpuCount,
+      durationMinutes: minutesUsed,
+      region,
+    })
+
     await prisma.computeRequest.update({
       where: { id: cr.id },
-      data: { minutesUsed, accruedCost },
+      data: { minutesUsed, accruedCost, co2Grams },
     })
 
     io.emit('compute:tick', {
@@ -130,6 +155,7 @@ export async function runMeterTick(prisma: PrismaClient, io: SocketServer): Prom
       minutesUsed,
       accruedCost,
       remainingCost: Number((cr.totalCost - accruedCost).toFixed(4)),
+      co2Grams,
       timestamp: new Date().toISOString(),
     })
   }

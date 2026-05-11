@@ -33,6 +33,7 @@ interface BillingRequest {
 
 interface BillingData {
   totalSpent: number
+  totalCo2Grams: number
   activeSubscriptions: number
   totalRequests: number
   currency: string
@@ -40,6 +41,7 @@ interface BillingData {
     month: string
     requests: BillingRequest[]
     total: number
+    co2Grams: number
   }>
 }
 
@@ -115,6 +117,30 @@ export default function BillingPage() {
             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Requests</div>
           </div>
         </div>
+        {/* M5.8 / D3: lifetime CO2 across this buyer's rentals. */}
+        <div className="stat-block" style={{ background: 'rgba(132, 204, 132, 0.08)' }}>
+          <div className="stat-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v8" /><path d="M5 12h14" /><path d="M12 22a10 10 0 1 0-9.5-13" /></svg>
+          </div>
+          <div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              {(() => {
+                const g = data?.totalCo2Grams ?? 0
+                return g >= 1000 ? `${(g / 1000).toFixed(1)} kg` : `${g.toFixed(0)} g`
+              })()}
+            </div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>CO2 emitted (est.)</div>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* M5.8 / D3: methodology footnote. Auditing the math is the
+          difference between honest reporting and PR fluff. */}
+      <motion.div variants={item}>
+        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+          CO2 estimate: (GPU TDP watts × count × minutes / 60 / 1000) × region grid intensity (g CO2/kWh).
+          H100/H200 700W, B200 1000W, B300 1200W, GB300 1400W. Grid intensity by region: US-WEST 290, US-EAST 380, EU 250, APAC 540, SA 140, OC 530, unknown 400. Honest approximation, never a paid offset claim.
+        </p>
       </motion.div>
 
       {/* Monthly Breakdown */}
