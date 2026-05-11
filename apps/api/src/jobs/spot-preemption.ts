@@ -260,12 +260,20 @@ async function scheduleNewPreemptions(
 
     // Find SPOT rentals on this tier, NOT already preemption-scheduled,
     // sorted by longest-running first (oldest activatedAt).
+    //
+    // Prisma null-handling note: a naive `adminNote: { not: { startsWith }}}`
+    // translates to NOT (col LIKE 'X%'), which evaluates to FALSE for
+    // NULL values — so SPOT rentals with no adminNote (the common case)
+    // would be excluded. We need OR(adminNote IS NULL, adminNote NOT LIKE).
     const victims = await prisma.computeRequest.findMany({
       where: {
         status: 'ACTIVE',
         tier: 'SPOT',
         gpuTier: tier,
-        adminNote: { not: { startsWith: 'PREEMPT_AT:' } },
+        OR: [
+          { adminNote: null },
+          { adminNote: { not: { startsWith: 'PREEMPT_AT:' } } },
+        ],
       },
       orderBy: { activatedAt: 'asc' },
       take: shortfall,
@@ -284,7 +292,11 @@ async function scheduleNewPreemptions(
         where: {
           id: victim.id,
           status: 'ACTIVE',
-          adminNote: { not: { startsWith: 'PREEMPT_AT:' } },
+          // Same null-handling fix as the victim query above.
+          OR: [
+            { adminNote: null },
+            { adminNote: { not: { startsWith: 'PREEMPT_AT:' } } },
+          ],
         },
         data: {
           adminNote: `PREEMPT_AT:${preemptAt.toISOString()}|reason=ON_DEMAND_PRESSURE`,
