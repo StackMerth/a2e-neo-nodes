@@ -74,14 +74,35 @@ export async function scheduleSeedKeepAlive(queue: Queue): Promise<void> {
 }
 
 export async function runSeedKeepAliveTick(prisma: PrismaClient): Promise<void> {
-  // Step 1: refresh status + heartbeat on every seed node
+  // Step 1: refresh status + heartbeat on every seed node, BUT respect
+  // manual PAUSED state. The previous version set status='ONLINE'
+  // unconditionally — which fought any operator who paused nodes via
+  // SQL (e.g. to force demand-pressure scenarios for SPOT preemption
+  // testing). Now we only flip OFFLINE/DEGRADED back to ONLINE; PAUSED
+  // and MAINTENANCE stick until manually changed.
   const refreshResult = await prisma.node.updateMany({
-    where: { id: { startsWith: 'seed-node-' } },
+    where: {
+      id: { startsWith: 'seed-node-' },
+      status: { in: ['ONLINE', 'OFFLINE', 'DEGRADED'] },
+    },
     data: {
       status: 'ONLINE',
       lastHeartbeat: new Date(),
       missedBeats: 0,
       pendingDeletion: false,
+    },
+  })
+
+  // Still bump heartbeat on PAUSED/MAINTENANCE nodes so they don't
+  // appear "stale" to admin views — but their status is preserved.
+  await prisma.node.updateMany({
+    where: {
+      id: { startsWith: 'seed-node-' },
+      status: { in: ['PAUSED', 'MAINTENANCE'] },
+    },
+    data: {
+      lastHeartbeat: new Date(),
+      missedBeats: 0,
     },
   })
 
