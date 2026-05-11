@@ -13,7 +13,8 @@
     "seed:test:keep-alive": "tsx scripts/seed-test-data.ts --keep-alive",
     "seed:keep-alive-only": "tsx scripts/seed-test-data.ts --keep-alive-only",
     "seed:templates": "tsx scripts/seed-templates.ts",
-    "reputation:recompute": "tsx scripts/reputation-recompute.ts"
+    "reputation:recompute": "tsx scripts/reputation-recompute.ts",
+    "backfill:co2": "tsx scripts/backfill-co2.ts"
   },
   "dependencies": {
     "@a2e/core": "workspace:*",

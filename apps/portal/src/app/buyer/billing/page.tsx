@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { CreditCard, DollarSign, FileText, Download, Server, Clock, ExternalLink } from 'lucide-react'
+import { CreditCard, DollarSign, FileText, Download, Server, Clock, ExternalLink, Leaf } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { Skeleton } from '@/components/ui/Skeleton'
 
@@ -119,9 +119,7 @@ export default function BillingPage() {
         </div>
         {/* M5.8 / D3: lifetime CO2 across this buyer's rentals. */}
         <div className="stat-block" style={{ background: 'rgba(132, 204, 132, 0.08)' }}>
-          <div className="stat-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v8" /><path d="M5 12h14" /><path d="M12 22a10 10 0 1 0-9.5-13" /></svg>
-          </div>
+          <div className="stat-icon"><Leaf size={18} /></div>
           <div>
             <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>
               {(() => {
