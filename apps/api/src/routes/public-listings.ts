@@ -87,17 +87,26 @@ export async function publicListingsRoutes(fastify: FastifyInstance) {
     const now = new Date()
     const heartbeatFloor = new Date(now.getTime() - HEARTBEAT_FRESH_MS)
 
-    // Hard filter: idle, ONLINE, agent online, heartbeat fresh, optional
-    // gpuTier + region pinpoints. Reputation filter is applied in JS
-    // after the join since Prisma's typed filters on enum relation hops
-    // are awkward, and we need to rank-compare anyway.
+    // Hard filter: idle, ONLINE, heartbeat fresh, has an operator,
+    // optional gpuTier + region pinpoints. Reputation filter is applied
+    // in JS after the join since Prisma's typed filters on enum relation
+    // hops are awkward, and we need to rank-compare anyway.
+    //
+    // Note: we deliberately do NOT filter on `agentVersion: { not: null }`
+    // here, even though the auto-allocator does. The catalog is
+    // descriptive ("what inventory exists") while the allocator is
+    // prescriptive ("which node can I actually deploy onto right now").
+    // Seed nodes used for dogfood testing have NULL agentVersion; gating
+    // them out of the catalog would make pre-launch verification harder
+    // without making the listings any more honest. Real agents will set
+    // agentVersion on first heartbeat, so production listings will
+    // converge with what the allocator picks anyway.
     const nodes = await fastify.prisma.node.findMany({
       where: {
         status: 'ONLINE' as NodeStatus,
         currentJobId: null,
         assignedComputeRequestId: null,
         pendingDeletion: false,
-        agentVersion: { not: null },
         lastHeartbeat: { gte: heartbeatFloor },
         ...(gpuTierParam ? { gpuTier: gpuTierParam as GpuTier } : {}),
         ...(regionParam ? { region: regionParam } : {}),
