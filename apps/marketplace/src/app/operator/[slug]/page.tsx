@@ -55,9 +55,22 @@ async function fetchOperator(slug: string): Promise<OperatorPublicData | null> {
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
   const op = await fetchOperator(params.slug)
   if (!op) return { title: 'Operator not found' }
+  const description = `${op.name} operates ${op.nodes.length} GPU node${op.nodes.length === 1 ? '' : 's'} on the A2E network. Reputation tier ${op.reputationTier.toLowerCase()}.`
+  const ogPath = `/og?type=operator&slug=${encodeURIComponent(op.slug)}`
   return {
-    title: `${op.name} on A2E`,
-    description: `${op.name} operates ${op.nodes.length} GPU node${op.nodes.length === 1 ? '' : 's'} on the A2E network. Reputation tier ${op.reputationTier.toLowerCase()}.`,
+    title: op.name,
+    description,
+    openGraph: {
+      title: `${op.name} on A2E`,
+      description,
+      images: [{ url: ogPath, width: 1200, height: 630, alt: `${op.name} operator profile` }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: `${op.name} on A2E`,
+      description,
+      images: [ogPath],
+    },
   }
 }
 
@@ -72,8 +85,36 @@ export default async function OperatorPage({ params }: { params: { slug: string 
   }, {})
   const tierLabel = op.reputationTier.charAt(0) + op.reputationTier.slice(1).toLowerCase()
 
+  const approvedRatings = op.ratings
+  const avgRating = approvedRatings.length > 0
+    ? approvedRatings.reduce((s, r) => s + r.score, 0) / approvedRatings.length
+    : null
+
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: op.name,
+    url: `https://marketplace.stackforgelab.tech/operator/${op.slug}`,
+    description: `GPU compute operator on the A2E network, reputation tier ${tierLabel}, ${op.nodes.length} ${op.nodes.length === 1 ? 'node' : 'nodes'}.`,
+    ...(avgRating != null && approvedRatings.length > 0
+      ? {
+        aggregateRating: {
+          '@type': 'AggregateRating',
+          ratingValue: avgRating.toFixed(1),
+          reviewCount: approvedRatings.length,
+          bestRating: 5,
+          worstRating: 1,
+        },
+      }
+      : {}),
+  }
+
   return (
     <main className="min-h-screen px-6 py-16 md:py-24">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <div className="max-w-4xl mx-auto space-y-16">
         {/* Breadcrumb */}
         <nav className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
