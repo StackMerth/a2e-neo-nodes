@@ -61,6 +61,7 @@ import {
   publicOperatorsRoutes,
   publicListingsRoutes,
   publicLeaderboardRoutes,
+  portalReferralRoutes,
 } from './routes'
 import { setupWebSocket } from './websocket'
 import { setNotificationSocket } from './services/notification/service.js'
@@ -138,6 +139,11 @@ import {
   createSpotPreemptionWorker,
   scheduleSpotPreemption,
 } from './jobs/spot-preemption'
+import {
+  createReferralCommissionQueue,
+  createReferralCommissionWorker,
+  scheduleReferralCommission,
+} from './jobs/referral-commission'
 
 const server = Fastify({
   logger: {
@@ -206,6 +212,7 @@ async function start() {
     await server.register(publicOperatorsRoutes)
     await server.register(publicListingsRoutes)
     await server.register(publicLeaderboardRoutes)
+    await server.register(portalReferralRoutes)
 
     const redisConnection = server.redis as unknown as import('bullmq').ConnectionOptions
     const rateFetcherQueue = createRateFetcherQueue(redisConnection)
@@ -321,6 +328,14 @@ async function start() {
     createSpotPreemptionWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleSpotPreemption(spotPreemptionQueue)
     server.log.info('SPOT preemption worker initialized (30s tick, 90s grace)')
+
+    // M5.7 D2 referral commission: daily worker. Expires elapsed 365d
+    // windows, then accrues REFERRAL_COMMISSION_PCT (default 10%) of
+    // every referee's daily earnings onto the referrer's Referral row.
+    const referralCommissionQueue = createReferralCommissionQueue(redisConnection)
+    createReferralCommissionWorker({ redis: redisConnection, prisma: server.prisma })
+    await scheduleReferralCommission(referralCommissionQueue)
+    server.log.info('Referral commission worker initialized (24h tick, 10% rate)')
 
     await scheduleRateFetcher(rateFetcherQueue)
     await scheduleReconciliation(reconciliationQueue, 5)
