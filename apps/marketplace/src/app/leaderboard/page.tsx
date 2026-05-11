@@ -66,8 +66,17 @@ async function fetchLeaderboard(tab: string): Promise<ReputationResponse | Refer
 }
 
 export const metadata = {
-  title: 'Leaderboard, A2E',
+  title: 'Leaderboard',
   description: 'Top operators on the A2E network ranked by transparent reputation score.',
+  openGraph: {
+    title: 'Earned, not bought',
+    description: 'Operators ranked by uptime, ratings, and completed jobs. Formula is public.',
+    images: [{ url: '/og?type=leaderboard', width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: 'summary_large_image' as const,
+    images: ['/og?type=leaderboard'],
+  },
 }
 
 export default async function LeaderboardPage({

@@ -21,9 +21,35 @@ const jetbrainsMono = JetBrains_Mono({
   display: 'swap',
 })
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://marketplace.stackforgelab.tech'
+
 export const metadata: Metadata = {
-  title: 'A2E Compute Marketplace',
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: 'A2E Compute Marketplace',
+    template: '%s, A2E',
+  },
   description: 'Browse GPU compute operators on the A2E network. Reputation, uptime, and ratings before you rent.',
+  openGraph: {
+    type: 'website',
+    siteName: 'A2E',
+    title: 'GPU compute, brokered honestly',
+    description: 'Per-minute billing, reputation-scored operators, SSH under a minute.',
+    images: [
+      {
+        url: '/og?type=home',
+        width: 1200,
+        height: 630,
+        alt: 'A2E Compute Marketplace',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'GPU compute, brokered honestly',
+    description: 'Per-minute billing, reputation-scored operators, SSH under a minute.',
+    images: ['/og?type=home'],
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

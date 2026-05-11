@@ -69,8 +69,17 @@ async function fetchListings(params: URLSearchParams): Promise<ListingsResponse 
 }
 
 export const metadata = {
-  title: 'Marketplace — A2E',
+  title: 'Marketplace',
   description: 'Browse live GPU inventory across operators. Filter by tier, region, pricing model, and reputation.',
+  openGraph: {
+    title: 'GPU inventory, live',
+    description: 'Browse live GPU inventory across operators. Filter by tier, region, pricing model, and reputation.',
+    images: [{ url: '/og?type=marketplace', width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: 'summary_large_image' as const,
+    images: ['/og?type=marketplace'],
+  },
 }
 
 export default async function MarketplacePage({
