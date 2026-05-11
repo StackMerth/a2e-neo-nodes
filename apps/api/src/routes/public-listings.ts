@@ -29,6 +29,7 @@
 
 import type { FastifyInstance } from 'fastify'
 import type { GpuTier, NodeStatus, ReputationTier } from '@a2e/database'
+import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 
 const HEARTBEAT_FRESH_MS = 2 * 60 * 1000
 const SPOT_DISCOUNT_PCT = parseFloat(process.env.SPOT_DISCOUNT_PCT ?? '0.4')
@@ -128,14 +129,13 @@ export async function publicListingsRoutes(fastify: FastifyInstance) {
       },
     })
 
-    // Yield floor rates keyed by gpuTier; the catalog uses these as the
-    // canonical retail price for typed tiers, and Node.customRatePerHour
-    // for the OTHER tier rows.
-    const yieldFloors = await fastify.prisma.yieldFloor.findMany({
-      select: { gpuTier: true, ratePerHour: true },
-    })
-    const rateByTier = new Map<GpuTier, number>()
-    for (const yf of yieldFloors) rateByTier.set(yf.gpuTier, yf.ratePerHour)
+    // Pricing source: `GPU_TIER_CONFIG.retailRate` in @a2e/shared is the
+    // canonical buyer-facing rate ($/day), matching what overflow/engine,
+    // cost/calculator, and the M2 money-flows tests use. Convert to $/hr
+    // via `dailyToHourly`. For OTHER tier nodes, fall back to the node's
+    // own `customRatePerHour`. The `YieldFloor` DB table is an admin
+    // override mechanism for the operator-side floor, not a buyer rate
+    // sheet, so we do not consult it here.
 
     const tierMultiplier =
       tierParam === 'SPOT' ? 1 - SPOT_DISCOUNT_PCT
@@ -158,7 +158,7 @@ export async function publicListingsRoutes(fastify: FastifyInstance) {
       const baseRate =
         n.gpuTier === 'OTHER'
           ? n.customRatePerHour ?? 0
-          : rateByTier.get(n.gpuTier) ?? 0
+          : dailyToHourly(GPU_TIER_CONFIG[n.gpuTier].retailRate)
       const ratePerHour = Number((baseRate * tierMultiplier).toFixed(4))
       if (maxRateParam !== undefined && ratePerHour > maxRateParam) continue
       if (ratePerHour <= 0) continue
