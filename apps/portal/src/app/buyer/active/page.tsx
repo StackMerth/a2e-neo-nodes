@@ -27,6 +27,10 @@ interface ActiveAllocation {
   // the card so buyers know which terms apply to each rental.
   tier?: 'ON_DEMAND' | 'SPOT' | 'RESERVED'
   commitmentDays?: number | null
+  // M3: adminNote is parsed for 'PREEMPT_AT:<iso>|...' so the countdown
+  // banner can render on page load (e.g. after refresh) without relying
+  // on the live WS event having fired during this session.
+  adminNote?: string | null
   // SSH connection details. sshHost is null for seed/test nodes (no
   // real datacenter machine behind them). sshUsername is the unix
   // account the agent creates per session. The credential is either
@@ -310,8 +314,24 @@ export default function ActiveComputePage() {
             const totalCost = alloc.totalCost ?? 0
             const remainingCost = Math.max(0, totalCost - accruedCost)
             const minutesUsed = tick?.minutesUsed ?? alloc.minutesUsed ?? 0
-            // M3: preemption notice for this card, if any
-            const preemption = preemptions[alloc.id] ?? preemptions[alloc.requestId]
+            // M3: preemption notice for this card. Source priority:
+            //   1. Live WS event (if received during this session)
+            //   2. adminNote on the row parsed for 'PREEMPT_AT:<iso>|...'
+            //      (handles page-refresh + missed WS event scenarios)
+            const wsPreemption = preemptions[alloc.id] ?? preemptions[alloc.requestId]
+            let preemption: PreemptionPayload | undefined = wsPreemption
+            if (!preemption && alloc.adminNote?.startsWith('PREEMPT_AT:')) {
+              const isoEnd = alloc.adminNote.slice('PREEMPT_AT:'.length).split('|')[0]
+              const preemptAt = new Date(isoEnd ?? '')
+              if (!Number.isNaN(preemptAt.getTime()) && preemptAt > new Date()) {
+                preemption = {
+                  requestId: alloc.id,
+                  preemptAt: preemptAt.toISOString(),
+                  graceMs: Math.max(0, preemptAt.getTime() - Date.now()),
+                  reason: alloc.adminNote.split('|reason=')[1] ?? 'unknown',
+                }
+              }
+            }
             return (
               <motion.div key={alloc.id} variants={itemVariants}>
                 <div
