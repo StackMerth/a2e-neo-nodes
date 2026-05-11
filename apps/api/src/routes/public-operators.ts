@@ -22,8 +22,42 @@
 import type { FastifyInstance } from 'fastify'
 import { calculateNodeUptime } from '../services/earnings/uptime-calculator.js'
 
+const OPERATOR_SCHEMA = {
+  tags: ['Public'],
+  summary: 'Operator vanity profile',
+  description: 'Public, no-auth operator profile. Returns reputation, uptime, node inventory, region distribution, and recent APPROVED ratings only. Buyer fields are redacted (first and last four chars of wallet, or first three plus domain of email).',
+  params: {
+    type: 'object',
+    properties: {
+      slug: { type: 'string', description: 'URL-safe operator slug' },
+    },
+    required: ['slug'],
+  },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        name: { type: 'string' },
+        slug: { type: 'string' },
+        reputationScore: { type: 'number' },
+        reputationTier: { type: 'string', enum: ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM'] },
+        availableAsSpot: { type: 'boolean' },
+        uptimePercent30d: { type: ['number', 'null'] },
+        totalCompletedJobs: { type: 'integer' },
+        nodes: { type: 'array' },
+        ratings: { type: 'array' },
+      },
+    },
+    404: {
+      type: 'object',
+      properties: { error: { type: 'string' } },
+    },
+  },
+}
+
 export async function publicOperatorsRoutes(fastify: FastifyInstance) {
-  fastify.get('/v1/public/operators/:slug', async (request, reply) => {
+  fastify.get('/v1/public/operators/:slug', { schema: OPERATOR_SCHEMA }, async (request, reply) => {
     const { slug } = request.params as { slug: string }
 
     const runner = await fastify.prisma.nodeRunner.findUnique({

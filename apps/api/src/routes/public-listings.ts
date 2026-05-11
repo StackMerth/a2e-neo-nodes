@@ -60,8 +60,60 @@ interface Listing {
   lastHeartbeat: string
 }
 
+const LISTINGS_SCHEMA = {
+  tags: ['Public'],
+  summary: 'Browse live GPU inventory',
+  description: 'Returns aggregated listings grouped by (operator + gpuTier + region). Sorted cheapest first, then by reputation, then by larger availability.',
+  querystring: {
+    type: 'object',
+    properties: {
+      gpuTier: { type: 'string', enum: ['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER'] },
+      region: { type: 'string', description: 'Operator region string match' },
+      maxRatePerHour: { type: 'number', minimum: 0 },
+      tier: { type: 'string', enum: ['ON_DEMAND', 'SPOT', 'RESERVED'], default: 'ON_DEMAND' },
+      minReputation: { type: 'string', enum: ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM'] },
+      limit: { type: 'integer', minimum: 1, maximum: 200, default: 100 },
+      offset: { type: 'integer', minimum: 0, default: 0 },
+    },
+  },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        total: { type: 'integer' },
+        limit: { type: 'integer' },
+        offset: { type: 'integer' },
+        filters: { type: 'object' },
+        listings: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              operatorSlug: { type: 'string' },
+              operatorName: { type: 'string' },
+              reputationTier: { type: 'string', enum: ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM'] },
+              reputationScore: { type: 'number' },
+              gpuTier: { type: 'string' },
+              region: { type: ['string', 'null'] },
+              availableCount: { type: 'integer' },
+              pricingTier: { type: 'string', enum: ['ON_DEMAND', 'SPOT', 'RESERVED'] },
+              ratePerHour: { type: 'number' },
+              ratePerMinute: { type: 'number' },
+              lastHeartbeat: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+      },
+    },
+    400: {
+      type: 'object',
+      properties: { error: { type: 'string' } },
+    },
+  },
+}
+
 export async function publicListingsRoutes(fastify: FastifyInstance) {
-  fastify.get('/v1/public/listings', async (request, reply) => {
+  fastify.get('/v1/public/listings', { schema: LISTINGS_SCHEMA }, async (request, reply) => {
     const q = request.query as Record<string, string | undefined>
 
     const gpuTierParam = q.gpuTier?.toUpperCase()

@@ -39,8 +39,33 @@ interface ReferrerRow {
   lifetimeCommission: number
 }
 
+const LEADERBOARD_SCHEMA = {
+  tags: ['Public'],
+  summary: 'Top operators by reputation',
+  description: 'Ranks operators by reputation score (60 percent uptime, 25 percent ratings, 15 percent volume). The referrers tab launches with the M5.7 referral program; until then it returns an empty rows array with a notice string.',
+  querystring: {
+    type: 'object',
+    properties: {
+      tab: { type: 'string', enum: ['reputation', 'referrers'], default: 'reputation' },
+      limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+    },
+  },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        tab: { type: 'string' },
+        limit: { type: 'integer' },
+        total: { type: 'integer' },
+        rows: { type: 'array' },
+        notice: { type: 'string' },
+      },
+    },
+  },
+}
+
 export async function publicLeaderboardRoutes(fastify: FastifyInstance) {
-  fastify.get('/v1/public/leaderboard', async (request, reply) => {
+  fastify.get('/v1/public/leaderboard', { schema: LEADERBOARD_SCHEMA }, async (request, reply) => {
     const q = request.query as Record<string, string | undefined>
     const tab = (q.tab ?? 'reputation').toLowerCase()
     const limit = Math.max(1, Math.min(100, parseInt(q.limit ?? '50', 10)))
