@@ -117,8 +117,11 @@ export default function BillingPage() {
             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Requests</div>
           </div>
         </div>
-        {/* M5.8 / D3: lifetime CO2 across this buyer's rentals. */}
-        <div className="stat-block" style={{ background: 'rgba(132, 204, 132, 0.08)' }}>
+        {/* M5.8 / D3: lifetime CO2 across this buyer's rentals.
+            Uses the same `green` palette as Total Spent so the
+            sustainability stat reads as a peer metric, not a
+            decorative afterthought. */}
+        <div className="stat-block green">
           <div className="stat-icon"><Leaf size={18} /></div>
           <div>
             <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>

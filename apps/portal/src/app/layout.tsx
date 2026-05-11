@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import '../globals.css'
 import { Providers } from './providers'
+import { CrispChat } from '@/components/CrispChat'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -27,6 +28,8 @@ export default function RootLayout({
         <Providers>
           {children}
         </Providers>
+        {/* M5.9 / D4: Crisp live chat. No-op when env var is unset. */}
+        <CrispChat />
       </body>
     </html>
   )
