@@ -74,7 +74,8 @@ export async function scheduleSeedKeepAlive(queue: Queue): Promise<void> {
 }
 
 export async function runSeedKeepAliveTick(prisma: PrismaClient): Promise<void> {
-  const result = await prisma.node.updateMany({
+  // Step 1: refresh status + heartbeat on every seed node
+  const refreshResult = await prisma.node.updateMany({
     where: { id: { startsWith: 'seed-node-' } },
     data: {
       status: 'ONLINE',
@@ -84,7 +85,55 @@ export async function runSeedKeepAliveTick(prisma: PrismaClient): Promise<void> 
     },
   })
 
+  // Step 2: clear orphaned assignments so seed nodes stay available
+  // for testing. An orphan = a seed node assigned to a ComputeRequest
+  // that is no longer ACTIVE (terminated, expired, completed, etc.).
+  // Without this sweep, terminated rentals leave dangling
+  // assignedComputeRequestId values that block the allocator from
+  // re-using the node. Real production agents do this cleanup as part
+  // of their own state machine; the keep-alive worker substitutes
+  // for that during seed/test mode.
+  //
+  // Done as a 2-step (find + clear) instead of one update to log how
+  // many orphans were cleared per tick — useful signal during testing.
+  const allSeedNodes = await prisma.node.findMany({
+    where: {
+      id: { startsWith: 'seed-node-' },
+      assignedComputeRequestId: { not: null },
+    },
+    select: { id: true, assignedComputeRequestId: true },
+  })
+
+  const orphanIds: string[] = []
+  if (allSeedNodes.length > 0) {
+    // Look up which compute requests are still ACTIVE
+    const assignedCrIds = allSeedNodes
+      .map(n => n.assignedComputeRequestId)
+      .filter((id): id is string => id !== null)
+    const activeCrs = await prisma.computeRequest.findMany({
+      where: { id: { in: assignedCrIds }, status: 'ACTIVE' },
+      select: { id: true },
+    })
+    const activeCrSet = new Set(activeCrs.map(cr => cr.id))
+
+    for (const node of allSeedNodes) {
+      if (node.assignedComputeRequestId && !activeCrSet.has(node.assignedComputeRequestId)) {
+        orphanIds.push(node.id)
+      }
+    }
+
+    if (orphanIds.length > 0) {
+      await prisma.node.updateMany({
+        where: { id: { in: orphanIds } },
+        data: { assignedComputeRequestId: null },
+      })
+    }
+  }
+
   // One-line log per tick so the operator can confirm it's alive.
   // eslint-disable-next-line no-console
-  console.log(`[seed-keep-alive] refreshed ${result.count} seed nodes`)
+  console.log(
+    `[seed-keep-alive] refreshed ${refreshResult.count} seed nodes` +
+      (orphanIds.length > 0 ? `, freed ${orphanIds.length} orphan assignments` : ''),
+  )
 }
