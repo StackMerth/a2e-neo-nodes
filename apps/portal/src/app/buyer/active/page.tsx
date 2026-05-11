@@ -23,6 +23,10 @@ interface ActiveAllocation {
   requestId: string
   gpuTier: string
   gpuCount: number
+  // M3: pricing tier (ON_DEMAND default | SPOT | RESERVED). Surfaced on
+  // the card so buyers know which terms apply to each rental.
+  tier?: 'ON_DEMAND' | 'SPOT' | 'RESERVED'
+  commitmentDays?: number | null
   // SSH connection details. sshHost is null for seed/test nodes (no
   // real datacenter machine behind them). sshUsername is the unix
   // account the agent creates per session. The credential is either
@@ -326,7 +330,7 @@ export default function ActiveComputePage() {
 
                   {/* Header Row */}
                   <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       <span
                         className="text-xs font-bold px-3 py-1.5 rounded-lg"
                         style={{ background: `${tierColor}20`, color: tierColor }}
@@ -336,6 +340,37 @@ export default function ActiveComputePage() {
                       <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                         x{alloc.gpuCount} GPU{alloc.gpuCount > 1 ? 's' : ''}
                       </span>
+                      {/* M3: pricing tier badge — distinguishes SPOT (yellow,
+                          preemptible) from RESERVED (blue, committed) from
+                          ON_DEMAND (green, default). */}
+                      {alloc.tier && alloc.tier !== 'ON_DEMAND' && (
+                        <span
+                          className="text-xs font-bold px-2 py-1 rounded"
+                          style={
+                            alloc.tier === 'SPOT'
+                              ? { background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.4)' }
+                              : { background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.4)' }
+                          }
+                          title={
+                            alloc.tier === 'SPOT'
+                              ? 'Spot tier — 40% off, preemptible with 90s notice'
+                              : `Reserved ${alloc.commitmentDays ?? ''}d — committed capacity, exempt from preemption`
+                          }
+                        >
+                          {alloc.tier === 'SPOT'
+                            ? 'SPOT'
+                            : `RESERVED${alloc.commitmentDays ? ` ${alloc.commitmentDays}d` : ''}`}
+                        </span>
+                      )}
+                      {alloc.tier === 'ON_DEMAND' && (
+                        <span
+                          className="text-xs font-bold px-2 py-1 rounded"
+                          style={{ background: 'rgba(34, 197, 94, 0.12)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.35)' }}
+                          title="On-Demand — full price, never preempted"
+                        >
+                          ON-DEMAND
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                       <Clock size={12} />
