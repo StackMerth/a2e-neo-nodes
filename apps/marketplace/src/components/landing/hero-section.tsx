@@ -113,10 +113,10 @@ export function HeroSection() {
             and SSH access in under sixty seconds. Pay what the work costs.
           </p>
           
-          {/* CTAs: stacked column on all breakpoints so Start renting
-              sits on top and View marketplace falls beneath it. */}
+          {/* CTAs: stacked on mobile, side-by-side from sm up so Start
+              renting and View marketplace sit on the same row on desktop. */}
           <div
-            className={`flex flex-col items-start gap-4 transition-all duration-700 delay-300 ${
+            className={`flex flex-col sm:flex-row sm:items-center gap-4 transition-all duration-700 delay-300 ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
@@ -150,7 +150,7 @@ export function HeroSection() {
           isVisible ? "opacity-100" : "opacity-0"
         }`}
       >
-        <div className="flex gap-16 marquee whitespace-nowrap">
+        <div className="flex justify-center gap-16 marquee whitespace-nowrap">
           {[...Array(2)].map((_, i) => (
             <div key={i} className="flex gap-16">
               {[
