@@ -5,6 +5,7 @@ import { generateAccessToken, generateRefreshToken, rotateRefreshToken, revokeRe
 import { generateNonce, verifyWalletSignature, findOrCreateUserByWallet } from '../services/auth/wallet.js'
 import { registerUser, authenticateUser, hashPassword } from '../services/auth/password.js'
 import { sendEmail } from '../services/email/sender.js'
+import { attributeReferral } from '../services/referral/attribution.js'
 
 // Validation schemas
 
@@ -13,6 +14,10 @@ const registerSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters'),
   name: z.string().min(1).max(100).optional(),
   role: z.enum(['NODE_RUNNER', 'COMPUTE_BUYER']).default('NODE_RUNNER'),
+  // M5.7 polish: ?ref=<CODE> propagated from the marketplace share URL
+  // through to signup. We only enforce shape here; attribution validates
+  // existence + applies the rule that referee role must be NODE_RUNNER.
+  referralCode: z.string().min(4).max(16).optional(),
 })
 
 const loginSchema = z.object({
@@ -66,12 +71,47 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
       })
     }
 
-    const { email, password, role } = parsed.data
+    const { email, password, role, referralCode } = parsed.data
 
     try {
       const user = await registerUser(email, password, role)
       const accessToken = generateAccessToken(user.id, user.role)
       const refreshToken = await generateRefreshToken(user.id)
+
+      // M5.7 polish: attribute the referral right at signup so the
+      // referee NodeRunner row exists with status=ACTIVE before they
+      // even land on the dashboard. Only NODE_RUNNER referees attribute;
+      // buyer-role signups skip silently (we don't pay commission for
+      // referring buyers, that's a different program if we ever add it).
+      let referralStatus: string | undefined
+      if (referralCode && role === 'NODE_RUNNER') {
+        try {
+          const refereeRunner = await fastify.prisma.nodeRunner.upsert({
+            where: { userId: user.id },
+            create: {
+              name: user.email?.split('@')[0] ?? 'Node Runner',
+              email: user.email,
+              walletAddress: user.walletAddress ?? `pending-${user.id}`,
+              userId: user.id,
+            },
+            update: {},
+          })
+          const attribution = await attributeReferral(
+            fastify.prisma,
+            refereeRunner.id,
+            referralCode,
+          )
+          referralStatus = attribution.status
+          fastify.log.info(
+            { userId: user.id, referralCode, status: attribution.status },
+            'Referral attribution attempted at signup',
+          )
+        } catch (refErr) {
+          // Never fail the signup over a referral problem. Log and move on.
+          fastify.log.warn({ err: refErr, userId: user.id }, 'Referral attribution failed at signup')
+          referralStatus = 'ERROR'
+        }
+      }
 
       reply.code(201).send({
         user: {
@@ -81,6 +121,7 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
         },
         accessToken,
         refreshToken,
+        ...(referralStatus ? { referral: { status: referralStatus } } : {}),
       })
     } catch (error) {
       if (error instanceof Error && error.message === 'Email already registered') {

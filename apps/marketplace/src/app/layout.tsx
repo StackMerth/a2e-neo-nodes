@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
 import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
+import { RefCapture } from '@/components/landing/ref-capture'
 
 const instrumentSans = Instrument_Sans({
   subsets: ['latin'],
@@ -55,7 +57,14 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${instrumentSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}>
-      <body className="font-sans antialiased">{children}</body>
+      <body className="font-sans antialiased">
+        {/* M5.7 polish: capture ?ref=CODE from share links and rewrite
+            portal-signup hrefs so the code rides across the domain hop. */}
+        <Suspense fallback={null}>
+          <RefCapture />
+        </Suspense>
+        {children}
+      </body>
     </html>
   )
 }
