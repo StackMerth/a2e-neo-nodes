@@ -64,7 +64,7 @@ export function HeroSection() {
           }`}
         >
           <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground">
-            <span className="w-8 h-px bg-foreground/30" />
+            <span className="w-8 h-px bg-brand" />
             The marketplace for GPU compute
           </span>
         </div>
@@ -96,7 +96,7 @@ export function HeroSection() {
                     </span>
                   ))}
                 </span>
-                <span className="absolute -bottom-2 left-0 right-0 h-3 bg-foreground/10" />
+                <span className="absolute -bottom-2 left-0 right-0 h-3 bg-brand/25" />
               </span>
             </span>
           </h1>
