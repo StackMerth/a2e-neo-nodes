@@ -88,9 +88,28 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
 
 // Auth API
 export const auth = {
-  register: (email: string, password: string, role?: 'NODE_RUNNER' | 'COMPUTE_BUYER') =>
-    apiFetch<{ user: { id: string; email: string; role: string }; accessToken: string; refreshToken: string }>(
-      '/v1/portal/auth/register', { method: 'POST', body: { email, password, ...(role ? { role } : {}) } }
+  register: (
+    email: string,
+    password: string,
+    role?: 'NODE_RUNNER' | 'COMPUTE_BUYER',
+    referralCode?: string,
+  ) =>
+    apiFetch<{
+      user: { id: string; email: string; role: string }
+      accessToken: string
+      refreshToken: string
+      referral?: { status: string }
+    }>(
+      '/v1/portal/auth/register',
+      {
+        method: 'POST',
+        body: {
+          email,
+          password,
+          ...(role ? { role } : {}),
+          ...(referralCode ? { referralCode } : {}),
+        },
+      },
     ),
   login: (email: string, password: string) =>
     apiFetch<{ user: { id: string; email: string | null; walletAddress: string | null; role: string; nodeRunnerId: string | null }; accessToken: string; refreshToken: string }>(

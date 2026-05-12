@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
@@ -8,6 +8,14 @@ import { useToast } from '@/components/ui/Toast'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
+
+// M5.7 polish: localStorage key shared between marketplace landing and
+// portal /register so a ref code captured at marketplace.../?ref=CODE
+// survives the user clicking through to portal signup. Both sides clear
+// it after a successful signup. Domains are different, so this is just
+// portal-side fallback for when the URL param gets dropped along the way
+// (e.g. user lands on /signup chooser first, then clicks "Node Runner").
+const REF_STORAGE_KEY = 'a2e_pending_ref'
 
 export default function RegisterPage() {
   const { register } = useAuth()
@@ -20,6 +28,23 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [referralCode, setReferralCode] = useState<string | null>(null)
+
+  // Resolve referral code: URL param wins, localStorage is the fallback
+  // for cases where the user navigated through /signup or refreshed.
+  useEffect(() => {
+    const urlRef = searchParams.get('ref')
+    if (urlRef && /^[A-Z0-9]{4,16}$/i.test(urlRef)) {
+      const code = urlRef.toUpperCase()
+      setReferralCode(code)
+      try { localStorage.setItem(REF_STORAGE_KEY, code) } catch { /* ignore */ }
+      return
+    }
+    try {
+      const stored = localStorage.getItem(REF_STORAGE_KEY)
+      if (stored && /^[A-Z0-9]{4,16}$/.test(stored)) setReferralCode(stored)
+    } catch { /* ignore */ }
+  }, [searchParams])
 
   const validate = () => {
     const errs: Record<string, string> = {}
@@ -37,8 +62,16 @@ export default function RegisterPage() {
     setLoading(true)
     try {
       const role = isBuyer ? 'COMPUTE_BUYER' : 'NODE_RUNNER'
-      const user = await register(email, password, role)
-      toast('success', 'Account created successfully')
+      const user = await register(email, password, role, referralCode ?? undefined)
+      // Clear the stored code so a later signup on the same browser
+      // doesn't accidentally re-attribute to the same referrer.
+      try { localStorage.removeItem(REF_STORAGE_KEY) } catch { /* ignore */ }
+      toast(
+        'success',
+        referralCode && !isBuyer
+          ? `Account created. Referral ${referralCode} applied.`
+          : 'Account created successfully',
+      )
       if (user.role === 'COMPUTE_BUYER') {
         router.push('/buyer/dashboard')
       } else {
@@ -59,6 +92,22 @@ export default function RegisterPage() {
       <p className="text-text-secondary text-sm mb-6">
         {isBuyer ? 'Get started with on-demand GPU compute' : 'Start earning with your GPU nodes'}
       </p>
+
+      {/* M5.7 polish: surface the captured referral code so the user
+          knows attribution will happen. Hidden when no code, or when
+          this is a buyer signup since the program is operator-only. */}
+      {referralCode && !isBuyer && (
+        <div
+          className="text-xs rounded-lg px-3 py-2 mb-4"
+          style={{
+            background: 'rgba(34,197,94,0.08)',
+            border: '1px solid rgba(34,197,94,0.25)',
+            color: 'var(--text-primary)',
+          }}
+        >
+          Invited by <span className="font-mono">{referralCode}</span>. Your referrer earns 10 percent of your first 365 days of network earnings.
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
