@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
+import { portalUrls } from "@/lib/portal-urls";
 
 const navLinks = [
   { name: "Marketplace", href: "/marketplace" },
@@ -65,14 +66,15 @@ export function Navigation() {
 
           {/* Desktop CTA */}
           <div className="hidden md:flex items-center gap-4">
-            <a href="#" className={`text-foreground/70 hover:text-foreground transition-all duration-500 ${isScrolled ? "text-xs" : "text-sm"}`}>
+            <a href={portalUrls.login} className={`text-foreground/70 hover:text-foreground transition-all duration-500 ${isScrolled ? "text-xs" : "text-sm"}`}>
               Sign in
             </a>
             <Button
+              asChild
               size="sm"
               className={`bg-foreground hover:bg-foreground/90 text-background rounded-full transition-all duration-500 ${isScrolled ? "px-4 h-8 text-xs" : "px-6"}`}
             >
-              Start renting
+              <a href={portalUrls.signup}>Start renting</a>
             </Button>
           </div>
 
@@ -129,18 +131,18 @@ export function Navigation() {
           }`}
           style={{ transitionDelay: isMobileMenuOpen ? "300ms" : "0ms" }}
           >
-            <Button 
-              variant="outline" 
+            <Button
+              asChild
+              variant="outline"
               className="flex-1 rounded-full h-14 text-base"
-              onClick={() => setIsMobileMenuOpen(false)}
             >
-              Sign in
+              <a href={portalUrls.login} onClick={() => setIsMobileMenuOpen(false)}>Sign in</a>
             </Button>
-            <Button 
+            <Button
+              asChild
               className="flex-1 bg-foreground text-background rounded-full h-14 text-base"
-              onClick={() => setIsMobileMenuOpen(false)}
             >
-              Start renting
+              <a href={portalUrls.signup} onClick={() => setIsMobileMenuOpen(false)}>Start renting</a>
             </Button>
           </div>
         </div>
