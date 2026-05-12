@@ -43,6 +43,7 @@ module.exports = {
         border: 'var(--border)',
         input: 'var(--input)',
         ring: 'var(--ring)',
+        brand: 'var(--brand)',
       },
       fontFamily: {
         sans: ['var(--font-instrument)', 'system-ui', 'sans-serif'],

@@ -229,6 +229,13 @@ function SecurityVisual() {
 }
 
 function AnimatedVisual({ type }: { type: string }) {
+  // Render client-only. SMIL <animate>/<animateMotion> hydrate
+  // inconsistently in React 18, which throws a "matching <line>"
+  // mismatch on first paint. The visuals only animate after JS
+  // anyway, so deferring to client costs nothing visible.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
   switch (type) {
     case "deploy":
       return <DeployVisual />;

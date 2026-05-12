@@ -15,8 +15,15 @@ const navLinks = [
 export function Navigation() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // Defer the mobile menu icon to client-only. Lucide's Menu/X icons
+  // use SVG <line>/<path> children that have occasionally tripped
+  // React 18 hydration in this app. Server renders an empty button,
+  // client fills it in post-mount. Visually identical because the
+  // button is md:hidden on desktop anyway.
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 20);
     };
@@ -77,17 +84,19 @@ export function Navigation() {
             </Button>
           </div>
 
-          {/* Mobile Menu Button */}
+          {/* Mobile Menu Button. Icon renders client-only to avoid
+              a hydration mismatch from lucide's SVG children. */}
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="md:hidden p-2"
             aria-label="Toggle menu"
+            suppressHydrationWarning
           >
-            {isMobileMenuOpen ? (
+            {mounted && (isMobileMenuOpen ? (
               <X className="w-6 h-6" />
             ) : (
               <Menu className="w-6 h-6" />
-            )}
+            ))}
           </button>
         </div>
 

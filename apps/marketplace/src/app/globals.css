@@ -28,6 +28,9 @@
   --input: oklch(0.92 0.01 90);
   --ring: oklch(0.12 0.01 60);
   --radius: 0.25rem;
+  /* Brand accent. Used sparingly: hero eyebrow dash, word-highlight
+     bar, text selection. Editorial ink/cream stays primary. */
+  --brand: oklch(0.72 0.14 152);
 }
 
 @layer base {
@@ -55,7 +58,7 @@
     font-family: var(--font-instrument), system-ui, sans-serif;
   }
   ::selection {
-    background: var(--foreground);
+    background: var(--brand);
     color: var(--background);
   }
 }
