@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 import { portalUrls } from "@/lib/portal-urls";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const navLinks = [
   { name: "Marketplace", href: "/marketplace" },
@@ -72,6 +73,7 @@ export function Navigation() {
 
           {/* Desktop CTA */}
           <div className="hidden md:flex items-center gap-4">
+            <ThemeToggle />
             <a href={portalUrls.login} className={`text-foreground/70 hover:text-foreground transition-all duration-500 ${isScrolled ? "text-xs" : "text-sm"}`}>
               Sign in
             </a>
@@ -82,6 +84,11 @@ export function Navigation() {
             >
               <a href={portalUrls.signup}>Start renting</a>
             </Button>
+          </div>
+
+          {/* Mobile: theme toggle next to menu button so phones can switch too. */}
+          <div className="md:hidden flex items-center gap-2">
+            <ThemeToggle />
           </div>
 
           {/* Mobile Menu Button. Icon renders client-only to avoid
