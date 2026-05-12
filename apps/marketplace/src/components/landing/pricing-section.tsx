@@ -56,19 +56,19 @@ const plans = [
 
 export function PricingSection() {
   return (
-    <section id="pricing" className="relative py-32 lg:py-40 border-t border-foreground/10">
+    <section id="pricing" className="relative py-20 sm:py-32 lg:py-40 border-t border-foreground/10">
       <div className="max-w-7xl mx-auto px-6 lg:px-12">
         {/* Header */}
-        <div className="max-w-3xl mb-20">
-          <span className="font-mono text-xs tracking-widest text-muted-foreground uppercase block mb-6">
+        <div className="max-w-3xl mb-12 sm:mb-16 lg:mb-20">
+          <span className="font-mono text-xs tracking-widest text-muted-foreground uppercase block mb-4 sm:mb-6">
             Pricing
           </span>
-          <h2 className="font-display text-5xl md:text-6xl lg:text-7xl tracking-tight text-foreground mb-6">
+          <h2 className="font-display text-4xl sm:text-5xl md:text-6xl lg:text-7xl tracking-tight text-foreground mb-4 sm:mb-6">
             Three tiers,
             <br />
             <span className="text-stroke">one rate sheet</span>
           </h2>
-          <p className="text-lg text-muted-foreground max-w-xl">
+          <p className="text-base sm:text-lg text-muted-foreground max-w-xl">
             Per-minute billing on every tier. Sample rates shown for an H100; the marketplace surfaces live per-operator pricing for every GPU class.
           </p>
         </div>
@@ -78,7 +78,7 @@ export function PricingSection() {
           {plans.map((plan, idx) => (
             <div
               key={plan.name}
-              className={`relative p-8 lg:p-12 bg-background ${
+              className={`relative p-6 sm:p-8 lg:p-12 bg-background ${
                 plan.popular ? "md:-my-4 md:py-12 lg:py-16 border-2 border-foreground" : ""
               }`}
             >

@@ -69,7 +69,7 @@ export function HowItWorksSection() {
     <section
       id="how-it-works"
       ref={sectionRef}
-      className="relative py-24 lg:py-32 bg-foreground text-background dark:bg-card dark:text-foreground overflow-hidden"
+      className="relative py-16 sm:py-24 lg:py-32 bg-foreground text-background dark:bg-card dark:text-foreground overflow-hidden"
     >
       {/* Diagonal lines pattern */}
       <div className="absolute inset-0 opacity-[0.03] pointer-events-none">
@@ -86,13 +86,13 @@ export function HowItWorksSection() {
 
       <div className="relative z-10 max-w-[1400px] mx-auto px-6 lg:px-12">
         {/* Header */}
-        <div className="mb-16 lg:mb-24">
-          <span className="inline-flex items-center gap-3 text-sm font-mono text-background/50 dark:text-foreground/50 mb-6">
+        <div className="mb-12 sm:mb-16 lg:mb-24">
+          <span className="inline-flex items-center gap-3 text-sm font-mono text-background/50 dark:text-foreground/50 mb-4 sm:mb-6">
             <span className="w-8 h-px bg-brand" />
             Process
           </span>
           <h2
-            className={`text-4xl lg:text-6xl font-display tracking-tight transition-all duration-700 ${
+            className={`text-3xl sm:text-4xl lg:text-6xl font-display tracking-tight transition-all duration-700 ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
@@ -103,7 +103,7 @@ export function HowItWorksSection() {
         </div>
 
         {/* Main content */}
-        <div className="grid lg:grid-cols-2 gap-16 lg:gap-24">
+        <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 lg:gap-24">
           {/* Steps */}
           <div className="space-y-0">
             {steps.map((step, index) => (
@@ -156,7 +156,7 @@ export function HowItWorksSection() {
               </div>
 
               {/* Code content */}
-              <div className="p-8 font-mono text-sm min-h-[280px]">
+              <div className="p-5 sm:p-8 font-mono text-xs sm:text-sm min-h-[280px] overflow-x-auto">
                 <pre className="text-background/70 dark:text-foreground/70">
                   {steps[activeStep].code.split('\n').map((line, lineIndex) => (
                     <div 
