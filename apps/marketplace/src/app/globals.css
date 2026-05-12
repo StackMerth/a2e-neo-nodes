@@ -3,9 +3,10 @@
 @tailwind utilities;
 
 /*
- * Editorial design system, light-mode only. Tokens mirror the v0/shadcn
- * "new-york" reference at StackMerth/design-animation-to-copy. Marketplace
- * keeps a separate palette from portal/dashboard until M4 ports them.
+ * Dual-theme tokens. :root holds the editorial cream/ink palette;
+ * .dark holds the brand-familiar navy/off-white palette that mirrors
+ * the old TokenOS_COMPUTE site. Brand green sits in both modes so
+ * the accent stays consistent across the toggle.
  */
 :root {
   --background: oklch(0.985 0.002 90);
@@ -14,7 +15,7 @@
   --card-foreground: oklch(0.12 0.01 60);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.12 0.01 60);
-  --primary: oklch(0.12 0.01 60);
+  --primary: oklch(0.72 0.14 152);
   --primary-foreground: oklch(0.985 0.002 90);
   --secondary: oklch(0.96 0.005 90);
   --secondary-foreground: oklch(0.12 0.01 60);
@@ -26,8 +27,32 @@
   --destructive-foreground: oklch(0.985 0.002 90);
   --border: oklch(0.88 0.01 90);
   --input: oklch(0.92 0.01 90);
-  --ring: oklch(0.12 0.01 60);
+  --ring: oklch(0.72 0.14 152);
   --radius: 0.25rem;
+  --brand: oklch(0.72 0.14 152);
+}
+
+.dark {
+  --background: oklch(0.135 0.012 250);
+  --foreground: oklch(0.97 0.005 90);
+  --card: oklch(0.17 0.012 250);
+  --card-foreground: oklch(0.97 0.005 90);
+  --popover: oklch(0.17 0.012 250);
+  --popover-foreground: oklch(0.97 0.005 90);
+  --primary: oklch(0.72 0.14 152);
+  --primary-foreground: oklch(0.135 0.012 250);
+  --secondary: oklch(0.19 0.012 250);
+  --secondary-foreground: oklch(0.97 0.005 90);
+  --muted: oklch(0.21 0.012 250);
+  --muted-foreground: oklch(0.68 0.015 250);
+  --accent: oklch(0.21 0.012 250);
+  --accent-foreground: oklch(0.97 0.005 90);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0.002 90);
+  --border: oklch(0.24 0.012 250);
+  --input: oklch(0.22 0.012 250);
+  --ring: oklch(0.72 0.14 152);
+  --brand: oklch(0.72 0.14 152);
 }
 
 @layer base {
@@ -55,7 +80,7 @@
     font-family: var(--font-instrument), system-ui, sans-serif;
   }
   ::selection {
-    background: var(--foreground);
+    background: var(--brand);
     color: var(--background);
   }
 }

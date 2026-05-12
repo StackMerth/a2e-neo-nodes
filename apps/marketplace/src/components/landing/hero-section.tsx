@@ -64,7 +64,7 @@ export function HeroSection() {
           }`}
         >
           <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground">
-            <span className="w-8 h-px bg-foreground/30" />
+            <span className="w-8 h-px bg-brand" />
             The marketplace for GPU compute
           </span>
         </div>
@@ -80,9 +80,9 @@ export function HeroSection() {
             <span className="block">
               to{" "}
               <span className="relative inline-block">
-                <span 
+                <span
                   key={wordIndex}
-                  className="inline-flex"
+                  className="inline-flex text-brand"
                 >
                   {words[wordIndex].split("").map((char, i) => (
                     <span
@@ -96,7 +96,7 @@ export function HeroSection() {
                     </span>
                   ))}
                 </span>
-                <span className="absolute -bottom-2 left-0 right-0 h-3 bg-foreground/10" />
+                <span className="absolute -bottom-2 left-0 right-0 h-3 bg-brand/15" />
               </span>
             </span>
           </h1>
@@ -123,7 +123,7 @@ export function HeroSection() {
             <Button
               asChild
               size="lg"
-              className="bg-foreground hover:bg-foreground/90 text-background px-8 h-14 text-base rounded-full group"
+              className="bg-brand hover:bg-brand/90 text-background px-8 h-14 text-base rounded-full group"
             >
               <a href={portalUrls.signup}>
                 Start renting
@@ -159,9 +159,9 @@ export function HeroSection() {
                 { value: "40%", label: "off retail", company: "SPOT TIER" },
                 { value: "11s", label: "median settlement", company: "SOLANA RAILS" },
               ].map((stat) => (
-                <div key={`${stat.company}-${i}`} className="flex items-baseline gap-4">
-                  <span className="text-4xl lg:text-5xl font-display">{stat.value}</span>
-                  <span className="text-sm text-muted-foreground">
+                <div key={`${stat.company}-${i}`} className="flex items-center gap-4">
+                  <span className="text-4xl lg:text-5xl font-display text-brand leading-none">{stat.value}</span>
+                  <span className="text-sm text-muted-foreground leading-tight">
                     {stat.label}
                     <span className="block font-mono text-xs mt-1">{stat.company}</span>
                   </span>
