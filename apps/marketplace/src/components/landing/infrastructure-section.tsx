@@ -36,9 +36,9 @@ export function InfrastructureSection() {
   }, []);
 
   return (
-    <section ref={sectionRef} className="relative py-24 lg:py-32 overflow-hidden">
+    <section ref={sectionRef} className="relative py-16 sm:py-24 lg:py-32 overflow-hidden">
       <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
-        <div className="grid lg:grid-cols-2 gap-16 lg:gap-24 items-center">
+        <div className="grid lg:grid-cols-2 gap-10 sm:gap-16 lg:gap-24 items-center">
           {/* Left: Content */}
           <div
             className={`transition-all duration-700 ${
@@ -49,7 +49,7 @@ export function InfrastructureSection() {
               <span className="w-8 h-px bg-foreground/30" />
               Inventory
             </span>
-            <h2 className="text-4xl lg:text-6xl font-display tracking-tight mb-8">
+            <h2 className="text-3xl sm:text-4xl lg:text-6xl font-display tracking-tight mb-6 sm:mb-8">
               Real machines,
               <br />
               real operators.

@@ -86,25 +86,24 @@ export function Navigation() {
             </Button>
           </div>
 
-          {/* Mobile: theme toggle next to menu button so phones can switch too. */}
-          <div className="md:hidden flex items-center gap-2">
+          {/* Mobile controls: theme toggle + menu button grouped so
+              justify-between only sees two children on mobile (logo
+              on the left, this cluster on the right). */}
+          <div className="md:hidden flex items-center gap-1">
             <ThemeToggle />
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="p-2"
+              aria-label="Toggle menu"
+              suppressHydrationWarning
+            >
+              {mounted && (isMobileMenuOpen ? (
+                <X className="w-6 h-6" />
+              ) : (
+                <Menu className="w-6 h-6" />
+              ))}
+            </button>
           </div>
-
-          {/* Mobile Menu Button. Icon renders client-only to avoid
-              a hydration mismatch from lucide's SVG children. */}
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="md:hidden p-2"
-            aria-label="Toggle menu"
-            suppressHydrationWarning
-          >
-            {mounted && (isMobileMenuOpen ? (
-              <X className="w-6 h-6" />
-            ) : (
-              <Menu className="w-6 h-6" />
-            ))}
-          </button>
         </div>
 
       </nav>

@@ -73,22 +73,22 @@ export default async function StatsPage() {
     <main className="relative min-h-screen overflow-x-hidden noise-overlay">
       <Navigation />
 
-      <section className="pt-32 lg:pt-40 pb-12 lg:pb-16 px-6 lg:px-12">
+      <section className="pt-24 sm:pt-32 lg:pt-40 pb-10 sm:pb-12 lg:pb-16 px-6 lg:px-12">
         <div className="max-w-[1200px] mx-auto">
-          <div className="flex items-center gap-3 mb-8">
+          <div className="flex flex-wrap items-center gap-3 mb-6 sm:mb-8">
             <span className="w-8 h-px bg-foreground/30" />
             <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
               Network stats
             </span>
-            <span className="flex-1 h-px bg-foreground/10" />
+            <span className="hidden sm:block flex-1 h-px bg-foreground/10" />
             <span className="font-mono text-xs text-muted-foreground">
               Updated {new Date(data.timestamp).toLocaleString()}
             </span>
           </div>
-          <h1 className="font-display text-5xl md:text-7xl leading-[0.95] tracking-tight text-foreground mb-6 max-w-3xl">
+          <h1 className="font-display text-4xl sm:text-5xl md:text-7xl leading-[0.95] tracking-tight text-foreground mb-4 sm:mb-6 max-w-3xl">
             The numbers, in the open.
           </h1>
-          <p className="text-lg text-muted-foreground max-w-2xl leading-relaxed">
+          <p className="text-base sm:text-lg text-muted-foreground max-w-2xl leading-relaxed">
             Direct readouts from the database, refreshed every 30 seconds. Nothing here is forecast, projected, or aspirational. If the network shrinks, this page shows it.
           </p>
         </div>

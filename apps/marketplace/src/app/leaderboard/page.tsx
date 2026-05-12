@@ -102,27 +102,27 @@ export default async function LeaderboardPage({
     <main className="relative min-h-screen overflow-x-hidden noise-overlay">
       <Navigation />
 
-      <section className="pt-32 lg:pt-40 pb-12 lg:pb-16 px-6 lg:px-12">
+      <section className="pt-24 sm:pt-32 lg:pt-40 pb-10 sm:pb-12 lg:pb-16 px-6 lg:px-12">
         <div className="max-w-[1200px] mx-auto">
-          <div className="flex items-center gap-3 mb-8">
+          <div className="flex items-center gap-3 mb-6 sm:mb-8">
             <span className="w-8 h-px bg-foreground/30" />
             <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
               Leaderboard
             </span>
           </div>
-          <h1 className="font-display text-5xl md:text-7xl leading-[0.95] tracking-tight text-foreground mb-6 max-w-3xl">
+          <h1 className="font-display text-4xl sm:text-5xl md:text-7xl leading-[0.95] tracking-tight text-foreground mb-4 sm:mb-6 max-w-3xl">
             Earned, not bought.
           </h1>
-          <p className="text-lg text-muted-foreground max-w-2xl leading-relaxed">
+          <p className="text-base sm:text-lg text-muted-foreground max-w-2xl leading-relaxed">
             Reputation is 60 percent uptime, 25 percent buyer ratings, 15 percent completed-job volume. The formula is public, the ranks are public, the math is public.
           </p>
         </div>
       </section>
 
-      <section className="px-6 lg:px-12 pb-24">
-        <div className="max-w-[1200px] mx-auto">
+      <section className="px-6 lg:px-12 pb-16 sm:pb-24 overflow-x-auto">
+        <div className="max-w-[1200px] mx-auto min-w-0">
           {/* Tabs */}
-          <div className="flex items-center gap-8 border-b border-foreground/10 mb-10">
+          <div className="flex items-center gap-4 sm:gap-8 border-b border-foreground/10 mb-6 sm:mb-10 overflow-x-auto">
             <TabLink href="/leaderboard?tab=reputation" active={tab === 'reputation'} label="Reputation" />
             <TabLink href="/leaderboard?tab=referrers" active={tab === 'referrers'} label="Top referrers" />
           </div>

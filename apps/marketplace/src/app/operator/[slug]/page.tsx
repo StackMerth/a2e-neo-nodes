@@ -110,12 +110,12 @@ export default async function OperatorPage({ params }: { params: { slug: string 
   }
 
   return (
-    <main className="min-h-screen px-6 py-16 md:py-24">
+    <main className="min-h-screen px-6 py-12 sm:py-16 md:py-24">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <div className="max-w-4xl mx-auto space-y-16">
+      <div className="max-w-4xl mx-auto space-y-10 sm:space-y-16">
         {/* Breadcrumb */}
         <nav className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
           <Link href="/" className="hover:text-foreground transition-colors">
@@ -130,7 +130,7 @@ export default async function OperatorPage({ params }: { params: { slug: string 
           <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
             {tierLabel} tier, score {op.reputationScore.toFixed(1)} of 100
           </p>
-          <h1 className="font-display text-5xl md:text-7xl leading-[1.05] text-foreground">
+          <h1 className="font-display text-4xl sm:text-5xl md:text-7xl leading-[1.05] text-foreground">
             {op.name}
           </h1>
           <p className="text-base text-muted-foreground max-w-2xl leading-relaxed">

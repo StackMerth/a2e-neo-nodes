@@ -112,25 +112,25 @@ export default async function MarketplacePage({
     <main className="relative min-h-screen overflow-x-hidden noise-overlay">
       <Navigation />
 
-      <section className="pt-32 lg:pt-40 pb-16 lg:pb-24 px-6 lg:px-12">
+      <section className="pt-24 sm:pt-32 lg:pt-40 pb-10 sm:pb-16 lg:pb-24 px-6 lg:px-12">
         <div className="max-w-[1400px] mx-auto">
-          <div className="flex items-center gap-3 mb-8">
+          <div className="flex items-center gap-3 mb-6 sm:mb-8">
             <span className="w-8 h-px bg-foreground/30" />
             <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
               Live inventory
             </span>
           </div>
-          <h1 className="font-display text-5xl md:text-7xl leading-[0.95] tracking-tight text-foreground mb-6 max-w-3xl">
+          <h1 className="font-display text-4xl sm:text-5xl md:text-7xl leading-[0.95] tracking-tight text-foreground mb-4 sm:mb-6 max-w-3xl">
             Pick a GPU.
           </h1>
-          <p className="text-lg text-muted-foreground max-w-2xl leading-relaxed">
+          <p className="text-base sm:text-lg text-muted-foreground max-w-2xl leading-relaxed">
             Every row below is an operator with idle nodes ready to allocate. Cheapest first, then higher reputation, then larger availability. Filter on the right; the URL updates so you can share or bookmark the view.
           </p>
         </div>
       </section>
 
-      <section className="px-6 lg:px-12 pb-24">
-        <div className="max-w-[1400px] mx-auto grid lg:grid-cols-[280px_1fr] gap-12">
+      <section className="px-6 lg:px-12 pb-16 sm:pb-24">
+        <div className="max-w-[1400px] mx-auto grid lg:grid-cols-[280px_1fr] gap-8 lg:gap-12">
           {/* Filter panel: plain GET form, server-rendered. */}
           <aside className="lg:sticky lg:top-32 self-start">
             <form action="/marketplace" method="GET" className="space-y-8">

@@ -118,10 +118,10 @@ export function DevelopersSection() {
   }, []);
 
   return (
-    <section id="developers" ref={sectionRef} className="relative py-24 lg:py-32 overflow-hidden">
+    <section id="developers" ref={sectionRef} className="relative py-16 sm:py-24 lg:py-32 overflow-hidden">
       <style dangerouslySetInnerHTML={{ __html: codeAnimationStyles }} />
       <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
-        <div className="grid lg:grid-cols-2 gap-16 lg:gap-24 items-start">
+        <div className="grid lg:grid-cols-2 gap-10 sm:gap-16 lg:gap-24 items-start">
           {/* Left: Content */}
           <div
             className={`transition-all duration-700 ${
@@ -132,17 +132,17 @@ export function DevelopersSection() {
               <span className="w-8 h-px bg-foreground/30" />
               For developers
             </span>
-            <h2 className="text-4xl lg:text-6xl font-display tracking-tight mb-8">
+            <h2 className="text-3xl sm:text-4xl lg:text-6xl font-display tracking-tight mb-6 sm:mb-8">
               Three calls
               <br />
               <span className="text-muted-foreground">to a running GPU.</span>
             </h2>
-            <p className="text-xl text-muted-foreground mb-12 leading-relaxed">
+            <p className="text-lg sm:text-xl text-muted-foreground mb-8 sm:mb-12 leading-relaxed">
               No SDK to install. No proprietary auth scheme. Just REST over HTTPS with bearer tokens and an OpenAPI spec you can read.
             </p>
-            
+
             {/* Features */}
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid sm:grid-cols-2 gap-4 sm:gap-6">
               {features.map((feature, index) => (
                 <div
                   key={feature.title}
@@ -172,7 +172,7 @@ export function DevelopersSection() {
                     key={example.label}
                     type="button"
                     onClick={() => setActiveTab(idx)}
-                    className={`px-6 py-4 text-sm font-mono transition-colors relative ${
+                    className={`px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-mono transition-colors relative ${
                       activeTab === idx
                         ? "text-foreground"
                         : "text-muted-foreground hover:text-foreground"
@@ -188,7 +188,7 @@ export function DevelopersSection() {
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="px-4 py-4 text-muted-foreground hover:text-foreground transition-colors"
+                  className="px-3 sm:px-4 py-3 sm:py-4 text-muted-foreground hover:text-foreground transition-colors"
                   aria-label="Copy code"
                 >
                   {copied ? (
@@ -198,9 +198,10 @@ export function DevelopersSection() {
                   )}
                 </button>
               </div>
-              
-              {/* Code content */}
-              <div className="p-8 font-mono text-sm bg-foreground/[0.01] min-h-[220px]">
+
+              {/* Code content. Horizontal scroll so long URLs do not blow
+                  out the layout on narrow viewports. */}
+              <div className="p-4 sm:p-8 font-mono text-xs sm:text-sm bg-foreground/[0.01] min-h-[220px] overflow-x-auto">
                 <pre className="text-foreground/80">
                   {codeExamples[activeTab].code.split('\n').map((line, lineIndex) => (
                     <div 

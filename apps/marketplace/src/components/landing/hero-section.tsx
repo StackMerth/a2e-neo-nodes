@@ -25,8 +25,9 @@ export function HeroSection() {
 
   return (
     <section className="relative min-h-screen flex flex-col justify-center overflow-hidden">
-      {/* Animated sphere background */}
-      <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[600px] h-[600px] lg:w-[800px] lg:h-[800px] opacity-40 pointer-events-none">
+      {/* Animated sphere background. Smaller on phones so it doesn't
+          dominate the viewport, scales up on tablet and desktop. */}
+      <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[360px] h-[360px] sm:w-[500px] sm:h-[500px] lg:w-[800px] lg:h-[800px] opacity-30 sm:opacity-40 pointer-events-none">
         <AnimatedSphere />
       </div>
       
@@ -56,7 +57,7 @@ export function HeroSection() {
         ))}
       </div>
       
-      <div className="relative z-10 max-w-[1400px] mx-auto px-6 lg:px-12 py-32 lg:py-40">
+      <div className="relative z-10 max-w-[1400px] mx-auto px-6 lg:px-12 py-24 sm:py-32 lg:py-40">
         {/* Eyebrow */}
         <div 
           className={`mb-8 transition-all duration-700 ${
@@ -103,9 +104,9 @@ export function HeroSection() {
         </div>
         
         {/* Description */}
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-24 items-end">
-          <p 
-            className={`text-xl lg:text-2xl text-muted-foreground leading-relaxed max-w-xl transition-all duration-700 delay-200 ${
+        <div className="grid lg:grid-cols-2 gap-8 lg:gap-24 items-end">
+          <p
+            className={`text-lg sm:text-xl lg:text-2xl text-muted-foreground leading-relaxed max-w-xl transition-all duration-700 delay-200 ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
@@ -123,7 +124,7 @@ export function HeroSection() {
             <Button
               asChild
               size="lg"
-              className="bg-brand hover:bg-brand/90 text-background px-8 h-14 text-base rounded-full group"
+              className="bg-brand hover:bg-brand/90 text-background px-6 sm:px-8 h-12 sm:h-14 text-sm sm:text-base rounded-full group"
             >
               <a href={portalUrls.signup}>
                 Start renting
@@ -134,7 +135,7 @@ export function HeroSection() {
               asChild
               size="lg"
               variant="outline"
-              className="h-14 px-8 text-base rounded-full border-foreground/20 hover:bg-foreground/5"
+              className="h-12 sm:h-14 px-6 sm:px-8 text-sm sm:text-base rounded-full border-foreground/20 hover:bg-foreground/5"
             >
               <a href="/marketplace">View marketplace</a>
             </Button>
@@ -146,24 +147,24 @@ export function HeroSection() {
       {/* Stats marquee - pinned to viewport bottom with more breathing
           room above so it doesn't crowd the hero copy. */}
       <div
-        className={`absolute bottom-8 left-0 right-0 mt-16 transition-all duration-700 delay-500 ${
+        className={`absolute bottom-4 sm:bottom-8 left-0 right-0 mt-16 transition-all duration-700 delay-500 ${
           isVisible ? "opacity-100" : "opacity-0"
         }`}
       >
-        <div className="flex justify-center gap-16 marquee whitespace-nowrap">
+        <div className="flex justify-center gap-8 sm:gap-16 marquee whitespace-nowrap">
           {[...Array(2)].map((_, i) => (
-            <div key={i} className="flex gap-16">
+            <div key={i} className="flex gap-8 sm:gap-16">
               {[
                 { value: "60s", label: "pay to ssh", company: "AUTO ALLOCATOR" },
                 { value: "/min", label: "billing precision", company: "PER MINUTE METER" },
                 { value: "40%", label: "off retail", company: "SPOT TIER" },
                 { value: "11s", label: "median settlement", company: "SOLANA RAILS" },
               ].map((stat) => (
-                <div key={`${stat.company}-${i}`} className="flex items-center gap-4">
-                  <span className="text-4xl lg:text-5xl font-display text-brand leading-none">{stat.value}</span>
-                  <span className="text-sm text-muted-foreground leading-tight">
+                <div key={`${stat.company}-${i}`} className="flex items-center gap-3 sm:gap-4">
+                  <span className="text-3xl sm:text-4xl lg:text-5xl font-display text-brand leading-none">{stat.value}</span>
+                  <span className="text-xs sm:text-sm text-muted-foreground leading-tight">
                     {stat.label}
-                    <span className="block font-mono text-xs mt-1">{stat.company}</span>
+                    <span className="block font-mono text-[10px] sm:text-xs mt-1">{stat.company}</span>
                   </span>
                 </div>
               ))}
