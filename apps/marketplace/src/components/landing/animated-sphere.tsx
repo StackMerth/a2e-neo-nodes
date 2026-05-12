@@ -74,18 +74,19 @@ export function AnimatedSphere() {
       // Sort by z for depth
       points.sort((a, b) => a.z - b.z);
 
-      // Draw points. Use foreground color from CSS so the sphere
-      // adapts to whatever palette globals.css declares.
+      // Draw points. Read foreground color from CSS each frame so
+      // the sphere adapts to whichever palette the user picked, in
+      // any color-string format the browser returns (rgb, oklch, hsl).
+      // globalAlpha handles transparency separately so we don't have
+      // to parse the color string.
       const fg = getComputedStyle(canvas).color || "rgb(255, 255, 255)";
-      const fgMatch = fg.match(/(\d+),\s*(\d+),\s*(\d+)/);
-      const r = fgMatch ? fgMatch[1] : "255";
-      const g = fgMatch ? fgMatch[2] : "255";
-      const b = fgMatch ? fgMatch[3] : "255";
+      ctx.fillStyle = fg;
       points.forEach((point) => {
         const alpha = 0.2 + (point.z + 1) * 0.4;
-        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        ctx.globalAlpha = alpha;
         ctx.fillText(point.char, point.x, point.y);
       });
+      ctx.globalAlpha = 1;
 
       time += 0.02;
       frameRef.current = requestAnimationFrame(render);

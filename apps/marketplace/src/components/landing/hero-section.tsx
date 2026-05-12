@@ -159,9 +159,9 @@ export function HeroSection() {
                 { value: "40%", label: "off retail", company: "SPOT TIER" },
                 { value: "11s", label: "median settlement", company: "SOLANA RAILS" },
               ].map((stat) => (
-                <div key={`${stat.company}-${i}`} className="flex items-baseline gap-4">
-                  <span className="text-4xl lg:text-5xl font-display text-brand">{stat.value}</span>
-                  <span className="text-sm text-muted-foreground">
+                <div key={`${stat.company}-${i}`} className="flex items-center gap-4">
+                  <span className="text-4xl lg:text-5xl font-display text-brand leading-none">{stat.value}</span>
+                  <span className="text-sm text-muted-foreground leading-tight">
                     {stat.label}
                     <span className="block font-mono text-xs mt-1">{stat.company}</span>
                   </span>
