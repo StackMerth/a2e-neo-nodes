@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * A²E branded loading indicator. Blinking square with the A²E wordmark.
+ * TokenOS DeAI branded loading indicator. Blinking square with the TokenOS DeAI wordmark.
  *
  * Usage:
  *   <A2ELoader />                          // full-screen, default message
@@ -35,7 +35,7 @@ export function A2ELoader({ message = 'Loading', fullScreen = true }: A2ELoaderP
         }}
       >
         <span className="font-bold text-2xl tracking-tight" style={{ color: '#0a0a0f' }}>
-          A²E
+          TokenOS DeAI
         </span>
       </div>
       {message && (

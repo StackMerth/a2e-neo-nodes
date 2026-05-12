@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 /*
  * The section reuses the original "testimonials" carousel structure but
- * presents A2E's operating principles instead of quotes from real customers.
+ * presents TokenOS DeAI's operating principles instead of quotes from real customers.
  * Until real operators and buyers publish quotes we can attribute to them,
  * we surface the design tenets that drive the platform. Each "quote" is a
  * literal commitment the codebase enforces.
@@ -13,28 +13,28 @@ const principles = [
   {
     quote: "Pay only for the minutes you used. Refund the rest.",
     author: "Operating principle",
-    role: "A2E Network",
+    role: "TokenOS DeAI Network",
     company: "Per-minute meter",
     metric: "/min billing precision",
   },
   {
     quote: "Reputation is earned through uptime and ratings. It cannot be bought.",
     author: "Operating principle",
-    role: "A2E Network",
+    role: "TokenOS DeAI Network",
     company: "Reputation scorer",
     metric: "60% uptime, 25% ratings, 15% volume",
   },
   {
     quote: "Every spot rental receives 90 seconds notice before preemption. No exceptions.",
     author: "Operating principle",
-    role: "A2E Network",
+    role: "TokenOS DeAI Network",
     company: "Spot preemption worker",
     metric: "90s grace window",
   },
   {
     quote: "Buyers SSH in under sixty seconds from payment. No tickets, no approvals on small rentals.",
     author: "Operating principle",
-    role: "A2E Network",
+    role: "TokenOS DeAI Network",
     company: "Auto allocator",
     metric: "<60s pay-to-prompt",
   },

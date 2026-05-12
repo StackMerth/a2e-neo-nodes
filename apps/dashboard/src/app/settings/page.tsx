@@ -1094,7 +1094,7 @@ export default function SettingsPage() {
 
                   <Input
                     label="From Address"
-                    placeholder='A2E Engine <noreply@tokenos.ai>'
+                    placeholder='TokenOS DeAI Engine <noreply@tokenos.ai>'
                     value={smtpConfig.fromAddress}
                     onChange={(e) => setSmtpConfig(prev => ({ ...prev, fromAddress: e.target.value }))}
                   />

@@ -368,7 +368,7 @@ export default function RoutingPage() {
       )}
 
       {/* How it works */}
-      <Card variant="glass" title="How A²E Routing Works">
+      <Card variant="glass" title="How TokenOS DeAI Routing Works">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
           <div className="flex gap-4">
             <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center flex-shrink-0">

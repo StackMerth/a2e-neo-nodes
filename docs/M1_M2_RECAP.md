@@ -1,4 +1,4 @@
-# A²E — M1 + M2 Deliverables Recap
+# TokenOS DeAI — M1 + M2 Deliverables Recap
 
 **Status as of 2026-05-10**
 
@@ -6,7 +6,7 @@ This doc summarizes everything shipped, tested, and remaining across M1 (Product
 
 ---
 
-## TL;DR — what A²E can do now that it couldn't 6 weeks ago
+## TL;DR — what TokenOS DeAI can do now that it couldn't 6 weeks ago
 
 | Capability | Before M1 | After M2 |
 |---|---|---|

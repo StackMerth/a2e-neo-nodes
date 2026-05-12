@@ -153,7 +153,7 @@ export default function NodesPage() {
               <Server size={32} style={{ color: 'var(--primary)' }} />
             </div>
             <h2 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>No Nodes Yet</h2>
-            <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Get started by installing the A2E agent on your GPU server.</p>
+            <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Get started by installing the TokenOS DeAI agent on your GPU server.</p>
             <Link href="/onboarding"><Button>Set Up Your First Node</Button></Link>
           </Card>
         </motion.div>

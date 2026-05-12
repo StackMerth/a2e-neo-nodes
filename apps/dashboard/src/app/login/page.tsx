@@ -86,11 +86,11 @@ export default function LoginPage() {
             }}
           >
             <span className="font-bold text-xl tracking-tight" style={{ color: '#0a0a0f' }}>
-              A²E
+              TokenOS DeAI
             </span>
           </div>
           <h1 className="text-2xl font-semibold tracking-tight" style={{ color: 'var(--text-primary, #fff)' }}>
-            A²E Dashboard
+            TokenOS DeAI Dashboard
           </h1>
           <p className="mt-1.5 text-sm" style={{ color: 'var(--text-muted)' }}>
             Sign in to continue
@@ -161,10 +161,10 @@ export default function LoginPage() {
         {/* Footer */}
         <motion.div variants={item} className="mt-8 flex flex-col items-center gap-2">
           <p className="text-xs tracking-wide" style={{ color: 'var(--text-muted)' }}>
-            A²E Arbitrage & Orchestration Engine
+            TokenOS DeAI Arbitrage & Orchestration Engine
           </p>
           <a
-            href={`${process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'}/health`}
+            href={`${process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'}/health`}
             target="_blank"
             rel="noopener"
             className="inline-flex items-center gap-1.5 text-xs hover:opacity-80 transition-opacity"

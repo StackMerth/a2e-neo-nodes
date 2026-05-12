@@ -19,7 +19,7 @@ import type { NextRequest } from 'next/server'
 
 export const runtime = 'edge'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
 
 const COLORS = {
   bg: '#FBFAF6',
@@ -179,7 +179,7 @@ function Header() {
       paddingBottom: 24,
     }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-        <span style={{ fontSize: 40, color: COLORS.ink, fontFamily: 'Instrument Serif, Georgia, serif' }}>A2E</span>
+        <span style={{ fontSize: 40, color: COLORS.ink, fontFamily: 'Instrument Serif, Georgia, serif' }}>TokenOS DeAI</span>
         <span style={{ fontSize: 14, color: COLORS.muted, fontFamily: 'JetBrains Mono, ui-monospace, monospace' }}>TM</span>
       </div>
       <span style={{

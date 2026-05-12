@@ -36,7 +36,7 @@ export default function OnboardingPage() {
       {/* Header */}
       <motion.div variants={item} className="text-center">
         <h1 className="text-2xl md:text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Set Up Your Node</h1>
-        <p style={{ color: 'var(--text-muted)' }}>Follow these steps to get your GPU node earning on the A2E network</p>
+        <p style={{ color: 'var(--text-muted)' }}>Follow these steps to get your GPU node earning on the TokenOS DeAI network</p>
       </motion.div>
 
       {/* Step Indicator */}
@@ -137,21 +137,21 @@ export default function OnboardingPage() {
           >
             <div className="flex items-center gap-2 mb-4">
               <Terminal size={20} style={{ color: 'var(--primary)' }} />
-              <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Install the A2E Agent</h2>
+              <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Install the TokenOS DeAI Agent</h2>
             </div>
-            <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>Run this command on your GPU server to install the A2E node agent:</p>
+            <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>Run this command on your GPU server to install the TokenOS DeAI node agent:</p>
 
             <div
               className="relative rounded-lg p-4 font-mono text-sm"
               style={{ background: 'var(--bg-darker)', border: '1px solid var(--border-color)' }}
             >
               <code style={{ color: 'var(--primary)' }} className="break-all">
-                curl -sSL https://a2e-api.onrender.com/v1/releases/install.sh | bash
+                curl -sSL https://tokenosdeai-api.onrender.com/v1/releases/install.sh | bash
               </code>
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(
-                    'curl -sSL https://a2e-api.onrender.com/v1/releases/install.sh | bash'
+                    'curl -sSL https://tokenosdeai-api.onrender.com/v1/releases/install.sh | bash'
                   )
                 }}
                 className="absolute top-3 right-3 p-1.5 rounded-md transition-colors"
@@ -168,10 +168,10 @@ export default function OnboardingPage() {
             >
               <p className="text-sm font-medium mb-1" style={{ color: 'var(--primary)' }}>What this does:</p>
               <ul className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
-                <li>- Downloads the A2E agent binary for your platform</li>
+                <li>- Downloads the TokenOS DeAI agent binary for your platform</li>
                 <li>- Installs it as a systemd service</li>
                 <li>- Configures GPU detection and Docker integration</li>
-                <li>- Registers your node with the A2E network</li>
+                <li>- Registers your node with the TokenOS DeAI network</li>
               </ul>
             </div>
 
@@ -282,7 +282,7 @@ function VerifyStep({ onBack }: { onBack: () => void }) {
             </div>
             <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Node Detected!</h2>
             <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
-              Your node is online and registered with the A2E network. You&apos;re now earning.
+              Your node is online and registered with the TokenOS DeAI network. You&apos;re now earning.
             </p>
             <Link href="/dashboard">
               <Button>Go to Dashboard</Button>
@@ -313,7 +313,7 @@ function VerifyStep({ onBack }: { onBack: () => void }) {
                   systemctl status a2e-agent
                 </code>.
               </li>
-              <li>&bull; The server cannot reach the A2E API (firewall blocking outbound HTTPS).</li>
+              <li>&bull; The server cannot reach the TokenOS DeAI API (firewall blocking outbound HTTPS).</li>
             </ul>
             <Button
               variant="secondary"

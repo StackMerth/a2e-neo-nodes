@@ -100,7 +100,7 @@ days. Customer complaints come with a stack trace already attached.
 
 **How to verify:**
 
-1. Visit [https://a2e-api.onrender.com/v1/admin/sentry-test](https://a2e-api.onrender.com/v1/admin/sentry-test)
+1. Visit [https://tokenosdeai-api.onrender.com/v1/admin/sentry-test](https://tokenosdeai-api.onrender.com/v1/admin/sentry-test)
 2. You'll see a deliberate error response (this is the test signal)
 3. Open your Sentry dashboard → a2e-api project → Issues
 4. The error appears within 10 seconds
@@ -179,14 +179,14 @@ Listed here because it's user-facing and was part of the same
 session.
 
 When any dashboard or portal page is loading data, users now see a
-pulsing A2E logo instead of generic skeleton placeholders. Reinforces
+pulsing TokenOS DeAI logo instead of generic skeleton placeholders. Reinforces
 the brand.
 
 **Why it matters:** Cohesive visual language. Even loading states
 look like part of the platform.
 
 **How to verify:** Visit any dashboard page after a fresh login.
-You'll see the A2E logo briefly pulse before content loads.
+You'll see the TokenOS DeAI logo briefly pulse before content loads.
 
 **Commit:** `f7e15e7`
 
@@ -280,7 +280,7 @@ own daily snapshots are a sufficient safety net for the QA phase).
 ## How to demo this to your team
 
 For a non-technical audience, the most impressive things to show
-are items 3 (Sentry), 4 (Cancel button), and 6 (A2E loader).
+are items 3 (Sentry), 4 (Cancel button), and 6 (TokenOS DeAI loader).
 
 A 5-minute walkthrough script:
 

@@ -7,8 +7,8 @@ import { AuthenticatedLayout } from '@/components/layout/AuthenticatedLayout'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'A²E Dashboard | TokenOS',
-  description: 'Admin dashboard for the A²E Arbitrage & Orchestration Engine',
+  title: 'TokenOS DeAI Dashboard | TokenOS',
+  description: 'Admin dashboard for the TokenOS DeAI Arbitrage & Orchestration Engine',
 }
 
 export const viewport: Viewport = {

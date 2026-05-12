@@ -12,7 +12,7 @@ import fp from 'fastify-plugin'
 import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
 
-const API_URL = process.env.API_URL ?? 'https://a2e-api.onrender.com'
+const API_URL = process.env.API_URL ?? 'https://tokenosdeai-api.onrender.com'
 
 export default fp(async (fastify) => {
   await fastify.register(swagger, {

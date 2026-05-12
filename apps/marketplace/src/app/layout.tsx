@@ -28,13 +28,13 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://marketplace.stackf
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: 'A2E Compute Marketplace',
-    template: '%s, A2E',
+    default: 'TokenOS DeAI Compute Marketplace',
+    template: '%s, TokenOS DeAI',
   },
-  description: 'Browse GPU compute operators on the A2E network. Reputation, uptime, and ratings before you rent.',
+  description: 'Browse GPU compute operators on the TokenOS DeAI network. Reputation, uptime, and ratings before you rent.',
   openGraph: {
     type: 'website',
-    siteName: 'A2E',
+    siteName: 'TokenOS DeAI',
     title: 'GPU compute, brokered honestly',
     description: 'Per-minute billing, reputation-scored operators, SSH under a minute.',
     images: [
@@ -42,7 +42,7 @@ export const metadata: Metadata = {
         url: '/og?type=home',
         width: 1200,
         height: 630,
-        alt: 'A2E Compute Marketplace',
+        alt: 'TokenOS DeAI Compute Marketplace',
       },
     ],
   },

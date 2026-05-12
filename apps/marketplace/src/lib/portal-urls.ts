@@ -8,7 +8,7 @@
  * subdomain currently in use.
  */
 const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'https://a2e-user.stackforgelab.tech'
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
 
 export const portalUrls = {
   signup: `${PORTAL_URL}/signup`,

@@ -113,9 +113,10 @@ export function HeroSection() {
             and SSH access in under sixty seconds. Pay what the work costs.
           </p>
           
-          {/* CTAs */}
-          <div 
-            className={`flex flex-col sm:flex-row items-start gap-4 transition-all duration-700 delay-300 ${
+          {/* CTAs: stacked column on all breakpoints so Start renting
+              sits on top and View marketplace falls beneath it. */}
+          <div
+            className={`flex flex-col items-start gap-4 transition-all duration-700 delay-300 ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
@@ -142,9 +143,10 @@ export function HeroSection() {
         
       </div>
       
-      {/* Stats marquee - full width outside container */}
-      <div 
-        className={`absolute bottom-24 left-0 right-0 transition-all duration-700 delay-500 ${
+      {/* Stats marquee - pinned to viewport bottom with more breathing
+          room above so it doesn't crowd the hero copy. */}
+      <div
+        className={`absolute bottom-8 left-0 right-0 mt-16 transition-all duration-700 delay-500 ${
           isVisible ? "opacity-100" : "opacity-0"
         }`}
       >

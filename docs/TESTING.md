@@ -1,4 +1,4 @@
-# A²E Testing Guide
+# TokenOS DeAI Testing Guide
 
 This document is a structured walkthrough of every feature of the platform that
 should be exercised during a QA pass. It assumes the production seed has been
@@ -58,7 +58,7 @@ URL: https://a2e-admin.stackforgelab.tech
 - [ ] List view shows all 25 nodes, sortable by status, GPU tier, region, last heartbeat.
 - [ ] Status filter chips (ONLINE / DEGRADED / OFFLINE / PAUSED / MAINTENANCE) update the table.
 - [ ] Click into any node → detail page shows recent heartbeats, GPU metrics over time, current job (if any), node runner owner.
-- [ ] "Add Node" button shows install command with the new API URL (a2e-api.onrender.com), not the old byredstone URL.
+- [ ] "Add Node" button shows install command with the new API URL (tokenosdeai-api.onrender.com), not the old byredstone URL.
 
 ### 3. Node Runners page
 
@@ -244,7 +244,7 @@ Sign in as `buyer@tokenos.ai` / `Buyer2026!!`.
 - [ ] Create a new API key → key shown once, copyable, then masked.
 - [ ] Programmatic test with the key:
   ```
-  curl -H "X-API-Key: <key>" https://a2e-api.onrender.com/v1/buyer/dashboard
+  curl -H "X-API-Key: <key>" https://tokenosdeai-api.onrender.com/v1/buyer/dashboard
   ```
 - [ ] Revoke a key → next API call with that key returns 401.
 

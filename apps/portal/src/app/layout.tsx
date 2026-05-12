@@ -7,8 +7,8 @@ import { CrispChat } from '@/components/CrispChat'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'A²E Portal | TokenOS',
-  description: 'Node Runner Portal for the A²E Arbitrage & Orchestration Engine',
+  title: 'TokenOS DeAI Portal | TokenOS',
+  description: 'Node Runner Portal for the TokenOS DeAI Arbitrage & Orchestration Engine',
 }
 
 export const viewport: Viewport = {

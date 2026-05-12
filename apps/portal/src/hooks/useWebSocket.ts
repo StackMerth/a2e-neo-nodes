@@ -16,7 +16,7 @@ interface UseWebSocketOptions {
 }
 
 /**
- * WebSocket hook for real-time updates from the A²E server.
+ * WebSocket hook for real-time updates from the TokenOS DeAI server.
  * Authenticates with JWT token. Auto-reconnects on disconnect.
  */
 export function useWebSocket(options: UseWebSocketOptions = {}) {

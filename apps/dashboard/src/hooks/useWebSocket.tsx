@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { io, Socket } from 'socket.io-client'
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
+const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'a2e-dev-key-2026'
 const TOKEN_KEY = 'a2e_admin_token'
 
@@ -134,7 +134,7 @@ export function useWebSocket(): UseWebSocketReturn {
 
     socket.on('connect', () => {
       setConnected(true)
-      addEvent('system', { message: 'Connected to A²E WebSocket' })
+      addEvent('system', { message: 'Connected to TokenOS DeAI WebSocket' })
     })
 
     socket.on('disconnect', (reason) => {
