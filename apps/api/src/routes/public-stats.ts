@@ -29,20 +29,22 @@ import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 
 const HEARTBEAT_FRESH_MS = 2 * 60 * 1000
 
+// Important: do NOT declare a `response` schema with `type: 'object'`
+// and no `properties` here. Fastify's response serializer treats that
+// as "object with zero allowed properties" and strips the body to {}.
+// These endpoints return rich nested data, so we omit the response
+// schema entirely; OpenAPI still documents the route via the tag,
+// summary, and description below.
 const STATS_SCHEMA = {
   tags: ['Public'],
   summary: 'Network-wide stats snapshot',
   description: 'Honest live aggregations of nodes online, operators, lifetime usage, and regional spread. Cached 30 seconds at the edge.',
-  response: {
-    200: { type: 'object' },
-  },
 }
 
 const LISTINGS_FEED_SCHEMA_JSON = {
   tags: ['Public'],
   summary: 'Inventory feed (JSON)',
   description: 'Full current catalog as a single JSON document, served with a Content-Disposition filename so curl/wget grab a file directly.',
-  response: { 200: { type: 'object' } },
 }
 
 const LISTINGS_FEED_SCHEMA_CSV = {
