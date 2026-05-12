@@ -78,7 +78,7 @@ export function Navigation() {
             <Button
               asChild
               size="sm"
-              className={`bg-foreground hover:bg-foreground/90 text-background rounded-full transition-all duration-500 ${isScrolled ? "px-4 h-8 text-xs" : "px-6"}`}
+              className={`bg-brand hover:bg-brand/90 text-background rounded-full transition-all duration-500 ${isScrolled ? "px-4 h-8 text-xs" : "px-6"}`}
             >
               <a href={portalUrls.signup}>Start renting</a>
             </Button>
@@ -148,7 +148,7 @@ export function Navigation() {
             </Button>
             <Button
               asChild
-              className="flex-1 bg-foreground text-background rounded-full h-14 text-base"
+              className="flex-1 bg-brand text-background rounded-full h-14 text-base"
             >
               <a href={portalUrls.signup} onClick={() => setIsMobileMenuOpen(false)}>Start renting</a>
             </Button>
