@@ -139,6 +139,12 @@ model User {
   successfulRentalCount Int     @default(0)
   lastRentalAt          DateTime?
 
+  // M5.7 anti-abuse: signup IP. Used by the referral attribution path
+  // to flag sock-puppet referees (same IP as the referrer) so the
+  // worker can skip commission accrual on suspicious pairs. Indexed
+  // because the IP check is on the hot signup path.
+  signupIp         String?
+
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -151,6 +157,7 @@ model User {
   ratingsGiven     Rating[]
 
   @@index([role])
+  @@index([signupIp])
 }
 
 model ApiKey {

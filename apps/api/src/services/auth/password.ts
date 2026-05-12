@@ -24,7 +24,8 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 export async function registerUser(
   email: string,
   password: string,
-  role: UserRole = 'NODE_RUNNER'
+  role: UserRole = 'NODE_RUNNER',
+  signupIp: string | null = null,
 ) {
   // Check if email is already taken
   const existing = await prisma.user.findUnique({ where: { email } });
@@ -39,6 +40,9 @@ export async function registerUser(
       email,
       passwordHash,
       role,
+      // M5.7 anti-abuse: pinned so the referral attribution path can
+      // compare the referee's signup IP against the referrer's.
+      signupIp,
     },
   });
 }

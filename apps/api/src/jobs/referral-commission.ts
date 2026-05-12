@@ -36,6 +36,14 @@ const TICK_INTERVAL_MS = parseInt(
 )
 const COMMISSION_PCT = parseFloat(process.env.REFERRAL_COMMISSION_PCT ?? '0.10')
 
+// M5.7 anti-abuse: lifetime commission cap per referrer. Computed by
+// summing totalCommissionAccrued across all of one referrer's Referral
+// rows. Set REFERRAL_REFERRER_CAP_USD=0 to disable the cap entirely.
+// Default $5000 mirrors the post-launch policy: enough to reward
+// real network-builders, low enough to bound damage from a sock-puppet
+// ring that slipped through the IP check.
+const REFERRER_CAP_USD = parseFloat(process.env.REFERRAL_REFERRER_CAP_USD ?? '5000')
+
 interface CommissionDeps {
   redis: ConnectionOptions
   prisma: PrismaClient
@@ -91,6 +99,7 @@ export async function runReferralCommissionTick(prisma: PrismaClient): Promise<v
     where: { status: 'ACTIVE' },
     select: {
       id: true,
+      referrerNodeRunnerId: true,
       refereeNodeRunnerId: true,
       lastSettledAt: true,
       createdAt: true,
@@ -98,10 +107,39 @@ export async function runReferralCommissionTick(prisma: PrismaClient): Promise<v
     },
   })
 
+  // Pre-compute the lifetime accrued total per referrer so the cap
+  // check is O(1) inside the loop. (Group across ALL referrals, not
+  // just the ACTIVE ones, because EXPIRED rows still count toward the
+  // referrer's lifetime payout total.)
+  let cappedReferrers = new Set<string>()
+  if (REFERRER_CAP_USD > 0) {
+    const totals = await prisma.referral.groupBy({
+      by: ['referrerNodeRunnerId'],
+      _sum: { totalCommissionAccrued: true },
+    })
+    for (const t of totals) {
+      if ((t._sum.totalCommissionAccrued ?? 0) >= REFERRER_CAP_USD) {
+        cappedReferrers.add(t.referrerNodeRunnerId)
+      }
+    }
+  }
+
   let totalRowsTouched = 0
   let totalCommissionAdded = 0
+  let totalCommissionSkippedByCap = 0
 
   for (const r of active) {
+    if (cappedReferrers.has(r.referrerNodeRunnerId)) {
+      // Referrer is at the lifetime cap. Skip accrual but still bump
+      // lastSettledAt so the same period is not re-scanned next tick.
+      await prisma.referral.update({
+        where: { id: r.id },
+        data: { lastSettledAt: now },
+      })
+      totalCommissionSkippedByCap += 1
+      continue
+    }
+
     const periodStart = r.lastSettledAt ?? r.createdAt
     // findMany + reduce keeps the math obvious; for our sizes this is
     // a handful of rows per referee, so the query is cheap.
@@ -123,7 +161,25 @@ export async function runReferralCommissionTick(prisma: PrismaClient): Promise<v
       continue
     }
 
-    const commission = Number((refereeEarnings * COMMISSION_PCT).toFixed(4))
+    let commission = Number((refereeEarnings * COMMISSION_PCT).toFixed(4))
+
+    // Cap the commission so this single tick can't blast past the
+    // referrer's lifetime cap. Also adds the now-capped referrer to
+    // the set so any later iteration this tick honors it.
+    if (REFERRER_CAP_USD > 0) {
+      const lifetimeAfter = r.totalCommissionAccrued + commission
+      const referrerSum = await prisma.referral.aggregate({
+        where: { referrerNodeRunnerId: r.referrerNodeRunnerId },
+        _sum: { totalCommissionAccrued: true },
+      })
+      const lifetimeForReferrer = (referrerSum._sum.totalCommissionAccrued ?? 0) - r.totalCommissionAccrued + lifetimeAfter
+      if (lifetimeForReferrer > REFERRER_CAP_USD) {
+        const headroom = Math.max(0, REFERRER_CAP_USD - ((referrerSum._sum.totalCommissionAccrued ?? 0) - r.totalCommissionAccrued + r.totalCommissionAccrued))
+        commission = Number(Math.min(commission, headroom).toFixed(4))
+        cappedReferrers.add(r.referrerNodeRunnerId)
+      }
+    }
+
     await prisma.referral.update({
       where: { id: r.id },
       data: {
@@ -138,6 +194,7 @@ export async function runReferralCommissionTick(prisma: PrismaClient): Promise<v
   // eslint-disable-next-line no-console
   console.log(
     `[referral-commission] expired=${expired.count} accruedRows=${totalRowsTouched} ` +
-      `commissionAdded=$${totalCommissionAdded.toFixed(2)}`,
+      `commissionAdded=$${totalCommissionAdded.toFixed(2)} ` +
+      `cappedSkips=${totalCommissionSkippedByCap} cap=$${REFERRER_CAP_USD.toFixed(0)}`,
   )
 }
