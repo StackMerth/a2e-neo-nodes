@@ -35,6 +35,12 @@ export function AnimatedWave() {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
+      // Pull foreground color from CSS each frame so the wave adapts
+      // when the user toggles between light and dark. globalAlpha
+      // handles transparency separately so we don't have to parse
+      // the color string (works regardless of rgb/oklch format).
+      ctx.fillStyle = getComputedStyle(canvas).color || "rgb(0, 0, 0)";
+
       const cols = Math.floor(rect.width / 20);
       const rows = Math.floor(rect.height / 20);
 
@@ -47,17 +53,18 @@ export function AnimatedWave() {
           const wave1 = Math.sin(x * 0.2 + time * 2) * Math.cos(y * 0.15 + time);
           const wave2 = Math.sin((x + y) * 0.1 + time * 1.5);
           const wave3 = Math.cos(x * 0.1 - y * 0.1 + time * 0.8);
-          
+
           const combined = (wave1 + wave2 + wave3) / 3;
           const normalized = (combined + 1) / 2;
-          
+
           const charIndex = Math.floor(normalized * (chars.length - 1));
           const alpha = 0.15 + normalized * 0.5;
 
-          ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+          ctx.globalAlpha = alpha;
           ctx.fillText(chars[charIndex], px, py);
         }
       }
+      ctx.globalAlpha = 1;
 
       time += 0.03;
       frameRef.current = requestAnimationFrame(render);
