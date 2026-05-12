@@ -38,8 +38,10 @@ const socialLinks = [
 export function FooterSection() {
   return (
     <footer className="relative border-t border-foreground/10">
-      {/* Animated wave background */}
-      <div className="absolute inset-0 h-64 opacity-20 pointer-events-none overflow-hidden">
+      {/* Animated wave background. inset-0 alone (no h-64 cap) so it
+          fills the entire footer behind the menu columns, not just
+          a strip across the top. */}
+      <div className="absolute inset-0 opacity-20 pointer-events-none overflow-hidden">
         <AnimatedWave />
       </div>
       
