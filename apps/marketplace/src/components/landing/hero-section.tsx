@@ -123,7 +123,7 @@ export function HeroSection() {
             <Button
               asChild
               size="lg"
-              className="bg-foreground hover:bg-foreground/90 text-background px-8 h-14 text-base rounded-full group"
+              className="bg-brand hover:bg-brand/90 text-background px-8 h-14 text-base rounded-full group"
             >
               <a href={portalUrls.signup}>
                 Start renting

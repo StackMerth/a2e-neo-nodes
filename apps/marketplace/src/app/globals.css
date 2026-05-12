@@ -3,33 +3,32 @@
 @tailwind utilities;
 
 /*
- * Editorial design system, light-mode only. Tokens mirror the v0/shadcn
- * "new-york" reference at StackMerth/design-animation-to-copy. Marketplace
- * keeps a separate palette from portal/dashboard until M4 ports them.
+ * Brand-familiar dark palette. Pulls the marketplace toward the old
+ * TokenOS_COMPUTE site (deep navy bg, white type, sage-green accent)
+ * so returning visitors feel at home. Tokens are still shadcn-shaped
+ * so component primitives keep working without per-component edits.
  */
 :root {
-  --background: oklch(0.985 0.002 90);
-  --foreground: oklch(0.12 0.01 60);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.12 0.01 60);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.12 0.01 60);
-  --primary: oklch(0.12 0.01 60);
-  --primary-foreground: oklch(0.985 0.002 90);
-  --secondary: oklch(0.96 0.005 90);
-  --secondary-foreground: oklch(0.12 0.01 60);
-  --muted: oklch(0.94 0.005 90);
-  --muted-foreground: oklch(0.45 0.02 60);
-  --accent: oklch(0.92 0.01 90);
-  --accent-foreground: oklch(0.12 0.01 60);
+  --background: oklch(0.135 0.012 250);          /* deep navy near-black */
+  --foreground: oklch(0.97 0.005 90);            /* off-white */
+  --card: oklch(0.17 0.012 250);
+  --card-foreground: oklch(0.97 0.005 90);
+  --popover: oklch(0.17 0.012 250);
+  --popover-foreground: oklch(0.97 0.005 90);
+  --primary: oklch(0.72 0.14 152);               /* brand green, primary CTA */
+  --primary-foreground: oklch(0.135 0.012 250);  /* dark text on green */
+  --secondary: oklch(0.19 0.012 250);
+  --secondary-foreground: oklch(0.97 0.005 90);
+  --muted: oklch(0.21 0.012 250);
+  --muted-foreground: oklch(0.68 0.015 250);
+  --accent: oklch(0.21 0.012 250);
+  --accent-foreground: oklch(0.97 0.005 90);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0.002 90);
-  --border: oklch(0.88 0.01 90);
-  --input: oklch(0.92 0.01 90);
-  --ring: oklch(0.12 0.01 60);
+  --border: oklch(0.24 0.012 250);
+  --input: oklch(0.22 0.012 250);
+  --ring: oklch(0.72 0.14 152);                  /* green focus ring */
   --radius: 0.25rem;
-  /* Brand accent. Used sparingly: hero eyebrow dash, word-highlight
-     bar, text selection. Editorial ink/cream stays primary. */
   --brand: oklch(0.72 0.14 152);
 }
 

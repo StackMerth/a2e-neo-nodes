@@ -95,7 +95,7 @@ export function MarketplaceChat() {
         <button
           aria-label="Open chat"
           onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 h-12 rounded-full bg-foreground text-background shadow-lg hover:opacity-90 transition-opacity"
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 h-12 rounded-full bg-brand text-background shadow-lg hover:opacity-90 transition-opacity"
         >
           <MessageCircle className="w-4 h-4" />
           <span className="font-mono text-xs uppercase tracking-[0.18em]">Ask</span>
@@ -181,7 +181,7 @@ export function MarketplaceChat() {
               onClick={send}
               disabled={sending || !input.trim()}
               aria-label="Send"
-              className="h-9 w-9 inline-flex items-center justify-center bg-foreground text-background rounded-md disabled:opacity-40 hover:opacity-90 transition-opacity"
+              className="h-9 w-9 inline-flex items-center justify-center bg-brand text-background rounded-md disabled:opacity-40 hover:opacity-90 transition-opacity"
             >
               <Send className="w-3.5 h-3.5" />
             </button>

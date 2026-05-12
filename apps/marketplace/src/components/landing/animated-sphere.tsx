@@ -74,10 +74,16 @@ export function AnimatedSphere() {
       // Sort by z for depth
       points.sort((a, b) => a.z - b.z);
 
-      // Draw points
+      // Draw points. Use foreground color from CSS so the sphere
+      // adapts to whatever palette globals.css declares.
+      const fg = getComputedStyle(canvas).color || "rgb(255, 255, 255)";
+      const fgMatch = fg.match(/(\d+),\s*(\d+),\s*(\d+)/);
+      const r = fgMatch ? fgMatch[1] : "255";
+      const g = fgMatch ? fgMatch[2] : "255";
+      const b = fgMatch ? fgMatch[3] : "255";
       points.forEach((point) => {
         const alpha = 0.2 + (point.z + 1) * 0.4;
-        ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
         ctx.fillText(point.char, point.x, point.y);
       });
 
