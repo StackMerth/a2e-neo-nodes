@@ -3,6 +3,7 @@ import { Suspense } from 'react'
 import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
 import { RefCapture } from '@/components/landing/ref-capture'
+import { MarketplaceChat } from '@/components/landing/marketplace-chat'
 
 const instrumentSans = Instrument_Sans({
   subsets: ['latin'],
@@ -64,6 +65,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <RefCapture />
         </Suspense>
         {children}
+        {/* Always-on chat assistant backed by Claude Haiku 4.5. */}
+        <MarketplaceChat />
       </body>
     </html>
   )

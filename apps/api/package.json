@@ -22,6 +22,7 @@
     "@a2e/core": "workspace:*",
     "@a2e/database": "workspace:*",
     "@a2e/shared": "workspace:*",
+    "@anthropic-ai/sdk": "^0.71.0",
     "@fastify/cors": "^9.0.0",
     "@fastify/swagger": "^8.14.0",
     "@fastify/swagger-ui": "^3.0.0",
