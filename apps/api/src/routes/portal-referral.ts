@@ -24,11 +24,31 @@ export async function portalReferralRoutes(fastify: FastifyInstance) {
     const userId = (request as { user?: { userId: string } }).user?.userId
     if (!userId) return reply.code(401).send({ error: 'Not authenticated' })
 
-    const runner = await fastify.prisma.nodeRunner.findUnique({
+    let runner = await fastify.prisma.nodeRunner.findUnique({
       where: { userId },
       select: { id: true, name: true, referralCode: true },
     })
-    if (!runner) return reply.code(404).send({ error: 'No node-runner profile for this user' })
+
+    // Auto-create NodeRunner row on first referral fetch. Mirrors the
+    // pattern in POST /v1/portal/node-runner/deploy so operators who
+    // came in via email signup but have not deployed a node yet can
+    // still grab their invite code. Wallet gets a placeholder until
+    // the user sets it via PATCH /v1/portal/user/wallet (or the deploy
+    // flow auto-fills it from User.walletAddress later).
+    if (!runner) {
+      const user = await fastify.prisma.user.findUnique({ where: { id: userId } })
+      if (!user) return reply.code(404).send({ error: 'User not found' })
+      const created = await fastify.prisma.nodeRunner.create({
+        data: {
+          name: user.email?.split('@')[0] ?? 'Node Runner',
+          email: user.email,
+          walletAddress: user.walletAddress ?? `pending-${user.id}`,
+          userId: user.id,
+        },
+        select: { id: true, name: true, referralCode: true },
+      })
+      runner = created
+    }
 
     const code = await ensureReferralCode(fastify.prisma, runner.id)
 
