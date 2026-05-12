@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 import { portalUrls } from "@/lib/portal-urls";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const navLinks = [
   { name: "Marketplace", href: "/marketplace" },
@@ -15,8 +16,15 @@ const navLinks = [
 export function Navigation() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // Defer the mobile menu icon to client-only. Lucide's Menu/X icons
+  // use SVG <line>/<path> children that have occasionally tripped
+  // React 18 hydration in this app. Server renders an empty button,
+  // client fills it in post-mount. Visually identical because the
+  // button is md:hidden on desktop anyway.
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 20);
     };
@@ -65,29 +73,37 @@ export function Navigation() {
 
           {/* Desktop CTA */}
           <div className="hidden md:flex items-center gap-4">
+            <ThemeToggle />
             <a href={portalUrls.login} className={`text-foreground/70 hover:text-foreground transition-all duration-500 ${isScrolled ? "text-xs" : "text-sm"}`}>
               Sign in
             </a>
             <Button
               asChild
               size="sm"
-              className={`bg-foreground hover:bg-foreground/90 text-background rounded-full transition-all duration-500 ${isScrolled ? "px-4 h-8 text-xs" : "px-6"}`}
+              className={`bg-brand hover:bg-brand/90 text-background rounded-full transition-all duration-500 ${isScrolled ? "px-4 h-8 text-xs" : "px-6"}`}
             >
               <a href={portalUrls.signup}>Start renting</a>
             </Button>
           </div>
 
-          {/* Mobile Menu Button */}
+          {/* Mobile: theme toggle next to menu button so phones can switch too. */}
+          <div className="md:hidden flex items-center gap-2">
+            <ThemeToggle />
+          </div>
+
+          {/* Mobile Menu Button. Icon renders client-only to avoid
+              a hydration mismatch from lucide's SVG children. */}
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="md:hidden p-2"
             aria-label="Toggle menu"
+            suppressHydrationWarning
           >
-            {isMobileMenuOpen ? (
+            {mounted && (isMobileMenuOpen ? (
               <X className="w-6 h-6" />
             ) : (
               <Menu className="w-6 h-6" />
-            )}
+            ))}
           </button>
         </div>
 
@@ -139,7 +155,7 @@ export function Navigation() {
             </Button>
             <Button
               asChild
-              className="flex-1 bg-foreground text-background rounded-full h-14 text-base"
+              className="flex-1 bg-brand text-background rounded-full h-14 text-base"
             >
               <a href={portalUrls.signup} onClick={() => setIsMobileMenuOpen(false)}>Start renting</a>
             </Button>
