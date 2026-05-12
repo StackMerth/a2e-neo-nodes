@@ -2,11 +2,12 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { User, Bell, Shield, Lock, KeyRound } from 'lucide-react'
+import { User, Bell, Shield, Lock, KeyRound, Wallet, Save } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
+import { apiFetch } from '@/lib/api'
 
 const container = {
   hidden: { opacity: 0 },
@@ -32,6 +33,28 @@ export default function SettingsPage() {
   const togglePref = (key: keyof typeof prefs) => {
     setPrefs(prev => ({ ...prev, [key]: !prev[key] }))
     toast('success', 'Preference updated')
+  }
+
+  // M5.6: wallet attach. Email-first signups land without a wallet;
+  // operators paste their Solana address here and the backend syncs it
+  // to both User.walletAddress and any linked NodeRunner row.
+  const [walletInput, setWalletInput] = useState('')
+  const [savingWallet, setSavingWallet] = useState(false)
+
+  async function saveWallet() {
+    const candidate = walletInput.trim()
+    if (!candidate) return
+    setSavingWallet(true)
+    try {
+      await apiFetch('/v1/portal/user/wallet', { method: 'PATCH', body: { walletAddress: candidate } })
+      toast('success', 'Wallet linked. Refresh to see it on your profile.')
+      setWalletInput('')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not save wallet'
+      toast('error', message)
+    } finally {
+      setSavingWallet(false)
+    }
   }
 
   return (
@@ -81,6 +104,53 @@ export default function SettingsPage() {
           </div>
         </div>
       </motion.div>
+
+      {/* M5.6: wallet attach. Shown to anyone whose User.walletAddress
+          is null, i.e. email-first signups who never went through a
+          wallet-bound signup flow. Once set the input hides itself and
+          the Profile panel above renders the truncated address. */}
+      {!user?.walletAddress && (
+        <motion.div variants={item}>
+          <div
+            className="rounded-xl p-6"
+            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <Wallet size={16} style={{ color: 'var(--text-secondary)' }} />
+              <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Link a Solana wallet</h2>
+            </div>
+            <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+              Email signups land without a wallet. Paste your Solana payout address here so settlements, refunds, and referral commission can flow to you. Base58 format, 32-44 chars.
+            </p>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                placeholder="e.g. 6dNUZBg...A9pK"
+                value={walletInput}
+                onChange={e => setWalletInput(e.target.value)}
+                className="flex-1 font-mono text-sm rounded-lg px-3 py-2 focus:outline-none"
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-primary)',
+                }}
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <Button
+                onClick={saveWallet}
+                disabled={savingWallet || walletInput.trim().length < 32}
+              >
+                <Save size={14} className="mr-1" />
+                Save
+              </Button>
+            </div>
+            <p className="text-[11px] mt-3 font-mono" style={{ color: 'var(--text-muted)' }}>
+              We never see your private key. This is just the public address you would paste on any other Solana service.
+            </p>
+          </div>
+        </motion.div>
+      )}
 
       {/* Notifications */}
       <motion.div variants={item}>

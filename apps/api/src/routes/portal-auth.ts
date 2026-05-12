@@ -265,6 +265,54 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
   })
 
   /**
+   * PATCH /v1/portal/user/wallet — Set or update the buyer/operator's
+   * Solana payout wallet. Email-first signups land without a wallet,
+   * so this is the single canonical place to attach one later.
+   *
+   * Side effect: if the user has a linked NodeRunner row, the wallet
+   * is also written there so payouts and the deploy flow stop using
+   * the `pending-<userId>` placeholder.
+   */
+  fastify.patch('/v1/portal/user/wallet', {
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    if (!request.user) return reply.code(401).send({ error: 'Unauthorized' })
+
+    const body = request.body as { walletAddress?: string }
+    const wallet = (body.walletAddress ?? '').trim()
+
+    // Solana base58 addresses are 32-44 chars; we accept that whole
+    // range and rely on downstream payout code to do strict base58
+    // decoding before any real transfer.
+    if (!wallet || wallet.length < 32 || wallet.length > 64 || !/^[A-HJ-NP-Za-km-z1-9]+$/.test(wallet)) {
+      return reply.code(400).send({ error: 'Invalid Solana wallet address' })
+    }
+
+    // Reject if already taken by another user (unique constraint on both
+    // User.walletAddress and NodeRunner.walletAddress).
+    const conflict = await fastify.prisma.user.findFirst({
+      where: { walletAddress: wallet, NOT: { id: request.user.userId } },
+      select: { id: true },
+    })
+    if (conflict) return reply.code(409).send({ error: 'Wallet already in use by another account' })
+
+    await fastify.prisma.$transaction(async tx => {
+      await tx.user.update({
+        where: { id: request.user!.userId },
+        data: { walletAddress: wallet },
+      })
+      // Sync to NodeRunner if one exists. We use `updateMany` so a
+      // missing NodeRunner is a no-op rather than an error.
+      await tx.nodeRunner.updateMany({
+        where: { userId: request.user!.userId },
+        data: { walletAddress: wallet },
+      })
+    })
+
+    reply.send({ success: true, walletAddress: wallet })
+  })
+
+  /**
    * POST /v1/portal/auth/logout-all — Revoke all refresh tokens (logout everywhere)
    */
   fastify.post('/v1/portal/auth/logout-all', {

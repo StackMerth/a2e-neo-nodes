@@ -19,6 +19,7 @@ import {
   LogOut,
   PanelLeftOpen,
   PanelLeftClose,
+  Users,
 } from 'lucide-react'
 
 const navItems = [
@@ -30,6 +31,7 @@ const navItems = [
   { path: '/payouts', icon: Wallet, label: 'Payouts' },
   { path: '/withdrawals', icon: ArrowDownToLine, label: 'Withdrawals' },
   { path: '/jobs', icon: Zap, label: 'Jobs' },
+  { path: '/referral', icon: Users, label: 'Referrals' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ]
 
