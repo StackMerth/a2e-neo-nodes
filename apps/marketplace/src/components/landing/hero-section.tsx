@@ -80,9 +80,9 @@ export function HeroSection() {
             <span className="block">
               to{" "}
               <span className="relative inline-block">
-                <span 
+                <span
                   key={wordIndex}
-                  className="inline-flex"
+                  className="inline-flex text-brand"
                 >
                   {words[wordIndex].split("").map((char, i) => (
                     <span
@@ -96,7 +96,7 @@ export function HeroSection() {
                     </span>
                   ))}
                 </span>
-                <span className="absolute -bottom-2 left-0 right-0 h-3 bg-brand/25" />
+                <span className="absolute -bottom-2 left-0 right-0 h-3 bg-brand/15" />
               </span>
             </span>
           </h1>
@@ -160,7 +160,7 @@ export function HeroSection() {
                 { value: "11s", label: "median settlement", company: "SOLANA RAILS" },
               ].map((stat) => (
                 <div key={`${stat.company}-${i}`} className="flex items-baseline gap-4">
-                  <span className="text-4xl lg:text-5xl font-display">{stat.value}</span>
+                  <span className="text-4xl lg:text-5xl font-display text-brand">{stat.value}</span>
                   <span className="text-sm text-muted-foreground">
                     {stat.label}
                     <span className="block font-mono text-xs mt-1">{stat.company}</span>
