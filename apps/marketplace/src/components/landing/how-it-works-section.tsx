@@ -88,7 +88,7 @@ export function HowItWorksSection() {
         {/* Header */}
         <div className="mb-16 lg:mb-24">
           <span className="inline-flex items-center gap-3 text-sm font-mono text-background/50 mb-6">
-            <span className="w-8 h-px bg-background/30" />
+            <span className="w-8 h-px bg-brand" />
             Process
           </span>
           <h2
@@ -116,7 +116,7 @@ export function HowItWorksSection() {
                 }`}
               >
                 <div className="flex items-start gap-6">
-                  <span className="font-display text-3xl text-background/30">{step.number}</span>
+                  <span className={`font-display text-3xl transition-colors duration-500 ${activeStep === index ? "text-brand" : "text-background/30"}`}>{step.number}</span>
                   <div className="flex-1">
                     <h3 className="text-2xl lg:text-3xl font-display mb-3 group-hover:translate-x-2 transition-transform duration-300">
                       {step.title}
@@ -128,8 +128,8 @@ export function HowItWorksSection() {
                     {/* Progress indicator */}
                     {activeStep === index && (
                       <div className="mt-4 h-px bg-background/20 overflow-hidden">
-                        <div 
-                          className="h-full bg-background w-0"
+                        <div
+                          className="h-full bg-brand w-0"
                           style={{
                             animation: 'progress 5s linear forwards'
                           }}
@@ -187,7 +187,7 @@ export function HowItWorksSection() {
 
               {/* Status */}
               <div className="px-6 py-4 border-t border-background/10 flex items-center gap-3">
-                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-brand animate-pulse" />
                 <span className="text-xs font-mono text-background/40">Ready</span>
               </div>
             </div>
