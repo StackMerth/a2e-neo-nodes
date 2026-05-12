@@ -12,6 +12,7 @@
 
 import { randomInt } from 'node:crypto'
 import type { PrismaClient } from '@a2e/database'
+import { ensureSlug } from './slug.js'
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const CODE_LENGTH = 8
@@ -32,6 +33,12 @@ export async function ensureReferralCode(
   prisma: PrismaClient,
   nodeRunnerId: string,
 ): Promise<string> {
+  // Always make sure the runner has a slug too. The leaderboard
+  // filters out slug-less rows because each row links to /operator/<slug>;
+  // without this, every newly auto-created NodeRunner stays invisible on
+  // the public leaderboard until manually slugged.
+  await ensureSlug(prisma, nodeRunnerId)
+
   const existing = await prisma.nodeRunner.findUnique({
     where: { id: nodeRunnerId },
     select: { referralCode: true },
