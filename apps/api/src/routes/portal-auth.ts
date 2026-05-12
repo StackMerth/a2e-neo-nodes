@@ -73,8 +73,15 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
 
     const { email, password, role, referralCode } = parsed.data
 
+    // M5.7 anti-abuse: capture the signup IP. Prefer the first hop in
+    // X-Forwarded-For (Render + Vercel always set it) and fall back to
+    // the raw request socket. Stored on User so the referral
+    // attribution path can compare against the referrer's IP.
+    const xff = (request.headers['x-forwarded-for'] as string | undefined)
+    const signupIp = xff?.split(',')[0]?.trim() || request.ip || null
+
     try {
-      const user = await registerUser(email, password, role)
+      const user = await registerUser(email, password, role, signupIp)
       const accessToken = generateAccessToken(user.id, user.role)
       const refreshToken = await generateRefreshToken(user.id)
 
