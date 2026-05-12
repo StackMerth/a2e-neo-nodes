@@ -267,7 +267,7 @@ export class HeartbeatService {
    * Perform a self-update: check, download, apply, and restart
    */
   private async performUpdate(payload?: { updateUrl?: string }): Promise<void> {
-    const updateUrl = payload?.updateUrl ?? 'https://a2e-api.onrender.com/releases';
+    const updateUrl = payload?.updateUrl ?? 'https://tokenosdeai-api.onrender.com/releases';
     const updater = new UpdateManager('1.0.0', updateUrl);
 
     const versionInfo = await updater.checkForUpdate();

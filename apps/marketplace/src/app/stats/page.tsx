@@ -14,7 +14,7 @@ import Link from 'next/link'
 import { Navigation } from '@/components/landing/navigation'
 import { FooterSection } from '@/components/landing/footer-section'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
 
 export const revalidate = 30
 
@@ -42,10 +42,10 @@ async function fetchStats(): Promise<StatsResponse | null> {
 
 export const metadata = {
   title: 'Stats',
-  description: 'Live network stats for the A2E GPU compute marketplace. Nodes online, operators active, lifetime compute, regional spread.',
+  description: 'Live network stats for the TokenOS DeAI GPU compute marketplace. Nodes online, operators active, lifetime compute, regional spread.',
   openGraph: {
-    title: 'A2E network stats',
-    description: 'Live network stats for the A2E GPU compute marketplace.',
+    title: 'TokenOS DeAI network stats',
+    description: 'Live network stats for the TokenOS DeAI GPU compute marketplace.',
     images: [{ url: '/og?type=marketplace', width: 1200, height: 630 }],
   },
   twitter: {

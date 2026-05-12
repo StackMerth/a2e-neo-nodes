@@ -11,7 +11,7 @@ must-fix-soon, P2 nice-to-have).
 **Environments:**
 - Marketplace: `https://marketplace.stackforgelab.tech`
 - Portal: `https://a2e-user.stackforgelab.tech`
-- API: `https://a2e-api.onrender.com`
+- API: `https://tokenosdeai-api.onrender.com`
 
 ---
 
@@ -67,7 +67,7 @@ must-fix-soon, P2 nice-to-have).
 
 | # | Check | Pass criterion | Status |
 |---|---|---|---|
-| 5.1 | `api...onrender.com/docs` | Swagger UI loads with title "A2E Marketplace API" | [ ] |
+| 5.1 | `api...onrender.com/docs` | Swagger UI loads with title "TokenOS DeAI Marketplace API" | [ ] |
 | 5.2 | "Public" tag has 5 routes | listings, listings.json, listings.csv, leaderboard, operators/:slug, stats | [ ] |
 | 5.3 | "Try it out" on `/v1/public/listings` | Click Execute with default params, returns 200 with body | [ ] |
 | 5.4 | Spec at `/docs/json` | Returns valid OpenAPI 3 document, paths object has all six public routes | [ ] |

@@ -38,7 +38,7 @@ export default function LoginPage() {
   return (
     <Card className="p-8">
       <h1 className="text-2xl font-bold text-text-primary mb-2">Welcome Back</h1>
-      <p className="text-text-secondary text-sm mb-6">Sign in to your A²E account</p>
+      <p className="text-text-secondary text-sm mb-6">Sign in to your TokenOS DeAI account</p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input

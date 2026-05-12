@@ -154,10 +154,10 @@ See `docs/QA_MATRIX_M5.md`. Top-level smoke test in 60 seconds:
 
 ```bash
 # Public surfaces
-curl -sS "https://a2e-api.onrender.com/v1/public/listings?limit=3"
-curl -sS "https://a2e-api.onrender.com/v1/public/leaderboard?tab=reputation"
-curl -sS "https://a2e-api.onrender.com/v1/public/stats"
-curl -sS "https://a2e-api.onrender.com/v1/public/listings.csv" | head -5
+curl -sS "https://tokenosdeai-api.onrender.com/v1/public/listings?limit=3"
+curl -sS "https://tokenosdeai-api.onrender.com/v1/public/leaderboard?tab=reputation"
+curl -sS "https://tokenosdeai-api.onrender.com/v1/public/stats"
+curl -sS "https://tokenosdeai-api.onrender.com/v1/public/listings.csv" | head -5
 
 # Browser
 open https://marketplace.stackforgelab.tech/
@@ -165,7 +165,7 @@ open https://marketplace.stackforgelab.tech/marketplace
 open https://marketplace.stackforgelab.tech/leaderboard
 open https://marketplace.stackforgelab.tech/stats
 open https://marketplace.stackforgelab.tech/operator/seed-bronze-runner
-open https://a2e-api.onrender.com/docs
+open https://tokenosdeai-api.onrender.com/docs
 
 # Referral round trip
 pnpm --filter @a2e/api referrals:test-flow asad@m.com

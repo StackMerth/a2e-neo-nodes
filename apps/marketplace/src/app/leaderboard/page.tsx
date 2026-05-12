@@ -14,7 +14,7 @@ import { Navigation } from '@/components/landing/navigation'
 import { FooterSection } from '@/components/landing/footer-section'
 import { cn } from '@/lib/utils'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
 
 export const revalidate = 60
 
@@ -67,7 +67,7 @@ async function fetchLeaderboard(tab: string): Promise<ReputationResponse | Refer
 
 export const metadata = {
   title: 'Leaderboard',
-  description: 'Top operators on the A2E network ranked by transparent reputation score.',
+  description: 'Top operators on the TokenOS DeAI network ranked by transparent reputation score.',
   openGraph: {
     title: 'Earned, not bought',
     description: 'Operators ranked by uptime, ratings, and completed jobs. Formula is public.',

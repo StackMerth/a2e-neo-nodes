@@ -1,6 +1,6 @@
-# A2E Admin Runbook
+# TokenOS DeAI Admin Runbook
 
-Operational reference for whoever is on-call for the A2E platform.
+Operational reference for whoever is on-call for the TokenOS DeAI platform.
 Assumes Render (API + Postgres + Redis), Vercel (marketplace, portal,
 dashboard), and Solana devnet/mainnet for payments.
 
@@ -10,7 +10,7 @@ dashboard), and Solana devnet/mainnet for payments.
 
 | Surface | Provider | URL | Notes |
 |---|---|---|---|
-| API | Render | <https://a2e-api.onrender.com> | Fastify + BullMQ workers; exposes `/v1/public/*` and `/v1/portal/*` + Swagger at `/docs` |
+| API | Render | <https://tokenosdeai-api.onrender.com> | Fastify + BullMQ workers; exposes `/v1/public/*` and `/v1/portal/*` + Swagger at `/docs` |
 | Postgres | Render | (internal) | Schema lives in `packages/database/prisma/schema.prisma` |
 | Redis | Render | (internal) | BullMQ queues + cached aggregates |
 | Marketplace | Vercel | <https://marketplace.stackforgelab.tech> | Public site, no auth |
@@ -20,8 +20,8 @@ dashboard), and Solana devnet/mainnet for payments.
 
 ## 2. Daily / weekly health checks
 
-- **API up:** `curl -sS https://a2e-api.onrender.com/v1/health` returns 200
-- **Stats sanity:** `curl -sS https://a2e-api.onrender.com/v1/public/stats` returns non-zero `totalNodesOnline`
+- **API up:** `curl -sS https://tokenosdeai-api.onrender.com/v1/health` returns 200
+- **Stats sanity:** `curl -sS https://tokenosdeai-api.onrender.com/v1/public/stats` returns non-zero `totalNodesOnline`
 - **Worker heartbeat (in Render logs):** look for `[per-minute-meter]`, `[reputation-scorer]`, `[spot-preemption]`, `[seed-keep-alive]`, `[referral-commission]` lines firing on cadence
 - **Recent payouts:** dashboard → settlements page → no rows stuck in PENDING > 30 min
 
@@ -72,7 +72,7 @@ mint a fresh admin token: log into the dashboard normally, then read
 For curl-based admin operations:
 
 ```bash
-curl -H "Authorization: Bearer <token>" https://a2e-api.onrender.com/v1/...
+curl -H "Authorization: Bearer <token>" https://tokenosdeai-api.onrender.com/v1/...
 ```
 
 ## 6. Per-feature operational notes
@@ -120,7 +120,7 @@ curl -H "Authorization: Bearer <token>" https://a2e-api.onrender.com/v1/...
 - **Helius:** `HELIUS_API_KEY` env. Currently on free tier; upgrade to
   Developer ($49/mo) once active buyer count exceeds ~100 or
   rate-limit signals appear in logs.
-- **Webhook URL** at Helius dashboard: `https://a2e-api.onrender.com/v1/webhooks/solana`
+- **Webhook URL** at Helius dashboard: `https://tokenosdeai-api.onrender.com/v1/webhooks/solana`
 
 ### Payer key
 
@@ -142,7 +142,7 @@ curl -H "Authorization: Bearer <token>" https://a2e-api.onrender.com/v1/...
 
 ### "Listings page is empty"
 
-1. `curl https://a2e-api.onrender.com/v1/public/listings` — is the API returning data?
+1. `curl https://tokenosdeai-api.onrender.com/v1/public/listings` — is the API returning data?
 2. If yes, hard-refresh the marketplace (Vercel ISR cache 60s)
 3. If no, check `seed-keep-alive` log: are heartbeats fresh?
 4. Last resort: `pnpm --filter @a2e/api seed:test:keep-alive` from Render shell

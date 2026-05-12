@@ -199,7 +199,7 @@ export default function RatingsModerationPage() {
                 <div>
                   <span className="text-text-muted">Buyer: </span>
                   <span className="text-text-primary font-mono">
-                    {r.buyer?.email ?? r.buyer?.walletAddress?.slice(0, 10) + '...' ?? 'unknown'}
+                    {r.buyer?.email ?? (r.buyer?.walletAddress ? `${r.buyer.walletAddress.slice(0, 10)}...` : 'unknown')}
                   </span>
                 </div>
                 <div>

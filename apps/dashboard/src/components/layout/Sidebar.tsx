@@ -191,7 +191,7 @@ export function Sidebar() {
           whileTap={{ scale: 0.98 }}
           onClick={() => router.push('/')}
         >
-          <div className="logo-icon">A²E</div>
+          <div className="logo-icon">TokenOS DeAI</div>
           <AnimatePresence>
             {sidebarOpen && (
               <motion.span

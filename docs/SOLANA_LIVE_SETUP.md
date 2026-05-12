@@ -87,7 +87,7 @@ The API supports three formats automatically: JSON array (`[1,2,3,...]`), base58
 
 Click **Save Changes** on Render's environment page. Render redeploys (~30 seconds, build cached).
 
-Visit `https://a2e-api.onrender.com/health/detailed` (admin auth required) to confirm `payment.mode === 'live'`.
+Visit `https://tokenosdeai-api.onrender.com/health/detailed` (admin auth required) to confirm `payment.mode === 'live'`.
 
 ### 6. Test with a small payout
 

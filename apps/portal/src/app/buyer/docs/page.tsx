@@ -13,7 +13,7 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
 
 interface Endpoint {
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE'

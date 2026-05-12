@@ -50,7 +50,7 @@ export function FooterSection() {
             {/* Brand Column */}
             <div className="col-span-2">
               <a href="#" className="inline-flex items-center gap-2 mb-6">
-                <span className="text-2xl font-display">A2E</span>
+                <span className="text-2xl font-display">TokenOS DeAI</span>
                 <span className="text-xs text-muted-foreground font-mono">TM</span>
               </a>
 
@@ -102,7 +102,7 @@ export function FooterSection() {
         {/* Bottom Bar */}
         <div className="py-8 border-t border-foreground/10 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-sm text-muted-foreground">
-            2026 A2E Network.
+            2026 TokenOS DeAI Network.
           </p>
 
           <div className="flex items-center gap-4 text-sm text-muted-foreground">

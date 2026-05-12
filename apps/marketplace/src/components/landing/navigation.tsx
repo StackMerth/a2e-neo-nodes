@@ -32,22 +32,21 @@ export function Navigation() {
           : "top-0 left-0 right-0"
       }`}
     >
-      <nav 
-        className={`mx-auto transition-all duration-500 ${
+      <nav
+        className={`mx-auto transition-all duration-500 bg-background/85 backdrop-blur-xl border border-foreground/10 shadow-lg ${
           isScrolled || isMobileMenuOpen
-            ? "bg-background/80 backdrop-blur-xl border border-foreground/10 rounded-2xl shadow-lg max-w-[1200px]"
-            : "bg-transparent max-w-[1400px]"
+            ? "rounded-2xl max-w-[1200px]"
+            : "rounded-none max-w-[1400px]"
         }`}
       >
-        <div 
+        <div
           className={`flex items-center justify-between transition-all duration-500 px-6 lg:px-8 ${
             isScrolled ? "h-14" : "h-20"
           }`}
         >
-          {/* Logo */}
-          <a href="#" className="flex items-center gap-2 group">
-            <span className={`font-display tracking-tight transition-all duration-500 ${isScrolled ? "text-xl" : "text-2xl"}`}>A2E</span>
-            <span className={`text-muted-foreground font-mono transition-all duration-500 ${isScrolled ? "text-[10px] mt-0.5" : "text-xs mt-1"}`}>TM</span>
+          {/* Logo (always routes home) */}
+          <a href="/" className="flex items-center gap-2 group">
+            <span className={`font-display tracking-tight transition-all duration-500 ${isScrolled ? "text-lg" : "text-xl"}`}>TokenOS DeAI</span>
           </a>
 
           {/* Desktop Navigation */}

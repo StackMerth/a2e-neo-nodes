@@ -63,11 +63,11 @@ export function AuthenticatedLayout({ children }: { children: React.ReactNode })
           {children}
 
           <footer className="admin-footer">
-            <span>&copy; {new Date().getFullYear()} A²E Engine</span>
+            <span>&copy; {new Date().getFullYear()} TokenOS DeAI Engine</span>
             {' \u2022 '}
             <a href="https://compute.tokenos.ai" target="_blank" rel="noopener noreferrer">TokenOS</a>
             {' \u2022 '}
-            <a href={`${process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'}/health`} target="_blank" rel="noopener noreferrer">API Status</a>
+            <a href={`${process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'}/health`} target="_blank" rel="noopener noreferrer">API Status</a>
           </footer>
         </div>
       </motion.main>

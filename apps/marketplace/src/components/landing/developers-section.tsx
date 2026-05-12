@@ -6,8 +6,8 @@ import { Copy, Check } from "lucide-react";
 const codeExamples = [
   {
     label: "Rent",
-    code: `curl -X POST https://api.a2e.network/v1/buyer/compute/requests \\
-  -H "Authorization: Bearer $A2E_TOKEN" \\
+    code: `curl -X POST https://api.tokenosdeai.network/v1/buyer/compute/requests \\
+  -H "Authorization: Bearer $TOKENOS_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
     "gpuTier": "H100",
@@ -19,13 +19,13 @@ const codeExamples = [
   {
     label: "Poll",
     code: `# After payment confirms, poll for SSH credentials
-curl https://api.a2e.network/v1/buyer/compute/requests/$ID \\
-  -H "Authorization: Bearer $A2E_TOKEN"
+curl https://api.tokenosdeai.network/v1/buyer/compute/requests/$ID \\
+  -H "Authorization: Bearer $TOKENOS_TOKEN"
 
 # Once status flips ACTIVE you get:
 # {
 #   "status": "ACTIVE",
-#   "sshHost": "h100-42.a2e.network",
+#   "sshHost": "h100-42.tokenosdeai.network",
 #   "sshUsername": "buyer-7b3f",
 #   "sshSessionToken": "..."
 # }`,
@@ -33,7 +33,7 @@ curl https://api.a2e.network/v1/buyer/compute/requests/$ID \\
   {
     label: "Connect",
     code: `# Use the session token as your SSH password
-ssh buyer-7b3f@h100-42.a2e.network
+ssh buyer-7b3f@h100-42.tokenosdeai.network
 
 # nvidia-smi
 +-----------------------------------------+
@@ -42,7 +42,7 @@ ssh buyer-7b3f@h100-42.a2e.network
 
 # Stop early, get refund for unused minutes
 curl -X POST .../requests/$ID/terminate \\
-  -H "Authorization: Bearer $A2E_TOKEN"`,
+  -H "Authorization: Bearer $TOKENOS_TOKEN"`,
   },
 ];
 

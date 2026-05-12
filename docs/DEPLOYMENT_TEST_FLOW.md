@@ -123,7 +123,7 @@ Requirements for the target server:
 - Ubuntu 22.04+ or Debian 12+ (RHEL also supported)
 - NVIDIA driver installed (>= 535)
 - SSH access as root or a user with passwordless sudo
-- Outbound HTTPS to `a2e-api.onrender.com`
+- Outbound HTTPS to `tokenosdeai-api.onrender.com`
 - At least 20GB free disk space
 - 8GB+ RAM
 - Docker will be auto-installed if missing
@@ -134,7 +134,7 @@ Requirements for the target server:
 |---|---|---|
 | Provisioning stuck on CONNECTING | SSH not reachable | Verify host/port from your machine: `ssh -p 22 root@host`. Check firewall. |
 | Stuck on VERIFYING with "GPU not detected" | NVIDIA driver missing on target | `nvidia-smi` on the target should work first. |
-| Stuck on DOWNLOADING | Target server can't reach API | Test from target: `curl https://a2e-api.onrender.com/health` |
+| Stuck on DOWNLOADING | Target server can't reach API | Test from target: `curl https://tokenosdeai-api.onrender.com/health` |
 | Stuck on STARTING | systemd failed | SSH in: `journalctl -u a2e-agent -n 50` |
 | Stuck on WAITING_REGISTRATION | Agent started but can't authenticate | Check `/var/log/a2e-agent/agent.log` on target for API_KEY mismatch |
 | Test mode not skipping SSH | Checkbox wasn't checked or request didn't include `testMode: true` | Confirm in browser DevTools Network tab; the POST body should include `testMode: true` |

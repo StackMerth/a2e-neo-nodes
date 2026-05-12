@@ -1,6 +1,6 @@
-# A2E Operator Guide
+# TokenOS DeAI Operator Guide
 
-How to run a GPU node on the A2E network: install the agent, get paid,
+How to run a GPU node on the TokenOS DeAI network: install the agent, get paid,
 build reputation, and invite other operators.
 
 ---

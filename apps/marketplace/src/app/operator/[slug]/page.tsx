@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
 
 type ReputationTier = 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM'
 
@@ -55,19 +55,19 @@ async function fetchOperator(slug: string): Promise<OperatorPublicData | null> {
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
   const op = await fetchOperator(params.slug)
   if (!op) return { title: 'Operator not found' }
-  const description = `${op.name} operates ${op.nodes.length} GPU node${op.nodes.length === 1 ? '' : 's'} on the A2E network. Reputation tier ${op.reputationTier.toLowerCase()}.`
+  const description = `${op.name} operates ${op.nodes.length} GPU node${op.nodes.length === 1 ? '' : 's'} on the TokenOS DeAI network. Reputation tier ${op.reputationTier.toLowerCase()}.`
   const ogPath = `/og?type=operator&slug=${encodeURIComponent(op.slug)}`
   return {
     title: op.name,
     description,
     openGraph: {
-      title: `${op.name} on A2E`,
+      title: `${op.name} on TokenOS DeAI`,
       description,
       images: [{ url: ogPath, width: 1200, height: 630, alt: `${op.name} operator profile` }],
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${op.name} on A2E`,
+      title: `${op.name} on TokenOS DeAI`,
       description,
       images: [ogPath],
     },
@@ -95,7 +95,7 @@ export default async function OperatorPage({ params }: { params: { slug: string 
     '@type': 'Organization',
     name: op.name,
     url: `https://marketplace.stackforgelab.tech/operator/${op.slug}`,
-    description: `GPU compute operator on the A2E network, reputation tier ${tierLabel}, ${op.nodes.length} ${op.nodes.length === 1 ? 'node' : 'nodes'}.`,
+    description: `GPU compute operator on the TokenOS DeAI network, reputation tier ${tierLabel}, ${op.nodes.length} ${op.nodes.length === 1 ? 'node' : 'nodes'}.`,
     ...(avgRating != null && approvedRatings.length > 0
       ? {
         aggregateRating: {
@@ -209,7 +209,7 @@ export default async function OperatorPage({ params }: { params: { slug: string 
         <Separator />
 
         <footer className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground text-center">
-          A2E Compute Marketplace · operator profile
+          TokenOS DeAI Compute Marketplace · operator profile
         </footer>
       </div>
     </main>

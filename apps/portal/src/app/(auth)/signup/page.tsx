@@ -67,7 +67,7 @@ export default function SignupPage() {
             <div className="flex-1 min-w-0">
               <p className="font-medium text-text-primary mb-0.5">Node Runner</p>
               <p className="text-sm text-text-muted">
-                Earn by hosting your GPUs on the A2E network
+                Earn by hosting your GPUs on the TokenOS DeAI network
               </p>
             </div>
             <ArrowRight className="w-5 h-5 text-text-muted group-hover:text-accent group-hover:translate-x-0.5 transition-all" />

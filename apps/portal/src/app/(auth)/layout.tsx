@@ -33,7 +33,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4">
       <Link href="/" className="mb-8 flex items-center gap-2">
-        <span className="text-3xl font-bold gradient-text">A²E</span>
+        <span className="text-3xl font-bold gradient-text">TokenOS DeAI</span>
         <span className="text-lg text-text-muted">Portal</span>
       </Link>
       <div className="w-full max-w-md">
