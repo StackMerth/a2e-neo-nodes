@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Suspense } from 'react'
-import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from 'next/font/google'
+import { Instrument_Sans, Inter, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
 import { RefCapture } from '@/components/landing/ref-capture'
 import { MarketplaceChat } from '@/components/landing/marketplace-chat'
@@ -12,9 +12,12 @@ const instrumentSans = Instrument_Sans({
   display: 'swap',
 })
 
-const instrumentSerif = Instrument_Serif({
+// Heavy Inter at weight 900 powers all display headlines. Matches
+// the chunky enterprise feel of the old TokenOS_COMPUTE wordmark
+// instead of the editorial Instrument Serif we started with.
+const interDisplay = Inter({
   subsets: ['latin'],
-  weight: '400',
+  weight: '900',
   variable: '--font-instrument-serif',
   display: 'swap',
 })
@@ -64,7 +67,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${instrumentSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${instrumentSans.variable} ${interDisplay.variable} ${jetbrainsMono.variable}`}>
       <body className="font-sans antialiased">
         <ThemeProvider>
           {/* M5.7 polish: capture ?ref=CODE from share links and rewrite

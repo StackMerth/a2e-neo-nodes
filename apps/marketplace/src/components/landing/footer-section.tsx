@@ -38,21 +38,22 @@ const socialLinks = [
 export function FooterSection() {
   return (
     <footer className="relative border-t border-foreground/10">
-      {/* Animated wave background. inset-0 alone (no h-64 cap) so it
-          fills the entire footer behind the menu columns, not just
-          a strip across the top. */}
-      <div className="absolute inset-0 opacity-20 pointer-events-none overflow-hidden">
-        <AnimatedWave />
-      </div>
-      
-      <div className="relative z-10 max-w-[1400px] mx-auto px-6 lg:px-12">
-        {/* Main Footer */}
-        <div className="py-12 sm:py-16 lg:py-24">
+      <div className="relative max-w-[1400px] mx-auto px-6 lg:px-12">
+        {/* Main Footer. Wave background lives inside this block only,
+            so the bottom copyright bar stays clean. */}
+        <div className="relative py-12 sm:py-16 lg:py-24">
+          <div className="absolute inset-0 opacity-20 pointer-events-none overflow-hidden -mx-6 lg:-mx-12">
+            <AnimatedWave />
+          </div>
+          <div className="relative z-10">
           <div className="grid grid-cols-2 md:grid-cols-6 gap-8 sm:gap-12 lg:gap-8">
             {/* Brand Column */}
             <div className="col-span-2">
               <a href="#" className="inline-flex items-center gap-2 mb-6">
-                <span className="text-2xl font-display">TokenOS DeAI</span>
+                <span className="text-2xl font-display">
+                  <span>TokenOS</span>
+                  <span className="text-brand">_DeAI</span>
+                </span>
                 <span className="text-xs text-muted-foreground font-mono">TM</span>
               </a>
 
@@ -98,6 +99,7 @@ export function FooterSection() {
                 </ul>
               </div>
             ))}
+          </div>
           </div>
         </div>
 
