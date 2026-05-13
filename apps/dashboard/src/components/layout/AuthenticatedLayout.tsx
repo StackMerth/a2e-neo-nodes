@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/hooks/useAuth'
 import { useSidebar } from './SidebarContext'
 import { Sidebar } from './Sidebar'
-import { MobileMenuButton } from './MobileMenuButton'
+import { TopHeader } from './TopHeader'
 import { WebSocketNotifier } from '@/components/WebSocketNotifier'
 
 const mainEase: [number, number, number, number] = [0.4, 0, 0.2, 1]
@@ -37,7 +37,7 @@ export function AuthenticatedLayout({ children }: { children: React.ReactNode })
   return (
     <div className="app-layout">
       <WebSocketNotifier />
-      <MobileMenuButton />
+      <TopHeader />
       <Sidebar />
 
       {/* Mobile Overlay */}

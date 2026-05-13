@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/hooks/useAuth'
-import { LayoutDashboard, LifeBuoy, LogOut, User } from 'lucide-react'
+import { LayoutDashboard, LogOut, Settings as SettingsIcon } from 'lucide-react'
 
 interface UserMenuProps {
   collapsed: boolean
@@ -13,8 +13,6 @@ interface UserMenuProps {
   avatarLetter: string
   role: string
 }
-
-const SUPPORT_TELEGRAM = process.env.NEXT_PUBLIC_SUPPORT_TELEGRAM || 'https://t.me/tokenosdeai'
 
 export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMenuProps) {
   const [open, setOpen] = useState(false)
@@ -147,8 +145,8 @@ export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMen
               </div>
 
               <MenuItem
-                icon={<User className="w-4 h-4" />}
-                label="Profile"
+                icon={<SettingsIcon className="w-4 h-4" />}
+                label="Settings"
                 onClick={() => {
                   setOpen(false)
                   router.push('/settings')
@@ -160,14 +158,6 @@ export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMen
                 onClick={() => {
                   setOpen(false)
                   router.push('/')
-                }}
-              />
-              <MenuItem
-                icon={<LifeBuoy className="w-4 h-4" />}
-                label="Open support ticket"
-                onClick={() => {
-                  setOpen(false)
-                  window.open(SUPPORT_TELEGRAM, '_blank', 'noreferrer')
                 }}
               />
               <div className="border-t border-border-subtle">
