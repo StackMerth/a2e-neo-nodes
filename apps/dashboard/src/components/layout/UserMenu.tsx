@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/hooks/useAuth'
@@ -17,14 +18,62 @@ const SUPPORT_TELEGRAM = process.env.NEXT_PUBLIC_SUPPORT_TELEGRAM || 'https://t.
 
 export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMenuProps) {
   const [open, setOpen] = useState(false)
+  // Smart-positioned dropdown, portaled to body so the sidebar's
+  // overflow:hidden does NOT clip it. opens upward when the trigger
+  // is near the bottom (sidebar footer here), downward when at top.
+  const [coords, setCoords] = useState<{
+    direction: 'down' | 'up'
+    anchor: number
+    left: number
+    maxHeight: number
+  } | null>(null)
   const router = useRouter()
   const { logout, user } = useAuth()
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!open) return
+    const position = () => {
+      const t = triggerRef.current
+      if (!t) return
+      const rect = t.getBoundingClientRect()
+      const vh = window.innerHeight
+      const vw = window.innerWidth
+      const spaceBelow = vh - rect.bottom
+      const spaceAbove = rect.top
+      const direction: 'down' | 'up' = spaceBelow > spaceAbove ? 'down' : 'up'
+      // Anchor to the right edge of the trigger when in the collapsed
+      // sidebar (so the menu flies out to the right). When expanded
+      // (full sidebar footer), align with the left edge instead.
+      const left = collapsed
+        ? Math.min(rect.right + 8, vw - 260)
+        : Math.max(8, rect.left)
+      setCoords({
+        direction,
+        anchor: direction === 'down' ? rect.bottom + 8 : vh - rect.top + 8,
+        left,
+        maxHeight: Math.max(160, (direction === 'down' ? spaceBelow : spaceAbove) - 16),
+      })
+    }
+    position()
+    window.addEventListener('resize', position)
+    window.addEventListener('scroll', position, true)
+    return () => {
+      window.removeEventListener('resize', position)
+      window.removeEventListener('scroll', position, true)
+    }
+  }, [open, collapsed])
+
+  // Close on outside click + Escape.
+  useEffect(() => {
+    if (!open) return
     function onClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const t = e.target as Node
+      if (
+        menuRef.current && !menuRef.current.contains(t)
+        && triggerRef.current && !triggerRef.current.contains(t)
+      ) {
         setOpen(false)
       }
     }
@@ -46,8 +95,9 @@ export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMen
   }
 
   return (
-    <div className="relative" ref={menuRef}>
+    <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center gap-3 p-2 rounded-md hover:bg-surface-hover transition-colors"
@@ -69,57 +119,71 @@ export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMen
         )}
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            role="menu"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.15 }}
-            className="absolute bottom-full mb-2 left-0 right-0 min-w-[220px] bg-surface border border-border rounded-md shadow-lg overflow-hidden z-50"
-          >
-            <div className="px-4 py-3 border-b border-border-subtle">
-              <p className="user-name text-sm truncate">{displayName}</p>
-              <p className="user-role text-xs truncate">{user?.username ?? role}</p>
-            </div>
+      {typeof window !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {open && coords && (
+            <motion.div
+              ref={menuRef}
+              role="menu"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.15 }}
+              style={{
+                position: 'fixed',
+                ...(coords.direction === 'down'
+                  ? { top: coords.anchor }
+                  : { bottom: coords.anchor }),
+                left: coords.left,
+                minWidth: 240,
+                maxHeight: coords.maxHeight,
+                zIndex: 9999,
+              }}
+              className="bg-surface border border-border rounded-md shadow-2xl overflow-y-auto"
+            >
+              <div className="px-4 py-3 border-b border-border-subtle">
+                <p className="user-name text-sm truncate">{displayName}</p>
+                <p className="user-role text-xs truncate">{user?.username ?? role}</p>
+              </div>
 
-            <MenuItem
-              icon={<User className="w-4 h-4" />}
-              label="Profile"
-              onClick={() => {
-                setOpen(false)
-                router.push('/settings')
-              }}
-            />
-            <MenuItem
-              icon={<LayoutDashboard className="w-4 h-4" />}
-              label="Admin Dashboard"
-              onClick={() => {
-                setOpen(false)
-                router.push('/')
-              }}
-            />
-            <MenuItem
-              icon={<LifeBuoy className="w-4 h-4" />}
-              label="Open support ticket"
-              onClick={() => {
-                setOpen(false)
-                window.open(SUPPORT_TELEGRAM, '_blank', 'noreferrer')
-              }}
-            />
-            <div className="border-t border-border-subtle">
               <MenuItem
-                icon={<LogOut className="w-4 h-4" />}
-                label="Sign out"
-                tone="danger"
-                onClick={handleLogout}
+                icon={<User className="w-4 h-4" />}
+                label="Profile"
+                onClick={() => {
+                  setOpen(false)
+                  router.push('/settings')
+                }}
               />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+              <MenuItem
+                icon={<LayoutDashboard className="w-4 h-4" />}
+                label="Admin Dashboard"
+                onClick={() => {
+                  setOpen(false)
+                  router.push('/')
+                }}
+              />
+              <MenuItem
+                icon={<LifeBuoy className="w-4 h-4" />}
+                label="Open support ticket"
+                onClick={() => {
+                  setOpen(false)
+                  window.open(SUPPORT_TELEGRAM, '_blank', 'noreferrer')
+                }}
+              />
+              <div className="border-t border-border-subtle">
+                <MenuItem
+                  icon={<LogOut className="w-4 h-4" />}
+                  label="Sign out"
+                  tone="danger"
+                  onClick={handleLogout}
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
+    </>
   )
 }
 
