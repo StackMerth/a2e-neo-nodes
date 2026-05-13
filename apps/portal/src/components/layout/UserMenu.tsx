@@ -18,28 +18,37 @@ const SUPPORT_TELEGRAM = process.env.NEXT_PUBLIC_SUPPORT_TELEGRAM || 'https://t.
 
 export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMenuProps) {
   const [open, setOpen] = useState(false)
-  const [coords, setCoords] = useState<{ bottom: number; left: number; maxHeight: number } | null>(null)
+  // Smart-positioned: opens downward when the trigger is near the top
+  // (e.g. in the TopHeader) and upward when the trigger is near the
+  // bottom (e.g. legacy sidebar footer). right-anchored to the trigger
+  // so the menu does not blow out of the viewport on small screens.
+  const [coords, setCoords] = useState<{
+    direction: 'down' | 'up'
+    anchor: number
+    right: number
+    maxHeight: number
+  } | null>(null)
   const router = useRouter()
   const { logout, user } = useAuth()
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
-  // Recompute menu position whenever it opens or the window resizes.
-  // bottom-based positioning anchors the menu's bottom edge 8px above
-  // the trigger's top; the menu then grows upward with whatever height
-  // it needs. max-height caps it to (trigger.top - 16) so it can never
-  // overflow the top of the viewport - it scrolls inside instead.
   useEffect(() => {
     if (!open) return
     const position = () => {
       const t = triggerRef.current
       if (!t) return
       const rect = t.getBoundingClientRect()
-      const viewportHeight = window.innerHeight
+      const vh = window.innerHeight
+      const vw = window.innerWidth
+      const spaceBelow = vh - rect.bottom
+      const spaceAbove = rect.top
+      const direction: 'down' | 'up' = spaceBelow > spaceAbove ? 'down' : 'up'
       setCoords({
-        bottom: viewportHeight - rect.top + 8,
-        left: rect.right + 8,
-        maxHeight: Math.max(160, rect.top - 16),
+        direction,
+        anchor: direction === 'down' ? rect.bottom + 8 : vh - rect.top + 8,
+        right: Math.max(8, vw - rect.right),
+        maxHeight: Math.max(160, (direction === 'down' ? spaceBelow : spaceAbove) - 16),
       })
     }
     position()
@@ -131,8 +140,10 @@ export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMen
               transition={{ duration: 0.15 }}
               style={{
                 position: 'fixed',
-                bottom: coords.bottom,
-                left: coords.left,
+                ...(coords.direction === 'down'
+                  ? { top: coords.anchor }
+                  : { bottom: coords.anchor }),
+                right: coords.right,
                 minWidth: 240,
                 maxHeight: coords.maxHeight,
                 zIndex: 9999,

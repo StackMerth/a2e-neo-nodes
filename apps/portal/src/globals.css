@@ -765,9 +765,11 @@ textarea:focus {
 
 .sidebar {
   position: fixed;
-  top: 0;
+  /* Sit below the 64px TopHeader so the sidebar's own top edge
+     does not visually collide with the header's logo + wordmark. */
+  top: 64px;
   left: 0;
-  height: 100vh;
+  height: calc(100vh - 64px);
   width: 80px;
   background: var(--bg-card);
   border-right: 1px solid var(--border-color);
