@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/hooks/useAuth'
 import { useSidebar } from './SidebarContext'
 import { NotificationBell } from './NotificationBell'
+import { ThemeToggle } from '@/components/theme-toggle'
 import {
   LayoutDashboard,
   Rocket,
@@ -189,6 +190,10 @@ export function Sidebar() {
         </div>
 
         <NotificationBell collapsed={!sidebarOpen} />
+
+        <div className="flex justify-center mb-2">
+          <ThemeToggle />
+        </div>
 
         <motion.button
           className="logout-btn"

@@ -5,39 +5,41 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Background
-        background: '#0a0a0a',
+        // Theme-aware: resolves via CSS vars defined in globals.css.
+        // :root holds light values, .dark holds dark values; next-themes
+        // toggles the class so every Tailwind utility flips automatically.
+        background: 'var(--bg-dark)',
         surface: {
-          DEFAULT: '#111111',
-          hover: '#1a1a1a',
-          elevated: '#161616',
+          DEFAULT: 'var(--bg-card)',
+          hover: 'var(--bg-card-hover)',
+          elevated: 'var(--bg-elevated)',
         },
 
         // Borders
         border: {
-          DEFAULT: '#222222',
-          subtle: '#1a1a1a',
+          DEFAULT: 'var(--border-color)',
+          subtle: 'var(--border-light)',
           accent: 'rgba(34, 197, 94, 0.3)',
         },
 
         // Text
-        'text-primary': '#ffffff',
-        'text-secondary': '#a1a1a1',
-        'text-muted': '#666666',
+        'text-primary': 'var(--text-primary)',
+        'text-secondary': 'var(--text-secondary)',
+        'text-muted': 'var(--text-muted)',
 
         // Accent Colors
         accent: {
-          DEFAULT: '#22c55e',
-          hover: '#16a34a',
+          DEFAULT: 'var(--primary)',
+          hover: 'var(--primary-dark)',
           muted: '#166534',
-          glow: 'rgba(34, 197, 94, 0.15)',
+          glow: 'var(--primary-glow)',
         },
 
-        // Status Colors
-        success: '#22c55e',
-        warning: '#f59e0b',
-        error: '#ef4444',
-        info: '#3b82f6',
+        // Status Colors (theme-aware)
+        success: 'var(--success)',
+        warning: 'var(--warning)',
+        error: 'var(--danger)',
+        info: 'var(--info)',
 
         // Additional accent colors
         'accent-blue': {
@@ -55,6 +57,14 @@ module.exports = {
           hover: '#d97706',
           glow: 'rgba(245, 158, 11, 0.15)',
         },
+      },
+
+      // Fonts: Inter Black for display, Instrument Sans for body,
+      // JetBrains Mono for code/numerals. Matches the marketplace.
+      fontFamily: {
+        sans: ['var(--font-instrument)', 'Inter', 'system-ui', 'sans-serif'],
+        display: ['var(--font-display)', 'Inter', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-jetbrains)', 'ui-monospace', 'monospace'],
       },
 
       // Background Images & Gradients

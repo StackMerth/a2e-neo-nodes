@@ -1,10 +1,29 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
+import { Instrument_Sans, Inter, JetBrains_Mono } from 'next/font/google'
 import '../globals.css'
 import { Providers } from './providers'
 import { CrispChat } from '@/components/CrispChat'
+import { ThemeProvider } from '@/components/theme-provider'
 
-const inter = Inter({ subsets: ['latin'] })
+const instrumentSans = Instrument_Sans({
+  subsets: ['latin'],
+  variable: '--font-instrument',
+  display: 'swap',
+})
+
+// Heavy Inter 900 for display headlines, matching the marketplace.
+const interDisplay = Inter({
+  subsets: ['latin'],
+  weight: '900',
+  variable: '--font-display',
+  display: 'swap',
+})
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-jetbrains',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'TokenOS DeAI Portal | TokenOS',
@@ -23,13 +42,15 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.className} bg-background text-text-primary min-h-screen`}>
-        <Providers>
-          {children}
-        </Providers>
-        {/* M5.9 / D4: Crisp live chat. No-op when env var is unset. */}
-        <CrispChat />
+    <html lang="en" suppressHydrationWarning className={`${instrumentSans.variable} ${interDisplay.variable} ${jetbrainsMono.variable}`}>
+      <body className="font-sans bg-background text-text-primary min-h-screen">
+        <ThemeProvider>
+          <Providers>
+            {children}
+          </Providers>
+          {/* M5.9 / D4: Crisp live chat. No-op when env var is unset. */}
+          <CrispChat />
+        </ThemeProvider>
       </body>
     </html>
   )

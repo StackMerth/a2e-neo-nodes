@@ -9,7 +9,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       attribute="class"
       defaultTheme="system"
       enableSystem
-      storageKey="marketplace-theme"
+      storageKey="dashboard-theme"
       disableTransitionOnChange
     >
       {children}
