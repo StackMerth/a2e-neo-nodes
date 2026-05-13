@@ -34,6 +34,11 @@ const requestSchema = z.object({
   commitmentDays: z.number().int().refine(d => [7, 30, 90].includes(d), {
     message: 'commitmentDays must be 7, 30, or 90',
   }).optional(),
+  // M4.4: optional region constraint. Free-form string matching the
+  // values operators put on Node.region (e.g. us-east-1, us-west-2,
+  // eu-west-1, ap-south-1). Empty / null means "Any" — allocator
+  // skips the region filter entirely.
+  requiredRegion: z.string().max(64).optional().nullable(),
 }).refine(
   data => data.tier !== 'RESERVED' || data.commitmentDays !== undefined,
   { message: 'commitmentDays required for RESERVED tier', path: ['commitmentDays'] },
@@ -132,7 +137,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
     }
 
-    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays } = parsed.data
+    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion } = parsed.data
     const baseRatePerDay = GPU_DAILY_RATES[gpuTier] ?? 140.15
     // M3: tier discount applied to ratePerDay so all downstream
     // calculations (totalCost, ratePerMinute set by allocator, refund
@@ -211,6 +216,11 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         // (refund logic checks this when buyer terminates early).
         tier,
         commitmentDays: tier === 'RESERVED' ? commitmentDays ?? null : null,
+        // M4.4: optional region constraint passed straight through to
+        // the allocator. Empty string is normalized to null so the
+        // allocator's `requiredRegion ? { region } : {}` branch picks
+        // "Any" rather than filtering for the empty string.
+        requiredRegion: requiredRegion?.trim() || null,
       },
     })
 

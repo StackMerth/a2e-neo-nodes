@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Server, CircleCheck, Hash, Layers, Calendar, FileText, Wallet, Receipt } from 'lucide-react'
+import { Server, CircleCheck, Hash, Layers, Calendar, FileText, Wallet, Receipt, Globe } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -99,6 +99,17 @@ const TIER_OPTIONS: Array<{
 
 const COMMITMENT_OPTIONS = [7, 30, 90] as const
 
+// M4.4: region options for the Region selector. Empty string = "Any"
+// (default), allocator skips the region filter entirely. Values match
+// the strings operators put on Node.region.
+const REGION_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '',            label: 'Any region' },
+  { value: 'us-east-1',   label: 'US East (Virginia)' },
+  { value: 'us-west-2',   label: 'US West (Oregon)' },
+  { value: 'eu-west-1',   label: 'EU West (Ireland)' },
+  { value: 'ap-south-1',  label: 'APAC (Mumbai)' },
+]
+
 export default function RequestComputePage() {
   const router = useRouter()
   const { toast } = useToast()
@@ -111,6 +122,9 @@ export default function RequestComputePage() {
   // M3: pricing tier + commitment slider for RESERVED
   const [rentalTier, setRentalTier] = useState<RentalTier>('ON_DEMAND')
   const [commitmentDays, setCommitmentDays] = useState<number>(30)
+  // M4.4: optional region constraint. Empty string = "Any" (default)
+  // which the API normalizes to null so the allocator skips the filter.
+  const [requiredRegion, setRequiredRegion] = useState<string>('')
 
   const hourlyRate = selectedTier ? HOURLY_RATES[selectedTier] ?? 0 : 0
   const tierMultiplier = TIER_OPTIONS.find(t => t.id === rentalTier)?.multiplier ?? 1
@@ -137,6 +151,7 @@ export default function RequestComputePage() {
         txHash: txHash.trim(),
         tier: rentalTier,
         commitmentDays: rentalTier === 'RESERVED' ? commitmentDays : undefined,
+        requiredRegion: requiredRegion || null,
       }) as { id: string }
       toast('success', 'Compute request submitted successfully')
       router.push(`/buyer/requests/${result.id}`)
@@ -403,6 +418,56 @@ export default function RequestComputePage() {
                 Reserved tier locks duration to the commitment period ({commitmentDays} days).
               </p>
             )}
+          </FormSection>
+        </FormCard>
+
+        {/* M4.4: Region (optional). Any region default = allocator
+            picks from the global pool. Specific region hard-filters
+            to that region's nodes; if none online the request waits
+            in PENDING with NO_REGION_CAPACITY flag visible to admin. */}
+        <FormCard
+          title="Region"
+          description="Pin the rental to a specific region or let the allocator pick from the whole network."
+          icon={Globe}
+        >
+          <FormSection>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+              {REGION_OPTIONS.map(opt => {
+                const isActive = requiredRegion === opt.value
+                return (
+                  <button
+                    key={opt.value || 'any'}
+                    type="button"
+                    onClick={() => setRequiredRegion(opt.value)}
+                    className="rounded-md px-3 py-2.5 text-left transition-colors"
+                    style={isActive
+                      ? {
+                          background: 'rgba(34,197,94,0.10)',
+                          border: '1px solid rgba(34,197,94,0.45)',
+                          color: 'var(--text-primary)',
+                        }
+                      : {
+                          background: 'var(--bg-elevated)',
+                          border: '1px solid var(--border-color)',
+                          color: 'var(--text-secondary)',
+                        }
+                    }
+                  >
+                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                      {opt.label}
+                    </p>
+                    {opt.value && (
+                      <p className="font-mono text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                        {opt.value}
+                      </p>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              Pinning a region narrows the pool. If no nodes are online in your chosen region the request will wait in queue until capacity appears.
+            </p>
           </FormSection>
         </FormCard>
 

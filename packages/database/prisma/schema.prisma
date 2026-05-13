@@ -965,6 +965,12 @@ model ComputeRequest {
   gpuCount        Int                  @default(1)
   durationDays    Int                  @default(30)
   purpose         String?              // What they'll use it for
+  // M4.4: optional region constraint. When set, the allocator hard-
+  // filters candidate nodes to Node.region === requiredRegion. Null =
+  // "Any" (default), meaning region is ignored. Free-form string to
+  // match Node.region; common values: us-east-1, us-west-2, eu-west-1,
+  // ap-south-1.
+  requiredRegion  String?
 
   // Pricing
   ratePerDay      Float                // Rate at time of request
