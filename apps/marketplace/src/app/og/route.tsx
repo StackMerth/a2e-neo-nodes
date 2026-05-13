@@ -100,7 +100,7 @@ function renderTitled(title: string, subtitle: string): ImageResponse {
       <div style={baseFrame}>
         <Header />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          <div style={eyebrow}>a2e network</div>
+          <div style={eyebrow}>tokenos deai network</div>
           <div style={{ ...headline, fontSize: 96 }}>{title}</div>
           <div style={subhead}>{subtitle}</div>
         </div>

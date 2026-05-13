@@ -52,9 +52,14 @@ export function Navigation() {
             isScrolled ? "h-14" : "h-20"
           }`}
         >
-          {/* Logo (always routes home) */}
+          {/* Logo (always routes home). Two-tone wordmark to echo the
+              old TokenOS_COMPUTE site: base name in foreground, suffix
+              in brand green. */}
           <a href="/" className="flex items-center gap-2 group">
-            <span className={`font-display tracking-tight transition-all duration-500 ${isScrolled ? "text-lg" : "text-xl"}`}>TokenOS DeAI</span>
+            <span className={`font-display tracking-tight transition-all duration-500 ${isScrolled ? "text-lg" : "text-xl"}`}>
+              <span>TokenOS</span>
+              <span className="text-brand">_DeAI</span>
+            </span>
           </a>
 
           {/* Desktop Navigation */}

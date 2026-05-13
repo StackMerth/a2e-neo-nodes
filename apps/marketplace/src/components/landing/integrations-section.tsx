@@ -2,19 +2,45 @@
 
 import { useEffect, useState, useRef } from "react";
 
-const integrations = [
-  { name: "Solana", category: "Payments rail" },
-  { name: "USDC", category: "Stablecoin" },
-  { name: "Helius", category: "RPC and webhooks" },
-  { name: "Postgres", category: "Source of truth" },
-  { name: "Redis", category: "Queue and cache" },
-  { name: "BullMQ", category: "Worker scheduling" },
-  { name: "Docker", category: "Container runtime" },
-  { name: "WireGuard", category: "Cluster networking" },
-  { name: "Prisma", category: "ORM" },
-  { name: "Sentry", category: "Error tracking" },
-  { name: "Render", category: "API hosting" },
-  { name: "Vercel", category: "Frontend hosting" },
+/*
+ * Reworked section: instead of a marquee of generic tech logos
+ * (Postgres, Redis, Vercel, etc) this section now surfaces the
+ * specific engine workers that make TokenOS DeAI a working DePIN
+ * marketplace. Each card names a worker, a one-line description of
+ * its job, and a hard number that proves it is running in
+ * production.
+ */
+const primitives = [
+  {
+    name: "Auto allocator",
+    description: "Watches confirmed payments every ten seconds, picks an idle node by tier and reputation, mints an SSH credential before the buyer can refresh the page.",
+    metric: "<60s pay-to-prompt",
+  },
+  {
+    name: "Per-minute meter",
+    description: "Heartbeats roll into a buyer-facing cost ticker every sixty seconds. Stop early and the unused minutes return to the wallet that paid.",
+    metric: "60s WebSocket cadence",
+  },
+  {
+    name: "Reputation engine",
+    description: "Daily recompute on a transparent formula. The score, tier, and the math behind both are public. There is no pay-to-rank tier.",
+    metric: "60 / 25 / 15 weighting",
+  },
+  {
+    name: "Spot preemption",
+    description: "When ON_DEMAND demand spikes, SPOT rentals get a 90 second grace window and a partial refund. RESERVED tier is exempt by contract.",
+    metric: "90s grace, never RESERVED",
+  },
+  {
+    name: "Solana settlement",
+    description: "USDC payouts confirm on Solana via Helius webhooks. Median end-to-end from buyer-pay to operator-credited is eleven seconds.",
+    metric: "11s median settlement",
+  },
+  {
+    name: "Carbon estimator",
+    description: "Per-rental CO2 from GPU TDP times region grid intensity. Buyer dashboard surfaces grams per active rental and monthly totals.",
+    metric: "per-job CO2 grams",
+  },
 ];
 
 export function IntegrationsSection() {
@@ -26,7 +52,7 @@ export function IntegrationsSection() {
       ([entry]) => {
         if (entry.isIntersecting) setIsVisible(true);
       },
-      { threshold: 0.1 }
+      { threshold: 0.1 },
     );
 
     if (sectionRef.current) observer.observe(sectionRef.current);
@@ -42,60 +68,45 @@ export function IntegrationsSection() {
             isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
         >
-          <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground mb-6">
-            <span className="w-8 h-px bg-foreground/30" />
-            Integrations
-            <span className="w-8 h-px bg-foreground/30" />
+          <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground mb-4 sm:mb-6">
+            <span className="w-8 h-px bg-brand" />
+            Engine internals
+            <span className="w-8 h-px bg-brand" />
           </span>
-          <h2 className="text-4xl lg:text-6xl font-display tracking-tight mb-6">
-            Open primitives,
+          <h2 className="text-3xl sm:text-4xl lg:text-6xl font-display tracking-tight mb-4 sm:mb-6">
+            Six workers,
             <br />
-            no lock-in.
+            one rate sheet.
           </h2>
-          <p className="text-xl text-muted-foreground">
-            Everything under the hood is open source or a standard you can swap. We are integrators, not gatekeepers.
+          <p className="text-base sm:text-lg lg:text-xl text-muted-foreground">
+            The moving parts that keep allocations fast, prices honest, and operators accountable. Every one of them is in production today.
           </p>
         </div>
 
-      </div>
-      
-      {/* Full-width marquees outside container */}
-      <div className="w-full mb-6">
-        <div className="flex gap-6 marquee">
-          {[...Array(2)].map((_, setIndex) => (
-            <div key={setIndex} className="flex gap-6 shrink-0">
-              {integrations.map((integration) => (
-                <div
-                  key={`${integration.name}-${setIndex}`}
-                  className="shrink-0 px-8 py-6 border border-foreground/10 hover:border-foreground/30 hover:bg-foreground/[0.02] transition-all duration-300 group"
-                >
-                  <div className="text-lg font-medium group-hover:translate-x-1 transition-transform">
-                    {integration.name}
-                  </div>
-                  <div className="text-sm text-muted-foreground">{integration.category}</div>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-      
-      {/* Reverse marquee */}
-      <div className="w-full">
-        <div className="flex gap-6 marquee-reverse">
-          {[...Array(2)].map((_, setIndex) => (
-            <div key={setIndex} className="flex gap-6 shrink-0">
-              {[...integrations].reverse().map((integration) => (
-                <div
-                  key={`${integration.name}-reverse-${setIndex}`}
-                  className="shrink-0 px-8 py-6 border border-foreground/10 hover:border-foreground/30 hover:bg-foreground/[0.02] transition-all duration-300 group"
-                >
-                  <div className="text-lg font-medium group-hover:translate-x-1 transition-transform">
-                    {integration.name}
-                  </div>
-                  <div className="text-sm text-muted-foreground">{integration.category}</div>
-                </div>
-              ))}
+        {/* Primitives grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-foreground/10 border border-foreground/10">
+          {primitives.map((p, idx) => (
+            <div
+              key={p.name}
+              className={`relative bg-background p-6 sm:p-8 transition-all duration-500 ${
+                isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+              }`}
+              style={{ transitionDelay: `${idx * 75}ms` }}
+            >
+              <div className="flex items-baseline justify-between mb-4">
+                <span className="font-mono text-xs text-muted-foreground">
+                  {String(idx + 1).padStart(2, "0")}
+                </span>
+                <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-brand">
+                  {p.metric}
+                </span>
+              </div>
+              <h3 className="font-display text-xl sm:text-2xl mb-3">
+                {p.name}
+              </h3>
+              <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
+                {p.description}
+              </p>
             </div>
           ))}
         </div>

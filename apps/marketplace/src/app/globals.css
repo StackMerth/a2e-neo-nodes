@@ -87,7 +87,8 @@
 
 @layer utilities {
   .font-display {
-    font-family: var(--font-instrument-serif), Georgia, serif;
+    font-family: var(--font-instrument-serif), system-ui, sans-serif;
+    letter-spacing: -0.02em;
   }
   .font-mono {
     font-family: var(--font-jetbrains), ui-monospace, monospace;

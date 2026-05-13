@@ -142,32 +142,6 @@ export function TestimonialsSection() {
           </div>
         </div>
 
-        {/* Tech Stack Marquee Label */}
-        <div className="mt-24 pt-12 border-t border-foreground/10">
-          <p className="font-mono text-xs tracking-widest text-muted-foreground uppercase mb-8 text-center">
-            Built on
-          </p>
-        </div>
-      </div>
-
-      {/* Full-width marquee outside container */}
-      <div className="w-full">
-        <div className="flex gap-16 items-center marquee">
-          {[...Array(2)].map((_, setIdx) => (
-            <div key={setIdx} className="flex gap-16 items-center shrink-0">
-              {["Solana", "Postgres", "Redis", "BullMQ", "Helius", "WireGuard", "Docker", "Render", "Vercel"].map(
-                (tech) => (
-                  <span
-                    key={`${setIdx}-${tech}`}
-                    className="font-display text-xl md:text-2xl text-foreground/30 whitespace-nowrap hover:text-foreground transition-colors duration-300"
-                  >
-                    {tech}
-                  </span>
-                )
-              )}
-            </div>
-          ))}
-        </div>
       </div>
     </section>
   );
