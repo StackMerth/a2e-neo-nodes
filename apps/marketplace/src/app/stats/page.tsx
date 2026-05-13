@@ -1,12 +1,18 @@
 /*
- * Network statistics page. Data fetched server-side so SEO/metadata
- * is preserved; rendered by the client `<ColorfulStats />` body so
- * Recharts can paint the gradient charts. Page-local dark + colorful
- * aesthetic (override of the editorial cream used elsewhere on the
- * marketplace).
+ * Network statistics page. Data fetched server-side so SEO + metadata
+ * are preserved; the body renders client-side so Recharts can paint
+ * the colorful charts. Navigation + FooterSection wrap the body the
+ * same way they do on every other marketplace route, so the menu nav
+ * remains visible and the page inherits the marketplace background.
  */
 
-import { ColorfulStats, type StatsSnapshot, type AnalyticsSnapshot } from './_components/colorful-stats'
+import { Navigation } from '@/components/landing/navigation'
+import { FooterSection } from '@/components/landing/footer-section'
+import {
+  ColorfulStats,
+  type StatsSnapshot,
+  type AnalyticsSnapshot,
+} from './_components/colorful-stats'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
 
@@ -34,9 +40,9 @@ async function fetchAnalytics(): Promise<AnalyticsSnapshot | null> {
 
 export const metadata = {
   title: 'Stats',
-  description: 'Live network statistics and 3-month projections for the TokenOS DeAI GPU compute marketplace.',
+  description: 'Live network stats and 3-month projections for the TokenOS DeAI GPU compute marketplace.',
   openGraph: {
-    title: 'TokenOS DeAI network statistics',
+    title: 'TokenOS DeAI network stats',
     description: 'Live network stats and projections for the TokenOS DeAI GPU compute marketplace.',
     images: [{ url: '/og?type=marketplace', width: 1200, height: 630 }],
   },
@@ -50,15 +56,22 @@ export default async function StatsPage() {
   const [stats, analytics] = await Promise.all([fetchStats(), fetchAnalytics()])
   if (!stats) {
     return (
-      <main
-        className="min-h-screen flex items-center justify-center px-6"
-        style={{ background: '#050714', color: '#ffffff' }}
-      >
-        <p className="font-mono text-sm text-white/55">
-          Stats temporarily unavailable.
-        </p>
+      <main className="relative min-h-screen overflow-x-hidden noise-overlay">
+        <Navigation />
+        <section className="pt-32 pb-24 flex items-center justify-center px-6">
+          <p className="font-mono text-sm text-muted-foreground">
+            Stats temporarily unavailable.
+          </p>
+        </section>
+        <FooterSection />
       </main>
     )
   }
-  return <ColorfulStats stats={stats} analytics={analytics} />
+  return (
+    <main className="relative min-h-screen overflow-x-hidden noise-overlay">
+      <Navigation />
+      <ColorfulStats stats={stats} analytics={analytics} />
+      <FooterSection />
+    </main>
+  )
 }

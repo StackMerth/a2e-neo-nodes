@@ -179,28 +179,67 @@ export function Sidebar() {
       initial="closed"
       style={{ width: sidebarOpen ? 280 : 80 }}
     >
-      {/* Logo */}
+      {/* Brand. Collapsed: a clean primary-toned monogram "T" tile.
+          Expanded: the full two-tone TokenOS_DeAI wordmark + small
+          Admin pill, matching the portal TopHeader treatment. */}
       <div className="sidebar-header">
         <motion.div
           className="logo"
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => router.push('/')}
+          style={{ minWidth: 0, flex: 1 }}
         >
-          <div className="logo-icon">TokenOS DeAI</div>
-          <AnimatePresence>
-            {sidebarOpen && (
-              <motion.span
-                className="logo-text"
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                transition={{ duration: 0.2 }}
+          {!sidebarOpen ? (
+            <span
+              className="inline-flex items-center justify-center font-display"
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                background: 'linear-gradient(135deg, var(--primary) 0%, var(--primary-dark, var(--primary)) 100%)',
+                color: '#ffffff',
+                fontWeight: 900,
+                fontSize: 16,
+                letterSpacing: '-0.02em',
+                flexShrink: 0,
+              }}
+              title="TokenOS DeAI Admin"
+            >
+              T
+            </span>
+          ) : (
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className="font-display tracking-tight"
+                style={{
+                  fontSize: '1.15rem',
+                  fontWeight: 900,
+                  letterSpacing: '-0.02em',
+                  whiteSpace: 'nowrap',
+                }}
               >
-                Admin
-              </motion.span>
-            )}
-          </AnimatePresence>
+                <span style={{ color: 'var(--text-primary)' }}>TokenOS</span>
+                <span style={{ color: 'var(--primary)' }}>_DeAI</span>
+              </span>
+              <AnimatePresence>
+                <motion.span
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="font-mono text-[10px] uppercase tracking-[0.16em] px-1.5 py-0.5 rounded-sm shrink-0"
+                  style={{
+                    color: 'var(--primary)',
+                    background: 'rgba(34, 197, 94, 0.10)',
+                    border: '1px solid rgba(34, 197, 94, 0.30)',
+                  }}
+                >
+                  Admin
+                </motion.span>
+              </AnimatePresence>
+            </div>
+          )}
         </motion.div>
 
         {sidebarOpen && (
