@@ -9,6 +9,7 @@ import { BuyerSidebar } from '@/components/layout/BuyerSidebar'
 import { MobileMenuButton } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { RoleIntroCallout } from '@/components/layout/RoleIntroCallout'
+import { TopHeader } from '@/components/layout/TopHeader'
 
 const mainEase: [number, number, number, number] = [0.4, 0, 0.2, 1]
 
@@ -39,7 +40,8 @@ export default function BuyerLayout({ children }: { children: React.ReactNode })
   if (!user) return null
 
   return (
-    <div className="app-layout">
+    <div className="app-layout pt-16">
+      <TopHeader />
       <MobileMenuButton />
       <BuyerSidebar />
 
