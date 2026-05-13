@@ -12,6 +12,15 @@ export interface RoutingContext {
   gpuTier: GpuTier
   hasInternalDemand: boolean
   deploymentId?: string
+  /**
+   * M4.4: optional region constraint inherited from the buyer's
+   * ComputeRequest.requiredRegion. The market-routing decision itself
+   * does not vary by region (external markets are global), but the
+   * field is surfaced here so audit-log payloads can record what the
+   * buyer asked for. The actual node-level hard filter lives in the
+   * compute-allocator's prisma.node.findMany where clause.
+   */
+  region?: string
 }
 
 export class RoutingEngine {

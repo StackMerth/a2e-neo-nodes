@@ -167,6 +167,12 @@ async function processRequest(
   // count we need. Pool size of max(gpuCount * 5, 20) gives enough
   // headroom that the top-N picks are still the truly best nodes.
   const PICK_POOL = Math.max(cr.gpuCount * 5, 20)
+  // M4.4: hard-filter on region when the buyer specified one. Null
+  // requiredRegion means "Any" (default) and the where clause skips
+  // the predicate entirely. Region strings are free-form and matched
+  // case-sensitively against Node.region (also a free-form String?
+  // column).
+  const requiredRegion = (cr as { requiredRegion?: string | null }).requiredRegion
   const candidates = await prisma.node.findMany({
     where: {
       gpuTier: cr.gpuTier,
@@ -176,6 +182,7 @@ async function processRequest(
       pendingDeletion: false,
       agentVersion: { not: null },
       lastHeartbeat: { gte: new Date(Date.now() - HEARTBEAT_FRESH_MS) },
+      ...(requiredRegion ? { region: requiredRegion } : {}),
     },
     orderBy: { lastHeartbeat: 'desc' },
     take: PICK_POOL,
@@ -202,11 +209,14 @@ async function processRequest(
     // Insufficient supply — stay in PENDING, retry next tick. We don't
     // mark anything; the request stays exactly where it was. We do
     // record an eligibility flag so admin can see the request is paid
-    // and waiting on capacity.
+    // and waiting on capacity. M4.4: distinguish region-bound from
+    // generic capacity shortage so admin's Needs Review queue can see
+    // when a buyer asked for an unstocked region.
+    const capacityFlag = requiredRegion ? 'NO_REGION_CAPACITY' : 'WAITING_ON_CAPACITY'
     await prisma.computeRequest.updateMany({
       where: { id: cr.id, status: 'PENDING' },
       data: {
-        eligibilityFlags: [...verdict.flags, 'WAITING_ON_CAPACITY'],
+        eligibilityFlags: [...verdict.flags, capacityFlag],
       },
     })
     return

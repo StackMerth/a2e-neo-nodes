@@ -190,6 +190,9 @@ export const buyer = {
     // M3: pricing tier + optional commitment (RESERVED only)
     tier?: 'ON_DEMAND' | 'SPOT' | 'RESERVED'
     commitmentDays?: number
+    // M4.4: optional region hard-filter (free-form, e.g. us-east-1).
+    // null/undefined/empty means "Any" - allocator skips the filter.
+    requiredRegion?: string | null
   }) =>
     apiFetch('/v1/buyer/compute/request', { method: 'POST', body: data }),
   requests: (params?: Record<string, string>) => {
