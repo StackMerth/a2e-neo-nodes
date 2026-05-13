@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useSidebar } from './SidebarContext'
 import { NotificationBell } from './NotificationBell'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { UserMenu } from './UserMenu'
 import {
   LayoutDashboard,
   Plus,
@@ -16,7 +17,6 @@ import {
   Key,
   BookOpen,
   Settings,
-  LogOut,
   PanelLeftOpen,
   PanelLeftClose,
 } from 'lucide-react'
@@ -45,15 +45,10 @@ const labelVariants = {
 }
 
 export function BuyerSidebar() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen } = useSidebar()
-
-  const handleLogout = async () => {
-    await logout()
-    router.push('/login')
-  }
 
   const displayName = user?.email || user?.walletAddress
     ? user.email || `${user.walletAddress?.slice(0, 6)}...${user.walletAddress?.slice(-4)}`
@@ -169,40 +164,20 @@ export function BuyerSidebar() {
         })}
       </nav>
 
-      {/* Footer */}
+      {/* Footer with avatar dropdown */}
       <div className="sidebar-footer">
-        <div className="user-info">
-          <motion.div
-            className="user-avatar"
-            whileHover={{ scale: 1.05 }}
-          >
-            {avatarLetter}
-          </motion.div>
-          <motion.div
-            className="user-details"
-            variants={labelVariants}
-          >
-            <span className="user-name">{displayName}</span>
-            <span className="user-role">Compute Buyer</span>
-          </motion.div>
-        </div>
-
         <NotificationBell collapsed={!sidebarOpen} />
 
         <div className="flex justify-center mb-2">
           <ThemeToggle />
         </div>
 
-        <motion.button
-          className="logout-btn"
-          onClick={handleLogout}
-          whileHover={{ scale: 1.02, backgroundColor: 'rgba(239, 68, 68, 0.15)' }}
-          whileTap={{ scale: 0.98 }}
-          title={!sidebarOpen ? 'Logout' : undefined}
-        >
-          <LogOut size={20} />
-          <motion.span variants={labelVariants}>Logout</motion.span>
-        </motion.button>
+        <UserMenu
+          collapsed={!sidebarOpen}
+          displayName={displayName}
+          avatarLetter={avatarLetter}
+          role="COMPUTE_BUYER"
+        />
       </div>
     </motion.aside>
   )

@@ -6,11 +6,15 @@ import { Menu, X } from "lucide-react";
 import { portalUrls } from "@/lib/portal-urls";
 import { ThemeToggle } from "@/components/theme-toggle";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://tokenosdeai-api.onrender.com";
+
+// Public-facing nav surfaces, all reachable without an account.
 const navLinks = [
   { name: "Marketplace", href: "/marketplace" },
-  { name: "Leaderboard", href: "/leaderboard" },
+  { name: "Operators", href: "/leaderboard" },
   { name: "Stats", href: "/stats" },
   { name: "Pricing", href: "/#pricing" },
+  { name: "API Docs", href: `${API_URL}/docs`, external: true },
 ];
 
 export function Navigation() {
@@ -62,12 +66,16 @@ export function Navigation() {
             </span>
           </a>
 
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-12">
+          {/* Desktop Navigation. gap-12 tightens to gap-8 from md to lg
+              so 5 items fit comfortably. external links get
+              target=_blank so docs open in a new tab. */}
+          <div className="hidden md:flex items-center gap-8 lg:gap-10">
             {navLinks.map((link) => (
               <a
                 key={link.name}
                 href={link.href}
+                target={link.external ? "_blank" : undefined}
+                rel={link.external ? "noreferrer" : undefined}
                 className="text-sm text-foreground/70 hover:text-foreground transition-colors duration-300 relative group"
               >
                 {link.name}
@@ -129,10 +137,12 @@ export function Navigation() {
               <a
                 key={link.name}
                 href={link.href}
+                target={link.external ? "_blank" : undefined}
+                rel={link.external ? "noreferrer" : undefined}
                 onClick={() => setIsMobileMenuOpen(false)}
                 className={`text-5xl font-display text-foreground hover:text-muted-foreground transition-all duration-500 ${
-                  isMobileMenuOpen 
-                    ? "opacity-100 translate-y-0" 
+                  isMobileMenuOpen
+                    ? "opacity-100 translate-y-0"
                     : "opacity-0 translate-y-4"
                 }`}
                 style={{ transitionDelay: isMobileMenuOpen ? `${i * 75}ms` : "0ms" }}

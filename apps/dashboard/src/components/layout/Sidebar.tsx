@@ -9,6 +9,7 @@ import { useSidebar } from './SidebarContext'
 import { useSocket } from '@/hooks/useWebSocket'
 import { api } from '@/lib/api'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { UserMenu } from './UserMenu'
 import {
   LayoutDashboard,
   Server,
@@ -26,7 +27,6 @@ import {
   FileText,
   ClipboardCheck,
   Settings,
-  LogOut,
   PanelLeftOpen,
   PanelLeftClose,
   Globe,
@@ -111,7 +111,7 @@ const labelVariants = {
 }
 
 export function Sidebar() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen } = useSidebar()
@@ -165,11 +165,6 @@ export function Sidebar() {
       off('rating:new')
     }
   }, [on, off, fetchBadges])
-
-  const handleLogout = () => {
-    logout()
-    router.push('/login')
-  }
 
   const displayName = user?.username || 'Admin'
   const avatarLetter = (user?.username || 'A').charAt(0).toUpperCase()
@@ -307,38 +302,18 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Footer */}
+      {/* Footer with avatar dropdown */}
       <div className="sidebar-footer">
-        <div className="user-info">
-          <motion.div
-            className="user-avatar"
-            whileHover={{ scale: 1.05 }}
-          >
-            {avatarLetter}
-          </motion.div>
-          <motion.div
-            className="user-details"
-            variants={labelVariants}
-          >
-            <span className="user-name">{displayName}</span>
-            <span className="user-role">{user?.role || 'Administrator'}</span>
-          </motion.div>
-        </div>
-
         <div className="flex justify-center mb-2">
           <ThemeToggle />
         </div>
 
-        <motion.button
-          className="logout-btn"
-          onClick={handleLogout}
-          whileHover={{ scale: 1.02, backgroundColor: 'rgba(239, 68, 68, 0.15)' }}
-          whileTap={{ scale: 0.98 }}
-          title={!sidebarOpen ? 'Logout' : undefined}
-        >
-          <LogOut size={20} />
-          <motion.span variants={labelVariants}>Logout</motion.span>
-        </motion.button>
+        <UserMenu
+          collapsed={!sidebarOpen}
+          displayName={displayName}
+          avatarLetter={avatarLetter}
+          role={user?.role ?? 'Administrator'}
+        />
       </div>
     </motion.aside>
   )
