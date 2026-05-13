@@ -2,14 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useAuth } from '@/hooks/useAuth'
 import { useSidebar } from './SidebarContext'
 import { useSocket } from '@/hooks/useWebSocket'
 import { api } from '@/lib/api'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { UserMenu } from './UserMenu'
 import {
   LayoutDashboard,
   Server,
@@ -111,8 +108,6 @@ const labelVariants = {
 }
 
 export function Sidebar() {
-  const { user } = useAuth()
-  const router = useRouter()
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen } = useSidebar()
   const [badges, setBadges] = useState<Record<string, number>>({})
@@ -166,9 +161,6 @@ export function Sidebar() {
     }
   }, [on, off, fetchBadges])
 
-  const displayName = user?.username || 'Admin'
-  const avatarLetter = (user?.username || 'A').charAt(0).toUpperCase()
-
   let itemIndex = 0
 
   return (
@@ -179,70 +171,10 @@ export function Sidebar() {
       initial="closed"
       style={{ width: sidebarOpen ? 280 : 80 }}
     >
-      {/* Brand. Collapsed: a clean primary-toned monogram "T" tile.
-          Expanded: the full two-tone TokenOS_DeAI wordmark + small
-          Admin pill, matching the portal TopHeader treatment. */}
-      <div className="sidebar-header">
-        <motion.div
-          className="logo"
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => router.push('/')}
-          style={{ minWidth: 0, flex: 1 }}
-        >
-          {!sidebarOpen ? (
-            <span
-              className="inline-flex items-center justify-center font-display"
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 8,
-                background: 'linear-gradient(135deg, var(--primary) 0%, var(--primary-dark, var(--primary)) 100%)',
-                color: '#ffffff',
-                fontWeight: 900,
-                fontSize: 16,
-                letterSpacing: '-0.02em',
-                flexShrink: 0,
-              }}
-              title="TokenOS DeAI Admin"
-            >
-              T
-            </span>
-          ) : (
-            <div className="flex items-center gap-2 min-w-0">
-              <span
-                className="font-display tracking-tight"
-                style={{
-                  fontSize: '1.15rem',
-                  fontWeight: 900,
-                  letterSpacing: '-0.02em',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <span style={{ color: 'var(--text-primary)' }}>TokenOS</span>
-                <span style={{ color: 'var(--primary)' }}>_DeAI</span>
-              </span>
-              <AnimatePresence>
-                <motion.span
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -10 }}
-                  transition={{ duration: 0.2 }}
-                  className="font-mono text-[10px] uppercase tracking-[0.16em] px-1.5 py-0.5 rounded-sm shrink-0"
-                  style={{
-                    color: 'var(--primary)',
-                    background: 'rgba(34, 197, 94, 0.10)',
-                    border: '1px solid rgba(34, 197, 94, 0.30)',
-                  }}
-                >
-                  Admin
-                </motion.span>
-              </AnimatePresence>
-            </div>
-          )}
-        </motion.div>
-
-        {sidebarOpen && (
+      {/* The brand sits in the TopHeader; sidebar is pure navigation.
+          Only the expand/collapse control remains at the top. */}
+      {sidebarOpen ? (
+        <div className="flex justify-end px-4 py-3">
           <motion.button
             className="collapse-btn"
             onClick={() => setSidebarOpen(false)}
@@ -254,10 +186,8 @@ export function Sidebar() {
           >
             <PanelLeftClose size={20} />
           </motion.button>
-        )}
-      </div>
-
-      {!sidebarOpen && (
+        </div>
+      ) : (
         <motion.div
           className="sidebar-toggle-collapsed"
           initial={{ opacity: 0 }}
@@ -341,19 +271,9 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Footer with avatar dropdown */}
-      <div className="sidebar-footer">
-        <div className="flex justify-center mb-2">
-          <ThemeToggle />
-        </div>
-
-        <UserMenu
-          collapsed={!sidebarOpen}
-          displayName={displayName}
-          avatarLetter={avatarLetter}
-          role={user?.role ?? 'Administrator'}
-        />
-      </div>
+      {/* Sidebar footer intentionally trimmed: identity, theme toggle,
+          and search moved to the TopHeader so the sidebar is pure
+          navigation. */}
     </motion.aside>
   )
 }

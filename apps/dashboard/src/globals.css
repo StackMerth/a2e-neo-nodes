@@ -752,15 +752,16 @@ textarea:focus {
 
 .sidebar {
   position: fixed;
-  top: 0;
+  /* TopHeader sits at the top (64px), sidebar starts below it. */
+  top: 64px;
   left: 0;
-  height: 100vh;
+  height: calc(100vh - 64px);
   width: 80px;
   background: var(--bg-card);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  z-index: 100;
+  z-index: 50;
   overflow: hidden;
 }
 
@@ -1108,7 +1109,7 @@ textarea:focus {
 
   .main-content {
     margin-left: 0 !important;
-    padding-top: 80px;
+    /* TopHeader is 64px; padding-top in the base rule already covers it. */
   }
 }
 
@@ -1123,7 +1124,9 @@ textarea:focus {
 
 .main-content {
   flex: 1;
-  padding: var(--space-xl);
+  /* TopHeader is 64px; main-content needs to clear it so the page
+     scrolls under the frosted header rather than starting beneath it. */
+  padding: 64px var(--space-xl) var(--space-xl);
   min-height: 100vh;
   margin-left: 80px;
 }
