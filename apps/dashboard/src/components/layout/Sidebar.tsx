@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useSidebar } from './SidebarContext'
 import { useSocket } from '@/hooks/useWebSocket'
 import { api } from '@/lib/api'
+import { ThemeToggle } from '@/components/theme-toggle'
 import {
   LayoutDashboard,
   Server,
@@ -322,6 +323,10 @@ export function Sidebar() {
             <span className="user-name">{displayName}</span>
             <span className="user-role">{user?.role || 'Administrator'}</span>
           </motion.div>
+        </div>
+
+        <div className="flex justify-center mb-2">
+          <ThemeToggle />
         </div>
 
         <motion.button
