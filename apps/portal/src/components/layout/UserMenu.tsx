@@ -49,11 +49,13 @@ export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMen
 
   const isBuyer = user?.role === 'COMPUTE_BUYER'
   const isAdmin = user?.role === 'ADMIN'
-  // Buyer's Portal is the unified label for the user-facing portal,
-  // matching how Stack Merth refers to the surface verbally. Admins
-  // get their own label since they jump to a different app entirely.
+  // Buyer's Portal is the unified label for the user-facing portal.
+  // The href has to land on a real page: /buyer 404s, only
+  // /buyer/dashboard exists. Node runners go to /dashboard. Admins
+  // jump back to the marketing/marketplace home since the admin
+  // surface lives in a separate app.
   const dashboardLabel = isAdmin ? 'Admin Dashboard' : "Buyer's Portal"
-  const dashboardHref = isBuyer ? '/buyer' : '/dashboard'
+  const dashboardHref = isBuyer ? '/buyer/dashboard' : '/dashboard'
 
   const roleLabel = isAdmin
     ? 'Administrator'
