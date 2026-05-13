@@ -140,6 +140,7 @@ export const auth = {
 export const nodeRunner = {
   profile: () => apiFetch('/v1/portal/node-runner/profile'),
   dashboard: () => apiFetch('/v1/portal/node-runner/dashboard'),
+  operatorStats: () => apiFetch('/v1/portal/node-runner/operator-stats'),
   nodes: () => apiFetch<{ nodes: unknown[] }>('/v1/portal/node-runner/nodes'),
   node: (id: string) => apiFetch(`/v1/portal/node-runner/nodes/${id}`),
   updateNode: (id: string, data: unknown) => apiFetch(`/v1/portal/node-runner/nodes/${id}`, { method: 'PATCH', body: data }),
