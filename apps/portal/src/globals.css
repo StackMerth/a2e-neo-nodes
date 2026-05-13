@@ -148,10 +148,13 @@
   --glass-blur: 32px;
 
   /* Text */
+  /* Brightened a step so values/labels on frosted cards read with
+     real contrast against the dark glass surface. Old values
+     (a1a1aa / 71717a) blended into the new --glass-bg too readily. */
   --text-primary: #ffffff;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --text-disabled: #52525b;
+  --text-secondary: #d1d5db;
+  --text-muted: #9ca3af;
+  --text-disabled: #6b7280;
 
   /* Borders */
   --border-color: rgba(255, 255, 255, 0.08);
