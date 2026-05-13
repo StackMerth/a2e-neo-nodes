@@ -2,11 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
-import { Check, Copy, Download, Loader2, AlertCircle, ChevronRight, Terminal } from 'lucide-react'
+import { Check, Copy, Download, Loader2, AlertCircle, ChevronRight, Terminal, ListChecks, Cpu } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
-import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import {
+  DashboardShell,
+  FormCard,
+  FormSection,
+} from '@/components/dashboard/FuturisticShell'
 
 const steps = [
   { id: 1, title: 'Requirements', description: 'Check system requirements' },
@@ -14,72 +17,60 @@ const steps = [
   { id: 3, title: 'Verify', description: 'Confirm node is online' },
 ]
 
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.07 } },
-}
-const item = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-}
-
 export default function OnboardingPage() {
   const [currentStep, setCurrentStep] = useState(0)
 
   return (
-    <motion.div
-      className="max-w-3xl mx-auto space-y-8"
-      variants={container}
-      initial="hidden"
-      animate="show"
+    <DashboardShell
+      title="Set Up Your Node"
+      subtitle="Follow these steps to get your GPU node earning on the TokenOS DeAI network"
     >
-      {/* Header */}
-      <motion.div variants={item} className="text-center">
-        <h1 className="text-2xl md:text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Set Up Your Node</h1>
-        <p style={{ color: 'var(--text-muted)' }}>Follow these steps to get your GPU node earning on the TokenOS DeAI network</p>
-      </motion.div>
-
-      {/* Step Indicator */}
-      <motion.div variants={item} className="flex items-center justify-center gap-4">
-        {steps.map((step, i) => (
-          <div key={step.id} className="flex items-center gap-3">
-            <div
-              className="flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold transition-all"
-              style={
-                i < currentStep
-                  ? { background: 'var(--primary)', color: '#fff' }
-                  : i === currentStep
-                  ? { background: 'rgba(34,197,94,0.2)', color: 'var(--primary)', border: '2px solid var(--primary)' }
-                  : { background: 'var(--bg-card-hover)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }
-              }
-            >
-              {i < currentStep ? <Check size={16} /> : step.id}
-            </div>
-            <span
-              className="text-sm hidden sm:inline"
-              style={{ color: i === currentStep ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: i === currentStep ? 500 : 400 }}
-            >
-              {step.title}
-            </span>
-            {i < steps.length - 1 && (
+      <div className="lg:col-span-3 max-w-3xl mx-auto w-full space-y-6">
+        {/* Step Indicator */}
+        <div className="flex items-center justify-center gap-4">
+          {steps.map((step, i) => (
+            <div key={step.id} className="flex items-center gap-3">
               <div
-                className="w-12 h-px"
-                style={{ background: i < currentStep ? 'var(--primary)' : 'var(--border-color)' }}
-              />
-            )}
-          </div>
-        ))}
-      </motion.div>
+                className="flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold transition-all"
+                style={
+                  i < currentStep
+                    ? { background: 'var(--primary)', color: '#fff' }
+                    : i === currentStep
+                    ? { background: 'rgba(34,197,94,0.2)', color: 'var(--primary)', border: '2px solid var(--primary)' }
+                    : { background: 'var(--bg-elevated)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }
+                }
+              >
+                {i < currentStep ? <Check size={16} /> : step.id}
+              </div>
+              <span
+                className="text-sm hidden sm:inline"
+                style={{ color: i === currentStep ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: i === currentStep ? 500 : 400 }}
+              >
+                {step.title}
+              </span>
+              {i < steps.length - 1 && (
+                <div
+                  className="w-12 h-px"
+                  style={{ background: i < currentStep ? 'var(--primary)' : 'var(--border-color)' }}
+                />
+              )}
+            </div>
+          ))}
+        </div>
 
-      {/* Step Content */}
-      {currentStep === 0 && (
-        <motion.div variants={item}>
-          <div
-            className="rounded-xl p-8"
-            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+        {/* Step Content */}
+        {currentStep === 0 && (
+          <FormCard
+            title="System Requirements"
+            description="Verify your GPU server meets these baseline specs before installing the agent"
+            icon={ListChecks}
+            footer={
+              <Button onClick={() => setCurrentStep(1)}>
+                Continue <ChevronRight size={16} className="ml-1" />
+              </Button>
+            }
           >
-            <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>System Requirements</h2>
-            <div className="space-y-4">
+            <FormSection>
               {[
                 { label: 'GPU', detail: 'NVIDIA H100, H200, B200, B300, or GB300', required: true },
                 { label: 'NVIDIA Driver', detail: 'Version 535+ with CUDA 12.0+', required: true },
@@ -90,8 +81,8 @@ export default function OnboardingPage() {
               ].map(req => (
                 <div
                   key={req.label}
-                  className="flex items-start gap-3 p-3 rounded-lg"
-                  style={{ background: 'var(--bg-card-hover)' }}
+                  className="flex items-start gap-3 p-3 rounded-md"
+                  style={{ background: 'var(--bg-elevated)' }}
                 >
                   <span
                     className="mt-0.5 w-5 h-5 rounded-full flex items-center justify-center"
@@ -119,78 +110,76 @@ export default function OnboardingPage() {
                   </span>
                 </div>
               ))}
-            </div>
-            <div className="mt-6 flex justify-end">
-              <Button onClick={() => setCurrentStep(1)}>
-                Continue <ChevronRight size={16} className="ml-1" />
-              </Button>
-            </div>
-          </div>
-        </motion.div>
-      )}
+            </FormSection>
+          </FormCard>
+        )}
 
-      {currentStep === 1 && (
-        <motion.div variants={item}>
-          <div
-            className="rounded-xl p-8"
-            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+        {currentStep === 1 && (
+          <FormCard
+            title="Install the TokenOS DeAI Agent"
+            description="Run this command on your GPU server to install the node agent"
+            icon={Terminal}
+            footer={
+              <div className="flex gap-3 w-full justify-between">
+                <Button variant="ghost" onClick={() => setCurrentStep(0)}>Back</Button>
+                <Button onClick={() => setCurrentStep(2)}>I&apos;ve installed it</Button>
+              </div>
+            }
           >
-            <div className="flex items-center gap-2 mb-4">
-              <Terminal size={20} style={{ color: 'var(--primary)' }} />
-              <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Install the TokenOS DeAI Agent</h2>
-            </div>
-            <p className="mb-6" style={{ color: 'var(--text-secondary)' }}>Run this command on your GPU server to install the TokenOS DeAI node agent:</p>
-
-            <div
-              className="relative rounded-lg p-4 font-mono text-sm"
-              style={{ background: 'var(--bg-darker)', border: '1px solid var(--border-color)' }}
-            >
-              <code style={{ color: 'var(--primary)' }} className="break-all">
-                curl -sSL https://a2e-api.onrender.com/v1/releases/install.sh | bash
-              </code>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(
-                    'curl -sSL https://a2e-api.onrender.com/v1/releases/install.sh | bash'
-                  )
-                }}
-                className="absolute top-3 right-3 p-1.5 rounded-md transition-colors"
-                style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}
-                title="Copy to clipboard"
+            <FormSection>
+              <div
+                className="relative rounded-md p-4 font-mono text-sm"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
               >
-                <Copy size={16} />
-              </button>
-            </div>
+                <code style={{ color: 'var(--primary)' }} className="break-all">
+                  curl -sSL https://a2e-api.onrender.com/v1/releases/install.sh | bash
+                </code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      'curl -sSL https://a2e-api.onrender.com/v1/releases/install.sh | bash'
+                    )
+                  }}
+                  className="absolute top-3 right-3 p-1.5 rounded-md transition-colors"
+                  style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}
+                  title="Copy to clipboard"
+                  type="button"
+                >
+                  <Copy size={16} />
+                </button>
+              </div>
 
-            <div
-              className="mt-6 p-4 rounded-lg"
-              style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)' }}
-            >
-              <p className="text-sm font-medium mb-1" style={{ color: 'var(--primary)' }}>What this does:</p>
-              <ul className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
-                <li>- Downloads the TokenOS DeAI agent binary for your platform</li>
-                <li>- Installs it as a systemd service</li>
-                <li>- Configures GPU detection and Docker integration</li>
-                <li>- Registers your node with the TokenOS DeAI network</li>
-              </ul>
-            </div>
+              <div
+                className="p-4 rounded-md"
+                style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)' }}
+              >
+                <p className="text-sm font-medium mb-1" style={{ color: 'var(--primary)' }}>What this does:</p>
+                <ul className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
+                  <li>- Downloads the TokenOS DeAI agent binary for your platform</li>
+                  <li>- Installs it as a systemd service</li>
+                  <li>- Configures GPU detection and Docker integration</li>
+                  <li>- Registers your node with the TokenOS DeAI network</li>
+                </ul>
+              </div>
 
-            <p className="text-xs mt-4" style={{ color: 'var(--text-muted)' }}>Or download manually:</p>
-            <div className="flex gap-3 mt-2">
-              <Button variant="secondary" size="sm"><Download size={14} className="mr-1" />Linux x64</Button>
-              <Button variant="secondary" size="sm"><Download size={14} className="mr-1" />Linux ARM64</Button>
-            </div>
+              <div>
+                <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>Or download manually:</p>
+                <div className="flex gap-3">
+                  <Button variant="secondary" size="sm" type="button">
+                    <Download size={14} className="mr-1" />Linux x64
+                  </Button>
+                  <Button variant="secondary" size="sm" type="button">
+                    <Download size={14} className="mr-1" />Linux ARM64
+                  </Button>
+                </div>
+              </div>
+            </FormSection>
+          </FormCard>
+        )}
 
-            <div className="mt-6 flex justify-between">
-              <Button variant="ghost" onClick={() => setCurrentStep(0)}>Back</Button>
-              <Button onClick={() => setCurrentStep(2)}>I&apos;ve installed it</Button>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {currentStep === 2 && <VerifyStep onBack={() => setCurrentStep(1)} />}
-    </motion.div>
+        {currentStep === 2 && <VerifyStep onBack={() => setCurrentStep(1)} />}
+      </div>
+    </DashboardShell>
   )
 }
 
@@ -238,17 +227,17 @@ function VerifyStep({ onBack }: { onBack: () => void }) {
   const remainingSec = Math.max(0, VERIFY_TIMEOUT_SEC - elapsedSec)
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+    <FormCard
+      title="Verify your node"
+      description="We are checking the network for your node registration"
+      icon={Cpu}
+      footer={
+        <Button variant="ghost" onClick={onBack}>Back</Button>
+      }
     >
-      <div
-        className="rounded-xl p-8 text-center"
-        style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
-      >
+      <FormSection>
         {checking && !found ? (
-          <>
+          <div className="text-center">
             <div
               className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
               style={{ background: 'rgba(34,197,94,0.1)' }}
@@ -257,8 +246,7 @@ function VerifyStep({ onBack }: { onBack: () => void }) {
             </div>
             <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Waiting for your node...</h2>
             <p className="text-sm mb-2" style={{ color: 'var(--text-muted)' }}>
-              We&apos;re checking for your node registration. This usually takes 30-60 seconds after
-              installation completes.
+              We&apos;re checking for your node registration. This usually takes 30-60 seconds after installation completes.
             </p>
             <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
               Elapsed: {elapsedSec}s &middot; Will stop checking in {remainingSec}s
@@ -271,9 +259,9 @@ function VerifyStep({ onBack }: { onBack: () => void }) {
             >
               Check now
             </Button>
-          </>
+          </div>
         ) : found ? (
-          <>
+          <div className="text-center">
             <div
               className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
               style={{ background: 'rgba(34,197,94,0.1)' }}
@@ -287,9 +275,9 @@ function VerifyStep({ onBack }: { onBack: () => void }) {
             <Link href="/dashboard">
               <Button>Go to Dashboard</Button>
             </Link>
-          </>
+          </div>
         ) : (
-          <>
+          <div className="text-center">
             <div
               className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
               style={{ background: 'rgba(245,158,11,0.1)' }}
@@ -325,12 +313,9 @@ function VerifyStep({ onBack }: { onBack: () => void }) {
             >
               Try again
             </Button>
-          </>
+          </div>
         )}
-        <div className="mt-4">
-          <Button variant="ghost" onClick={onBack}>Back</Button>
-        </div>
-      </div>
-    </motion.div>
+      </FormSection>
+    </FormCard>
   )
 }

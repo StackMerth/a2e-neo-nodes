@@ -1,25 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import { motion } from 'framer-motion'
 import { User, Bell, Shield, Lock, KeyRound, Wallet } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { buyer } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
+import {
+  DashboardShell,
+  FormCard,
+  FormSection,
+} from '@/components/dashboard/FuturisticShell'
 
 // Loose Solana address validation: base58 alphabet, 32-44 chars.
 // Stricter on-chain validity is enforced by the API route + Solana SDK.
 const SOL_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
-
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.07 } },
-}
-const item = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-}
 
 export default function BuyerSettingsPage() {
   const { user } = useAuth()
@@ -68,111 +63,89 @@ export default function BuyerSettingsPage() {
   }
 
   return (
-    <motion.div
-      className="space-y-6 max-w-2xl"
-      variants={container}
-      initial="hidden"
-      animate="show"
+    <DashboardShell
+      title="Settings"
+      subtitle="Manage your account and preferences"
     >
-      <motion.div variants={item}>
-        <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Settings</h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Manage your account and preferences</p>
-      </motion.div>
-
-      {/* Profile */}
-      <motion.div variants={item}>
-        <div
-          className="rounded-xl p-6"
-          style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+      <div className="lg:col-span-3 max-w-3xl mx-auto w-full space-y-6">
+        {/* Profile */}
+        <FormCard
+          title="Profile"
+          description="Identity attached to this buyer account"
+          icon={User}
         >
-          <div className="flex items-center gap-2 mb-4">
-            <User size={16} style={{ color: 'var(--text-secondary)' }} />
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Profile</h2>
-          </div>
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between py-2" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Email</span>
-              <span style={{ color: 'var(--text-primary)' }}>{user?.email ?? 'Not set'}</span>
-            </div>
-            <div className="flex justify-between py-2">
-              <span style={{ color: 'var(--text-muted)' }}>Role</span>
-              <span
-                className="text-xs font-medium px-2 py-0.5 rounded-full"
-                style={{ color: 'var(--info)', background: 'rgba(59,130,246,0.1)' }}
-              >
-                Compute Buyer
-              </span>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Wallet — editable. Used for receiving prorated refunds when a
-          rental is terminated early, and (later) for wallet-based login. */}
-      <motion.div variants={item}>
-        <div
-          className="rounded-xl p-6"
-          style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
-        >
-          <div className="flex items-center gap-2 mb-4">
-            <Wallet size={16} style={{ color: 'var(--text-secondary)' }} />
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Solana Wallet Address</h2>
-          </div>
-          <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-            We send prorated refunds here when you terminate a rental early. Required for refunds.
-          </p>
-
-          <div className="mb-3 py-2" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-            <div className="flex items-center justify-between">
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Current</span>
-              <span className="font-mono text-xs" style={{ color: currentWallet ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                {currentWallet
-                  ? `${currentWallet.slice(0, 6)}...${currentWallet.slice(-6)}`
-                  : 'Not connected'}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Paste your Solana wallet address"
-              value={walletInput}
-              onChange={(e) => setWalletInput(e.target.value)}
-              disabled={savingWallet}
-              className="flex-1 px-3 py-2 rounded-lg text-xs font-mono"
-              style={{
-                background: 'var(--bg-card)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border-color)',
-              }}
+          <FormSection>
+            <Row label="Email" value={user?.email ?? 'Not set'} />
+            <Row
+              label="Role"
+              value={
+                <span
+                  className="text-xs font-medium px-2 py-0.5 rounded-full"
+                  style={{ color: 'var(--info)', background: 'rgba(59,130,246,0.1)' }}
+                >
+                  Compute Buyer
+                </span>
+              }
             />
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleSaveWallet}
-              disabled={savingWallet || !walletInput.trim()}
-            >
-              {savingWallet ? 'Saving...' : currentWallet ? 'Update' : 'Save'}
-            </Button>
-          </div>
-          <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
-            Tip: 32-44 characters, starts with a letter or digit. Valid Solana addresses are base58-encoded.
-          </p>
-        </div>
-      </motion.div>
+          </FormSection>
+        </FormCard>
 
-      {/* Notifications */}
-      <motion.div variants={item}>
-        <div
-          className="rounded-xl p-6"
-          style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+        {/* Wallet */}
+        <FormCard
+          title="Solana Wallet Address"
+          description="We send prorated refunds here when you terminate a rental early. Required for refunds."
+          icon={Wallet}
         >
-          <div className="flex items-center gap-2 mb-4">
-            <Bell size={16} style={{ color: 'var(--text-secondary)' }} />
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Notification Preferences</h2>
-          </div>
-          <div className="space-y-1">
+          <FormSection>
+            <div className="py-2" style={{ borderBottom: '1px solid var(--border-color)' }}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Current</span>
+                <span className="font-mono text-xs" style={{ color: currentWallet ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                  {currentWallet
+                    ? `${currentWallet.slice(0, 6)}...${currentWallet.slice(-6)}`
+                    : 'Not connected'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Paste your Solana wallet address"
+                value={walletInput}
+                onChange={(e) => setWalletInput(e.target.value)}
+                disabled={savingWallet}
+                className="flex-1 font-mono text-sm rounded-md px-3 py-2 focus:outline-none focus:border-primary transition-colors"
+                style={{
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-primary)',
+                }}
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSaveWallet}
+                disabled={savingWallet || !walletInput.trim()}
+              >
+                {savingWallet ? 'Saving...' : currentWallet ? 'Update' : 'Save'}
+              </Button>
+            </div>
+            <p className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>
+              Tip: 32-44 characters, starts with a letter or digit. Valid Solana addresses are base58-encoded.
+            </p>
+          </FormSection>
+        </FormCard>
+
+        {/* Notifications */}
+        <FormCard
+          title="Notification Preferences"
+          description="Pick which events trigger an in-app + email notification"
+          icon={Bell}
+        >
+          <FormSection>
             {([
               ['requestApproved', 'Request Approved', 'Get notified when a compute request is approved'],
               ['computeReady', 'Compute Ready', 'Get notified when your compute allocation is ready to use'],
@@ -181,20 +154,22 @@ export default function BuyerSettingsPage() {
             ] as [keyof typeof prefs, string, string][]).map(([key, label, desc]) => (
               <div
                 key={key}
-                className="flex items-center justify-between py-3 last:border-0"
-                style={{ borderBottom: '1px solid var(--glass-border)' }}
+                className="flex items-center justify-between py-3 last:pb-0"
+                style={{ borderBottom: '1px solid var(--border-color)' }}
               >
-                <div>
+                <div className="min-w-0 pr-4">
                   <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{label}</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{desc}</p>
+                  <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{desc}</p>
                 </div>
                 <button
                   onClick={() => togglePref(key)}
-                  className="relative w-11 h-6 rounded-full transition-colors"
+                  className="relative w-11 h-6 rounded-full transition-colors shrink-0"
                   style={{
-                    background: prefs[key] ? 'var(--primary)' : 'var(--bg-card-hover)',
+                    background: prefs[key] ? 'var(--primary)' : 'var(--bg-elevated)',
                     border: prefs[key] ? 'none' : '1px solid var(--border-color)',
                   }}
+                  aria-pressed={prefs[key]}
+                  aria-label={`Toggle ${label}`}
                 >
                   <span
                     className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform"
@@ -203,32 +178,48 @@ export default function BuyerSettingsPage() {
                 </button>
               </div>
             ))}
-          </div>
-        </div>
-      </motion.div>
+          </FormSection>
+        </FormCard>
 
-      {/* Security */}
-      <motion.div variants={item}>
-        <div
-          className="rounded-xl p-6"
-          style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+        {/* Security */}
+        <FormCard
+          title="Security"
+          description="Password management and two-factor authentication"
+          icon={Shield}
         >
-          <div className="flex items-center gap-2 mb-4">
-            <Shield size={16} style={{ color: 'var(--text-secondary)' }} />
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Security</h2>
-          </div>
-          <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>Password management and two-factor authentication</p>
-          <div className="flex gap-3">
-            <Button variant="secondary" size="sm" disabled>
-              <Lock size={14} className="mr-1" /> Change Password
-            </Button>
-            <Button variant="secondary" size="sm" disabled>
-              <KeyRound size={14} className="mr-1" /> Enable 2FA
-            </Button>
-          </div>
-          <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>These features will be available soon.</p>
-        </div>
-      </motion.div>
-    </motion.div>
+          <FormSection>
+            <div className="flex gap-3 flex-wrap">
+              <Button variant="secondary" size="sm" disabled>
+                <Lock size={14} className="mr-1" /> Change Password
+              </Button>
+              <Button variant="secondary" size="sm" disabled>
+                <KeyRound size={14} className="mr-1" /> Enable 2FA
+              </Button>
+            </div>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              These features will be available soon.
+            </p>
+          </FormSection>
+        </FormCard>
+      </div>
+    </DashboardShell>
+  )
+}
+
+function Row({
+  label,
+  value,
+}: {
+  label: string
+  value: React.ReactNode
+}) {
+  return (
+    <div
+      className="flex items-center justify-between py-2"
+      style={{ borderBottom: '1px solid var(--border-color)' }}
+    >
+      <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{label}</span>
+      <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{value}</span>
+    </div>
   )
 }

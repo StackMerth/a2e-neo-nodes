@@ -2,21 +2,17 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
-import { ArrowLeft, Save } from 'lucide-react'
+import { ArrowLeft, Save, User, Wallet, CalendarClock } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useToast } from '@/components/ui/Toast'
-
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.07 } },
-}
-const item = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-}
+import { A2ELoader } from '@/components/ui/A2ELoader'
+import {
+  DashboardShell,
+  FormCard,
+  FormSection,
+} from '@/components/dashboard/FuturisticShell'
 
 const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -77,123 +73,146 @@ export default function PayoutSettingsPage() {
     finally { setSaving(false) }
   }
 
-  if (loading) return <div className="animate-fadeIn"><div className="animate-shimmer h-64 rounded-xl" /></div>
+  if (loading) {
+    return <A2ELoader fullScreen={false} message="Loading payout settings" />
+  }
 
   return (
-    <motion.div
-      className="space-y-6 max-w-2xl"
-      variants={container}
-      initial="hidden"
-      animate="show"
+    <DashboardShell
+      title="Payout Settings"
+      subtitle="Manage your payout wallet and preferences"
     >
-      <motion.div variants={item}>
-        <Link href="/payouts" className="text-sm inline-flex items-center gap-1 hover:opacity-80" style={{ color: 'var(--text-muted)' }}>
-          <ArrowLeft size={14} /> Back to Payouts
+      <div className="lg:col-span-3 max-w-3xl mx-auto w-full space-y-6">
+        <Link
+          href="/payouts"
+          className="inline-flex items-center gap-1 text-xs font-mono uppercase tracking-[0.18em] hover:opacity-80 w-fit"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <ArrowLeft size={12} /> Back to Payouts
         </Link>
-        <h1 className="text-2xl font-bold mt-1" style={{ color: 'var(--text-primary)' }}>Payout Settings</h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Manage your payout wallet and preferences</p>
-      </motion.div>
 
-      <form onSubmit={handleSave}>
-        {/* Profile */}
-        <motion.div variants={item}>
-          <div
-            className="rounded-xl p-6 space-y-5 mb-6"
-            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+        <form onSubmit={handleSave} className="space-y-6">
+          <FormCard
+            title="Profile"
+            description="Display identity attached to this operator account"
+            icon={User}
           >
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Profile</h2>
-            <Input label="Display Name" value={name} onChange={e => setName(e.target.value)} placeholder="Your name" />
-            <Input label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" />
-            <Input label="Payout Wallet (Solana)" value={wallet} onChange={e => setWallet(e.target.value)} placeholder="Solana wallet address" />
-          </div>
-        </motion.div>
+            <FormSection>
+              <Input label="Display Name" value={name} onChange={e => setName(e.target.value)} placeholder="Your name" />
+              <Input label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" />
+            </FormSection>
+          </FormCard>
 
-        {/* Payout Preferences */}
-        <motion.div variants={item}>
-          <div
-            className="rounded-xl p-6 space-y-5 mb-6"
-            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+          <FormCard
+            title="Payout Wallet"
+            description="Solana wallet that receives settlements and referral commission"
+            icon={Wallet}
           >
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Payout Preferences</h2>
-
-            <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Minimum Payout Threshold (USD)</label>
-              <input
-                type="number"
-                min={1}
-                max={100000}
-                step={1}
-                value={threshold}
-                onChange={e => setThreshold(Number(e.target.value))}
-                className="w-full rounded-lg px-4 py-2.5 text-sm"
-                style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+            <FormSection>
+              <Input
+                label="Payout Wallet (Solana)"
+                value={wallet}
+                onChange={e => setWallet(e.target.value)}
+                placeholder="Solana wallet address"
               />
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Payouts will only be triggered when your balance exceeds this amount</p>
-            </div>
+            </FormSection>
+          </FormCard>
 
-            <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Payout Frequency</label>
-              <div className="flex gap-2">
-                {['DAILY', 'WEEKLY', 'MONTHLY'].map(f => (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => setFrequency(f)}
-                    className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
-                    style={frequency === f
-                      ? { background: 'var(--primary)', color: '#fff' }
-                      : { background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }
-                    }
+          <FormCard
+            title="Payout Preferences"
+            description="How often and at what threshold should settlements run"
+            icon={CalendarClock}
+          >
+            <FormSection title="Threshold">
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                  Minimum Payout Threshold (USD)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100000}
+                  step={1}
+                  value={threshold}
+                  onChange={e => setThreshold(Number(e.target.value))}
+                  className="w-full rounded-md px-4 py-2.5 text-sm"
+                  style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                />
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  Payouts will only be triggered when your balance exceeds this amount.
+                </p>
+              </div>
+            </FormSection>
+
+            <FormSection title="Frequency">
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                  Payout Frequency
+                </label>
+                <div className="flex gap-2">
+                  {['DAILY', 'WEEKLY', 'MONTHLY'].map(f => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => setFrequency(f)}
+                      className="px-4 py-2 rounded-md text-sm font-medium transition-all"
+                      style={frequency === f
+                        ? { background: 'var(--primary)', color: '#fff' }
+                        : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }
+                      }
+                    >
+                      {f.charAt(0) + f.slice(1).toLowerCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {frequency === 'WEEKLY' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                    Day of Week
+                  </label>
+                  <select
+                    value={dayOfWeek}
+                    onChange={e => setDayOfWeek(Number(e.target.value))}
+                    className="w-full rounded-md px-4 py-2.5 text-sm"
+                    style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                   >
-                    {f.charAt(0) + f.slice(1).toLowerCase()}
-                  </button>
-                ))}
-              </div>
-            </div>
+                    {DAYS_OF_WEEK.map((day, i) => (
+                      <option key={i} value={i}>{day}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
-            {frequency === 'WEEKLY' && (
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Day of Week</label>
-                <select
-                  value={dayOfWeek}
-                  onChange={e => setDayOfWeek(Number(e.target.value))}
-                  className="w-full rounded-lg px-4 py-2.5 text-sm"
-                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                >
-                  {DAYS_OF_WEEK.map((day, i) => (
-                    <option key={i} value={i}>{day}</option>
-                  ))}
-                </select>
-              </div>
-            )}
+              {frequency === 'MONTHLY' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                    Day of Month
+                  </label>
+                  <select
+                    value={dayOfMonth}
+                    onChange={e => setDayOfMonth(Number(e.target.value))}
+                    className="w-full rounded-md px-4 py-2.5 text-sm"
+                    style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                  >
+                    {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </FormSection>
+          </FormCard>
 
-            {frequency === 'MONTHLY' && (
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Day of Month</label>
-                <select
-                  value={dayOfMonth}
-                  onChange={e => setDayOfMonth(Number(e.target.value))}
-                  className="w-full rounded-lg px-4 py-2.5 text-sm"
-                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                >
-                  {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-        </motion.div>
-
-        <motion.div variants={item}>
           <div className="flex justify-end">
             <Button type="submit" loading={saving}>
               <Save size={16} className="mr-2" />
               Save Changes
             </Button>
           </div>
-        </motion.div>
-      </form>
-    </motion.div>
+        </form>
+      </div>
+    </DashboardShell>
   )
 }

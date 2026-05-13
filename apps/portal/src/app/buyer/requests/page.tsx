@@ -2,10 +2,14 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
-import { List, Server, RefreshCw, ArrowRight } from 'lucide-react'
+import { List, Server, ArrowRight } from 'lucide-react'
 import { buyer } from '@/lib/api'
-import { Skeleton } from '@/components/ui/Skeleton'
+import {
+  DashboardShell,
+  DataTableCard,
+  EmptyState,
+  type DataTableColumn,
+} from '@/components/dashboard/FuturisticShell'
 
 interface ComputeRequest {
   id: string
@@ -17,6 +21,8 @@ interface ComputeRequest {
   purpose?: string
   requestedAt: string
 }
+
+type RequestRow = ComputeRequest & Record<string, unknown>
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   PENDING: { bg: 'rgba(245,158,11,0.15)', text: '#f59e0b' },
@@ -30,23 +36,6 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 const FILTER_OPTIONS = ['All', 'PENDING', 'ACTIVE', 'COMPLETED'] as const
 type FilterOption = typeof FILTER_OPTIONS[number]
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.05 },
-  },
-}
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 15 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] },
-  },
-}
 
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat('en-US', {
@@ -82,132 +71,119 @@ export default function RequestsListPage() {
     loadData()
   }, [loadData])
 
-  if (loading) {
-    return (
-      <div className="space-y-6 animate-fadeIn">
-        <Skeleton className="h-14 w-full" />
-        <Skeleton className="h-12 w-80" />
-        {[1, 2, 3, 4].map(i => (
-          <Skeleton key={i} className="h-20 w-full" />
-        ))}
-      </div>
-    )
-  }
+  const columns: Array<DataTableColumn<RequestRow>> = [
+    {
+      key: 'gpuTier',
+      header: 'Configuration',
+      render: (r) => (
+        <Link
+          href={`/buyer/requests/${r.id}`}
+          className="hover:underline inline-flex items-center gap-2"
+          style={{ color: 'var(--text-primary)' }}
+        >
+          <Server size={14} style={{ color: 'var(--text-muted)' }} />
+          <span className="font-semibold">{r.gpuTier}</span>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            x{r.gpuCount} &middot; {r.durationDays}d
+          </span>
+        </Link>
+      ),
+    },
+    {
+      key: 'requestedAt',
+      header: 'Requested',
+      mono: true,
+      render: (r) => new Date(r.requestedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    },
+    {
+      key: 'totalCost',
+      header: 'Total',
+      align: 'right',
+      mono: true,
+      render: (r) => formatCurrency(r.totalCost),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      align: 'right',
+      render: (r) => {
+        const sc = STATUS_COLORS[r.status] ?? STATUS_COLORS.PENDING!
+        return (
+          <span
+            className="text-xs font-medium px-2.5 py-1 rounded-full inline-flex items-center gap-1"
+            style={{ background: sc.bg, color: sc.text }}
+          >
+            {r.status}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'id',
+      header: '',
+      align: 'right',
+      width: '40px',
+      render: () => <ArrowRight size={14} style={{ color: 'var(--text-muted)' }} />,
+    },
+  ]
+
+  // Filter pills rendered in the card's actions slot.
+  const filterBar = (
+    <div className="flex gap-1 flex-wrap">
+      {FILTER_OPTIONS.map((opt) => {
+        const isActive = filter === opt
+        return (
+          <button
+            key={opt}
+            onClick={() => setFilter(opt)}
+            className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+            style={isActive
+              ? { background: 'var(--primary)', color: '#fff' }
+              : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }
+            }
+          >
+            {opt === 'All' ? 'All' : opt.charAt(0) + opt.slice(1).toLowerCase()}
+          </button>
+        )
+      })}
+    </div>
+  )
 
   return (
-    <motion.div
-      className="space-y-6"
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
+    <DashboardShell
+      title="My Requests"
+      subtitle="Compute rentals you've submitted"
+      onRefresh={() => loadData(true)}
+      refreshing={refreshing}
     >
-      {/* Header */}
-      <motion.div className="dash-header" variants={itemVariants}>
-        <div className="dash-header-left">
-          <h1><List size={28} /> My Requests</h1>
-        </div>
-        <div className="dash-header-right">
-          <button
-            className="dash-refresh-btn"
-            onClick={() => loadData(true)}
-            disabled={refreshing}
-            title="Refresh data"
-          >
-            <RefreshCw size={16} className={refreshing ? 'spin' : ''} />
-          </button>
-        </div>
-      </motion.div>
-
-      {/* Filter Pills */}
-      <motion.div variants={itemVariants}>
-        <div style={{ display: 'flex', gap: '4px', padding: '4px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', width: 'fit-content' }}>
-          {FILTER_OPTIONS.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => setFilter(opt)}
-              className="px-4 py-1.5 rounded-md text-xs font-medium transition-all"
-              style={{
-                background: filter === opt ? 'var(--primary)' : 'transparent',
-                color: filter === opt ? '#fff' : 'var(--text-muted)',
-              }}
-            >
-              {opt === 'All' ? 'All' : opt.charAt(0) + opt.slice(1).toLowerCase()}
-            </button>
-          ))}
-        </div>
-      </motion.div>
-
-      {/* Request Cards */}
-      {requests.length > 0 ? (
-        <motion.div className="space-y-3" variants={containerVariants}>
-          {requests.map((req) => {
-            const statusColor = STATUS_COLORS[req.status] ?? STATUS_COLORS.PENDING
-            return (
-              <motion.div key={req.id} variants={itemVariants}>
-                <Link href={`/buyer/requests/${req.id}`}>
-                  <div
-                    className="rounded-xl p-4 transition-all duration-200 hover:border-white/20"
-                    style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <Server size={18} style={{ color: 'var(--text-muted)' }} />
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-                              {req.gpuTier}
-                            </span>
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                              x{req.gpuCount} &middot; {req.durationDays} days
-                            </span>
-                          </div>
-                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                            {new Date(req.requestedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                          {formatCurrency(req.totalCost)}
-                        </span>
-                        <span
-                          className="text-xs font-medium px-2.5 py-1 rounded-full"
-                          style={{ background: statusColor.bg, color: statusColor.text }}
-                        >
-                          {req.status}
-                        </span>
-                        <ArrowRight size={16} style={{ color: 'var(--text-muted)' }} />
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              </motion.div>
-            )
-          })}
-        </motion.div>
-      ) : (
-        <motion.div variants={itemVariants}>
-          <div
-            className="rounded-xl p-12 text-center"
-            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
-          >
-            <Server size={40} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-            <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-              No requests found
-            </p>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-              {filter !== 'All' ? `No ${filter.toLowerCase()} requests. Try a different filter.` : 'Submit your first compute request to get started.'}
-            </p>
-            {filter === 'All' && (
-              <Link href="/buyer/request">
-                <button className="btn btn-primary mt-4" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <div className="lg:col-span-3">
+        <DataTableCard<RequestRow>
+          title="Requests"
+          icon={List}
+          actions={filterBar}
+          columns={columns}
+          rows={(requests ?? []) as RequestRow[]}
+          loading={loading}
+          empty={
+            <EmptyState
+              icon={Server}
+              title="No requests found"
+              description={filter !== 'All'
+                ? `No ${filter.toLowerCase()} requests. Try a different filter.`
+                : 'Submit your first compute request to get started.'}
+              action={filter === 'All' ? (
+                <Link
+                  href="/buyer/request"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium"
+                  style={{ background: 'var(--primary)', color: '#fff' }}
+                >
                   Request Compute
-                </button>
-              </Link>
-            )}
-          </div>
-        </motion.div>
-      )}
-    </motion.div>
+                </Link>
+              ) : undefined}
+            />
+          }
+        />
+      </div>
+    </DashboardShell>
   )
 }
