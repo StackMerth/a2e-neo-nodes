@@ -167,7 +167,7 @@ export default function ReferralPage() {
                   <div className="col-span-12 md:col-span-2 md:text-right">
                     {r.referee.slug && (
                       <a
-                        href={`https://marketplace.stackforgelab.tech/operator/${r.referee.slug}`}
+                        href={`https://market.tokenos.ai/operator/${r.referee.slug}`}
                         target="_blank"
                         rel="noreferrer"
                         className="text-xs inline-flex items-center gap-1 hover:underline"

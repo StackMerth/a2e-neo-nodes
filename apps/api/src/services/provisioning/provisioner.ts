@@ -732,7 +732,7 @@ security:
     await this.log('info', 'Installing systemd service...')
     const serviceContent = `[Unit]
 Description=A²E Node Agent - GPU Compute Orchestration
-Documentation=https://a2e-admin.stackforgelab.tech/docs
+Documentation=https://admin.tokenos.ai/docs
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service

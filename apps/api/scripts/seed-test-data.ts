@@ -27,7 +27,8 @@ if (!dbUrl) {
 const looksProd =
   /prod|production/i.test(dbUrl) ||
   /\.onrender\.com/i.test(dbUrl) ||
-  /\.stackforgelab\.tech/i.test(dbUrl) ||
+  /\.tokenos\.ai/i.test(dbUrl) ||
+  /\.stackforgelab\.tech/i.test(dbUrl) || // legacy staging
   /a2e\.byredstone\.com|\.byredstone\.com/i.test(dbUrl) || // legacy Phase 1 hosts
   process.env.NODE_ENV === 'production'
 if (looksProd && process.env.ALLOW_PROD_SEED !== '1') {

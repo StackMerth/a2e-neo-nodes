@@ -193,7 +193,7 @@ function wrapTemplate(title: string, content: string): string {
       ${content}
     </div>
     <div style="text-align: center; margin-top: 32px; color: #71717a; font-size: 12px;">
-      <p>A&sup2;E Engine &mdash; compute.tokenos.ai</p>
+      <p>A&sup2;E Engine &mdash; user.tokenos.ai</p>
     </div>
   </div>
 </body>

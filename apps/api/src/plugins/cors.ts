@@ -11,11 +11,16 @@ const corsPlugin: FastifyPluginCallback = async (fastify: FastifyInstance) => {
     'http://localhost:3000', // dashboard
     'http://localhost:3001', // api (rare; included for local cross-port testing)
     'http://localhost:3002', // portal
-    'http://localhost:3003', // marketplace (M3)
-    // Production subdomains
+    'http://localhost:3003', // marketplace
+    // Production subdomains (tokenos.ai)
+    'https://admin.tokenos.ai',
+    'https://user.tokenos.ai',
+    'https://market.tokenos.ai',
+    // Legacy subdomains (kept temporarily so anyone with bookmarks
+    // still reaches the API while DNS settles).
     'https://a2e-admin.stackforgelab.tech',
     'https://a2e-user.stackforgelab.tech',
-    'https://marketplace.stackforgelab.tech', // M3
+    'https://marketplace.stackforgelab.tech',
   ]
 
   await fastify.register(cors, {

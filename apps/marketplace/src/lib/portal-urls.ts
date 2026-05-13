@@ -4,10 +4,9 @@
  * when rewriting anchors with the referral code.
  *
  * NEXT_PUBLIC_PORTAL_URL must be set in marketplace's Vercel env to
- * the actual portal origin. Falls back to the stackforgelab.tech
- * subdomain currently in use.
+ * the actual portal origin. Falls back to user.tokenos.ai (production).
  */
-const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'https://a2e-user.stackforgelab.tech'
+const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'https://user.tokenos.ai'
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
 
 export const portalUrls = {

@@ -328,7 +328,7 @@ export function generateInvoiceHTML(data: InvoiceData): string {
     <div style="text-align: right;">
       <p><strong>A²E Engine</strong></p>
       <p>TokenOS Platform</p>
-      <p>compute.tokenos.ai</p>
+      <p>user.tokenos.ai</p>
     </div>
   </div>
 

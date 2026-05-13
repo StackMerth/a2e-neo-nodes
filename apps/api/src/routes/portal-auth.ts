@@ -55,7 +55,7 @@ const verifyEmailSchema = z.object({
   token: z.string().min(1),
 })
 
-const PORTAL_URL = process.env.PORTAL_URL || 'https://a2e-user.stackforgelab.tech'
+const PORTAL_URL = process.env.PORTAL_URL || 'https://user.tokenos.ai'
 
 export async function portalAuthRoutes(fastify: FastifyInstance) {
 
