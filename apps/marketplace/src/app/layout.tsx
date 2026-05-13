@@ -33,28 +33,28 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://marketplace.stackf
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: 'TokenOS DeAI Compute Marketplace',
-    template: '%s, TokenOS DeAI',
+    default: 'TokenOS Compute Marketplace',
+    template: '%s, TokenOS',
   },
-  description: 'Browse GPU compute operators on the TokenOS DeAI network. Reputation, uptime, and ratings before you rent.',
+  description: 'Discover GPU compute operators on the TokenOS network. Browse reputation, uptime, and ratings before you rent.',
   openGraph: {
     type: 'website',
-    siteName: 'TokenOS DeAI',
-    title: 'GPU compute, brokered honestly',
-    description: 'Per-minute billing, reputation-scored operators, SSH under a minute.',
+    siteName: 'TokenOS',
+    title: 'TokenOS Compute Marketplace',
+    description: 'Discover GPU compute operators on the TokenOS network. Browse reputation, uptime, and ratings before you rent.',
     images: [
       {
         url: '/og?type=home',
         width: 1200,
         height: 630,
-        alt: 'TokenOS DeAI Compute Marketplace',
+        alt: 'TokenOS Compute Marketplace',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'GPU compute, brokered honestly',
-    description: 'Per-minute billing, reputation-scored operators, SSH under a minute.',
+    title: 'TokenOS Compute Marketplace',
+    description: 'Discover GPU compute operators on the TokenOS network. Browse reputation, uptime, and ratings before you rent.',
     images: ['/og?type=home'],
   },
 }
