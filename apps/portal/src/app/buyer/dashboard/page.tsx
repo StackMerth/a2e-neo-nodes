@@ -2,22 +2,33 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
 import {
-  LayoutDashboard,
   Server,
   Clock,
   DollarSign,
   Loader2,
-  RefreshCw,
   Plus,
   Copy,
   Check,
   ArrowRight,
+  Activity,
+  Wallet,
+  Key,
+  CreditCard,
+  Cpu,
 } from 'lucide-react'
 import { buyer } from '@/lib/api'
-import { Skeleton } from '@/components/ui/Skeleton'
 import { A2ELoader } from '@/components/ui/A2ELoader'
+import {
+  DashboardShell,
+  DashboardMainColumn,
+  DashboardRightRail,
+  SectionCard,
+  MetricTriad,
+  ClockCard,
+  QuickActions,
+  ResourceAllocation,
+} from '@/components/dashboard/FuturisticShell'
 
 interface BuyerDashboardData {
   activeCompute: number
@@ -45,23 +56,6 @@ interface BuyerDashboardData {
   }[]
 }
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.05 },
-  },
-}
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 15 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] },
-  },
-}
-
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -71,31 +65,31 @@ const formatCurrency = (n: number) =>
   }).format(n)
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  PENDING: { bg: 'rgba(245,158,11,0.15)', text: '#f59e0b' },
-  APPROVED: { bg: 'rgba(59,130,246,0.15)', text: '#3b82f6' },
+  PENDING:   { bg: 'rgba(245,158,11,0.15)', text: '#f59e0b' },
+  APPROVED:  { bg: 'rgba(59,130,246,0.15)', text: '#3b82f6' },
   ALLOCATED: { bg: 'rgba(139,92,246,0.15)', text: '#8b5cf6' },
-  ACTIVE: { bg: 'rgba(34,197,94,0.15)', text: '#22c55e' },
+  ACTIVE:    { bg: 'rgba(34,197,94,0.15)',  text: '#22c55e' },
   COMPLETED: { bg: 'rgba(113,113,122,0.15)', text: '#71717a' },
   CANCELLED: { bg: 'rgba(113,113,122,0.15)', text: '#71717a' },
-  REJECTED: { bg: 'rgba(239,68,68,0.15)', text: '#ef4444' },
+  REJECTED:  { bg: 'rgba(239,68,68,0.15)',  text: '#ef4444' },
 }
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
-
   const handleCopy = async () => {
     await navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
-
   return (
     <button
       onClick={handleCopy}
       className="ml-2 p-1 rounded transition-colors hover:bg-white/10"
       title="Copy to clipboard"
     >
-      {copied ? <Check size={14} style={{ color: 'var(--primary)' }} /> : <Copy size={14} style={{ color: 'var(--text-muted)' }} />}
+      {copied
+        ? <Check size={14} style={{ color: 'var(--primary)' }} />
+        : <Copy size={14} style={{ color: 'var(--text-muted)' }} />}
     </button>
   )
 }
@@ -128,117 +122,99 @@ export default function BuyerDashboardPage() {
     return <A2ELoader fullScreen={false} message="Loading your dashboard" />
   }
 
-  const stats = [
-    {
-      label: 'Active Compute',
-      value: `${data?.activeCompute ?? 0}`,
-      icon: <Server size={18} />,
-      colorClass: 'green',
-    },
-    {
-      label: 'Pending Requests',
-      value: `${data?.pendingRequests ?? 0}`,
-      icon: <Loader2 size={18} />,
-      colorClass: 'orange',
-    },
-    {
-      label: 'Total Spent',
-      value: formatCurrency(data?.totalSpent ?? 0),
-      icon: <DollarSign size={18} />,
-      colorClass: 'blue',
-    },
-    {
-      label: 'Days Remaining',
-      value: `${data?.daysRemaining ?? 0}`,
-      icon: <Clock size={18} />,
-      colorClass: 'purple',
-    },
-  ]
+  // Spend "budget" framing for the resource bar: how much of the month
+  // has been spent vs. an implied $500 monthly target. Freestyle metric
+  // since we do not yet have a user-set budget.
+  const monthlyTarget = 500
+  const monthSpendPct = Math.min(100, ((data?.totalSpent ?? 0) / monthlyTarget) * 100)
 
   return (
-    <motion.div
-      className="dashboard-modern"
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
+    <DashboardShell
+      title="Compute Dashboard"
+      subtitle="Buyer's Portal"
+      liveLabel="LIVE"
+      onRefresh={() => loadData(true)}
+      refreshing={refreshing}
     >
-      {/* Header */}
-      <motion.div className="dash-header" variants={itemVariants}>
-        <div className="dash-header-left">
-          <h1><LayoutDashboard size={28} /> Compute Dashboard</h1>
-        </div>
-        <div className="dash-header-right">
-          <div className="dash-date-badge">
-            <Clock size={14} />
-            {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-          </div>
-          <button
-            className="dash-refresh-btn"
-            onClick={() => loadData(true)}
-            disabled={refreshing}
-            title="Refresh data"
-          >
-            <RefreshCw size={16} className={refreshing ? 'spin' : ''} />
-          </button>
-        </div>
-      </motion.div>
+      <DashboardMainColumn>
+        {/* Top metrics */}
+        <MetricTriad
+          metrics={[
+            {
+              label: 'Active Compute',
+              value: `${data?.activeCompute ?? 0}`,
+              detail: 'running rentals',
+              icon: Server,
+              tone: 'green',
+            },
+            {
+              label: 'Pending Requests',
+              value: `${data?.pendingRequests ?? 0}`,
+              detail: 'awaiting allocation',
+              icon: Loader2,
+              tone: 'orange',
+            },
+            {
+              label: 'Total Spent',
+              value: formatCurrency(data?.totalSpent ?? 0),
+              detail: 'lifetime USDC',
+              icon: DollarSign,
+              tone: 'cyan',
+            },
+          ]}
+        />
 
-      {/* Stat Blocks */}
-      <motion.div className="stat-blocks" variants={containerVariants}>
-        {stats.map((s) => (
-          <motion.div
-            key={s.label}
-            className={`stat-block ${s.colorClass}`}
-            variants={itemVariants}
+        {/* Active allocations */}
+        {data?.activeAllocations && data.activeAllocations.length > 0 && (
+          <SectionCard
+            title="Active Compute"
+            icon={Activity}
+            badge={
+              <span className="inline-flex items-center gap-2 px-2 py-0.5 rounded-full border border-accent/40 bg-accent/10">
+                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+                <span className="font-mono text-[10px] tracking-[0.14em]" style={{ color: 'var(--primary)' }}>
+                  ALLOCATED
+                </span>
+              </span>
+            }
           >
-            <div className="stat-icon">{s.icon}</div>
-            <div className="stat-content">
-              <span className="stat-value">{s.value}</span>
-              <span className="stat-label">{s.label}</span>
-            </div>
-          </motion.div>
-        ))}
-      </motion.div>
-
-      {/* Active Compute Cards */}
-      {data?.activeAllocations && data.activeAllocations.length > 0 && (
-        <motion.div variants={itemVariants}>
-          <div className="dash-chart-card">
-            <h3 className="dash-chart-title">Active Compute</h3>
-            <div className="space-y-4">
+            <div className="space-y-3">
               {data.activeAllocations.map((alloc) => (
                 <div
                   key={alloc.id}
-                  className="rounded-xl p-4"
-                  style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)' }}
+                  className="rounded-md border p-4"
+                  style={{
+                    background: 'rgba(34,197,94,0.04)',
+                    borderColor: 'rgba(34,197,94,0.2)',
+                  }}
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <span
-                        className="text-xs font-bold px-2.5 py-1 rounded-md"
+                        className="font-mono text-[11px] font-bold px-2 py-0.5 rounded"
                         style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}
                       >
                         {alloc.gpuTier}
                       </span>
-                      <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        x{alloc.gpuCount}
+                      <span className="font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
+                        × {alloc.gpuCount}
                       </span>
                     </div>
-                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      Expires {new Date(alloc.expiresAt).toLocaleDateString()}
+                    <span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      EXPIRES {new Date(alloc.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </span>
                   </div>
                   {alloc.sshHost && (
                     <div className="space-y-1.5">
                       <div className="flex items-center text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
-                        <span style={{ color: 'var(--text-muted)', width: 60 }}>SSH:</span>
+                        <span style={{ color: 'var(--text-muted)', width: 50 }}>SSH</span>
                         <span>{alloc.sshUser}@{alloc.sshHost}:{alloc.sshPort}</span>
                         <CopyButton text={`ssh ${alloc.sshUser}@${alloc.sshHost} -p ${alloc.sshPort}`} />
                       </div>
                       {alloc.sshPassword && (
                         <div className="flex items-center text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
-                          <span style={{ color: 'var(--text-muted)', width: 60 }}>Pass:</span>
-                          <span>{'*'.repeat(12)}</span>
+                          <span style={{ color: 'var(--text-muted)', width: 50 }}>PASS</span>
+                          <span>{'•'.repeat(12)}</span>
                           <CopyButton text={alloc.sshPassword} />
                         </div>
                       )}
@@ -247,24 +223,23 @@ export default function BuyerDashboardPage() {
                 </div>
               ))}
             </div>
-          </div>
-        </motion.div>
-      )}
+          </SectionCard>
+        )}
 
-      {/* Recent Requests */}
-      <motion.div variants={itemVariants}>
-        <div className="dash-chart-card">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="dash-chart-title" style={{ marginBottom: 0 }}>Recent Requests</h3>
-            <Link href="/buyer/requests">
-              <button
-                className="flex items-center gap-1 text-xs font-medium transition-colors"
-                style={{ color: 'var(--primary)' }}
-              >
-                View All <ArrowRight size={14} />
-              </button>
+        {/* Recent Requests */}
+        <SectionCard
+          title="Recent Requests"
+          icon={Cpu}
+          actions={
+            <Link
+              href="/buyer/requests"
+              className="inline-flex items-center gap-1 text-xs font-medium transition-colors"
+              style={{ color: 'var(--primary)' }}
+            >
+              View all <ArrowRight size={12} />
             </Link>
-          </div>
+          }
+        >
           {data?.recentRequests && data.recentRequests.length > 0 ? (
             <div className="space-y-2">
               {data.recentRequests.map((req) => {
@@ -272,26 +247,26 @@ export default function BuyerDashboardPage() {
                 return (
                   <Link key={req.id} href={`/buyer/requests/${req.id}`}>
                     <div
-                      className="flex items-center justify-between rounded-lg p-3 transition-colors"
-                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
+                      className="flex items-center justify-between rounded-md border p-3 transition-colors hover:bg-surface-hover"
+                      style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
                     >
                       <div className="flex items-center gap-3">
                         <span
-                          className="text-xs font-bold px-2 py-0.5 rounded"
+                          className="font-mono text-[11px] font-bold px-2 py-0.5 rounded"
                           style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}
                         >
                           {req.gpuTier}
                         </span>
-                        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                          x{req.gpuCount} &middot; {req.durationDays}d
+                        <span className="text-sm font-mono" style={{ color: 'var(--text-secondary)' }}>
+                          × {req.gpuCount}, {req.durationDays}d
                         </span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                        <span className="text-sm font-mono" style={{ color: 'var(--text-primary)' }}>
                           {formatCurrency(req.totalCost)}
                         </span>
                         <span
-                          className="text-xs font-medium px-2 py-0.5 rounded-full"
+                          className="font-mono text-[10px] font-bold tracking-[0.1em] px-2 py-0.5 rounded-full"
                           style={{ background: statusColor.bg, color: statusColor.text }}
                         >
                           {req.status}
@@ -304,38 +279,81 @@ export default function BuyerDashboardPage() {
             </div>
           ) : (
             <div className="text-center py-8">
-              <Server size={32} style={{ color: 'var(--text-muted)', margin: '0 auto 8px' }} />
+              <Server size={32} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No requests yet</p>
-              <Link href="/buyer/request">
-                <button className="btn btn-primary mt-4" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <Plus size={16} /> Request Compute
-                </button>
+              <Link
+                href="/buyer/request"
+                className="inline-flex items-center gap-1 mt-4 px-4 h-9 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors"
+              >
+                <Plus size={14} /> Request Compute
               </Link>
             </div>
           )}
-        </div>
-      </motion.div>
+        </SectionCard>
+      </DashboardMainColumn>
 
-      {/* Quick Actions */}
-      <motion.div variants={itemVariants}>
-        <div className="dash-chart-card">
-          <h3 className="dash-chart-title">Quick Actions</h3>
-          <div style={{ display: 'flex', gap: 'var(--space-md)', flexWrap: 'wrap' }}>
-            <Link href="/buyer/request">
-              <button className="btn btn-primary">
-                <Plus size={16} />
-                Request Compute
-              </button>
+      <DashboardRightRail>
+        <ClockCard />
+
+        <QuickActions
+          actions={[
+            { label: 'New Request', href: '/buyer/request', icon: Plus, emphasis: true },
+            { label: 'Active',      href: '/buyer/active',  icon: Server },
+            { label: 'Billing',     href: '/buyer/billing', icon: CreditCard },
+            { label: 'API Keys',    href: '/buyer/api-keys', icon: Key },
+          ]}
+        />
+
+        <ResourceAllocation
+          title="This Month"
+          bars={[
+            {
+              label: 'Spend vs. $500 cap',
+              value: monthSpendPct,
+              tone: 'green',
+              detail: `${formatCurrency(data?.totalSpent ?? 0)} / ${formatCurrency(monthlyTarget)}`,
+            },
+            {
+              label: 'Active rentals',
+              value: data?.activeCompute ?? 0,
+              max: Math.max(5, (data?.activeCompute ?? 0)),
+              tone: 'cyan',
+              detail: `${data?.activeCompute ?? 0} live`,
+            },
+            {
+              label: 'Days of compute left',
+              value: Math.min(30, data?.daysRemaining ?? 0),
+              max: 30,
+              tone: 'purple',
+              detail: `${data?.daysRemaining ?? 0}d`,
+            },
+          ]}
+        />
+
+        <SectionCard
+          title="Wallet"
+          icon={Wallet}
+          actions={
+            <Link
+              href="/buyer/billing"
+              className="font-mono text-[10px] tracking-[0.14em] uppercase"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              MANAGE
             </Link>
-            <Link href="/buyer/active">
-              <button className="btn btn-secondary">
-                <Server size={16} />
-                View Active
-              </button>
-            </Link>
+          }
+        >
+          <p className="font-mono text-[11px] mb-2" style={{ color: 'var(--text-muted)' }}>
+            Settlement on Solana
+          </p>
+          <div className="font-display text-2xl tracking-tight" style={{ color: 'var(--text-primary)' }}>
+            USDC
           </div>
-        </div>
-      </motion.div>
-    </motion.div>
+          <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
+            Median settlement 11s. Refunds for unused minutes on early termination.
+          </p>
+        </SectionCard>
+      </DashboardRightRail>
+    </DashboardShell>
   )
 }
