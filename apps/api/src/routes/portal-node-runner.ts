@@ -176,11 +176,60 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
 
     const nodes = await fastify.prisma.node.findMany({
       where: { nodeRunnerId: nr.id },
-      select: { id: true, gpuTier: true, customGpuModel: true },
+      select: { id: true, gpuTier: true, customGpuModel: true, assignedComputeRequestId: true },
     })
     const nodeIds = nodes.map(n => n.id)
     const nodeLabel = (n: { id: string; gpuTier: string; customGpuModel: string | null }) =>
       n.customGpuModel || `${n.gpuTier} (${n.id.slice(0, 6)})`
+
+    // Build upcomingPayouts from active rentals on owned nodes. Per-node
+    // expected payout = yieldFloor.ratePerDay * durationDays (the
+    // guaranteed minimum operator yield documented for each tier). True
+    // settlement amount can exceed this if the rental sold above the
+    // floor; we surface the floor as a conservative honest estimate
+    // labeled "~" in the UI.
+    const assignedRequestIds = Array.from(new Set(
+      nodes.map(n => n.assignedComputeRequestId).filter((id): id is string => !!id)
+    ))
+    const [activeRequests, yieldFloors] = await Promise.all([
+      assignedRequestIds.length === 0
+        ? Promise.resolve([] as Array<{ id: string; gpuTier: string; gpuCount: number; durationDays: number; totalCost: number; expiresAt: Date | null; status: string }>)
+        : fastify.prisma.computeRequest.findMany({
+            where: { id: { in: assignedRequestIds }, status: 'ACTIVE' },
+            select: { id: true, gpuTier: true, gpuCount: true, durationDays: true, totalCost: true, expiresAt: true, status: true },
+          }),
+      fastify.prisma.yieldFloor.findMany({ select: { gpuTier: true, ratePerDay: true } }),
+    ])
+    const yieldByTier = new Map<string, number>()
+    for (const yf of yieldFloors) yieldByTier.set(yf.gpuTier, yf.ratePerDay)
+    const reqById = new Map(activeRequests.map(r => [r.id, r]))
+
+    const upcomingPayouts: Array<{
+      completesAt: string
+      expectedAmount: number
+      gpuTier: string
+      nodeId: string
+      requestId: string
+    }> = []
+    for (const n of nodes) {
+      if (!n.assignedComputeRequestId) continue
+      const r = reqById.get(n.assignedComputeRequestId)
+      if (!r || !r.expiresAt) continue
+      const floor = yieldByTier.get(r.gpuTier) ?? 0
+      // Per-node expected payout: yield floor times rental duration. Tier
+      // floor is already per-node-per-day, so no division by gpuCount.
+      const expectedAmount = floor > 0
+        ? floor * r.durationDays
+        : r.totalCost / Math.max(1, r.gpuCount)
+      upcomingPayouts.push({
+        completesAt: r.expiresAt.toISOString(),
+        expectedAmount: Number(expectedAmount.toFixed(2)),
+        gpuTier: r.gpuTier,
+        nodeId: n.id,
+        requestId: r.id,
+      })
+    }
+    upcomingPayouts.sort((a, b) => a.completesAt.localeCompare(b.completesAt))
 
     // Fleet composition: how many nodes per GPU tier (independent of
     // whether they have earnings in the last 30d, so the Node Status
@@ -334,6 +383,7 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       perNodeEarnings,
       recentPayouts,
       nodesByTier,
+      upcomingPayouts,
     })
   })
 

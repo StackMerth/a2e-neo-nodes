@@ -21,6 +21,8 @@ import {
   PiggyBank,
   Building2,
   ExternalLink,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import Link from 'next/link'
 import { nodeRunner } from '@/lib/api'
@@ -58,6 +60,13 @@ interface RecentPayout {
 }
 
 interface NodesByTier { gpuTier: string; count: number }
+interface UpcomingPayout {
+  completesAt: string
+  expectedAmount: number
+  gpuTier: string
+  nodeId: string
+  requestId: string
+}
 
 interface OperatorStatsData {
   pendingPayout: number
@@ -71,6 +80,7 @@ interface OperatorStatsData {
   perNodeEarnings: PerNodeEarnings[]
   recentPayouts: RecentPayout[]
   nodesByTier: NodesByTier[]
+  upcomingPayouts: UpcomingPayout[]
 }
 
 const NODE_STATUS_COLORS: Record<string, string> = {
@@ -186,74 +196,280 @@ function OperatorStatTile({
   )
 }
 
-function PayoutCalendar({ entries }: { entries: PayoutCalendarEntry[] }) {
-  const max = useMemo(
-    () => entries.reduce((m, e) => Math.max(m, e.amount), 0),
-    [entries],
+// ---------------------------------------------------------------------
+// Forward-looking payout schedule. Replaces the trailing 30-day heatmap
+// with a real monthly calendar + countdown panel + upcoming list.
+// ---------------------------------------------------------------------
+
+function PayoutScheduleCard({ payouts }: { payouts: UpcomingPayout[] }) {
+  const today = useMemo(() => {
+    const d = new Date()
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  }, [])
+  const [viewMonth, setViewMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
+  const [now, setNow] = useState(() => new Date())
+
+  // Tick once a second so the countdown updates.
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Group payouts by date (YYYY-MM-DD) for calendar dots, and into
+  // tier-clustered rows (same completesAt + tier) for the upcoming list.
+  const byDate = useMemo(() => {
+    const m = new Map<string, UpcomingPayout[]>()
+    for (const p of payouts) {
+      const key = p.completesAt.slice(0, 10)
+      const arr = m.get(key) ?? []
+      arr.push(p)
+      m.set(key, arr)
+    }
+    return m
+  }, [payouts])
+
+  const clusters = useMemo(() => {
+    const m = new Map<string, { completesAt: string; gpuTier: string; count: number; totalAmount: number }>()
+    for (const p of payouts) {
+      const key = `${p.completesAt}::${p.gpuTier}`
+      const c = m.get(key) ?? {
+        completesAt: p.completesAt, gpuTier: p.gpuTier, count: 0, totalAmount: 0,
+      }
+      c.count += 1
+      c.totalAmount += p.expectedAmount
+      m.set(key, c)
+    }
+    return Array.from(m.values()).sort((a, b) => a.completesAt.localeCompare(b.completesAt))
+  }, [payouts])
+
+  const expectedTotal = useMemo(
+    () => payouts.reduce((s, p) => s + p.expectedAmount, 0),
+    [payouts],
   )
-  const total = useMemo(
-    () => entries.reduce((s, e) => s + e.amount, 0),
-    [entries],
-  )
-  const activeDays = useMemo(
-    () => entries.filter(e => e.amount > 0).length,
-    [entries],
-  )
-  if (entries.length === 0) {
-    return <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No payout data yet.</p>
+  const firstCluster = clusters[0]
+
+  // Calendar grid: 6 rows x 7 cols, padded with prior/next month bleed.
+  const cells = useMemo(() => {
+    const firstOfMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1)
+    const startWeekday = firstOfMonth.getDay()
+    const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate()
+    const cells: Array<{ date: Date | null; inMonth: boolean }> = []
+    for (let i = 0; i < startWeekday; i++) cells.push({ date: null, inMonth: false })
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push({ date: new Date(viewMonth.getFullYear(), viewMonth.getMonth(), d), inMonth: true })
+    }
+    while (cells.length < 42) cells.push({ date: null, inMonth: false })
+    return cells
+  }, [viewMonth])
+
+  const monthLabel = viewMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
+  function fmtCountdown(target: Date): string {
+    const diff = target.getTime() - now.getTime()
+    if (diff <= 0) return 'now'
+    const totalSec = Math.floor(diff / 1000)
+    const d = Math.floor(totalSec / 86400)
+    const h = Math.floor((totalSec % 86400) / 3600)
+    const m = Math.floor((totalSec % 3600) / 60)
+    const s = totalSec % 60
+    return `${d}d ${h}h ${m}m ${s}s`
   }
-  const first = entries[0]
-  const last = entries[entries.length - 1]
-  // 6 rows of 5 cells: chronological, oldest top-left to newest bottom-right.
+
   return (
-    <div>
-      <div className="grid grid-cols-6 gap-1.5">
-        {entries.map((e) => {
-          const ratio = max > 0 ? e.amount / max : 0
-          const opacity = e.amount > 0 ? 0.25 + ratio * 0.75 : 0.08
-          const isToday = e.date === new Date().toISOString().slice(0, 10)
-          return (
-            <div
-              key={e.date}
-              title={`${formatDateShort(e.date)} - ${formatCurrency(e.amount)}`}
-              className="aspect-square rounded"
-              style={{
-                background: e.amount > 0 ? `rgba(34,197,94,${opacity})` : 'rgba(255,255,255,0.04)',
-                border: '1px solid var(--glass-border)',
-                outline: isToday ? '2px solid var(--primary)' : 'none',
-                outlineOffset: '-1px',
-              }}
-            />
-          )
-        })}
-      </div>
-      <div className="mt-4 pt-4 border-t border-border-subtle flex items-center justify-between gap-3 font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
-        <span>
-          {first ? formatDateShort(first.date) : ''} <span style={{ color: 'var(--text-secondary)' }}>to</span> {last ? formatDateShort(last.date) : ''}
+    <SectionCard
+      title="Payout Calendar"
+      badge={
+        <span className="font-mono text-[10px] tracking-[0.18em] uppercase ml-1" style={{ color: '#a78bfa' }}>
+          Schedule
         </span>
-        <span className="flex items-center gap-1.5">
-          Less
-          {[0.1, 0.3, 0.5, 0.75, 1].map(o => (
-            <span key={o} className="w-2.5 h-2.5 rounded-sm" style={{ background: `rgba(34,197,94,${o})` }} />
-          ))}
-          More
-        </span>
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-3 font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
-        <div className="rounded p-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)' }}>
-          <span className="block tracking-[0.14em] uppercase mb-1">30d total</span>
-          <span className="font-display text-base" style={{ color: 'var(--text-primary)' }}>
-            {formatCurrency(total)}
-          </span>
+      }
+      icon={CalendarDays}
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-6">
+        {/* Calendar */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))}
+              className="w-9 h-9 rounded-md inline-flex items-center justify-center transition-colors"
+              style={{ background: 'var(--surface-elevated)', border: '1px solid var(--border-color)' }}
+              aria-label="Previous month"
+            >
+              <ChevronLeft size={16} style={{ color: 'var(--text-secondary)' }} />
+            </button>
+            <p className="font-display text-base sm:text-lg tracking-tight" style={{ color: 'var(--text-primary)' }}>
+              {monthLabel}
+            </p>
+            <button
+              onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1))}
+              className="w-9 h-9 rounded-md inline-flex items-center justify-center transition-colors"
+              style={{ background: 'var(--surface-elevated)', border: '1px solid var(--border-color)' }}
+              aria-label="Next month"
+            >
+              <ChevronRight size={16} style={{ color: 'var(--text-secondary)' }} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 mb-1">
+            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+              <div key={d} className="font-mono text-[10px] uppercase text-center py-1" style={{ color: 'var(--text-muted)' }}>
+                {d}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1">
+            {cells.map((cell, idx) => {
+              if (!cell.date) {
+                return <div key={idx} className="aspect-square" />
+              }
+              const key = `${cell.date.getFullYear()}-${String(cell.date.getMonth() + 1).padStart(2, '0')}-${String(cell.date.getDate()).padStart(2, '0')}`
+              const dayPayouts = byDate.get(key) ?? []
+              const isToday = cell.date.getTime() === today.getTime()
+              const tiers = Array.from(new Set(dayPayouts.map(p => p.gpuTier)))
+              return (
+                <div
+                  key={idx}
+                  className="aspect-square rounded-md relative flex flex-col items-center justify-center transition-colors"
+                  style={{
+                    background: isToday ? 'rgba(139, 92, 246, 0.10)' : 'transparent',
+                    border: isToday ? '1px solid rgba(139, 92, 246, 0.45)' : '1px solid transparent',
+                  }}
+                  title={dayPayouts.length > 0 ? `${dayPayouts.length} payout${dayPayouts.length === 1 ? '' : 's'}` : undefined}
+                >
+                  <span
+                    className="font-mono text-sm"
+                    style={{
+                      color: isToday
+                        ? 'var(--text-primary)'
+                        : dayPayouts.length > 0
+                          ? 'var(--text-primary)'
+                          : 'var(--text-muted)',
+                      fontWeight: isToday || dayPayouts.length > 0 ? 600 : 400,
+                    }}
+                  >
+                    {cell.date.getDate()}
+                  </span>
+                  {tiers.length > 0 && (
+                    <div className="absolute bottom-1 flex items-center gap-0.5">
+                      {tiers.slice(0, 4).map(t => (
+                        <span
+                          key={t}
+                          className="w-1.5 h-1.5 rounded-full"
+                          style={{ background: TIER_COLORS[t] ?? TIER_COLORS.OTHER }}
+                        />
+                      ))}
+                      {tiers.length > 4 && (
+                        <span className="font-mono text-[8px]" style={{ color: 'var(--text-muted)' }}>+</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Tier legend */}
+          <div className="mt-5 pt-4 border-t border-border-subtle flex flex-wrap gap-4">
+            {(['H100', 'H200', 'B200', 'B300', 'GB300'] as const).map(t => (
+              <span key={t} className="inline-flex items-center gap-1.5 font-mono text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                <span className="w-2 h-2 rounded-full" style={{ background: TIER_COLORS[t] }} />
+                {t}
+              </span>
+            ))}
+          </div>
         </div>
-        <div className="rounded p-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)' }}>
-          <span className="block tracking-[0.14em] uppercase mb-1">Active days</span>
-          <span className="font-display text-base" style={{ color: 'var(--text-primary)' }}>
-            {activeDays} / {entries.length}
-          </span>
+
+        {/* Right panel */}
+        <div className="flex flex-col gap-4">
+          {/* Next node completes in */}
+          <div
+            className="rounded-lg p-4"
+            style={{
+              background: 'rgba(139, 92, 246, 0.08)',
+              border: '1px solid rgba(139, 92, 246, 0.35)',
+            }}
+          >
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#a78bfa' }}>
+              Next node completes in
+            </p>
+            {firstCluster ? (
+              <>
+                <p className="font-display text-2xl sm:text-[28px] leading-tight tracking-tight mt-2" style={{ color: '#a78bfa' }}>
+                  {fmtCountdown(new Date(firstCluster.completesAt))}
+                </p>
+                <p className="font-mono text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                  {firstCluster.count}x {firstCluster.gpuTier}
+                </p>
+              </>
+            ) : (
+              <p className="font-mono text-sm mt-2" style={{ color: 'var(--text-muted)' }}>
+                No active rentals
+              </p>
+            )}
+          </div>
+
+          {/* Upcoming list */}
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] mb-3" style={{ color: 'var(--text-muted)' }}>
+              Upcoming
+            </p>
+            {clusters.length === 0 ? (
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                Scheduled payouts will appear here as your nodes start serving rentals.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {clusters.slice(0, 3).map((c, i) => (
+                  <div
+                    key={i}
+                    className="rounded-lg p-3 flex items-start justify-between gap-3"
+                    style={{
+                      background: 'var(--surface-elevated)',
+                      borderLeft: `3px solid ${TIER_COLORS[c.gpuTier] ?? TIER_COLORS.OTHER}`,
+                      border: '1px solid var(--border-color)',
+                      borderLeftWidth: 3,
+                    }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-display text-sm" style={{ color: 'var(--text-primary)' }}>
+                        {new Date(c.completesAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </p>
+                      <p className="font-mono text-[11px] mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                        {c.count}x {c.gpuTier}
+                      </p>
+                      <p className="font-mono text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                        {fmtCountdown(new Date(c.completesAt))}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-display text-base" style={{ color: '#22c55e' }}>
+                        ~{formatCurrencyShort(c.totalAmount)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Expected total */}
+          <div className="pt-3 border-t border-border-subtle">
+            <div className="flex items-baseline justify-between">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: 'var(--text-muted)' }}>
+                Expected total
+              </p>
+              <p className="font-display text-xl" style={{ color: '#a78bfa' }}>
+                ~{formatCurrencyShort(expectedTotal)}
+              </p>
+            </div>
+            <p className="text-xs mt-2 italic" style={{ color: 'var(--text-muted)' }}>
+              Payouts are sent within 24 hours of node completion.
+            </p>
+          </div>
         </div>
       </div>
-    </div>
+    </SectionCard>
   )
 }
 
@@ -572,16 +788,13 @@ export default function DashboardPage() {
           </div>
         </SectionCard>
 
-        {/* Payout calendar + per-node earnings, paired side-by-side on lg+ */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <SectionCard title="Payout Calendar (30d)" icon={CalendarDays}>
-            <PayoutCalendar entries={ops?.payoutCalendar ?? []} />
-          </SectionCard>
+        {/* Forward-looking payout schedule (full width) */}
+        <PayoutScheduleCard payouts={ops?.upcomingPayouts ?? []} />
 
-          <SectionCard title="Earnings by Node" icon={Server}>
-            <PerNodeEarningsList nodes={ops?.perNodeEarnings ?? []} />
-          </SectionCard>
-        </div>
+        {/* Per-node earnings (full width) */}
+        <SectionCard title="Earnings by Node" icon={Server}>
+          <PerNodeEarningsList nodes={ops?.perNodeEarnings ?? []} />
+        </SectionCard>
 
         {/* Fleet composition: status donut + GPU tier breakdown */}
         <SectionCard title="Fleet Composition" icon={Cpu}>
