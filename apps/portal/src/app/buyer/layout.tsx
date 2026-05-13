@@ -16,11 +16,14 @@ export default function BuyerLayout({ children }: { children: React.ReactNode })
   const router = useRouter()
   const { sidebarOpen, setSidebarOpen } = useSidebar()
 
+  // Dual-role support: any authenticated user can view this surface;
+  // node runners are no longer bounced back to /dashboard. Buyer-only
+  // actions (submit request, top up, etc.) still work because they
+  // create rows scoped to the user's own ID; nothing about the role
+  // gates the operation itself.
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login')
-    } else if (!loading && user && user.role !== 'COMPUTE_BUYER' && user.role !== 'ADMIN') {
-      router.push('/dashboard')
     }
   }, [user, loading, router])
 

@@ -16,11 +16,13 @@ export default function NodeRunnerLayout({ children }: { children: React.ReactNo
   const router = useRouter()
   const { sidebarOpen, setSidebarOpen } = useSidebar()
 
+  // Dual-role support: any authenticated user can view this surface;
+  // the previous role-based redirect to /buyer/dashboard is removed.
+  // Data on every page is already scoped by userId, so a buyer who
+  // pokes around here just sees empty node/earning lists.
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login')
-    } else if (!loading && user && user.role === 'COMPUTE_BUYER') {
-      router.push('/buyer/dashboard')
     }
   }, [user, loading, router])
 

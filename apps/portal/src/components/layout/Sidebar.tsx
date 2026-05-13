@@ -8,6 +8,7 @@ import { useSidebar } from './SidebarContext'
 import { NotificationBell } from './NotificationBell'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { UserMenu } from './UserMenu'
+import { ViewSwitcher } from './ViewSwitcher'
 import {
   LayoutDashboard,
   Rocket,
@@ -124,6 +125,11 @@ export function Sidebar() {
           </motion.button>
         </motion.div>
       )}
+
+      {/* Dual-role view switcher: flip between Node Runner and Buyer
+          surfaces. Lives at the top of the sidebar so it's always
+          one click away. */}
+      <ViewSwitcher collapsed={!sidebarOpen} />
 
       {/* Navigation */}
       <nav className="sidebar-nav">
