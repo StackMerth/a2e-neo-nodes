@@ -176,7 +176,7 @@ export default function DeploymentsPage() {
                             >
                               {dep.gpuTier}
                             </span>
-                            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                            <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
                               {dep.nodeCount} node{dep.nodeCount !== 1 ? 's' : ''}
                             </span>
                           </div>
@@ -200,7 +200,7 @@ export default function DeploymentsPage() {
                                 {status.label}
                               </span>
                             </div>
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                               {new Date(dep.createdAt).toLocaleDateString()}
                             </span>
                           </div>
@@ -210,7 +210,7 @@ export default function DeploymentsPage() {
                         <div className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
                           ${dep.amount.toLocaleString()}
                         </div>
-                        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                           TX: {dep.txHash.slice(0, 8)}...{dep.txHash.slice(-4)}
                         </div>
                       </div>

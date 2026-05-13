@@ -11,11 +11,11 @@
  */
 
 import Link from 'next/link'
-import { Search } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { NotificationBell } from './NotificationBell'
 import { UserMenu } from './UserMenu'
+import { GlobalSearch } from './GlobalSearch'
 
 export function TopHeader() {
   const { user } = useAuth()
@@ -44,20 +44,10 @@ export function TopHeader() {
         </span>
       </Link>
 
-      {/* Search (hidden on the smallest screens to keep the bar uncrowded) */}
+      {/* Global search (hidden on the smallest screens to keep the bar
+          uncrowded). Cmd/Ctrl-K focuses the input from anywhere. */}
       <div className="hidden md:flex items-center flex-1 max-w-md mx-6">
-        <div
-          className="flex items-center w-full gap-2 px-4 h-10 rounded-full border border-border"
-          style={{ background: 'var(--bg-elevated)' }}
-        >
-          <Search className="w-4 h-4 shrink-0" style={{ color: 'var(--text-muted)' }} />
-          <input
-            type="text"
-            placeholder="Search..."
-            className="bg-transparent border-none outline-none text-sm w-full"
-            style={{ color: 'var(--text-primary)' }}
-          />
-        </div>
+        <GlobalSearch />
       </div>
 
       {/* Right-side cluster - generous gap so bell + toggle + avatar

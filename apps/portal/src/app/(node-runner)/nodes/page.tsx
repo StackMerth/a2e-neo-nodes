@@ -199,16 +199,16 @@ export default function NodesPage() {
                     </div>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
-                        <span style={{ color: 'var(--text-muted)' }}>Wallet</span>
-                        <span className="font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{node.walletAddress.slice(0, 6)}...{node.walletAddress.slice(-4)}</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>Wallet</span>
+                        <span className="font-mono text-xs" style={{ color: 'var(--text-primary)' }}>{node.walletAddress.slice(0, 6)}...{node.walletAddress.slice(-4)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span style={{ color: 'var(--text-muted)' }}>Last Heartbeat</span>
-                        <span style={{ color: 'var(--text-secondary)' }}>{timeAgo(node.lastHeartbeat)}</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>Last Heartbeat</span>
+                        <span style={{ color: 'var(--text-primary)' }}>{timeAgo(node.lastHeartbeat)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span style={{ color: 'var(--text-muted)' }}>Agent</span>
-                        <span style={{ color: 'var(--text-secondary)' }}>{node.agentVersion ?? 'Unknown'}</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>Agent</span>
+                        <span style={{ color: 'var(--text-primary)' }}>{node.agentVersion ?? 'Unknown'}</span>
                       </div>
                       {/* Usage + External listing badges */}
                       <div className="flex items-center gap-2 mt-2 flex-wrap">
