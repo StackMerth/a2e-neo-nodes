@@ -1,5 +1,5 @@
-import { A2ELoader } from '@/components/ui/A2ELoader'
+import { FuturisticLoader } from '@/components/FuturisticLoader'
 
 export default function Loading() {
-  return <A2ELoader />
+  return <FuturisticLoader caption="LOADING" />
 }
