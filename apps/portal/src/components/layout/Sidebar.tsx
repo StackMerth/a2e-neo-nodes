@@ -129,7 +129,10 @@ export function Sidebar() {
             <Link
               key={item.path}
               href={item.path}
-              onClick={() => setSidebarOpen(false)}
+              // Tapping any nav item expands the sidebar to reveal
+              // labels. Click-outside on the page closes it again
+              // (see asideRef useEffect at the top of the component).
+              onClick={() => setSidebarOpen(true)}
               className={`nav-item ${isActive ? 'active' : ''}`}
               title={!sidebarOpen ? item.label : undefined}
             >

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -112,6 +112,24 @@ export function Sidebar() {
   const { sidebarOpen, setSidebarOpen } = useSidebar()
   const [badges, setBadges] = useState<Record<string, number>>({})
   const { on, off } = useSocket()
+  const asideRef = useRef<HTMLElement | null>(null)
+
+  // Auto-close on outside click when the sidebar is expanded. Anchored
+  // to the <aside> ref; the click only counts as "outside" when it
+  // lands neither inside the sidebar nor on the TopHeader's mobile
+  // toggle button (which has its own toggle handler).
+  useEffect(() => {
+    if (!sidebarOpen) return
+    function onClick(e: MouseEvent) {
+      const target = e.target as Node | null
+      if (!target) return
+      if (asideRef.current?.contains(target)) return
+      if ((target as Element).closest?.('[data-mobile-menu-trigger]')) return
+      setSidebarOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [sidebarOpen, setSidebarOpen])
 
   // Compute badge counts. compute = PENDING + WAITLISTED so the admin
   // sees the full review backlog, not just the unallocated PENDING set.
@@ -165,6 +183,7 @@ export function Sidebar() {
 
   return (
     <motion.aside
+      ref={asideRef}
       className={`sidebar ${!sidebarOpen ? 'collapsed' : ''} ${sidebarOpen ? 'mobile-open' : ''}`}
       variants={sidebarVariants}
       animate={sidebarOpen ? 'open' : 'closed'}
@@ -233,7 +252,10 @@ export function Sidebar() {
                 <Link
                   key={item.path}
                   href={item.path}
-                  onClick={() => setSidebarOpen(false)}
+                  // Tapping any nav item expands the sidebar to reveal
+                  // the labels alongside the icons. Click-outside on
+                  // the page closes it again (see asideRef useEffect).
+                  onClick={() => setSidebarOpen(true)}
                   className={`nav-item ${isActive ? 'active' : ''}`}
                   title={!sidebarOpen ? item.label : undefined}
                 >
