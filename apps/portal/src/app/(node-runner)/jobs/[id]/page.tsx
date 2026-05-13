@@ -3,19 +3,18 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { motion } from 'framer-motion'
-import { ArrowLeft, Briefcase, Server, Clock, DollarSign, GitBranch, Shield } from 'lucide-react'
+import { ArrowLeft, Briefcase, Server, Clock, DollarSign, GitBranch, Shield, Info } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
-import { Skeleton } from '@/components/ui/Skeleton'
-
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
-}
-const item = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-}
+import { A2ELoader } from '@/components/ui/A2ELoader'
+import {
+  DashboardShell,
+  DashboardMainColumn,
+  DashboardRightRail,
+  EmptyState,
+  MetricTriad,
+  SectionCard,
+  type MetricCardData,
+} from '@/components/dashboard/FuturisticShell'
 
 interface JobDetail {
   id: string
@@ -74,22 +73,27 @@ export default function JobDetailPage() {
   }, [id])
 
   if (loading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1,2,3,4].map(i => <Skeleton key={i} className="h-24" />)}
-        </div>
-        <Skeleton className="h-48" />
-      </div>
-    )
+    return <A2ELoader fullScreen={false} message="Loading job" />
   }
 
   if (!data) {
     return (
-      <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>
-        Job not found
-      </div>
+      <DashboardShell title="Job not found" subtitle="The requested job could not be loaded">
+        <div className="lg:col-span-3">
+          <SectionCard>
+            <EmptyState
+              icon={Briefcase}
+              title="Job not found"
+              description="The job you are looking for could not be loaded."
+              action={
+                <Link href="/jobs">
+                  <button className="text-sm font-medium" style={{ color: 'var(--primary)' }}>Back to Jobs</button>
+                </Link>
+              }
+            />
+          </SectionCard>
+        </div>
+      </DashboardShell>
     )
   }
 
@@ -104,67 +108,54 @@ export default function JobDetailPage() {
     return `${m}m ${s}s`
   }
 
+  const titleBadge = (
+    <span className="text-xs font-medium px-3 py-1 rounded-full" style={{ background: statusStyle.bg, color: statusStyle.color }}>
+      {job.status}
+    </span>
+  )
+
+  const metrics: MetricCardData[] = [
+    {
+      label: 'Earnings',
+      value: job.earnings != null ? `$${job.earnings.toFixed(4)}` : '-',
+      detail: job.ratePerHour != null ? `$${job.ratePerHour.toFixed(2)}/hr` : 'Rate unknown',
+      icon: DollarSign,
+      tone: 'green',
+    },
+    {
+      label: 'Market',
+      value: job.market ?? '-',
+      detail: 'Routing target',
+      icon: GitBranch,
+      tone: 'blue',
+    },
+    {
+      label: 'Duration',
+      value: formatDuration(job.durationSeconds),
+      detail: job.gpuTier,
+      icon: Clock,
+      tone: 'purple',
+    },
+  ]
+
   return (
-    <motion.div
-      className="space-y-6"
-      variants={container}
-      initial="hidden"
-      animate="show"
+    <DashboardShell
+      title={`Job ${job.id.slice(0, 12)}`}
+      subtitle={`Created ${new Date(job.createdAt).toLocaleString()}`}
+      liveLabel={job.status === 'RUNNING' ? 'RUNNING' : undefined}
     >
-      {/* Header */}
-      <motion.div variants={item}>
-        <Link href="/jobs" className="text-sm inline-flex items-center gap-1 hover:opacity-80" style={{ color: 'var(--text-muted)' }}>
-          <ArrowLeft size={14} /> Back to Jobs
+      <DashboardMainColumn>
+        <Link
+          href="/jobs"
+          className="inline-flex items-center gap-1 text-xs font-mono uppercase tracking-[0.18em] hover:opacity-80 w-fit"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <ArrowLeft size={12} /> Back to Jobs
         </Link>
-        <div className="flex items-center justify-between mt-2">
-          <h1 className="text-2xl font-bold flex items-center gap-3" style={{ color: 'var(--text-primary)' }}>
-            <Briefcase size={28} style={{ color: 'var(--primary)' }} />
-            Job: {job.id.slice(0, 12)}
-          </h1>
-          <span className="text-sm font-medium px-3 py-1.5 rounded-full" style={{ background: statusStyle.bg, color: statusStyle.color }}>
-            {job.status}
-          </span>
-        </div>
-      </motion.div>
 
-      {/* KPI Blocks */}
-      <motion.div variants={item} className="stat-blocks">
-        <div className="stat-block green">
-          <div className="stat-icon"><DollarSign size={18} /></div>
-          <div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-              {job.earnings != null ? `$${job.earnings.toFixed(4)}` : '-'}
-            </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Earnings</div>
-          </div>
-        </div>
-        <div className="stat-block blue">
-          <div className="stat-icon"><GitBranch size={18} /></div>
-          <div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>{job.market ?? '-'}</div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Market</div>
-          </div>
-        </div>
-        <div className="stat-block purple">
-          <div className="stat-icon"><Clock size={18} /></div>
-          <div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>{formatDuration(job.durationSeconds)}</div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Duration</div>
-          </div>
-        </div>
-        <div className="stat-block yellow">
-          <div className="stat-icon"><Server size={18} /></div>
-          <div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>{job.gpuTier}</div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>GPU Tier</div>
-          </div>
-        </div>
-      </motion.div>
+        <MetricTriad metrics={metrics} />
 
-      {/* Job Details */}
-      <motion.div variants={item}>
-        <div className="rounded-xl p-6" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-          <h2 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Job Details</h2>
+        <SectionCard title="Job Details" icon={Info} badge={titleBadge}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
             <Row label="Job ID" value={job.id} mono />
             <Row label="Deployment ID" value={job.deploymentId} mono />
@@ -174,17 +165,10 @@ export default function JobDetailPage() {
             <Row label="Rate" value={job.ratePerHour != null ? `$${job.ratePerHour.toFixed(2)}/hr` : '-'} />
             {job.errorMessage && <Row label="Error" value={job.errorMessage} error />}
           </div>
-        </div>
-      </motion.div>
+        </SectionCard>
 
-      {/* Routing Decision */}
-      {job.routingLog && (
-        <motion.div variants={item}>
-          <div className="rounded-xl p-6" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-            <div className="flex items-center gap-2 mb-4">
-              <Shield size={16} style={{ color: 'var(--text-secondary)' }} />
-              <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Routing Decision</h2>
-            </div>
+        {job.routingLog && (
+          <SectionCard title="Routing Decision" icon={Shield}>
             <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>{job.routingLog.reason}</p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
               <Row label="Selected Market" value={job.routingLog.selectedMarket} />
@@ -195,24 +179,33 @@ export default function JobDetailPage() {
               <Row label="Yield Floor" value={`$${job.routingLog.yieldFloor.toFixed(2)}/hr`} />
               <Row label="Floor Applied" value={job.routingLog.yieldFloorApplied ? 'Yes' : 'No'} />
             </div>
-          </div>
-        </motion.div>
-      )}
+          </SectionCard>
+        )}
+      </DashboardMainColumn>
 
-      {/* Node Info */}
-      {job.node && (
-        <motion.div variants={item}>
-          <div className="rounded-xl p-6" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-            <h2 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Assigned Node</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+      <DashboardRightRail>
+        <SectionCard title="Status" icon={Briefcase}>
+          <div className="flex flex-col gap-3">
+            <div>
+              <span className="text-xs font-medium px-3 py-1.5 rounded-full" style={{ background: statusStyle.bg, color: statusStyle.color }}>
+                {job.status}
+              </span>
+            </div>
+            <Row label="GPU Tier" value={job.gpuTier} />
+          </div>
+        </SectionCard>
+
+        {job.node && (
+          <SectionCard title="Assigned Node" icon={Server}>
+            <div className="space-y-3 text-sm">
               <Row label="Node ID" value={job.node.id.slice(0, 12)} mono />
               <Row label="GPU Tier" value={job.node.gpuTier} />
               <Row label="Wallet" value={`${job.node.walletAddress.slice(0, 8)}...${job.node.walletAddress.slice(-6)}`} mono />
             </div>
-          </div>
-        </motion.div>
-      )}
-    </motion.div>
+          </SectionCard>
+        )}
+      </DashboardRightRail>
+    </DashboardShell>
   )
 }
 
@@ -220,7 +213,9 @@ function Row({ label, value, mono, error }: { label: string; value: string; mono
   return (
     <div className="flex justify-between py-2" style={{ borderBottom: '1px solid var(--glass-border)' }}>
       <span style={{ color: 'var(--text-muted)' }}>{label}</span>
-      <span style={{ color: error ? 'var(--danger)' : 'var(--text-primary)', fontFamily: mono ? 'monospace' : 'inherit', fontSize: mono ? '0.8rem' : undefined }}>{value}</span>
+      <span style={{ color: error ? 'var(--danger)' : 'var(--text-primary)', fontFamily: mono ? 'monospace' : 'inherit', fontSize: mono ? '0.8rem' : undefined }}>
+        {value}
+      </span>
     </div>
   )
 }

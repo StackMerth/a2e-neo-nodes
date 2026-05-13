@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { BookOpen, Copy, Check, Key, Server, CreditCard, Terminal } from 'lucide-react'
+import { Copy, Check, Key, Server, CreditCard, Terminal } from 'lucide-react'
+import { DashboardShell } from '@/components/dashboard/FuturisticShell'
 
 const container = {
   hidden: { opacity: 0 },
@@ -154,16 +155,12 @@ function CopyBtn({ text }: { text: string }) {
 
 export default function ApiDocsPage() {
   return (
-    <motion.div className="space-y-8 max-w-4xl" variants={container} initial="hidden" animate="show">
-      <motion.div variants={item}>
-        <h1 className="text-2xl font-bold flex items-center gap-3" style={{ color: 'var(--text-primary)' }}>
-          <BookOpen size={28} style={{ color: 'var(--primary)' }} />
-          API Documentation
-        </h1>
-        <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>
-          Use these endpoints to programmatically manage your compute resources.
-        </p>
-      </motion.div>
+    <DashboardShell
+      title="API Docs"
+      subtitle="Programmatically manage your compute resources"
+    >
+      <div className="lg:col-span-3">
+        <motion.div className="space-y-8 max-w-4xl" variants={container} initial="hidden" animate="show">
 
       {/* Auth Guide */}
       <motion.div variants={item}>
@@ -271,6 +268,8 @@ export default function ApiDocsPage() {
           </div>
         </div>
       </motion.div>
-    </motion.div>
+        </motion.div>
+      </div>
+    </DashboardShell>
   )
 }

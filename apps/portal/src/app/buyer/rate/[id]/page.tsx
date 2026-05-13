@@ -9,7 +9,7 @@
  * Reachable from:
  *   - The bell-icon notification "Rental Ended" (via direct link)
  *   - The buyer's request detail page (a "Rate this rental" CTA on
- *     COMPLETED rentals — wired in /buyer/requests/[id])
+ *     COMPLETED rentals, wired in /buyer/requests/[id])
  *
  * If the rental isn't COMPLETED, the API returns 400 and we show an
  * error state. If a rating already exists, we show the previous rating
@@ -18,20 +18,15 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { motion } from 'framer-motion'
-import { Star, ArrowLeft } from 'lucide-react'
+import { Star, ArrowLeft, MessageSquare } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
-
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.07 } },
-}
-const item = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-}
+import {
+  DashboardShell,
+  FormCard,
+  FormSection,
+} from '@/components/dashboard/FuturisticShell'
 
 export default function RateRentalPage() {
   const params = useParams()
@@ -59,7 +54,7 @@ export default function RateRentalPage() {
         setComment(result.rating.comment ?? '')
       }
     } catch {
-      /* silent — page handles fresh-rate case */
+      /* silent, page handles fresh-rate case */
     } finally {
       setLoading(false)
     }
@@ -81,7 +76,7 @@ export default function RateRentalPage() {
     setSubmitting(true)
     try {
       await buyer.rate(id, { score, comment: comment.trim() || undefined })
-      toast('success', existingRating ? 'Rating updated — pending re-moderation' : 'Rating submitted — pending moderation')
+      toast('success', existingRating ? 'Rating updated, pending re-moderation' : 'Rating submitted, pending moderation')
       router.push(`/buyer/requests/${id}`)
     } catch (e) {
       toast('error', e instanceof Error ? e.message : 'Failed to submit rating')
@@ -91,127 +86,133 @@ export default function RateRentalPage() {
   }
 
   if (loading) {
-    return <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>Loading...</div>
+    return (
+      <DashboardShell title="Rate this rental" subtitle="Loading...">
+        <div className="lg:col-span-3 max-w-3xl mx-auto w-full">
+          <FormCard title="Loading" icon={Star}>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading rating...</p>
+          </FormCard>
+        </div>
+      </DashboardShell>
+    )
   }
 
   return (
-    <motion.div
-      className="space-y-6 max-w-2xl mx-auto"
-      variants={container}
-      initial="hidden"
-      animate="show"
+    <DashboardShell
+      title="Rate this rental"
+      subtitle="Help other buyers pick reliable operators"
     >
-      <motion.button
-        variants={item}
-        type="button"
-        onClick={() => router.push(`/buyer/requests/${id}`)}
-        className="inline-flex items-center gap-2 text-sm"
-        style={{ color: 'var(--text-muted)' }}
-      >
-        <ArrowLeft size={14} /> Back to rental
-      </motion.button>
-
-      <motion.div variants={item}>
-        <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-          Rate this rental
-        </h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-          Your feedback helps other buyers pick reliable operators. Ratings are reviewed by the team before publishing.
-        </p>
-      </motion.div>
-
-      {existingRating && (
-        <motion.div
-          variants={item}
-          className="rounded-xl p-4"
-          style={{
-            background: 'rgba(59,130,246,0.08)',
-            border: '1px solid rgba(59,130,246,0.3)',
-          }}
-        >
-          <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-            You already rated this rental {existingRating.score} star{existingRating.score === 1 ? '' : 's'}
-            {' — '}<span style={{ color: 'var(--text-muted)' }}>status: {existingRating.moderationStatus}</span>
-          </p>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-            Submitting a new rating will overwrite the existing one and reset moderation status.
-          </p>
-        </motion.div>
-      )}
-
-      {/* Star picker */}
-      <motion.div variants={item} className="rounded-xl p-6" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-        <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Score</h2>
-        <div className="flex items-center gap-2">
-          {[1, 2, 3, 4, 5].map(n => {
-            const filled = n <= (hoverScore || score)
-            return (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setScore(n)}
-                onMouseEnter={() => setHoverScore(n)}
-                onMouseLeave={() => setHoverScore(0)}
-                className="transition-transform hover:scale-110"
-                aria-label={`${n} star${n === 1 ? '' : 's'}`}
-              >
-                <Star
-                  size={36}
-                  fill={filled ? '#facc15' : 'transparent'}
-                  style={{ color: filled ? '#facc15' : 'var(--text-muted)' }}
-                />
-              </button>
-            )
-          })}
-          {score > 0 && (
-            <span className="ml-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {score} star{score === 1 ? '' : 's'}
-            </span>
-          )}
-        </div>
-      </motion.div>
-
-      {/* Comment */}
-      <motion.div variants={item} className="rounded-xl p-6" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-        <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
-          Comment <span style={{ color: 'var(--text-muted)' }}>(optional, ≤500 chars)</span>
-        </h2>
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          maxLength={500}
-          rows={5}
-          placeholder="What worked well? What could be better? Be specific — operator-side improvements depend on signal."
-          className="w-full px-3 py-2 rounded-lg text-sm"
-          style={{
-            background: 'var(--bg-card)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--border-color)',
-          }}
-        />
-        <p className="text-xs mt-1 text-right" style={{ color: 'var(--text-muted)' }}>
-          {comment.length} / 500
-        </p>
-      </motion.div>
-
-      <motion.div variants={item} className="flex gap-3 justify-end">
-        <Button
-          variant="secondary"
-          size="md"
+      <div className="lg:col-span-3 max-w-3xl mx-auto w-full space-y-6">
+        <button
+          type="button"
           onClick={() => router.push(`/buyer/requests/${id}`)}
-          disabled={submitting}
+          className="inline-flex items-center gap-2 text-sm"
+          style={{ color: 'var(--text-muted)' }}
         >
-          Cancel
-        </Button>
-        <Button
-          variant="primary"
-          size="md"
-          onClick={handleSubmit}
-          disabled={submitting || score < 1}
+          <ArrowLeft size={14} /> Back to rental
+        </button>
+
+        {existingRating && (
+          <div
+            className="rounded-lg p-4"
+            style={{
+              background: 'rgba(59,130,246,0.08)',
+              border: '1px solid rgba(59,130,246,0.3)',
+            }}
+          >
+            <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+              You already rated this rental {existingRating.score} star{existingRating.score === 1 ? '' : 's'}
+              {' '}<span style={{ color: 'var(--text-muted)' }}>(status: {existingRating.moderationStatus})</span>
+            </p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              Submitting a new rating will overwrite the existing one and reset moderation status.
+            </p>
+          </div>
+        )}
+
+        <FormCard
+          title="Your Rating"
+          description="Ratings are reviewed by the team before publishing."
+          icon={Star}
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => router.push(`/buyer/requests/${id}`)}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                onClick={handleSubmit}
+                disabled={submitting || score < 1}
+              >
+                {submitting ? 'Submitting...' : existingRating ? 'Update Rating' : 'Submit Rating'}
+              </Button>
+            </>
+          }
         >
-          {submitting ? 'Submitting...' : existingRating ? 'Update Rating' : 'Submit Rating'}
-        </Button>
-      </motion.div>
-    </motion.div>
+          <FormSection title="Score">
+            <div className="flex items-center gap-2">
+              {[1, 2, 3, 4, 5].map(n => {
+                const filled = n <= (hoverScore || score)
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setScore(n)}
+                    onMouseEnter={() => setHoverScore(n)}
+                    onMouseLeave={() => setHoverScore(0)}
+                    className="transition-transform hover:scale-110"
+                    aria-label={`${n} star${n === 1 ? '' : 's'}`}
+                  >
+                    <Star
+                      size={36}
+                      fill={filled ? '#facc15' : 'transparent'}
+                      style={{ color: filled ? '#facc15' : 'var(--text-muted)' }}
+                    />
+                  </button>
+                )
+              })}
+              {score > 0 && (
+                <span className="ml-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  {score} star{score === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+          </FormSection>
+
+          <FormSection title="Comment" description="Optional, max 500 characters">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <MessageSquare size={14} style={{ color: 'var(--text-muted)' }} />
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  What worked well? What could be better? Specifics help operators improve.
+                </span>
+              </div>
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                maxLength={500}
+                rows={5}
+                placeholder="Be specific, operator-side improvements depend on signal."
+                className="w-full px-3 py-2 rounded-lg text-sm"
+                style={{
+                  background: 'var(--bg-card)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                }}
+              />
+              <p className="text-xs mt-1 text-right" style={{ color: 'var(--text-muted)' }}>
+                {comment.length} / 500
+              </p>
+            </div>
+          </FormSection>
+        </FormCard>
+      </div>
+    </DashboardShell>
   )
 }

@@ -1,10 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { motion } from 'framer-motion'
 import {
   Server,
-  RefreshCw,
   Copy,
   Check,
   Clock,
@@ -15,8 +13,12 @@ import {
 } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { useWebSocket } from '@/hooks/useWebSocket'
-import { Skeleton } from '@/components/ui/Skeleton'
 import Link from 'next/link'
+import {
+  DashboardShell,
+  SectionCard,
+  EmptyState,
+} from '@/components/dashboard/FuturisticShell'
 
 interface ActiveAllocation {
   id: string
@@ -78,16 +80,6 @@ const TIER_COLORS: Record<string, string> = {
   B200: '#8b5cf6',
   B300: '#f59e0b',
   GB300: '#ef4444',
-}
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.06 } },
-}
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -275,368 +267,339 @@ export default function ActiveComputePage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="space-y-6 animate-fadeIn">
-        <Skeleton className="h-14 w-full" />
-        {[1, 2, 3].map(i => (
-          <Skeleton key={i} className="h-48 w-full" />
-        ))}
-      </div>
-    )
-  }
-
   return (
-    <motion.div
-      className="space-y-6"
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
+    <DashboardShell
+      title="Active Rentals"
+      subtitle="GPU allocations currently running on your account"
+      onRefresh={() => loadData(true)}
+      refreshing={refreshing}
     >
-      {/* Header */}
-      <motion.div className="dash-header" variants={itemVariants}>
-        <div className="dash-header-left">
-          <h1><Server size={28} /> Active Compute</h1>
-        </div>
-        <div className="dash-header-right">
-          <button
-            className="dash-refresh-btn"
-            onClick={() => loadData(true)}
-            disabled={refreshing}
-            title="Refresh data"
-          >
-            <RefreshCw size={16} className={refreshing ? 'spin' : ''} />
-          </button>
-        </div>
-      </motion.div>
-
-      {/* Allocation Cards */}
-      {allocations.length > 0 ? (
-        <motion.div className="space-y-4" variants={containerVariants}>
-          {allocations.map((alloc) => {
-            const tierColor = TIER_COLORS[alloc.gpuTier] ?? 'var(--primary)'
-            const tick = ticks[alloc.id] ?? ticks[alloc.requestId]
-            const accruedCost = tick?.accruedCost ?? alloc.accruedCost ?? 0
-            const totalCost = alloc.totalCost ?? 0
-            const remainingCost = Math.max(0, totalCost - accruedCost)
-            const minutesUsed = tick?.minutesUsed ?? alloc.minutesUsed ?? 0
-            // M5.8 / D3: live CO2 grams. Prefer the websocket tick, fall
-            // back to whatever the rental row had when we last fetched.
-            const co2Grams = tick?.co2Grams ?? alloc.co2Grams ?? null
-            // M3: preemption notice for this card. Source priority:
-            //   1. Live WS event (if received during this session)
-            //   2. adminNote on the row parsed for 'PREEMPT_AT:<iso>|...'
-            //      (handles page-refresh + missed WS event scenarios)
-            const wsPreemption = preemptions[alloc.id] ?? preemptions[alloc.requestId]
-            let preemption: PreemptionPayload | undefined = wsPreemption
-            if (!preemption && alloc.adminNote?.startsWith('PREEMPT_AT:')) {
-              const isoEnd = alloc.adminNote.slice('PREEMPT_AT:'.length).split('|')[0]
-              const preemptAt = new Date(isoEnd ?? '')
-              if (!Number.isNaN(preemptAt.getTime()) && preemptAt > new Date()) {
-                preemption = {
-                  requestId: alloc.id,
-                  preemptAt: preemptAt.toISOString(),
-                  graceMs: Math.max(0, preemptAt.getTime() - Date.now()),
-                  reason: alloc.adminNote.split('|reason=')[1] ?? 'unknown',
-                }
-              }
-            }
-            return (
-              <motion.div key={alloc.id} variants={itemVariants}>
-                <div
-                  className="rounded-xl p-6"
-                  style={{
-                    background: 'var(--glass-bg)',
-                    border: `1px solid ${tierColor}30`,
-                  }}
+      <div className="lg:col-span-3">
+        <SectionCard title="Active Rentals" icon={Server}>
+          {loading ? (
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading rentals...</p>
+          ) : allocations.length === 0 ? (
+            <EmptyState
+              icon={Server}
+              title="No active compute"
+              description="Your active GPU allocations will appear here once provisioned."
+              action={
+                <Link
+                  href="/buyer/request"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium"
+                  style={{ background: 'var(--primary)', color: '#fff' }}
                 >
-                  {/* M3: SPOT preemption banner — appears when this card's
-                      rental has been scheduled for eviction. Shows a live
-                      countdown so the buyer knows exactly when to save work. */}
-                  {preemption && (
-                    <PreemptionBanner preemption={preemption} />
-                  )}
+                  Request Compute
+                </Link>
+              }
+            />
+          ) : (
+            <div className="grid grid-cols-1 gap-4">
+              {allocations.map((alloc) => {
+                const tierColor = TIER_COLORS[alloc.gpuTier] ?? 'var(--primary)'
+                const tick = ticks[alloc.id] ?? ticks[alloc.requestId]
+                const accruedCost = tick?.accruedCost ?? alloc.accruedCost ?? 0
+                const totalCost = alloc.totalCost ?? 0
+                const remainingCost = Math.max(0, totalCost - accruedCost)
+                const minutesUsed = tick?.minutesUsed ?? alloc.minutesUsed ?? 0
+                // M5.8 / D3: live CO2 grams. Prefer the websocket tick, fall
+                // back to whatever the rental row had when we last fetched.
+                const co2Grams = tick?.co2Grams ?? alloc.co2Grams ?? null
+                // M3: preemption notice for this card. Source priority:
+                //   1. Live WS event (if received during this session)
+                //   2. adminNote on the row parsed for 'PREEMPT_AT:<iso>|...'
+                //      (handles page-refresh + missed WS event scenarios)
+                const wsPreemption = preemptions[alloc.id] ?? preemptions[alloc.requestId]
+                let preemption: PreemptionPayload | undefined = wsPreemption
+                if (!preemption && alloc.adminNote?.startsWith('PREEMPT_AT:')) {
+                  const isoEnd = alloc.adminNote.slice('PREEMPT_AT:'.length).split('|')[0]
+                  const preemptAt = new Date(isoEnd ?? '')
+                  if (!Number.isNaN(preemptAt.getTime()) && preemptAt > new Date()) {
+                    preemption = {
+                      requestId: alloc.id,
+                      preemptAt: preemptAt.toISOString(),
+                      graceMs: Math.max(0, preemptAt.getTime() - Date.now()),
+                      reason: alloc.adminNote.split('|reason=')[1] ?? 'unknown',
+                    }
+                  }
+                }
+                return (
+                  <div
+                    key={alloc.id}
+                    className="rounded-xl p-6"
+                    style={{
+                      background: 'var(--bg-elevated)',
+                      border: `1px solid ${tierColor}30`,
+                    }}
+                  >
+                    {/* M3: SPOT preemption banner — appears when this card's
+                        rental has been scheduled for eviction. Shows a live
+                        countdown so the buyer knows exactly when to save work. */}
+                    {preemption && (
+                      <PreemptionBanner preemption={preemption} />
+                    )}
 
-                  {/* Header Row */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span
-                        className="text-xs font-bold px-3 py-1.5 rounded-lg"
-                        style={{ background: `${tierColor}20`, color: tierColor }}
-                      >
-                        {alloc.gpuTier}
-                      </span>
-                      <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        x{alloc.gpuCount} GPU{alloc.gpuCount > 1 ? 's' : ''}
-                      </span>
-                      {/* M3: pricing tier badge — distinguishes SPOT (yellow,
-                          preemptible) from RESERVED (blue, committed) from
-                          ON_DEMAND (green, default). */}
-                      {alloc.tier && alloc.tier !== 'ON_DEMAND' && (
+                    {/* Header Row */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3 flex-wrap">
                         <span
-                          className="text-xs font-bold px-2 py-1 rounded"
-                          style={
-                            alloc.tier === 'SPOT'
-                              ? { background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.4)' }
-                              : { background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.4)' }
-                          }
-                          title={
-                            alloc.tier === 'SPOT'
-                              ? 'Spot tier — 40% off, preemptible with 90s notice'
-                              : `Reserved ${alloc.commitmentDays ?? ''}d — committed capacity, exempt from preemption`
-                          }
+                          className="text-xs font-bold px-3 py-1.5 rounded-lg"
+                          style={{ background: `${tierColor}20`, color: tierColor }}
                         >
-                          {alloc.tier === 'SPOT'
-                            ? 'SPOT'
-                            : `RESERVED${alloc.commitmentDays ? ` ${alloc.commitmentDays}d` : ''}`}
+                          {alloc.gpuTier}
                         </span>
-                      )}
-                      {alloc.tier === 'ON_DEMAND' && (
-                        <span
-                          className="text-xs font-bold px-2 py-1 rounded"
-                          style={{ background: 'rgba(34, 197, 94, 0.12)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.35)' }}
-                          title="On-Demand — full price, never preempted"
-                        >
-                          ON-DEMAND
+                        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                          x{alloc.gpuCount} GPU{alloc.gpuCount > 1 ? 's' : ''}
                         </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                      <Clock size={12} />
-                      Expires {new Date(alloc.expiresAt).toLocaleDateString()}
-                    </div>
-                  </div>
-
-                  {/* Time Remaining Progress Bar */}
-                  <div className="mb-4">
-                    <TimeRemainingBar expiresAt={alloc.expiresAt} activatedAt={alloc.activatedAt} />
-                  </div>
-
-                  {/* Live cost ticker (updated via compute:tick websocket event) */}
-                  {totalCost > 0 && (
-                    <div
-                      className="rounded-lg p-3 mb-4 flex items-center justify-between"
-                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <DollarSign size={14} style={{ color: tierColor }} />
-                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          {minutesUsed} min used
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-mono" style={{ color: 'var(--text-primary)' }}>
-                          ${accruedCost.toFixed(2)}
-                          <span className="text-xs ml-1" style={{ color: 'var(--text-muted)' }}>
-                            / ${totalCost.toFixed(2)}
+                        {/* M3: pricing tier badge — distinguishes SPOT (yellow,
+                            preemptible) from RESERVED (blue, committed) from
+                            ON_DEMAND (green, default). */}
+                        {alloc.tier && alloc.tier !== 'ON_DEMAND' && (
+                          <span
+                            className="text-xs font-bold px-2 py-1 rounded"
+                            style={
+                              alloc.tier === 'SPOT'
+                                ? { background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.4)' }
+                                : { background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.4)' }
+                            }
+                            title={
+                              alloc.tier === 'SPOT'
+                                ? 'Spot tier — 40% off, preemptible with 90s notice'
+                                : `Reserved ${alloc.commitmentDays ?? ''}d — committed capacity, exempt from preemption`
+                            }
+                          >
+                            {alloc.tier === 'SPOT'
+                              ? 'SPOT'
+                              : `RESERVED${alloc.commitmentDays ? ` ${alloc.commitmentDays}d` : ''}`}
                           </span>
-                        </div>
-                        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          ${remainingCost.toFixed(2)} refund if terminated now
-                        </div>
+                        )}
+                        {alloc.tier === 'ON_DEMAND' && (
+                          <span
+                            className="text-xs font-bold px-2 py-1 rounded"
+                            style={{ background: 'rgba(34, 197, 94, 0.12)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.35)' }}
+                            title="On-Demand — full price, never preempted"
+                          >
+                            ON-DEMAND
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                        <Clock size={12} />
+                        Expires {new Date(alloc.expiresAt).toLocaleDateString()}
                       </div>
                     </div>
-                  )}
 
-                  {/* M5.8 / D3: CO2 estimate per rental. Honest
-                      approximation from GPU TDP times region grid
-                      intensity. Formula footnoted on the billing page. */}
-                  {co2Grams != null && co2Grams > 0 && (
-                    <div
-                      className="rounded-lg p-3 mb-4 flex items-center justify-between"
-                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
-                    >
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        Carbon emitted (estimate)
-                      </span>
-                      <span className="text-sm font-mono" style={{ color: 'var(--text-primary)' }}>
-                        {co2Grams >= 1000
-                          ? `${(co2Grams / 1000).toFixed(2)} kg CO2`
-                          : `${co2Grams.toFixed(0)} g CO2`}
-                      </span>
+                    {/* Time Remaining Progress Bar */}
+                    <div className="mb-4">
+                      <TimeRemainingBar expiresAt={alloc.expiresAt} activatedAt={alloc.activatedAt} />
                     </div>
-                  )}
 
-                  {/* SSH Details */}
-                  {(() => {
-                    const sshHost = alloc.sshHost ?? null
-                    const sshPort = alloc.sshPort ?? 22
-                    const sshUsername = alloc.sshUsername ?? 'a2e-buyer'
-                    const sshCredential = alloc.sshSessionToken ?? alloc.sshPassword ?? null
-                    const credentialLabel = alloc.sshSessionToken ? 'Session Token' : 'Password'
-                    const isTestMode =
-                      !sshHost ||
-                      (alloc.allocatedNodeIds ?? []).some(id => id.startsWith('seed-node-'))
-
-                    return (
+                    {/* Live cost ticker (updated via compute:tick websocket event) */}
+                    {totalCost > 0 && (
                       <div
-                        className="rounded-lg p-4"
+                        className="rounded-lg p-3 mb-4 flex items-center justify-between"
                         style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
                       >
-                        <div className="flex items-center gap-2 mb-3">
-                          <Terminal size={14} style={{ color: tierColor }} />
-                          <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
-                            SSH Access
+                        <div className="flex items-center gap-2">
+                          <DollarSign size={14} style={{ color: tierColor }} />
+                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            {minutesUsed} min used
                           </span>
                         </div>
-
-                        {/* Test-mode banner — shown when the rental was assigned
-                            to a seed-node or has no real host. The session token
-                            is real and the rest of the M2 lifecycle (meter,
-                            terminate, refund, expiry) all work; the only missing
-                            piece is a real datacenter machine to connect to. */}
-                        {isTestMode && (
-                          <div
-                            className="rounded-md p-3 mb-3 text-xs"
-                            style={{
-                              background: 'rgba(245, 158, 11, 0.1)',
-                              border: '1px solid rgba(245, 158, 11, 0.3)',
-                              color: 'var(--warning, #f59e0b)',
-                            }}
-                          >
-                            <strong>Test mode rental.</strong> This rental was assigned to a
-                            test/seed node — the SSH credentials below are real and
-                            ephemeral, but there&rsquo;s no live GPU machine behind this host.
-                            Real production rentals connect to actual datacenter hardware.
-                          </div>
-                        )}
-
-                        <div className="space-y-2">
-                          <div className="flex items-center text-xs">
-                            <span style={{ color: 'var(--text-muted)', minWidth: 100 }}>Host</span>
-                            <span className="font-mono" style={{ color: 'var(--text-primary)' }}>
-                              {sshHost ?? <em style={{ color: 'var(--text-muted)' }}>not assigned (test node)</em>}
+                        <div className="text-right">
+                          <div className="text-sm font-mono" style={{ color: 'var(--text-primary)' }}>
+                            ${accruedCost.toFixed(2)}
+                            <span className="text-xs ml-1" style={{ color: 'var(--text-muted)' }}>
+                              / ${totalCost.toFixed(2)}
                             </span>
-                            {sshHost && <CopyButton text={sshHost} />}
                           </div>
-                          <div className="flex items-center text-xs">
-                            <span style={{ color: 'var(--text-muted)', minWidth: 100 }}>Port</span>
-                            <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{sshPort}</span>
-                            <CopyButton text={String(sshPort)} />
+                          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            ${remainingCost.toFixed(2)} refund if terminated now
                           </div>
-                          <div className="flex items-center text-xs">
-                            <span style={{ color: 'var(--text-muted)', minWidth: 100 }}>Username</span>
-                            <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{sshUsername}</span>
-                            <CopyButton text={sshUsername} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* M5.8 / D3: CO2 estimate per rental. Honest
+                        approximation from GPU TDP times region grid
+                        intensity. Formula footnoted on the billing page. */}
+                    {co2Grams != null && co2Grams > 0 && (
+                      <div
+                        className="rounded-lg p-3 mb-4 flex items-center justify-between"
+                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
+                      >
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          Carbon emitted (estimate)
+                        </span>
+                        <span className="text-sm font-mono" style={{ color: 'var(--text-primary)' }}>
+                          {co2Grams >= 1000
+                            ? `${(co2Grams / 1000).toFixed(2)} kg CO2`
+                            : `${co2Grams.toFixed(0)} g CO2`}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* SSH Details */}
+                    {(() => {
+                      const sshHost = alloc.sshHost ?? null
+                      const sshPort = alloc.sshPort ?? 22
+                      const sshUsername = alloc.sshUsername ?? 'a2e-buyer'
+                      const sshCredential = alloc.sshSessionToken ?? alloc.sshPassword ?? null
+                      const credentialLabel = alloc.sshSessionToken ? 'Session Token' : 'Password'
+                      const isTestMode =
+                        !sshHost ||
+                        (alloc.allocatedNodeIds ?? []).some(id => id.startsWith('seed-node-'))
+
+                      return (
+                        <div
+                          className="rounded-lg p-4"
+                          style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
+                        >
+                          <div className="flex items-center gap-2 mb-3">
+                            <Terminal size={14} style={{ color: tierColor }} />
+                            <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                              SSH Access
+                            </span>
                           </div>
-                          {sshCredential && (
+
+                          {/* Test-mode banner — shown when the rental was assigned
+                              to a seed-node or has no real host. The session token
+                              is real and the rest of the M2 lifecycle (meter,
+                              terminate, refund, expiry) all work; the only missing
+                              piece is a real datacenter machine to connect to. */}
+                          {isTestMode && (
+                            <div
+                              className="rounded-md p-3 mb-3 text-xs"
+                              style={{
+                                background: 'rgba(245, 158, 11, 0.1)',
+                                border: '1px solid rgba(245, 158, 11, 0.3)',
+                                color: 'var(--warning, #f59e0b)',
+                              }}
+                            >
+                              <strong>Test mode rental.</strong> This rental was assigned to a
+                              test/seed node, the SSH credentials below are real and
+                              ephemeral, but there&rsquo;s no live GPU machine behind this host.
+                              Real production rentals connect to actual datacenter hardware.
+                            </div>
+                          )}
+
+                          <div className="space-y-2">
                             <div className="flex items-center text-xs">
-                              <span style={{ color: 'var(--text-muted)', minWidth: 100 }}>{credentialLabel}</span>
-                              <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{'*'.repeat(12)}</span>
-                              <CopyButton text={sshCredential} />
+                              <span style={{ color: 'var(--text-muted)', minWidth: 100 }}>Host</span>
+                              <span className="font-mono" style={{ color: 'var(--text-primary)' }}>
+                                {sshHost ?? <em style={{ color: 'var(--text-muted)' }}>not assigned (test node)</em>}
+                              </span>
+                              {sshHost && <CopyButton text={sshHost} />}
+                            </div>
+                            <div className="flex items-center text-xs">
+                              <span style={{ color: 'var(--text-muted)', minWidth: 100 }}>Port</span>
+                              <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{sshPort}</span>
+                              <CopyButton text={String(sshPort)} />
+                            </div>
+                            <div className="flex items-center text-xs">
+                              <span style={{ color: 'var(--text-muted)', minWidth: 100 }}>Username</span>
+                              <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{sshUsername}</span>
+                              <CopyButton text={sshUsername} />
+                            </div>
+                            {sshCredential && (
+                              <div className="flex items-center text-xs">
+                                <span style={{ color: 'var(--text-muted)', minWidth: 100 }}>{credentialLabel}</span>
+                                <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{'*'.repeat(12)}</span>
+                                <CopyButton text={sshCredential} />
+                              </div>
+                            )}
+                          </div>
+
+                          {sshHost && (
+                            <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border-color)' }}>
+                              <div className="flex items-center text-xs">
+                                <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>
+                                  ssh {sshUsername}@{sshHost} -p {sshPort}
+                                </span>
+                                <CopyButton text={`ssh ${sshUsername}@${sshHost} -p ${sshPort}`} />
+                              </div>
                             </div>
                           )}
                         </div>
+                      )
+                    })()}
 
-                        {sshHost && (
-                          <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border-color)' }}>
-                            <div className="flex items-center text-xs">
-                              <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>
-                                ssh {sshUsername}@{sshHost} -p {sshPort}
-                              </span>
-                              <CopyButton text={`ssh ${sshUsername}@${sshHost} -p ${sshPort}`} />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })()}
+                    {/* M3: Checkpoint button — triggers workspace snapshot.
+                        Less prominent than Terminate (smaller, neutral color).
+                        The actual S3 upload happens agent-side; the API just
+                        flags REQUESTED for the agent to pick up. */}
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await buyer.checkpoint(alloc.id)
+                            // toast wired via parent; for simplicity just alert here
+                            window.alert('Checkpoint requested. Agent will package + upload your workspace shortly.')
+                          } catch (err) {
+                            window.alert(err instanceof Error ? err.message : 'Checkpoint failed')
+                          }
+                        }}
+                        className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                        style={{
+                          background: 'rgba(59, 130, 246, 0.1)',
+                          border: '1px solid rgba(59, 130, 246, 0.3)',
+                          color: '#3b82f6',
+                        }}
+                      >
+                        <Save size={14} />
+                        Checkpoint Workspace
+                      </button>
+                      <p className="text-xs text-center mt-2" style={{ color: 'var(--text-muted)' }}>
+                        Snapshot your workspace so you can restore it on a future rental.
+                      </p>
+                    </div>
 
-                  {/* M3: Checkpoint button — triggers workspace snapshot.
-                      Less prominent than Terminate (smaller, neutral color).
-                      The actual S3 upload happens agent-side; the API just
-                      flags REQUESTED for the agent to pick up. */}
-                  <div className="mt-4">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await buyer.checkpoint(alloc.id)
-                          // toast wired via parent; for simplicity just alert here
-                          window.alert('Checkpoint requested. Agent will package + upload your workspace shortly.')
-                        } catch (err) {
-                          window.alert(err instanceof Error ? err.message : 'Checkpoint failed')
-                        }
-                      }}
-                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                      style={{
-                        background: 'rgba(59, 130, 246, 0.1)',
-                        border: '1px solid rgba(59, 130, 246, 0.3)',
-                        color: '#3b82f6',
-                      }}
-                    >
-                      <Save size={14} />
-                      Checkpoint Workspace
-                    </button>
-                    <p className="text-xs text-center mt-2" style={{ color: 'var(--text-muted)' }}>
-                      Snapshot your workspace so you can restore it on a future rental.
-                    </p>
+                    {/* Terminate — full-width destructive CTA so buyers never
+                        have to hunt for it. Red border + red text on the
+                        darker neutral background calls attention without being
+                        so loud it gets accidental clicks (we still have a
+                        browser confirm dialog as the second guard). */}
+                    <div className="mt-5">
+                      <button
+                        type="button"
+                        onClick={() => handleTerminate(alloc)}
+                        disabled={terminatingId === alloc.id}
+                        className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold transition-all"
+                        style={{
+                          background: terminatingId === alloc.id
+                            ? 'rgba(239, 68, 68, 0.05)'
+                            : 'rgba(239, 68, 68, 0.1)',
+                          border: '1px solid rgba(239, 68, 68, 0.4)',
+                          color: '#ef4444',
+                          opacity: terminatingId === alloc.id ? 0.6 : 1,
+                          cursor: terminatingId === alloc.id ? 'not-allowed' : 'pointer',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (terminatingId !== alloc.id) {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.18)'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (terminatingId !== alloc.id) {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'
+                          }
+                        }}
+                      >
+                        <XCircle size={16} />
+                        {terminatingId === alloc.id ? 'Terminating...' : 'Terminate Rental'}
+                      </button>
+                      <p className="text-xs text-center mt-2" style={{ color: 'var(--text-muted)' }}>
+                        Refund any unused time. Returns ${remainingCost.toFixed(2)} to your wallet.
+                      </p>
+                    </div>
                   </div>
-
-                  {/* Terminate — full-width destructive CTA so buyers never
-                      have to hunt for it. Red border + red text on the
-                      darker neutral background calls attention without being
-                      so loud it gets accidental clicks (we still have a
-                      browser confirm dialog as the second guard). */}
-                  <div className="mt-5">
-                    <button
-                      type="button"
-                      onClick={() => handleTerminate(alloc)}
-                      disabled={terminatingId === alloc.id}
-                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold transition-all"
-                      style={{
-                        background: terminatingId === alloc.id
-                          ? 'rgba(239, 68, 68, 0.05)'
-                          : 'rgba(239, 68, 68, 0.1)',
-                        border: '1px solid rgba(239, 68, 68, 0.4)',
-                        color: '#ef4444',
-                        opacity: terminatingId === alloc.id ? 0.6 : 1,
-                        cursor: terminatingId === alloc.id ? 'not-allowed' : 'pointer',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (terminatingId !== alloc.id) {
-                          e.currentTarget.style.background = 'rgba(239, 68, 68, 0.18)'
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (terminatingId !== alloc.id) {
-                          e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'
-                        }
-                      }}
-                    >
-                      <XCircle size={16} />
-                      {terminatingId === alloc.id ? 'Terminating...' : 'Terminate Rental'}
-                    </button>
-                    <p className="text-xs text-center mt-2" style={{ color: 'var(--text-muted)' }}>
-                      Refund any unused time. Returns ${remainingCost.toFixed(2)} to your wallet.
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-            )
-          })}
-        </motion.div>
-      ) : (
-        <motion.div variants={itemVariants}>
-          <div
-            className="rounded-xl p-12 text-center"
-            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
-          >
-            <Server size={40} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-            <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-              No active compute
-            </p>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-              Your active GPU allocations will appear here once provisioned.
-            </p>
-            <Link href="/buyer/request">
-              <button className="btn btn-primary mt-4" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                Request Compute
-              </button>
-            </Link>
-          </div>
-        </motion.div>
-      )}
-    </motion.div>
+                )
+              })}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+    </DashboardShell>
   )
 }

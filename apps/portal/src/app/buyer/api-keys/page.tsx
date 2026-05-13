@@ -1,23 +1,18 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Key, Plus, Copy, Check, Trash2, Clock, Shield } from 'lucide-react'
+import { Key, Plus, Copy, Check, Trash2, Shield } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
-import { Skeleton } from '@/components/ui/Skeleton'
 import { useToast } from '@/components/ui/Toast'
-
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
-}
-const item = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-}
+import {
+  DashboardShell,
+  DataTableCard,
+  EmptyState,
+  type DataTableColumn,
+} from '@/components/dashboard/FuturisticShell'
 
 interface ApiKeyItem {
   id: string
@@ -28,6 +23,8 @@ interface ApiKeyItem {
   expiresAt: string | null
   createdAt: string
 }
+
+type ApiKeyRow = ApiKeyItem & Record<string, unknown>
 
 export default function ApiKeysPage() {
   const { toast } = useToast()
@@ -97,87 +94,97 @@ export default function ApiKeysPage() {
     return `${Math.floor(hrs / 24)}d ago`
   }
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-10 w-48" />
-        <Skeleton className="h-48" />
-      </div>
-    )
-  }
+  const columns: Array<DataTableColumn<ApiKeyRow>> = [
+    {
+      key: 'name',
+      header: 'Name',
+      render: (k) => (
+        <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{k.name}</span>
+      ),
+    },
+    {
+      key: 'key',
+      header: 'Key',
+      mono: true,
+      render: (k) => k.key,
+    },
+    {
+      key: 'permissions',
+      header: 'Permissions',
+      render: (k) => (
+        <div className="flex gap-1 flex-wrap">
+          {k.permissions.map((p) => (
+            <span
+              key={p}
+              className="text-2xs px-1.5 py-0.5 rounded"
+              style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--primary)' }}
+            >
+              {p}
+            </span>
+          ))}
+        </div>
+      ),
+    },
+    {
+      key: 'lastUsedAt',
+      header: 'Last Used',
+      mono: true,
+      render: (k) => timeAgo(k.lastUsedAt),
+    },
+    {
+      key: 'createdAt',
+      header: 'Created',
+      mono: true,
+      render: (k) => new Date(k.createdAt).toLocaleDateString(),
+    },
+    {
+      key: 'id',
+      header: '',
+      align: 'right',
+      render: (k) => (
+        <button
+          onClick={() => handleRevoke(k.id)}
+          className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded transition-colors hover:bg-surface-hover"
+          style={{ color: 'var(--danger)' }}
+        >
+          <Trash2 size={12} /> Revoke
+        </button>
+      ),
+    },
+  ]
+
+  const createButton = (
+    <Button
+      size="sm"
+      onClick={() => { setShowCreate(true); setCreatedKey(null); setNewKeyName(''); setNewKeyExpiry('') }}
+    >
+      <Plus size={14} className="mr-1" /> Create Key
+    </Button>
+  )
 
   return (
-    <motion.div className="space-y-6" variants={container} initial="hidden" animate="show">
-      {/* Header */}
-      <motion.div variants={item} className="dash-header">
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-          <Key size={28} style={{ color: 'var(--primary)' }} />
-          API Keys
-        </h1>
-        <Button size="sm" onClick={() => { setShowCreate(true); setCreatedKey(null); setNewKeyName(''); setNewKeyExpiry(''); }}>
-          <Plus size={16} className="mr-2" /> Create Key
-        </Button>
-      </motion.div>
-
-      <motion.div variants={item}>
-        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-          Use API keys for programmatic access to your compute resources. Keys authenticate as your account.
-        </p>
-      </motion.div>
-
-      {/* Key List */}
-      <motion.div variants={item}>
-        <div className="rounded-xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-          {keys.length === 0 ? (
-            <div className="text-center py-16">
-              <Key size={40} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No API keys yet</p>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Create one to get started with the API</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-muted)' }}>
-                    <th className="text-left px-5 py-3 text-xs uppercase tracking-wider font-medium">Name</th>
-                    <th className="text-left px-5 py-3 text-xs uppercase tracking-wider font-medium">Key</th>
-                    <th className="text-left px-5 py-3 text-xs uppercase tracking-wider font-medium">Permissions</th>
-                    <th className="text-left px-5 py-3 text-xs uppercase tracking-wider font-medium">Last Used</th>
-                    <th className="text-left px-5 py-3 text-xs uppercase tracking-wider font-medium">Created</th>
-                    <th className="text-right px-5 py-3 text-xs uppercase tracking-wider font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {keys.map((k) => (
-                    <tr key={k.id} style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                      <td className="px-5 py-3 font-medium" style={{ color: 'var(--text-primary)' }}>{k.name}</td>
-                      <td className="px-5 py-3 font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{k.key}</td>
-                      <td className="px-5 py-3">
-                        <div className="flex gap-1 flex-wrap">
-                          {k.permissions.map(p => (
-                            <span key={p} className="text-2xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--primary)' }}>{p}</span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>{timeAgo(k.lastUsedAt)}</td>
-                      <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>{new Date(k.createdAt).toLocaleDateString()}</td>
-                      <td className="px-5 py-3 text-right">
-                        <button
-                          onClick={() => handleRevoke(k.id)}
-                          className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded transition-colors"
-                          style={{ color: 'var(--danger)' }}
-                        >
-                          <Trash2 size={12} /> Revoke
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </motion.div>
+    <DashboardShell
+      title="API Keys"
+      subtitle="Programmatic access to your compute resources"
+    >
+      <div className="lg:col-span-3">
+        <DataTableCard<ApiKeyRow>
+          title="API Keys"
+          icon={Key}
+          actions={createButton}
+          columns={columns}
+          rows={(keys ?? []) as ApiKeyRow[]}
+          loading={loading}
+          empty={
+            <EmptyState
+              icon={Key}
+              title="No API keys yet"
+              description="Create one to get started with the API. Keys authenticate as your account."
+              action={createButton}
+            />
+          }
+        />
+      </div>
 
       {/* Create Modal */}
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title={createdKey ? 'API Key Created' : 'Create API Key'}>
@@ -211,6 +218,6 @@ export default function ApiKeysPage() {
           </div>
         )}
       </Modal>
-    </motion.div>
+    </DashboardShell>
   )
 }

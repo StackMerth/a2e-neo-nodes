@@ -1,33 +1,78 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter, useParams } from 'next/navigation'
-import { motion } from 'framer-motion'
-import { Cpu, Thermometer, MemoryStick, Clock, MapPin, Tag, Server, Activity, CircleCheck, CircleX, Loader2, Ban } from 'lucide-react'
+import {
+  Cpu,
+  Thermometer,
+  MemoryStick,
+  Clock,
+  MapPin,
+  Tag,
+  Server,
+  Activity,
+  CircleCheck,
+  CircleX,
+  Loader2,
+  Ban,
+  ArrowLeft,
+  Briefcase,
+  HardDrive,
+  Gauge,
+} from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
-import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
-import { Skeleton } from '@/components/ui/Skeleton'
 import { useToast } from '@/components/ui/Toast'
+import { A2ELoader } from '@/components/ui/A2ELoader'
+import {
+  DashboardShell,
+  DashboardMainColumn,
+  DashboardRightRail,
+  DataTableCard,
+  EmptyState,
+  SectionCard,
+  type DataTableColumn,
+} from '@/components/dashboard/FuturisticShell'
+
+interface NodeJob {
+  id: string
+  status: string
+  market: string | null
+  earnings: number | null
+  durationSeconds: number | null
+  createdAt: string
+  completedAt: string | null
+}
+
+interface NodeHeartbeat {
+  id: string
+  gpuUtilization: number | null
+  gpuTemperature: number | null
+  gpuMemoryUsed: number | null
+  gpuMemoryTotal: number | null
+  timestamp: string
+}
 
 interface NodeDetail {
-  id: string; walletAddress: string; gpuTier: string; nodeType: string; status: string
-  region: string | null; agentVersion: string | null; currentJobId: string | null
-  lastHeartbeat: string; customGpuModel: string | null; customRatePerHour: number | null; createdAt: string
-  heartbeats: Array<{ id: string; gpuUtilization: number | null; gpuTemperature: number | null; gpuMemoryUsed: number | null; gpuMemoryTotal: number | null; timestamp: string }>
-  jobs: Array<{ id: string; status: string; market: string | null; earnings: number | null; durationSeconds: number | null; createdAt: string; completedAt: string | null }>
+  id: string
+  walletAddress: string
+  gpuTier: string
+  nodeType: string
+  status: string
+  region: string | null
+  agentVersion: string | null
+  currentJobId: string | null
+  lastHeartbeat: string
+  customGpuModel: string | null
+  customRatePerHour: number | null
+  createdAt: string
+  heartbeats: NodeHeartbeat[]
+  jobs: NodeJob[]
 }
 
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.07 } },
-}
-const item = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-}
+type JobRow = NodeJob & Record<string, unknown>
 
 export default function NodeDetailPage() {
   const { id } = useParams() as { id: string }
@@ -35,18 +80,23 @@ export default function NodeDetailPage() {
   const { toast } = useToast()
   const [data, setData] = useState<{ node: NodeDetail; uptimeEarnings: { earnings: number; uptimeHours: number } } | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
 
-  useEffect(() => { loadData() }, [id])
-
-  async function loadData() {
+  const loadData = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true)
     try {
       const d = await nodeRunner.node(id) as { node: NodeDetail; uptimeEarnings: { earnings: number; uptimeHours: number } }
       setData(d)
     } catch { toast('error', 'Failed to load node') }
-    finally { setLoading(false) }
-  }
+    finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [id, toast])
+
+  useEffect(() => { loadData() }, [loadData])
 
   async function handleStatusChange(status: string) {
     setActionLoading(true)
@@ -68,8 +118,30 @@ export default function NodeDetailPage() {
     finally { setActionLoading(false); setShowDeleteModal(false) }
   }
 
-  if (loading) return <div className="space-y-4 animate-fadeIn">{[1,2,3].map(i => <Skeleton key={i} className="h-40" />)}</div>
-  if (!data) return <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>Node not found</div>
+  if (loading) {
+    return <A2ELoader fullScreen={false} message="Loading node" />
+  }
+
+  if (!data) {
+    return (
+      <DashboardShell title="Node not found" subtitle="The requested node could not be loaded">
+        <div className="lg:col-span-3">
+          <SectionCard>
+            <EmptyState
+              icon={Server}
+              title="Node not found"
+              description="The node you are looking for could not be loaded."
+              action={
+                <Link href="/nodes">
+                  <Button variant="secondary">Back to Nodes</Button>
+                </Link>
+              }
+            />
+          </SectionCard>
+        </div>
+      </DashboardShell>
+    )
+  }
 
   const { node, uptimeEarnings } = data
   const lastHb = node.heartbeats[0]
@@ -84,136 +156,164 @@ export default function NodeDetailPage() {
 
   const statusStyle = statusStyles[node.status] ?? { bg: 'var(--bg-card-hover)', color: 'var(--text-muted)' }
 
-  return (
-    <motion.div
-      className="space-y-6"
-      variants={container}
-      initial="hidden"
-      animate="show"
+  const jobColumns: Array<DataTableColumn<JobRow>> = [
+    {
+      key: 'id',
+      header: 'Job ID',
+      mono: true,
+      render: (j) => (
+        <Link href={`/jobs/${j.id}`} className="hover:underline" style={{ color: 'var(--primary)' }}>
+          {j.id.slice(0, 8)}
+        </Link>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (j) => <JobBadge status={j.status} />,
+    },
+    {
+      key: 'market',
+      header: 'Market',
+      render: (j) => j.market ?? '-',
+    },
+    {
+      key: 'earnings',
+      header: 'Earnings',
+      align: 'right',
+      mono: true,
+      render: (j) => j.earnings != null ? `$${j.earnings.toFixed(4)}` : '-',
+    },
+    {
+      key: 'durationSeconds',
+      header: 'Duration',
+      align: 'right',
+      mono: true,
+      render: (j) => j.durationSeconds != null ? `${Math.floor(j.durationSeconds / 60)}m ${j.durationSeconds % 60}s` : '-',
+    },
+    {
+      key: 'createdAt',
+      header: 'Date',
+      align: 'right',
+      mono: true,
+      render: (j) => new Date(j.createdAt).toLocaleDateString(),
+    },
+  ]
+
+  const titleBadge = (
+    <span
+      className="text-xs px-2.5 py-1 rounded-full font-medium"
+      style={{ background: statusStyle.bg, color: statusStyle.color }}
     >
-      {/* Header */}
-      <motion.div variants={item} className="flex items-center justify-between">
-        <div>
-          <Link href="/nodes" className="text-sm hover:opacity-80 mb-1 inline-block" style={{ color: 'var(--text-muted)' }}>&larr; Back to Nodes</Link>
-          <h1 className="text-2xl font-bold flex items-center gap-3" style={{ color: 'var(--text-primary)' }}>
-            {node.customGpuModel || node.gpuTier} Node
-            <span
-              className="text-xs px-2.5 py-1 rounded-full font-medium"
-              style={{ background: statusStyle.bg, color: statusStyle.color }}
-            >
-              {node.status}
-            </span>
-          </h1>
-        </div>
-        <div className="flex gap-2">
-          {node.status === 'ONLINE' && <Button variant="secondary" size="sm" onClick={() => handleStatusChange('PAUSED')} loading={actionLoading}>Pause</Button>}
-          {node.status === 'PAUSED' && <Button size="sm" onClick={() => handleStatusChange('ONLINE')} loading={actionLoading}>Resume</Button>}
-          {node.status !== 'MAINTENANCE' && <Button variant="secondary" size="sm" onClick={() => handleStatusChange('MAINTENANCE')} loading={actionLoading}>Maintenance</Button>}
-          <Button variant="danger" size="sm" onClick={() => setShowDeleteModal(true)}>Remove</Button>
-        </div>
-      </motion.div>
+      {node.status}
+    </span>
+  )
 
-      {/* Specs + Earnings */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <motion.div variants={item}>
-          <div
-            className="rounded-xl p-5 h-full"
-            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
-          >
-            <h3 className="text-xs font-medium uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>Specifications</h3>
-            <div className="space-y-2 text-sm">
-              <SpecRow icon={<Cpu size={14} />} label="GPU Tier" value={node.gpuTier} />
-              <SpecRow icon={<Server size={14} />} label="Type" value={node.nodeType} />
-              <SpecRow icon={<MapPin size={14} />} label="Region" value={node.region ?? 'Unknown'} />
-              <SpecRow icon={<Tag size={14} />} label="Agent" value={node.agentVersion ?? 'Unknown'} />
-              <SpecRow icon={<Clock size={14} />} label="Registered" value={new Date(node.createdAt).toLocaleDateString()} />
-            </div>
-          </div>
-        </motion.div>
-        <motion.div variants={item}>
-          <div
-            className="rounded-xl p-5 h-full"
-            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
-          >
-            <h3 className="text-xs font-medium uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>Performance (30d)</h3>
-            <div className="space-y-2 text-sm">
-              <Row label="Uptime" value={`${uptimeEarnings.uptimeHours.toFixed(1)} hrs`} />
-              <Row label="Earnings" value={`$${uptimeEarnings.earnings.toFixed(2)}`} />
-              <Row label="Last Heartbeat" value={node.lastHeartbeat ? new Date(node.lastHeartbeat).toLocaleTimeString() : 'Never'} />
-            </div>
-          </div>
-        </motion.div>
-        <motion.div variants={item}>
-          <div
-            className="rounded-xl p-5 h-full"
-            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
-          >
-            <h3 className="text-xs font-medium uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>GPU Metrics</h3>
-            {lastHb ? (
-              <div className="space-y-2 text-sm">
-                <SpecRow icon={<Thermometer size={14} />} label="Temperature" value={lastHb.gpuTemperature != null ? `${lastHb.gpuTemperature}\u00b0C` : 'N/A'} />
-                <SpecRow icon={<Activity size={14} />} label="GPU Util" value={lastHb.gpuUtilization != null ? `${lastHb.gpuUtilization}%` : 'N/A'} />
-                <SpecRow icon={<MemoryStick size={14} />} label="Memory" value={lastHb.gpuMemoryUsed != null && lastHb.gpuMemoryTotal != null ? `${(lastHb.gpuMemoryUsed / 1024).toFixed(1)} / ${(lastHb.gpuMemoryTotal / 1024).toFixed(1)} GB` : 'N/A'} />
-              </div>
-            ) : <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No metrics available</p>}
-          </div>
-        </motion.div>
-      </div>
-
-      {/* Recent Jobs */}
-      <motion.div variants={item}>
-        <div
-          className="rounded-xl p-6"
-          style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+  return (
+    <DashboardShell
+      title={`${node.customGpuModel || node.gpuTier} Node`}
+      subtitle={`Registered ${new Date(node.createdAt).toLocaleDateString()}`}
+      liveLabel={node.status === 'ONLINE' ? 'LIVE' : undefined}
+      onRefresh={() => loadData(true)}
+      refreshing={refreshing}
+    >
+      <DashboardMainColumn>
+        <Link
+          href="/nodes"
+          className="inline-flex items-center gap-1 text-xs font-mono uppercase tracking-[0.18em] hover:opacity-80 w-fit"
+          style={{ color: 'var(--text-muted)' }}
         >
-          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Recent Jobs</h3>
-          {node.jobs.length === 0 ? (
-            <p className="text-sm py-4 text-center" style={{ color: 'var(--text-muted)' }}>No jobs executed yet</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs uppercase tracking-wider" style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)' }}>
-                    <th className="text-left py-2 font-medium">Job ID</th><th className="text-left py-2 font-medium">Status</th>
-                    <th className="text-left py-2 font-medium">Market</th><th className="text-right py-2 font-medium">Earnings</th>
-                    <th className="text-right py-2 font-medium">Duration</th><th className="text-right py-2 font-medium">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {node.jobs.map(job => (
-                    <tr key={job.id} className="transition-colors" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                      <td className="py-2.5 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{job.id.slice(0, 8)}</td>
-                      <td className="py-2.5"><JobBadge status={job.status} /></td>
-                      <td className="py-2.5" style={{ color: 'var(--text-secondary)' }}>{job.market ?? '-'}</td>
-                      <td className="py-2.5 text-right font-medium" style={{ color: 'var(--text-primary)' }}>{job.earnings != null ? `$${job.earnings.toFixed(4)}` : '-'}</td>
-                      <td className="py-2.5 text-right" style={{ color: 'var(--text-secondary)' }}>{job.durationSeconds != null ? `${Math.floor(job.durationSeconds / 60)}m ${job.durationSeconds % 60}s` : '-'}</td>
-                      <td className="py-2.5 text-right text-xs" style={{ color: 'var(--text-muted)' }}>{new Date(job.createdAt).toLocaleDateString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <ArrowLeft size={12} /> Back to Nodes
+        </Link>
+
+        <SectionCard title="Performance (30d)" icon={Gauge} badge={titleBadge}>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Stat label="Uptime" value={`${uptimeEarnings.uptimeHours.toFixed(1)} hrs`} />
+            <Stat label="Earnings" value={`$${uptimeEarnings.earnings.toFixed(2)}`} />
+            <Stat label="Last Heartbeat" value={node.lastHeartbeat ? new Date(node.lastHeartbeat).toLocaleTimeString() : 'Never'} />
+          </div>
+        </SectionCard>
+
+        <DataTableCard<JobRow>
+          title="Recent Jobs"
+          icon={Briefcase}
+          columns={jobColumns}
+          rows={(node.jobs ?? []) as JobRow[]}
+          empty={
+            <EmptyState
+              icon={Briefcase}
+              title="No jobs yet"
+              description="Jobs executed on this node will appear here."
+            />
+          }
+        />
+      </DashboardMainColumn>
+
+      <DashboardRightRail>
+        <SectionCard
+          title="Controls"
+          icon={Activity}
+        >
+          <div className="flex flex-col gap-2">
+            {node.status === 'ONLINE' && (
+              <Button variant="secondary" size="sm" onClick={() => handleStatusChange('PAUSED')} loading={actionLoading}>Pause</Button>
+            )}
+            {node.status === 'PAUSED' && (
+              <Button size="sm" onClick={() => handleStatusChange('ONLINE')} loading={actionLoading}>Resume</Button>
+            )}
+            {node.status !== 'MAINTENANCE' && (
+              <Button variant="secondary" size="sm" onClick={() => handleStatusChange('MAINTENANCE')} loading={actionLoading}>Maintenance</Button>
+            )}
+            <Button variant="danger" size="sm" onClick={() => setShowDeleteModal(true)}>Remove</Button>
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Specifications" icon={Server}>
+          <div className="space-y-3 text-sm">
+            <SpecRow icon={<Cpu size={14} />} label="GPU Tier" value={node.gpuTier} />
+            <SpecRow icon={<HardDrive size={14} />} label="Type" value={node.nodeType} />
+            <SpecRow icon={<MapPin size={14} />} label="Region" value={node.region ?? 'Unknown'} />
+            <SpecRow icon={<Tag size={14} />} label="Agent" value={node.agentVersion ?? 'Unknown'} />
+            <SpecRow icon={<Clock size={14} />} label="Registered" value={new Date(node.createdAt).toLocaleDateString()} />
+          </div>
+        </SectionCard>
+
+        <SectionCard title="GPU Metrics" icon={Activity}>
+          {lastHb ? (
+            <div className="space-y-3 text-sm">
+              <SpecRow icon={<Thermometer size={14} />} label="Temperature" value={lastHb.gpuTemperature != null ? `${lastHb.gpuTemperature}°C` : 'N/A'} />
+              <SpecRow icon={<Activity size={14} />} label="GPU Util" value={lastHb.gpuUtilization != null ? `${lastHb.gpuUtilization}%` : 'N/A'} />
+              <SpecRow icon={<MemoryStick size={14} />} label="Memory" value={lastHb.gpuMemoryUsed != null && lastHb.gpuMemoryTotal != null ? `${(lastHb.gpuMemoryUsed / 1024).toFixed(1)} / ${(lastHb.gpuMemoryTotal / 1024).toFixed(1)} GB` : 'N/A'} />
             </div>
+          ) : (
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No metrics available</p>
           )}
-        </div>
-      </motion.div>
+        </SectionCard>
+      </DashboardRightRail>
 
       {/* Delete Modal */}
       <Modal open={showDeleteModal} onClose={() => setShowDeleteModal(false)} title="Remove Node">
-        <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>Are you sure you want to remove this node? The agent will be uninstalled on the next heartbeat.</p>
+        <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
+          Are you sure you want to remove this node? The agent will be uninstalled on the next heartbeat.
+        </p>
         <div className="flex gap-3 justify-end">
           <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>Cancel</Button>
           <Button variant="danger" onClick={handleDelete} loading={actionLoading}>Remove Node</Button>
         </div>
       </Modal>
-    </motion.div>
+    </DashboardShell>
   )
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between">
-      <span style={{ color: 'var(--text-muted)' }}>{label}</span>
-      <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{value}</span>
+    <div className="rounded-md p-3" style={{ background: 'var(--bg-elevated)' }}>
+      <p className="font-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-muted)' }}>
+        {label}
+      </p>
+      <p className="font-display text-xl tracking-tight mt-1" style={{ color: 'var(--text-primary)' }}>
+        {value}
+      </p>
     </div>
   )
 }
