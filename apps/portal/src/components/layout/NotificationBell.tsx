@@ -104,8 +104,10 @@ export function NotificationBell({ collapsed = false }: { collapsed?: boolean })
     <div className="relative" ref={ref}>
       <motion.button
         // Compact 36x36 button to match the theme toggle and avatar in
-        // the TopHeader. Badge positioned over the top-right corner.
-        className="relative inline-flex items-center justify-center w-9 h-9 rounded-md border border-border bg-surface-elevated hover:bg-surface-hover transition-colors"
+        // the TopHeader. Inline pixel size locks dimensions identically
+        // to the other header controls.
+        style={{ width: 36, height: 36, flex: '0 0 36px' }}
+        className="relative inline-flex items-center justify-center rounded-md border border-border bg-surface-elevated hover:bg-surface-hover transition-colors"
         onClick={() => setOpen(!open)}
         whileHover={{ scale: 1.04 }}
         whileTap={{ scale: 0.96 }}

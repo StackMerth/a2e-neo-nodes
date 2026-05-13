@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -45,9 +46,28 @@ export function BuyerSidebar() {
   const router = useRouter()
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen } = useSidebar()
+  const asideRef = useRef<HTMLElement | null>(null)
+
+  // Auto-close on outside click when the sidebar is expanded. Anchored
+  // to the <aside> ref; the click only counts as "outside" when it
+  // lands neither inside the sidebar nor on the mobile-menu trigger
+  // button (which has its own toggle handler).
+  useEffect(() => {
+    if (!sidebarOpen) return
+    function onClick(e: MouseEvent) {
+      const target = e.target as Node | null
+      if (!target) return
+      if (asideRef.current?.contains(target)) return
+      if ((target as Element).closest?.('[data-mobile-menu-trigger]')) return
+      setSidebarOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [sidebarOpen, setSidebarOpen])
 
   return (
     <motion.aside
+      ref={asideRef}
       className={`sidebar ${!sidebarOpen ? 'collapsed' : ''} ${sidebarOpen ? 'mobile-open' : ''}`}
       variants={sidebarVariants}
       animate={sidebarOpen ? 'open' : 'closed'}
