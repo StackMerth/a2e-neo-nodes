@@ -69,7 +69,7 @@ export function AuthenticatedLayout({ children }: { children: React.ReactNode })
             {' \u2022 '}
             <a href="https://user.tokenos.ai" target="_blank" rel="noopener noreferrer">User Portal</a>
             {' \u2022 '}
-            <a href={`${process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'}/health`} target="_blank" rel="noopener noreferrer">API Status</a>
+            <a href={`${process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'}/health`} target="_blank" rel="noopener noreferrer">API Status</a>
           </footer>
         </div>
       </motion.main>

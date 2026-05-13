@@ -146,12 +146,12 @@ export default function OnboardingPage() {
               style={{ background: 'var(--bg-darker)', border: '1px solid var(--border-color)' }}
             >
               <code style={{ color: 'var(--primary)' }} className="break-all">
-                curl -sSL https://tokenosdeai-api.onrender.com/v1/releases/install.sh | bash
+                curl -sSL https://a2e-api.onrender.com/v1/releases/install.sh | bash
               </code>
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(
-                    'curl -sSL https://tokenosdeai-api.onrender.com/v1/releases/install.sh | bash'
+                    'curl -sSL https://a2e-api.onrender.com/v1/releases/install.sh | bash'
                   )
                 }}
                 className="absolute top-3 right-3 p-1.5 rounded-md transition-colors"

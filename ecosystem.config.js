@@ -28,7 +28,7 @@ module.exports = {
         PORT: 3001,
         HOSTNAME: "0.0.0.0",
         NODE_ENV: "production",
-        NEXT_PUBLIC_API_URL: "https://tokenosdeai-api.onrender.com",
+        NEXT_PUBLIC_API_URL: "https://a2e-api.onrender.com",
         NEXT_PUBLIC_API_KEY: "a2e-dev-key-2026",
       },
     },

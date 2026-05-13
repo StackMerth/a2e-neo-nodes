@@ -20,7 +20,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { MessageCircle, X, Send, LifeBuoy, ExternalLink } from 'lucide-react'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
 const SUPPORT_TELEGRAM = process.env.NEXT_PUBLIC_SUPPORT_TELEGRAM || 'https://t.me/tokenosdeai'
 const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@tokenosdeai.com'
 

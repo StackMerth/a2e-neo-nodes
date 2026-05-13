@@ -14,7 +14,7 @@ import {
   type AnalyticsSnapshot,
 } from './_components/colorful-stats'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
 
 export const revalidate = 30
 

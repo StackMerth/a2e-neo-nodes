@@ -17,7 +17,7 @@ import { Navigation } from '@/components/landing/navigation'
 import { FooterSection } from '@/components/landing/footer-section'
 import { cn } from '@/lib/utils'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
 
 export const revalidate = 60
 
