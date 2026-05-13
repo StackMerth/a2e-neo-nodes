@@ -11,7 +11,7 @@
  */
 
 import Link from 'next/link'
-import { Search, Hexagon } from 'lucide-react'
+import { Search } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { NotificationBell } from './NotificationBell'
@@ -36,10 +36,9 @@ export function TopHeader() {
         WebkitBackdropFilter: 'blur(var(--glass-blur, 20px))',
       }}
     >
-      {/* Logo: hexagon + two-tone TokenOS_DeAI wordmark */}
-      <Link href="/dashboard" className="flex items-center gap-2 shrink-0">
-        <Hexagon className="w-7 h-7" style={{ color: 'var(--primary)' }} strokeWidth={2.5} />
-        <span className="font-display text-xl tracking-tight hidden sm:inline-flex">
+      {/* Two-tone TokenOS_DeAI wordmark only - no icon. */}
+      <Link href="/dashboard" className="flex items-center shrink-0">
+        <span className="font-display text-xl tracking-tight">
           <span style={{ color: 'var(--text-primary)' }}>TokenOS</span>
           <span style={{ color: 'var(--primary)' }}>_DeAI</span>
         </span>
@@ -61,8 +60,9 @@ export function TopHeader() {
         </div>
       </div>
 
-      {/* Right-side cluster */}
-      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+      {/* Right-side cluster - generous gap so bell + toggle + avatar
+          read as distinct controls, not glued together. */}
+      <div className="flex items-center gap-3 shrink-0">
         <NotificationBell collapsed={true} />
         <ThemeToggle />
         {user && (

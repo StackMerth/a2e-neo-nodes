@@ -21,8 +21,10 @@ export function ViewSwitcher({ collapsed }: ViewSwitcherProps) {
   const onBuyer = pathname?.startsWith('/buyer') ?? false
 
   if (collapsed) {
+    // mt-3 breathing room between the expand button above and the
+    // switcher icons, so the cluster does not feel glued together.
     return (
-      <div className="flex flex-col gap-1 px-3 mb-4">
+      <div className="flex flex-col gap-2 px-3 mt-3 mb-4">
         <Link
           href="/dashboard"
           aria-label="Switch to Node Runner view"
