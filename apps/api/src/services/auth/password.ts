@@ -35,11 +35,22 @@ export async function registerUser(
 
   const passwordHash = await hashPassword(password);
 
+  // Dual-identity: flip the boolean flag that matches the chosen role.
+  // role stays as the primary identity (the one shown in admin lists)
+  // but day-to-day capability checks now read these booleans, and the
+  // user can opt in to the other role later via Settings.
+  const isBuyer = role === 'COMPUTE_BUYER' || role === 'CUSTOMER';
+  const isNodeRunner = role === 'NODE_RUNNER';
+  const isAdmin = role === 'ADMIN';
+
   return prisma.user.create({
     data: {
       email,
       passwordHash,
       role,
+      isBuyer,
+      isNodeRunner,
+      isAdmin,
       // M5.7 anti-abuse: pinned so the referral attribution path can
       // compare the referee's signup IP against the referrer's.
       signupIp,
