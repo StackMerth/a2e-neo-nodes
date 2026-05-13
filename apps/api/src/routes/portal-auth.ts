@@ -304,11 +304,53 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
       email: user.email,
       walletAddress: user.walletAddress,
       role: user.role,
+      // Dual-identity flags: which surfaces this account can act in.
+      // Frontend uses these to decide whether to show the role-aware
+      // onboarding callout when a user lands on the "other" side.
+      isBuyer: user.isBuyer,
+      isNodeRunner: user.isNodeRunner,
+      isAdmin: user.isAdmin,
       emailVerified: user.emailVerified,
       twoFactorEnabled: user.twoFactorEnabled,
       nodeRunnerId: user.nodeRunner?.id ?? null,
       nodeRunnerName: user.nodeRunner?.name ?? null,
       createdAt: user.createdAt,
+    })
+  })
+
+  /**
+   * POST /v1/portal/auth/add-role — opt in to the other role.
+   * Body: { role: 'COMPUTE_BUYER' | 'NODE_RUNNER' }
+   *
+   * Flips isBuyer or isNodeRunner true on the authenticated user.
+   * The primary role label (user.role) is NOT changed, so admin
+   * reports keep their existing segmentation. Idempotent: calling
+   * twice is a no-op. Returns the refreshed flag set.
+   */
+  fastify.post('/v1/portal/auth/add-role', {
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    if (!request.user) return reply.code(401).send({ error: 'Unauthorized' })
+
+    const body = request.body as { role?: string }
+    const role = body.role
+    if (role !== 'COMPUTE_BUYER' && role !== 'NODE_RUNNER') {
+      return reply.code(400).send({
+        error: 'Validation Error',
+        message: 'role must be COMPUTE_BUYER or NODE_RUNNER',
+      })
+    }
+
+    const updated = await fastify.prisma.user.update({
+      where: { id: request.user.userId },
+      data: role === 'COMPUTE_BUYER' ? { isBuyer: true } : { isNodeRunner: true },
+      select: { isBuyer: true, isNodeRunner: true, isAdmin: true },
+    })
+
+    reply.send({
+      isBuyer: updated.isBuyer,
+      isNodeRunner: updated.isNodeRunner,
+      isAdmin: updated.isAdmin,
     })
   })
 

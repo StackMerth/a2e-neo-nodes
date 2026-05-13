@@ -8,6 +8,14 @@ interface User {
   email: string | null
   walletAddress: string | null
   role: string
+  // Dual-identity flags surfaced by /v1/portal/auth/me. The UI uses
+  // these to decide whether to show the role-aware intro callout
+  // when a user lands on the "other" side. May be undefined on
+  // legacy clients hitting an older token; treat as primary-role
+  // matches the flag.
+  isBuyer?: boolean
+  isNodeRunner?: boolean
+  isAdmin?: boolean
   nodeRunnerId: string | null
 }
 
