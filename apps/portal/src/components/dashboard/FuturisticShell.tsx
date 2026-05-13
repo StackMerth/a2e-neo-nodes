@@ -29,7 +29,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { RefreshCw, type LucideIcon } from 'lucide-react'
+import { RefreshCw, ChevronLeft, ChevronRight, type LucideIcon } from 'lucide-react'
 
 /* ---------- Shell ---------- */
 
@@ -325,5 +325,331 @@ export function ResourceAllocation({
         })}
       </div>
     </SectionCard>
+  )
+}
+
+/* ---------- DataTableCard ---------- */
+/*
+ * SectionCard wrapping a styled table. Use when the page is dominated
+ * by a paginated list (jobs, payouts, audit, etc.). Pass columns and
+ * rows; the table renders sticky head, hover rows, mono numerics, and
+ * an optional pagination footer. For free-form cells provide `render`
+ * on the column; for primitive values the column reads `row[key]`.
+ */
+
+export interface DataTableColumn<Row> {
+  key: keyof Row & string
+  header: ReactNode
+  align?: 'left' | 'right' | 'center'
+  /** Render mono-spaced for numerics, ids, hashes. */
+  mono?: boolean
+  /** Override the cell renderer (defaults to row[key] as string). */
+  render?: (row: Row, idx: number) => ReactNode
+  /** Optional width hint (px, %, or tailwind class). */
+  width?: string
+}
+
+export interface PaginationState {
+  page: number
+  pageSize: number
+  total: number
+  onPageChange: (page: number) => void
+}
+
+export function DataTableCard<Row extends Record<string, unknown>>({
+  title,
+  icon,
+  badge,
+  actions,
+  columns,
+  rows,
+  rowKey,
+  loading,
+  empty,
+  pagination,
+  onRowClick,
+}: {
+  title?: string
+  icon?: LucideIcon
+  badge?: ReactNode
+  actions?: ReactNode
+  columns: Array<DataTableColumn<Row>>
+  rows: Row[]
+  /** Function returning a stable key for each row. Defaults to row.id. */
+  rowKey?: (row: Row, idx: number) => string | number
+  loading?: boolean
+  /** Renderer for the empty state when rows.length === 0. */
+  empty?: ReactNode
+  pagination?: PaginationState
+  /** If provided, rows render as buttons and fire this on click. */
+  onRowClick?: (row: Row) => void
+}) {
+  const keyFn = rowKey ?? ((row: Row, idx: number) =>
+    (row.id as string | number | undefined) ?? idx)
+
+  return (
+    <SectionCard title={title} icon={icon} badge={badge} actions={actions} noPadding>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr
+              className="text-left border-b border-border-subtle"
+              style={{ background: 'rgba(255, 255, 255, 0.02)' }}
+            >
+              {columns.map((c) => (
+                <th
+                  key={c.key}
+                  className="px-5 py-3 font-mono text-[10px] uppercase tracking-[0.16em]"
+                  style={{
+                    color: 'var(--text-muted)',
+                    textAlign: c.align ?? 'left',
+                    width: c.width,
+                  }}
+                >
+                  {c.header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={columns.length} className="px-5 py-10 text-center font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Loading...
+                </td>
+              </tr>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="px-5 py-10">
+                  {empty ?? (
+                    <p className="text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                      No records to show.
+                    </p>
+                  )}
+                </td>
+              </tr>
+            ) : (
+              rows.map((row, idx) => {
+                const k = keyFn(row, idx)
+                const clickable = !!onRowClick
+                return (
+                  <tr
+                    key={k}
+                    className={`border-b border-border-subtle transition-colors ${clickable ? 'cursor-pointer hover:bg-surface-hover' : ''}`}
+                    onClick={clickable ? () => onRowClick(row) : undefined}
+                  >
+                    {columns.map((c) => {
+                      const cell = c.render ? c.render(row, idx) : (row[c.key] as ReactNode)
+                      return (
+                        <td
+                          key={c.key}
+                          className={`px-5 py-3 ${c.mono ? 'font-mono text-xs' : ''}`}
+                          style={{
+                            color: 'var(--text-primary)',
+                            textAlign: c.align ?? 'left',
+                          }}
+                        >
+                          {cell}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {pagination && pagination.total > pagination.pageSize && (
+        <Pagination {...pagination} />
+      )}
+    </SectionCard>
+  )
+}
+
+/* ---------- Pagination ---------- */
+
+export function Pagination({ page, pageSize, total, onPageChange }: PaginationState) {
+  const pages = Math.max(1, Math.ceil(total / pageSize))
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1
+  const end = Math.min(page * pageSize, total)
+  return (
+    <div
+      className="flex items-center justify-between px-5 py-3 border-t border-border-subtle"
+      style={{ background: 'rgba(255, 255, 255, 0.02)' }}
+    >
+      <p className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        {start}–{end} of {total.toLocaleString()}
+      </p>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+          disabled={page <= 1}
+          aria-label="Previous page"
+          className="inline-flex items-center justify-center w-8 h-8 rounded-md border border-border hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <ChevronLeft className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+        </button>
+        <span className="font-mono text-[11px] px-3" style={{ color: 'var(--text-primary)' }}>
+          {page} / {pages}
+        </span>
+        <button
+          type="button"
+          onClick={() => onPageChange(Math.min(pages, page + 1))}
+          disabled={page >= pages}
+          aria-label="Next page"
+          className="inline-flex items-center justify-center w-8 h-8 rounded-md border border-border hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <ChevronRight className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ---------- EmptyState ---------- */
+/*
+ * Helper for the `empty` slot on DataTableCard or any other panel that
+ * needs an "no records yet" hero. Keeps the visual consistent.
+ */
+
+export function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  action,
+}: {
+  icon?: LucideIcon
+  title: string
+  description?: string
+  action?: ReactNode
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+      {Icon && (
+        <div
+          className="w-12 h-12 rounded-full inline-flex items-center justify-center mb-4"
+          style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid var(--border-color)' }}
+        >
+          <Icon className="w-6 h-6" style={{ color: 'var(--text-muted)' }} />
+        </div>
+      )}
+      <h3 className="font-display text-lg mb-1" style={{ color: 'var(--text-primary)' }}>
+        {title}
+      </h3>
+      {description && (
+        <p className="text-sm max-w-sm" style={{ color: 'var(--text-secondary)' }}>
+          {description}
+        </p>
+      )}
+      {action && <div className="mt-5">{action}</div>}
+    </div>
+  )
+}
+
+/* ---------- FormCard + FormSection ---------- */
+/*
+ * SectionCard tuned for forms. Header carries the title + optional
+ * description + optional right-side actions (e.g. a Save button when
+ * the form is short). Body is the form fields. Footer slot positions a
+ * full-width action bar at the bottom for longer forms.
+ *
+ * Use `FormSection` to group related fields with a consistent gap.
+ */
+
+export function FormCard({
+  title,
+  description,
+  icon,
+  actions,
+  footer,
+  children,
+}: {
+  title: string
+  description?: string
+  icon?: LucideIcon
+  actions?: ReactNode
+  footer?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      className="rounded-md overflow-hidden"
+      style={{
+        background: 'var(--glass-bg)',
+        backdropFilter: 'blur(var(--glass-blur, 24px))',
+        WebkitBackdropFilter: 'blur(var(--glass-blur, 24px))',
+        border: '1px solid var(--glass-border)',
+        boxShadow: 'var(--glass-shadow, 0 8px 32px rgba(0, 0, 0, 0.35))',
+      }}
+    >
+      <div className="flex items-start justify-between px-5 sm:px-6 py-4 border-b border-border-subtle gap-4">
+        <div className="flex items-start gap-3 min-w-0">
+          {icon && (
+            <div className="shrink-0 mt-0.5">
+              {(() => {
+                const Icon = icon
+                return <Icon className="w-5 h-5" style={{ color: 'var(--primary)' }} />
+              })()}
+            </div>
+          )}
+          <div className="min-w-0">
+            <h2 className="font-display text-base tracking-tight" style={{ color: 'var(--text-primary)' }}>
+              {title}
+            </h2>
+            {description && (
+              <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                {description}
+              </p>
+            )}
+          </div>
+        </div>
+        {actions && <div className="shrink-0">{actions}</div>}
+      </div>
+      <div className="p-5 sm:p-6 space-y-6">{children}</div>
+      {footer && (
+        <div
+          className="flex items-center justify-end gap-3 px-5 sm:px-6 py-4 border-t border-border-subtle"
+          style={{ background: 'rgba(255, 255, 255, 0.02)' }}
+        >
+          {footer}
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
+export function FormSection({
+  title,
+  description,
+  children,
+}: {
+  title?: string
+  description?: string
+  children: ReactNode
+}) {
+  return (
+    <div>
+      {(title || description) && (
+        <div className="mb-3">
+          {title && (
+            <h3 className="font-mono text-[11px] uppercase tracking-[0.16em]" style={{ color: 'var(--text-muted)' }}>
+              {title}
+            </h3>
+          )}
+          {description && (
+            <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+              {description}
+            </p>
+          )}
+        </div>
+      )}
+      <div className="space-y-4">{children}</div>
+    </div>
   )
 }
