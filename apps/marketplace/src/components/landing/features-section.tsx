@@ -274,7 +274,7 @@ function FeatureCard({ feature, index }: { feature: typeof features[0]; index: n
       }`}
       style={{ transitionDelay: `${index * 100}ms` }}
     >
-      <div className="flex flex-col lg:flex-row gap-6 sm:gap-8 lg:gap-16 py-10 sm:py-12 lg:py-20 border-b border-foreground/10">
+      <div className="flex flex-col lg:flex-row gap-6 sm:gap-8 lg:gap-16 p-6 sm:p-8 lg:p-12 border border-foreground/15 rounded-sm hover:border-foreground/25 transition-colors">
         {/* Number */}
         <div className="shrink-0">
           <span className="font-mono text-sm text-brand">{feature.number}</span>
@@ -343,8 +343,8 @@ export function FeaturesSection() {
           </h2>
         </div>
 
-        {/* Features List */}
-        <div>
+        {/* Features List, each a bordered card */}
+        <div className="flex flex-col gap-4 sm:gap-6">
           {features.map((feature, index) => (
             <FeatureCard key={feature.number} feature={feature} index={index} />
           ))}

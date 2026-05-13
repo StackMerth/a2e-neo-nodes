@@ -74,7 +74,7 @@ export function PricingSection() {
         </div>
 
         {/* Pricing Cards */}
-        <div className="grid md:grid-cols-3 gap-px bg-foreground/10">
+        <div className="grid md:grid-cols-3 gap-px bg-foreground/15">
           {plans.map((plan, idx) => (
             <div
               key={plan.name}

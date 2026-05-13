@@ -53,9 +53,10 @@
   --bg-input: #ffffff;
   --bg-tertiary: #ebe9e3;
 
-  /* Glass morphism, light */
+  /* Glass morphism, light. Border bumped to 0.15 so card edges stand
+     out cleanly (Scaleway-style outlined cards). */
   --glass-bg: rgba(255, 255, 255, 0.85);
-  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-border: rgba(0, 0, 0, 0.15);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
 
   /* Text - ink on cream */
@@ -136,9 +137,9 @@
   --bg-input: #0d0d12;
   --bg-tertiary: #1f1f28;
 
-  /* Glass morphism */
+  /* Glass morphism. Border bumped to 0.15 for clearer card outlines. */
   --glass-bg: rgba(17, 17, 24, 0.8);
-  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.15);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 
   /* Text */

@@ -124,7 +124,7 @@ export function MetricsSection() {
         </div>
         
         {/* Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-foreground/10">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-foreground/15">
           {metrics.map((metric, index) => (
             <div
               key={metric.label}

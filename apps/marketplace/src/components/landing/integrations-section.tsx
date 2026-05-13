@@ -84,7 +84,7 @@ export function IntegrationsSection() {
         </div>
 
         {/* Primitives grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-foreground/10 border border-foreground/10">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-foreground/15 border border-foreground/15">
           {primitives.map((p, idx) => (
             <div
               key={p.name}

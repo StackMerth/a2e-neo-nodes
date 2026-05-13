@@ -96,7 +96,7 @@ export default async function StatsPage() {
 
       {/* Top-line counters */}
       <section className="px-6 lg:px-12 pb-16">
-        <div className="max-w-[1200px] mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-px bg-foreground/10">
+        <div className="max-w-[1200px] mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-px bg-foreground/15">
           <BigStat label="GPUs online" value={data.totalNodesOnline.toLocaleString()} unit={data.totalNodesOnline === 1 ? 'machine' : 'machines'} />
           <BigStat label="Operators live" value={data.totalOperatorsOnline.toLocaleString()} unit={data.totalOperatorsOnline === 1 ? 'operator' : 'operators'} />
           <BigStat label="Lifetime rentals" value={data.totalRentalsLifetime.toLocaleString()} unit="ACTIVE + COMPLETED" />
@@ -119,7 +119,7 @@ export default async function StatsPage() {
           {data.nodesByTier.length === 0 ? (
             <p className="text-muted-foreground text-sm">No nodes online right now.</p>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-foreground/10">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-foreground/15">
               {data.nodesByTier.map(t => (
                 <div key={t.gpuTier} className="bg-background p-6">
                   <p className="font-display text-4xl md:text-5xl text-foreground">{t.count}</p>
@@ -167,7 +167,7 @@ export default async function StatsPage() {
           <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-6">
             Reference retail prices, on-demand
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-foreground/10">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-foreground/15">
             {data.topPricesByTier.map(p => (
               <div key={p.gpuTier} className="bg-background p-6">
                 <p className="font-mono text-xs text-muted-foreground mb-2">{p.gpuTier}</p>
