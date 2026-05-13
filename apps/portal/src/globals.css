@@ -53,11 +53,13 @@
   --bg-input: #ffffff;
   --bg-tertiary: #ebe9e3;
 
-  /* Glass morphism, light. Border bumped to 0.15 so card edges stand
-     out cleanly (Scaleway-style outlined cards). */
-  --glass-bg: rgba(255, 255, 255, 0.85);
+  /* Glass morphism (frosted), light mode. Lower alpha + heavy
+     backdrop blur so cards read as actual glass over the particle
+     background, not opaque blocks. */
+  --glass-bg: rgba(255, 255, 255, 0.55);
   --glass-border: rgba(0, 0, 0, 0.15);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+  --glass-blur: 24px;
 
   /* Text - ink on cream */
   --text-primary: #1a1a18;
@@ -137,10 +139,13 @@
   --bg-input: #0d0d12;
   --bg-tertiary: #1f1f28;
 
-  /* Glass morphism. Border bumped to 0.15 for clearer card outlines. */
-  --glass-bg: rgba(17, 17, 24, 0.8);
+  /* Glass morphism (frosted), dark mode. Lower alpha + heavy
+     backdrop blur so cards read as actual glass over the particle
+     background, not opaque blocks. */
+  --glass-bg: rgba(17, 17, 24, 0.45);
   --glass-border: rgba(255, 255, 255, 0.15);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --glass-blur: 24px;
 
   /* Text */
   --text-primary: #ffffff;
@@ -175,6 +180,17 @@ body {
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* font-display utility: enforces Inter Black 900 weight and tight
+   tracking, matching the marketplace branding. Without these
+   explicit declarations the Tailwind utility only sets font-family
+   and inherits weight from the parent, so big headlines render at
+   400-700 instead of the intended 900. */
+.font-display {
+  font-family: var(--font-display), 'Inter', system-ui, sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.02em;
 }
 
 /* Animated background gradient */

@@ -3,11 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useAuth } from '@/hooks/useAuth'
 import { useSidebar } from './SidebarContext'
-import { NotificationBell } from './NotificationBell'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { UserMenu } from './UserMenu'
 import { ViewSwitcher } from './ViewSwitcher'
 import {
   LayoutDashboard,
@@ -50,16 +46,9 @@ const labelVariants = {
 }
 
 export function Sidebar() {
-  const { user } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen } = useSidebar()
-
-  const displayName = user?.email || user?.walletAddress
-    ? user.email || `${user.walletAddress?.slice(0, 6)}...${user.walletAddress?.slice(-4)}`
-    : 'User'
-
-  const avatarLetter = (user?.email || user?.walletAddress || 'U').charAt(0).toUpperCase()
 
   return (
     <motion.aside
@@ -172,21 +161,9 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer with avatar dropdown */}
-      <div className="sidebar-footer">
-        <NotificationBell collapsed={!sidebarOpen} />
-
-        <div className="flex justify-center mb-2">
-          <ThemeToggle />
-        </div>
-
-        <UserMenu
-          collapsed={!sidebarOpen}
-          displayName={displayName}
-          avatarLetter={avatarLetter}
-          role={user?.role ?? ''}
-        />
-      </div>
+      {/* Sidebar footer intentionally trimmed: identity, notifications,
+          and theme toggle moved to the TopHeader so the sidebar is
+          pure navigation. */}
     </motion.aside>
   )
 }

@@ -18,23 +18,29 @@ const SUPPORT_TELEGRAM = process.env.NEXT_PUBLIC_SUPPORT_TELEGRAM || 'https://t.
 
 export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMenuProps) {
   const [open, setOpen] = useState(false)
-  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null)
+  const [coords, setCoords] = useState<{ bottom: number; left: number; maxHeight: number } | null>(null)
   const router = useRouter()
   const { logout, user } = useAuth()
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
   // Recompute menu position whenever it opens or the window resizes.
+  // bottom-based positioning anchors the menu's bottom edge 8px above
+  // the trigger's top; the menu then grows upward with whatever height
+  // it needs. max-height caps it to (trigger.top - 16) so it can never
+  // overflow the top of the viewport - it scrolls inside instead.
   useEffect(() => {
     if (!open) return
     const position = () => {
       const t = triggerRef.current
       if (!t) return
       const rect = t.getBoundingClientRect()
-      // Open upward from the trigger; the menu is ~250px wide so it
-      // pops out to the right of the sidebar (the trigger sits at the
-      // sidebar's bottom-left corner).
-      setCoords({ top: rect.top - 8, left: rect.right + 8 })
+      const viewportHeight = window.innerHeight
+      setCoords({
+        bottom: viewportHeight - rect.top + 8,
+        left: rect.right + 8,
+        maxHeight: Math.max(160, rect.top - 16),
+      })
     }
     position()
     window.addEventListener('resize', position)
@@ -125,13 +131,13 @@ export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMen
               transition={{ duration: 0.15 }}
               style={{
                 position: 'fixed',
-                top: coords.top,
+                bottom: coords.bottom,
                 left: coords.left,
-                transform: 'translateY(-100%)',
                 minWidth: 240,
+                maxHeight: coords.maxHeight,
                 zIndex: 9999,
               }}
-              className="bg-surface border border-border rounded-md shadow-2xl overflow-hidden"
+              className="bg-surface border border-border rounded-md shadow-2xl overflow-y-auto"
             >
               <div className="px-4 py-3 border-b border-border-subtle">
                 <p className="user-name text-sm truncate">{displayName}</p>

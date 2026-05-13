@@ -44,7 +44,7 @@ export function A2ELoader({
         />
       </div>
 
-      <div className="text-2xl font-bold tracking-tight mb-2" style={{ letterSpacing: '-0.02em' }}>
+      <div className="font-display text-3xl mb-2">
         <span style={{ color: 'var(--text-primary)' }}>TokenOS</span>
         <span style={{ color: 'var(--primary)' }}>_DeAI</span>
       </div>
