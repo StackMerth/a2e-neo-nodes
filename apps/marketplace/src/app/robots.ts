@@ -4,7 +4,7 @@
  */
 import type { MetadataRoute } from 'next'
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://marketplace.stackforgelab.tech'
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://market.tokenos.ai'
 
 export default function robots(): MetadataRoute.Robots {
   return {

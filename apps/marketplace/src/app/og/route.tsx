@@ -163,7 +163,7 @@ function renderFrame({
               textTransform: 'uppercase',
             }}
           >
-            marketplace.stackforgelab.tech
+            market.tokenos.ai
           </span>
         </div>
 
