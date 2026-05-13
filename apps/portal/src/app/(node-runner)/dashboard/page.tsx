@@ -57,6 +57,8 @@ interface RecentPayout {
   nodeId: string
 }
 
+interface NodesByTier { gpuTier: string; count: number }
+
 interface OperatorStatsData {
   pendingPayout: number
   capitalDeployed: number
@@ -68,6 +70,7 @@ interface OperatorStatsData {
   payoutCalendar: PayoutCalendarEntry[]
   perNodeEarnings: PerNodeEarnings[]
   recentPayouts: RecentPayout[]
+  nodesByTier: NodesByTier[]
 }
 
 const NODE_STATUS_COLORS: Record<string, string> = {
@@ -76,6 +79,18 @@ const NODE_STATUS_COLORS: Record<string, string> = {
   Maintenance: '#f59e0b',
   Paused:      '#3b82f6',
   'In Use':    '#8b5cf6',
+}
+
+// Same palette as the Nodes page tier chips. Used to color the GPU
+// tier breakdown on the right of the Node Status Mix donut so the
+// card has content even when all nodes are in the same status.
+const TIER_COLORS: Record<string, string> = {
+  H100:  '#22c55e',
+  H200:  '#3b82f6',
+  B200:  '#8b5cf6',
+  B300:  '#f59e0b',
+  GB300: '#ef4444',
+  OTHER: '#94a3b8',
 }
 
 const TIER_TONE: Record<OperatorStatsData['reputationTier'], string> = {
@@ -176,12 +191,23 @@ function PayoutCalendar({ entries }: { entries: PayoutCalendarEntry[] }) {
     () => entries.reduce((m, e) => Math.max(m, e.amount), 0),
     [entries],
   )
+  const total = useMemo(
+    () => entries.reduce((s, e) => s + e.amount, 0),
+    [entries],
+  )
+  const activeDays = useMemo(
+    () => entries.filter(e => e.amount > 0).length,
+    [entries],
+  )
   if (entries.length === 0) {
     return <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No payout data yet.</p>
   }
+  const first = entries[0]
+  const last = entries[entries.length - 1]
+  // 6 rows of 5 cells: chronological, oldest top-left to newest bottom-right.
   return (
     <div>
-      <div className="grid grid-cols-15 gap-1.5" style={{ gridTemplateColumns: 'repeat(15, minmax(0, 1fr))' }}>
+      <div className="grid grid-cols-6 gap-1.5">
         {entries.map((e) => {
           const ratio = max > 0 ? e.amount / max : 0
           const opacity = e.amount > 0 ? 0.25 + ratio * 0.75 : 0.08
@@ -190,18 +216,21 @@ function PayoutCalendar({ entries }: { entries: PayoutCalendarEntry[] }) {
             <div
               key={e.date}
               title={`${formatDateShort(e.date)} - ${formatCurrency(e.amount)}`}
-              className="aspect-square rounded-sm"
+              className="aspect-square rounded"
               style={{
-                background: e.amount > 0 ? `rgba(34,197,94,${opacity})` : 'var(--border-color)',
-                outline: isToday ? '1px solid var(--primary)' : 'none',
-                outlineOffset: '1px',
+                background: e.amount > 0 ? `rgba(34,197,94,${opacity})` : 'rgba(255,255,255,0.04)',
+                border: '1px solid var(--glass-border)',
+                outline: isToday ? '2px solid var(--primary)' : 'none',
+                outlineOffset: '-1px',
               }}
             />
           )
         })}
       </div>
-      <div className="flex items-center justify-between mt-3 font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
-        <span>{formatDateShort(entries[0].date)}</span>
+      <div className="mt-4 pt-4 border-t border-border-subtle flex items-center justify-between gap-3 font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
+        <span>
+          {first ? formatDateShort(first.date) : ''} <span style={{ color: 'var(--text-secondary)' }}>to</span> {last ? formatDateShort(last.date) : ''}
+        </span>
         <span className="flex items-center gap-1.5">
           Less
           {[0.1, 0.3, 0.5, 0.75, 1].map(o => (
@@ -209,7 +238,66 @@ function PayoutCalendar({ entries }: { entries: PayoutCalendarEntry[] }) {
           ))}
           More
         </span>
-        <span>{formatDateShort(entries[entries.length - 1].date)}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-3 font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
+        <div className="rounded p-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)' }}>
+          <span className="block tracking-[0.14em] uppercase mb-1">30d total</span>
+          <span className="font-display text-base" style={{ color: 'var(--text-primary)' }}>
+            {formatCurrency(total)}
+          </span>
+        </div>
+        <div className="rounded p-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)' }}>
+          <span className="block tracking-[0.14em] uppercase mb-1">Active days</span>
+          <span className="font-display text-base" style={{ color: 'var(--text-primary)' }}>
+            {activeDays} / {entries.length}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TierBreakdown({ tiers, total }: { tiers: NodesByTier[]; total: number }) {
+  if (tiers.length === 0 || total === 0) {
+    return <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No tier data yet.</p>
+  }
+  return (
+    <div className="space-y-3">
+      {/* Stacked horizontal bar showing tier proportions */}
+      <div className="h-3 w-full rounded-sm overflow-hidden flex" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)' }}>
+        {tiers.map(t => {
+          const pct = (t.count / total) * 100
+          const color = TIER_COLORS[t.gpuTier] ?? TIER_COLORS.OTHER
+          return (
+            <div
+              key={t.gpuTier}
+              title={`${t.gpuTier} - ${t.count} (${pct.toFixed(1)}%)`}
+              style={{ width: `${pct}%`, background: color }}
+            />
+          )
+        })}
+      </div>
+      <div className="space-y-1.5">
+        {tiers.map(t => {
+          const pct = (t.count / total) * 100
+          const color = TIER_COLORS[t.gpuTier] ?? TIER_COLORS.OTHER
+          return (
+            <div key={t.gpuTier} className="flex items-center gap-2 text-sm">
+              <span
+                className="font-mono text-[10px] px-2 py-0.5 rounded-sm"
+                style={{ background: `${color}22`, color, border: `1px solid ${color}55` }}
+              >
+                {t.gpuTier}
+              </span>
+              <span className="flex-1 font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {pct.toFixed(0)}%
+              </span>
+              <span className="font-mono text-sm" style={{ color: 'var(--text-primary)' }}>
+                {t.count}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -495,8 +583,8 @@ export default function DashboardPage() {
           </SectionCard>
         </div>
 
-        {/* Nodes status mix */}
-        <SectionCard title="Node Status Mix" icon={Cpu}>
+        {/* Fleet composition: status donut + GPU tier breakdown */}
+        <SectionCard title="Fleet Composition" icon={Cpu}>
           {nodeStatusData.length === 0 ? (
             <div className="text-center py-8">
               <Server size={32} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
@@ -509,45 +597,68 @@ export default function DashboardPage() {
               </Link>
             </div>
           ) : (
-            <div className="flex flex-col sm:flex-row items-center gap-6">
-              <div className="h-40 w-40 relative">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={nodeStatusData}
-                      innerRadius={40}
-                      outerRadius={70}
-                      paddingAngle={2}
-                      dataKey="value"
-                    >
-                      {nodeStatusData.map((entry) => (
-                        <Cell key={entry.name} fill={entry.color} stroke="transparent" />
-                      ))}
-                    </Pie>
-                    <Tooltip content={<ChartTooltip />} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <span className="font-display text-2xl" style={{ color: 'var(--text-primary)' }}>
-                    {data?.nodes.total ?? 0}
-                  </span>
-                  <span className="font-mono text-[10px] tracking-[0.14em] uppercase" style={{ color: 'var(--text-muted)' }}>
-                    Total
-                  </span>
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_1px_1fr] gap-6 items-stretch">
+              {/* Left: Status donut + status legend */}
+              <div className="flex flex-col">
+                <p className="font-mono text-[10px] tracking-[0.14em] uppercase mb-3" style={{ color: 'var(--text-muted)' }}>
+                  Status mix
+                </p>
+                <div className="flex items-center gap-4">
+                  <div className="h-36 w-36 relative shrink-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={nodeStatusData}
+                          innerRadius={38}
+                          outerRadius={64}
+                          paddingAngle={2}
+                          dataKey="value"
+                        >
+                          {nodeStatusData.map((entry) => (
+                            <Cell key={entry.name} fill={entry.color} stroke="transparent" />
+                          ))}
+                        </Pie>
+                        <Tooltip content={<ChartTooltip />} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <span className="font-display text-2xl" style={{ color: 'var(--text-primary)' }}>
+                        {data?.nodes.total ?? 0}
+                      </span>
+                      <span className="font-mono text-[10px] tracking-[0.14em] uppercase" style={{ color: 'var(--text-muted)' }}>
+                        Total
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    {nodeStatusData.map((entry) => (
+                      <div key={entry.name} className="flex items-center gap-2 text-sm">
+                        <span className="w-2 h-2 rounded-sm" style={{ background: entry.color }} />
+                        <span className="flex-1 font-mono text-[11px] truncate" style={{ color: 'var(--text-secondary)' }}>
+                          {entry.name}
+                        </span>
+                        <span className="font-mono text-sm" style={{ color: 'var(--text-primary)' }}>
+                          {entry.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-              <div className="flex-1 w-full space-y-2">
-                {nodeStatusData.map((entry) => (
-                  <div key={entry.name} className="flex items-center gap-3 text-sm">
-                    <span className="w-2.5 h-2.5 rounded-sm" style={{ background: entry.color }} />
-                    <span className="flex-1 font-mono text-[12px]" style={{ color: 'var(--text-secondary)' }}>
-                      {entry.name}
-                    </span>
-                    <span className="font-mono text-sm" style={{ color: 'var(--text-primary)' }}>
-                      {entry.value}
-                    </span>
-                  </div>
-                ))}
+
+              {/* Vertical divider on lg+ */}
+              <div className="hidden lg:block w-px self-stretch" style={{ background: 'var(--border-color)' }} />
+
+              {/* Right: GPU tier breakdown */}
+              <div className="flex flex-col">
+                <p className="font-mono text-[10px] tracking-[0.14em] uppercase mb-3" style={{ color: 'var(--text-muted)' }}>
+                  GPU tier breakdown
+                </p>
+                {ops && ops.nodesByTier && ops.nodesByTier.length > 0 ? (
+                  <TierBreakdown tiers={ops.nodesByTier} total={data?.nodes.total ?? 0} />
+                ) : (
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No tier data yet.</p>
+                )}
               </div>
             </div>
           )}

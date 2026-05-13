@@ -123,8 +123,14 @@ export function SectionCard({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25 }}
-      className="rounded-md overflow-hidden border border-border"
-      style={{ background: 'var(--glass-bg)', backdropFilter: 'blur(20px)' }}
+      className="rounded-md overflow-hidden"
+      style={{
+        background: 'var(--glass-bg)',
+        backdropFilter: 'blur(var(--glass-blur, 24px))',
+        WebkitBackdropFilter: 'blur(var(--glass-blur, 24px))',
+        border: '1px solid var(--glass-border)',
+        boxShadow: 'var(--glass-shadow, 0 8px 32px rgba(0, 0, 0, 0.35))',
+      }}
     >
       {(title || actions) && (
         <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-border-subtle">

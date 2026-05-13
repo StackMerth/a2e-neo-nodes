@@ -56,8 +56,8 @@
   /* Glass morphism (frosted), light mode. Lower alpha + heavy
      backdrop blur so cards read as actual glass over the particle
      background, not opaque blocks. */
-  --glass-bg: rgba(255, 255, 255, 0.55);
-  --glass-border: rgba(0, 0, 0, 0.15);
+  --glass-bg: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(0, 0, 0, 0.18);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
   --glass-blur: 24px;
 
@@ -142,10 +142,10 @@
   /* Glass morphism (frosted), dark mode. Lower alpha + heavy
      backdrop blur so cards read as actual glass over the particle
      background, not opaque blocks. */
-  --glass-bg: rgba(17, 17, 24, 0.45);
-  --glass-border: rgba(255, 255, 255, 0.15);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  --glass-blur: 24px;
+  --glass-bg: rgba(20, 22, 32, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.22);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --glass-blur: 32px;
 
   /* Text */
   --text-primary: #ffffff;
