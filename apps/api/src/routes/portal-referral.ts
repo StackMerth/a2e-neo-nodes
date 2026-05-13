@@ -79,7 +79,7 @@ export async function portalReferralRoutes(fastify: FastifyInstance) {
 
     return reply.send({
       referralCode: code,
-      shareUrl: `https://marketplace.stackforgelab.tech/?ref=${code}`,
+      shareUrl: `${process.env.MARKETPLACE_URL || 'https://market.tokenos.ai'}/?ref=${code}`,
       lifetimeCommission: Number(lifetimeCommission.toFixed(4)),
       refereeCount: referrals.length,
       activeReferees: referrals.filter(r => r.status === 'ACTIVE').length,

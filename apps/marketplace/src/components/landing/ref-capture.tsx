@@ -15,7 +15,7 @@ import { useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 const REF_STORAGE_KEY = 'a2e_pending_ref'
-const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'https://a2e-user.stackforgelab.tech'
+const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'https://user.tokenos.ai'
 
 export function RefCapture() {
   const searchParams = useSearchParams()

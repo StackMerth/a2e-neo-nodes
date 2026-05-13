@@ -96,6 +96,11 @@ export function setupWebSocket(fastify: FastifyInstance): SocketServer {
         'http://localhost:3001',
         'http://localhost:3002',
         'http://localhost:3003',
+        // Production (tokenos.ai)
+        'https://admin.tokenos.ai',
+        'https://user.tokenos.ai',
+        'https://market.tokenos.ai',
+        // Legacy (kept briefly so bookmarks keep working)
         'https://a2e-admin.stackforgelab.tech',
         'https://a2e-user.stackforgelab.tech',
         'https://marketplace.stackforgelab.tech',

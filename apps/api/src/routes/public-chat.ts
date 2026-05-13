@@ -42,8 +42,8 @@ WHAT TOKENOS DEAI IS
 - Operators are reputation-scored: 60% uptime, 25% buyer ratings, 15% completed-job volume. Tiers Bronze, Silver, Gold, Platinum.
 - GPU tiers supported: H100, H200, B200, B300, GB300. Sample H100 rate: ~$5.84/hr on-demand.
 - Auto-allocator picks an idle GPU and mints an ephemeral SSH credential. Pay-to-SSH median: under 60 seconds.
-- Buyers sign up at the portal (a2e-user.stackforgelab.tech). Operators run the install script on their GPU machine.
-- Public surfaces: marketplace catalog, leaderboard, stats page (live network numbers), operator profiles. All at marketplace.stackforgelab.tech.
+- Buyers sign up at the portal (user.tokenos.ai). Operators run the install script on their GPU machine.
+- Public surfaces: marketplace catalog, leaderboard, stats page (live network numbers), operator profiles. All at market.tokenos.ai.
 - Referral program: operators get a unique invite code worth 10% of their referee's network earnings for 365 days.
 
 RULES

@@ -94,7 +94,7 @@ export default async function OperatorPage({ params }: { params: { slug: string 
     '@context': 'https://schema.org',
     '@type': 'Organization',
     name: op.name,
-    url: `https://marketplace.stackforgelab.tech/operator/${op.slug}`,
+    url: `https://market.tokenos.ai/operator/${op.slug}`,
     description: `GPU compute operator on the TokenOS DeAI network, reputation tier ${tierLabel}, ${op.nodes.length} ${op.nodes.length === 1 ? 'node' : 'nodes'}.`,
     ...(avgRating != null && approvedRatings.length > 0
       ? {
