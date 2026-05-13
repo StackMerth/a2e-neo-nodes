@@ -147,7 +147,7 @@ export default function DeploymentsPage() {
           </div>
         </motion.div>
       ) : (
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {deployments.map(dep => {
             const status = STATUS_CONFIG[dep.status] ?? STATUS_CONFIG.DEPLOYMENT_REQUESTED!
             const tierStyle = TIER_STYLES[dep.gpuTier] ?? { bg: 'var(--bg-card-hover)', color: 'var(--text-secondary)', border: 'var(--border-color)' }
@@ -158,7 +158,13 @@ export default function DeploymentsPage() {
                 <Link href={`/deployments/${dep.id}`}>
                   <div
                     className="rounded-xl p-5 transition-all duration-200 hover-lift"
-                    style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+                    style={{
+                      background: 'var(--glass-bg)',
+                      backdropFilter: 'blur(var(--glass-blur, 24px))',
+                      WebkitBackdropFilter: 'blur(var(--glass-blur, 24px))',
+                      border: '1px solid var(--glass-border)',
+                      boxShadow: 'var(--glass-shadow, 0 4px 16px rgba(0, 0, 0, 0.3))',
+                    }}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div className="flex items-center gap-4">

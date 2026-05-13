@@ -182,6 +182,17 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     const nodeLabel = (n: { id: string; gpuTier: string; customGpuModel: string | null }) =>
       n.customGpuModel || `${n.gpuTier} (${n.id.slice(0, 6)})`
 
+    // Fleet composition: how many nodes per GPU tier (independent of
+    // whether they have earnings in the last 30d, so the Node Status
+    // Mix card always has something to show even on a brand-new operator).
+    const tierMap = new Map<string, number>()
+    for (const n of nodes) {
+      tierMap.set(n.gpuTier, (tierMap.get(n.gpuTier) ?? 0) + 1)
+    }
+    const nodesByTier = Array.from(tierMap.entries())
+      .map(([gpuTier, count]) => ({ gpuTier, count }))
+      .sort((a, b) => b.count - a.count)
+
     const now = new Date()
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const thirtyDayStart = new Date(todayStart.getTime() - 30 * 86400000)
@@ -265,7 +276,10 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
 
     const leaderboardRank = higherRanked + 1
 
-    // Build 30-day payout calendar (one cell per day)
+    // Build 30-day payout calendar (one cell per day). Only accumulate
+    // into days that are inside the 30-day window so an out-of-range
+    // Earning row (the date>=thirtyDayStart query is inclusive of the
+    // start boundary plus a tz fudge) can't add a stray 31st bucket.
     const dayMap = new Map<string, number>()
     for (let i = 29; i >= 0; i--) {
       const d = new Date(todayStart.getTime() - i * 86400000)
@@ -273,7 +287,9 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     }
     for (const e of dailyEarnings30d) {
       const key = new Date(e.date).toISOString().slice(0, 10)
-      dayMap.set(key, (dayMap.get(key) ?? 0) + e.earnings)
+      if (dayMap.has(key)) {
+        dayMap.set(key, (dayMap.get(key) ?? 0) + e.earnings)
+      }
     }
     const payoutCalendar = Array.from(dayMap.entries()).map(([date, amount]) => ({
       date, amount,
@@ -317,6 +333,7 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       payoutCalendar,
       perNodeEarnings,
       recentPayouts,
+      nodesByTier,
     })
   })
 

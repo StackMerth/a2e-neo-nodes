@@ -170,7 +170,10 @@ export default function NodesPage() {
                     className="rounded-xl p-5 transition-all duration-200 h-full hover-lift"
                     style={{
                       background: 'var(--glass-bg)',
+                      backdropFilter: 'blur(var(--glass-blur, 24px))',
+                      WebkitBackdropFilter: 'blur(var(--glass-blur, 24px))',
                       border: '1px solid var(--glass-border)',
+                      boxShadow: 'var(--glass-shadow, 0 4px 16px rgba(0, 0, 0, 0.3))',
                     }}
                   >
                     <div className="flex items-center justify-between mb-4">
