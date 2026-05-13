@@ -149,6 +149,178 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
   })
 
   // ===================================================================
+  // OPERATOR ANALYTICS
+  // Consolidated "me-data" for the dashboard right rail and analytics
+  // section. Single round-trip so the dashboard does not have to make
+  // 5+ parallel calls on initial paint.
+  // ===================================================================
+
+  /**
+   * GET /v1/portal/node-runner/operator-stats
+   *
+   * Returns the operator's payout-side and reputation analytics:
+   *   - pendingPayout      : available - already earned but not yet withdrawn
+   *   - capitalDeployed    : sum of investments (cost basis)
+   *   - leaderboardRank    : 1-indexed rank by reputationScore (1 = top)
+   *   - totalRanked        : count of node-runners scored (denominator)
+   *   - uptimeStreak       : consecutive days with at least one heartbeat
+   *   - payoutCalendar     : 30-day array of {date, amount}
+   *   - perNodeEarnings    : array of {nodeId, label, earnings} for last 30d
+   *   - recentPayouts      : last 5 settlements (Settlement rows)
+   */
+  fastify.get('/v1/portal/node-runner/operator-stats', async (request, reply) => {
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) {
+      return reply.code(404).send({ error: 'No node runner profile found' })
+    }
+
+    const nodes = await fastify.prisma.node.findMany({
+      where: { nodeRunnerId: nr.id },
+      select: { id: true, gpuTier: true, customGpuModel: true },
+    })
+    const nodeIds = nodes.map(n => n.id)
+    const nodeLabel = (n: { id: string; gpuTier: string; customGpuModel: string | null }) =>
+      n.customGpuModel || `${n.gpuTier} (${n.id.slice(0, 6)})`
+
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const thirtyDayStart = new Date(todayStart.getTime() - 30 * 86400000)
+
+    // Run aggregations in parallel
+    const [
+      earningsAgg,
+      withdrawnAgg,
+      pendingWithdrawalsAgg,
+      investmentsAgg,
+      higherRanked,
+      totalRanked,
+      perNodeEarningsRows,
+      dailyEarnings30d,
+      recentPayouts,
+      recentHeartbeats,
+    ] = await Promise.all([
+      nodeIds.length === 0
+        ? Promise.resolve({ _sum: { earnings: 0 } as { earnings: number | null } })
+        : fastify.prisma.earning.aggregate({
+            where: { nodeId: { in: nodeIds } },
+            _sum: { earnings: true },
+          }),
+      fastify.prisma.withdrawalRequest.aggregate({
+        where: { nodeRunnerId: nr.id, status: 'COMPLETED' },
+        _sum: { amount: true },
+      }),
+      fastify.prisma.withdrawalRequest.aggregate({
+        where: { nodeRunnerId: nr.id, status: { in: ['PENDING', 'APPROVED', 'PROCESSING'] } },
+        _sum: { amount: true },
+      }),
+      fastify.prisma.investment.aggregate({
+        where: { nodeRunnerId: nr.id },
+        _sum: { amount: true },
+      }),
+      fastify.prisma.nodeRunner.count({
+        where: { reputationScore: { gt: nr.reputationScore } },
+      }),
+      fastify.prisma.nodeRunner.count(),
+      nodeIds.length === 0
+        ? Promise.resolve([] as { nodeId: string; _sum: { earnings: number | null } }[])
+        : fastify.prisma.earning.groupBy({
+            by: ['nodeId'],
+            where: { nodeId: { in: nodeIds }, date: { gte: thirtyDayStart } },
+            _sum: { earnings: true },
+          }),
+      nodeIds.length === 0
+        ? Promise.resolve([] as { date: Date; earnings: number }[])
+        : fastify.prisma.earning.findMany({
+            where: { nodeId: { in: nodeIds }, date: { gte: thirtyDayStart } },
+            select: { date: true, earnings: true },
+          }),
+      fastify.prisma.settlement.findMany({
+        where: { nodeId: { in: nodeIds }, status: 'COMPLETED' },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: {
+          id: true, amount: true, status: true, txHash: true, createdAt: true,
+          nodeId: true,
+        },
+      }),
+      nodeIds.length === 0
+        ? Promise.resolve([] as { timestamp: Date }[])
+        : fastify.prisma.heartbeat.findMany({
+            where: {
+              nodeId: { in: nodeIds },
+              timestamp: { gte: new Date(todayStart.getTime() - 60 * 86400000) },
+            },
+            select: { timestamp: true },
+            orderBy: { timestamp: 'desc' },
+          }),
+    ])
+
+    // Pending payout: earnings not yet withdrawn or in-flight
+    const totalEarnings = earningsAgg._sum.earnings ?? 0
+    const totalWithdrawn = withdrawnAgg._sum.amount ?? 0
+    const pendingWithdrawal = pendingWithdrawalsAgg._sum.amount ?? 0
+    const pendingPayout = Math.max(0, totalEarnings - totalWithdrawn - pendingWithdrawal)
+
+    const capitalDeployed = investmentsAgg._sum.amount ?? 0
+
+    const leaderboardRank = higherRanked + 1
+
+    // Build 30-day payout calendar (one cell per day)
+    const dayMap = new Map<string, number>()
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(todayStart.getTime() - i * 86400000)
+      dayMap.set(d.toISOString().slice(0, 10), 0)
+    }
+    for (const e of dailyEarnings30d) {
+      const key = new Date(e.date).toISOString().slice(0, 10)
+      dayMap.set(key, (dayMap.get(key) ?? 0) + e.earnings)
+    }
+    const payoutCalendar = Array.from(dayMap.entries()).map(([date, amount]) => ({
+      date, amount,
+    }))
+
+    // Per-node earnings: bind by-node sums to readable labels
+    const nodeById = new Map(nodes.map(n => [n.id, n]))
+    const perNodeEarnings = perNodeEarningsRows
+      .map(row => {
+        const n = nodeById.get(row.nodeId)
+        return {
+          nodeId: row.nodeId,
+          label: n ? nodeLabel(n) : row.nodeId.slice(0, 6),
+          gpuTier: n?.gpuTier ?? 'UNKNOWN',
+          earnings: row._sum.earnings ?? 0,
+        }
+      })
+      .sort((a, b) => b.earnings - a.earnings)
+
+    // Uptime streak: consecutive days (going back from today, inclusive)
+    // where at least one heartbeat from any owned node landed.
+    const heartbeatDays = new Set<string>()
+    for (const hb of recentHeartbeats) {
+      heartbeatDays.add(new Date(hb.timestamp).toISOString().slice(0, 10))
+    }
+    let uptimeStreak = 0
+    for (let i = 0; i < 60; i++) {
+      const d = new Date(todayStart.getTime() - i * 86400000).toISOString().slice(0, 10)
+      if (heartbeatDays.has(d)) uptimeStreak++
+      else break
+    }
+
+    reply.send({
+      pendingPayout,
+      capitalDeployed,
+      leaderboardRank,
+      totalRanked,
+      reputationScore: nr.reputationScore,
+      reputationTier: nr.reputationTier,
+      uptimeStreak,
+      payoutCalendar,
+      perNodeEarnings,
+      recentPayouts,
+    })
+  })
+
+  // ===================================================================
   // NODES
   // ===================================================================
 

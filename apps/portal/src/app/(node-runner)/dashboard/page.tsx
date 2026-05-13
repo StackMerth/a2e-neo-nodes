@@ -15,6 +15,12 @@ import {
   Globe,
   Cpu,
   Zap,
+  CalendarDays,
+  Trophy,
+  Flame,
+  PiggyBank,
+  Building2,
+  ExternalLink,
 } from 'lucide-react'
 import Link from 'next/link'
 import { nodeRunner } from '@/lib/api'
@@ -40,12 +46,43 @@ interface DashboardData {
   dailyEarnings?: { date: string; amount: number }[]
 }
 
+interface PayoutCalendarEntry { date: string; amount: number }
+interface PerNodeEarnings { nodeId: string; label: string; gpuTier: string; earnings: number }
+interface RecentPayout {
+  id: string
+  amount: number
+  status: string
+  txHash: string | null
+  createdAt: string
+  nodeId: string
+}
+
+interface OperatorStatsData {
+  pendingPayout: number
+  capitalDeployed: number
+  leaderboardRank: number
+  totalRanked: number
+  reputationScore: number
+  reputationTier: 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM'
+  uptimeStreak: number
+  payoutCalendar: PayoutCalendarEntry[]
+  perNodeEarnings: PerNodeEarnings[]
+  recentPayouts: RecentPayout[]
+}
+
 const NODE_STATUS_COLORS: Record<string, string> = {
   Online:      '#22c55e',
   Offline:     '#ef4444',
   Maintenance: '#f59e0b',
   Paused:      '#3b82f6',
   'In Use':    '#8b5cf6',
+}
+
+const TIER_TONE: Record<OperatorStatsData['reputationTier'], string> = {
+  BRONZE:   '#a16207',
+  SILVER:   '#94a3b8',
+  GOLD:     '#eab308',
+  PLATINUM: '#22d3ee',
 }
 
 const formatCurrency = (n: number) =>
@@ -55,6 +92,16 @@ const formatCurrency = (n: number) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(n)
+
+const formatCurrencyShort = (n: number) => {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 10_000) return `$${(n / 1_000).toFixed(1)}k`
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(2)}k`
+  return formatCurrency(n)
+}
+
+const formatDateShort = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
 interface TooltipPayloadItem { name: string; value: number; color?: string }
 function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipPayloadItem[]; label?: string }) {
@@ -71,16 +118,209 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
   )
 }
 
+// ---------------------------------------------------------------------
+// Sub-components for the new operator analytics row.
+// Pulled inline (not in FuturisticShell) because they consume the
+// operator-stats response directly and are dashboard-specific.
+// ---------------------------------------------------------------------
+
+function OperatorStatTile({
+  label, value, sub, icon: Icon, tone,
+}: {
+  label: string
+  value: string
+  sub?: string
+  icon: typeof DollarSign
+  tone: string
+}) {
+  return (
+    <div
+      className="rounded-md p-3 flex items-start gap-3"
+      style={{
+        background: 'var(--glass-bg)',
+        border: '1px solid var(--glass-border)',
+        backdropFilter: 'blur(var(--glass-blur, 16px))',
+      }}
+    >
+      <div
+        className="w-9 h-9 shrink-0 rounded-md flex items-center justify-center"
+        style={{ background: `${tone}1a`, border: `1px solid ${tone}55` }}
+      >
+        <Icon size={16} style={{ color: tone }} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p
+          className="font-mono text-[10px] tracking-[0.14em] uppercase truncate"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          {label}
+        </p>
+        <p
+          className="font-display text-lg leading-tight truncate"
+          style={{ color: 'var(--text-primary)' }}
+        >
+          {value}
+        </p>
+        {sub && (
+          <p className="font-mono text-[11px] truncate" style={{ color: 'var(--text-secondary)' }}>
+            {sub}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PayoutCalendar({ entries }: { entries: PayoutCalendarEntry[] }) {
+  const max = useMemo(
+    () => entries.reduce((m, e) => Math.max(m, e.amount), 0),
+    [entries],
+  )
+  if (entries.length === 0) {
+    return <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No payout data yet.</p>
+  }
+  return (
+    <div>
+      <div className="grid grid-cols-15 gap-1.5" style={{ gridTemplateColumns: 'repeat(15, minmax(0, 1fr))' }}>
+        {entries.map((e) => {
+          const ratio = max > 0 ? e.amount / max : 0
+          const opacity = e.amount > 0 ? 0.25 + ratio * 0.75 : 0.08
+          const isToday = e.date === new Date().toISOString().slice(0, 10)
+          return (
+            <div
+              key={e.date}
+              title={`${formatDateShort(e.date)} - ${formatCurrency(e.amount)}`}
+              className="aspect-square rounded-sm"
+              style={{
+                background: e.amount > 0 ? `rgba(34,197,94,${opacity})` : 'var(--border-color)',
+                outline: isToday ? '1px solid var(--primary)' : 'none',
+                outlineOffset: '1px',
+              }}
+            />
+          )
+        })}
+      </div>
+      <div className="flex items-center justify-between mt-3 font-mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
+        <span>{formatDateShort(entries[0].date)}</span>
+        <span className="flex items-center gap-1.5">
+          Less
+          {[0.1, 0.3, 0.5, 0.75, 1].map(o => (
+            <span key={o} className="w-2.5 h-2.5 rounded-sm" style={{ background: `rgba(34,197,94,${o})` }} />
+          ))}
+          More
+        </span>
+        <span>{formatDateShort(entries[entries.length - 1].date)}</span>
+      </div>
+    </div>
+  )
+}
+
+function PerNodeEarningsList({ nodes }: { nodes: PerNodeEarnings[] }) {
+  if (nodes.length === 0) {
+    return (
+      <div className="text-center py-6">
+        <Server size={28} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No node earnings yet.</p>
+      </div>
+    )
+  }
+  const max = nodes.reduce((m, n) => Math.max(m, n.earnings), 0)
+  return (
+    <div className="space-y-3">
+      {nodes.slice(0, 8).map(n => {
+        const ratio = max > 0 ? (n.earnings / max) * 100 : 0
+        return (
+          <div key={n.nodeId} className="flex items-center gap-3 text-sm">
+            <Link
+              href={`/nodes/${n.nodeId}`}
+              className="font-mono text-[12px] truncate flex-1 hover:underline"
+              style={{ color: 'var(--text-secondary)' }}
+              title={n.label}
+            >
+              {n.label}
+            </Link>
+            <div className="flex-1 h-2 rounded-sm overflow-hidden" style={{ background: 'var(--border-color)' }}>
+              <div
+                className="h-full transition-all"
+                style={{ width: `${ratio}%`, background: 'var(--primary)' }}
+              />
+            </div>
+            <span className="font-mono text-sm w-20 text-right" style={{ color: 'var(--text-primary)' }}>
+              {formatCurrency(n.earnings)}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function RecentPayoutsTable({ payouts }: { payouts: RecentPayout[] }) {
+  if (payouts.length === 0) {
+    return (
+      <div className="text-center py-6">
+        <Wallet size={28} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No payouts yet.</p>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-2">
+      {payouts.map(p => (
+        <div
+          key={p.id}
+          className="flex items-center justify-between gap-3 text-sm rounded-md px-3 py-2"
+          style={{ background: 'var(--surface-elevated)', border: '1px solid var(--border-color)' }}
+        >
+          <div className="min-w-0 flex-1">
+            <p className="font-mono text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+              {new Date(p.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </p>
+            <p className="font-display text-sm" style={{ color: 'var(--text-primary)' }}>
+              {formatCurrency(p.amount)}
+            </p>
+          </div>
+          {p.txHash ? (
+            <a
+              href={`https://solscan.io/tx/${p.txHash}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 font-mono text-[11px] hover:underline"
+              style={{ color: 'var(--primary)' }}
+            >
+              View tx <ExternalLink size={11} />
+            </a>
+          ) : (
+            <span className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>{p.status}</span>
+          )}
+        </div>
+      ))}
+      <Link
+        href="/payouts"
+        className="inline-flex items-center gap-1 mt-1 font-mono text-[11px] hover:underline"
+        style={{ color: 'var(--primary)' }}
+      >
+        View all payouts <ExternalLink size={11} />
+      </Link>
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
+  const [ops, setOps] = useState<OperatorStatsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
     try {
-      const d = (await nodeRunner.dashboard()) as DashboardData
+      const [d, o] = await Promise.all([
+        nodeRunner.dashboard() as Promise<DashboardData>,
+        nodeRunner.operatorStats() as Promise<OperatorStatsData>,
+      ])
       setData(d)
+      setOps(o)
     } catch { /* silent */ }
     finally {
       setLoading(false)
@@ -147,6 +387,8 @@ export default function DashboardPage() {
     ? ((data.nodes.inUse ?? 0) / data.nodes.online) * 100
     : 0
 
+  const tierColor = ops ? TIER_TONE[ops.reputationTier] : '#94a3b8'
+
   return (
     <DashboardShell
       title="Node Runner Dashboard"
@@ -183,6 +425,40 @@ export default function DashboardPage() {
           ]}
         />
 
+        {/* Operator stats: payout + capital + rank + streak */}
+        {ops && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <OperatorStatTile
+              label="Pending Payout"
+              value={formatCurrencyShort(ops.pendingPayout)}
+              sub="Withdraw-ready"
+              icon={PiggyBank}
+              tone="#22c55e"
+            />
+            <OperatorStatTile
+              label="Capital Deployed"
+              value={formatCurrencyShort(ops.capitalDeployed)}
+              sub="Cost basis"
+              icon={Building2}
+              tone="#06b6d4"
+            />
+            <OperatorStatTile
+              label="Leaderboard"
+              value={ops.totalRanked > 0 ? `#${ops.leaderboardRank}` : '-'}
+              sub={ops.totalRanked > 0 ? `of ${ops.totalRanked} - ${ops.reputationTier}` : 'Not ranked'}
+              icon={Trophy}
+              tone={tierColor}
+            />
+            <OperatorStatTile
+              label="Uptime Streak"
+              value={`${ops.uptimeStreak}d`}
+              sub={ops.uptimeStreak === 1 ? 'Day in a row' : 'Days in a row'}
+              icon={Flame}
+              tone="#f97316"
+            />
+          </div>
+        )}
+
         {/* Daily earnings bar chart */}
         <SectionCard title="Earnings, last 30 days" icon={Zap}>
           <div className="h-56 w-full">
@@ -207,6 +483,17 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </div>
         </SectionCard>
+
+        {/* Payout calendar + per-node earnings, paired side-by-side on lg+ */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <SectionCard title="Payout Calendar (30d)" icon={CalendarDays}>
+            <PayoutCalendar entries={ops?.payoutCalendar ?? []} />
+          </SectionCard>
+
+          <SectionCard title="Earnings by Node" icon={Server}>
+            <PerNodeEarningsList nodes={ops?.perNodeEarnings ?? []} />
+          </SectionCard>
+        </div>
 
         {/* Nodes status mix */}
         <SectionCard title="Node Status Mix" icon={Cpu}>
@@ -264,6 +551,11 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+        </SectionCard>
+
+        {/* Recent payouts list */}
+        <SectionCard title="Recent Payouts" icon={Wallet}>
+          <RecentPayoutsTable payouts={ops?.recentPayouts ?? []} />
         </SectionCard>
       </DashboardMainColumn>
 
