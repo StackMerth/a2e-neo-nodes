@@ -103,30 +103,30 @@ export function NotificationBell({ collapsed = false }: { collapsed?: boolean })
   return (
     <div className="relative" ref={ref}>
       <motion.button
-        className="sidebar-notif-btn"
+        // Compact 36x36 button to match the theme toggle and avatar in
+        // the TopHeader. Badge positioned over the top-right corner.
+        className="relative inline-flex items-center justify-center w-9 h-9 rounded-md border border-border bg-surface-elevated hover:bg-surface-hover transition-colors"
         onClick={() => setOpen(!open)}
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
-        title={collapsed ? 'Notifications' : undefined}
+        whileHover={{ scale: 1.04 }}
+        whileTap={{ scale: 0.96 }}
+        title="Notifications"
       >
-        <Bell size={20} />
-        <motion.span variants={labelVariants} animate={collapsed ? 'closed' : 'open'}>
-          Notifications
-        </motion.span>
+        <Bell className="w-4 h-4" style={{ color: 'var(--text-primary)' }} />
         {count > 0 && (
-          <span className="sidebar-notif-badge">
+          <span
+            className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full text-[10px] font-bold text-white"
+            style={{ background: 'var(--danger)' }}
+          >
             {count > 9 ? '9+' : count}
           </span>
         )}
       </motion.button>
 
       {open && (
-        <div className="fixed ml-2 w-80 rounded-xl shadow-xl animate-scaleIn overflow-hidden z-50"
+        <div className="absolute top-full right-0 mt-2 w-80 rounded-xl shadow-xl animate-scaleIn overflow-hidden z-50"
           style={{
             background: 'var(--bg-card)',
             border: '1px solid var(--border-color)',
-            bottom: '80px',
-            left: '80px',
           }}
         >
           <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>

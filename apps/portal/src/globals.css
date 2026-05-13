@@ -430,8 +430,8 @@ select {
 
 .glass-strong {
   background: rgba(17, 17, 24, 0.9);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--glass-blur, 20px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px));
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -524,8 +524,8 @@ select {
 
 .card {
   background: var(--glass-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--glass-blur, 20px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px));
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   padding: var(--space-lg);
@@ -1195,10 +1195,28 @@ textarea:focus {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-family: var(--font-display), 'Inter', system-ui, sans-serif;
+  font-size: 1.75rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
   margin: 0;
   color: var(--text-primary);
+}
+
+/* Chart card titles also pick up Inter Black 900 so a Deployments
+   header reads as a real heading, matching the marketplace branding. */
+.dash-chart-title {
+  font-family: var(--font-display), 'Inter', system-ui, sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  font-size: 1rem;
+}
+
+/* Stat block numbers also go heavy so they read as KPIs. */
+.stat-blocks .stat-value {
+  font-family: var(--font-display), 'Inter', system-ui, sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.02em;
 }
 
 .dash-header-left h1 svg {
@@ -1266,8 +1284,8 @@ textarea:focus {
   gap: var(--space-md);
   padding: var(--space-md) var(--space-lg);
   background: var(--glass-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--glass-blur, 20px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px));
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   text-decoration: none;
@@ -1380,8 +1398,8 @@ textarea:focus {
 .dash-chart-card {
   padding: var(--space-lg);
   background: var(--glass-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(var(--glass-blur, 20px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px));
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   transition: all var(--transition-base);
