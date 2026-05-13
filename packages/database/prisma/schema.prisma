@@ -112,7 +112,21 @@ model User {
   email            String?   @unique
   walletAddress    String?   @unique
   passwordHash     String?
+  // role marks the user's primary identity (whichever they signed up
+  // as). Kept for backward compat and for reporting. Day-to-day
+  // capability checks should read isBuyer / isNodeRunner / isAdmin
+  // instead, since a single account can now hold multiple roles.
   role             UserRole  @default(NODE_RUNNER)
+  // Dual-identity flags. Migration backfills from role on launch:
+  //   role=COMPUTE_BUYER  -> isBuyer=true
+  //   role=NODE_RUNNER    -> isNodeRunner=true
+  //   role=CUSTOMER       -> isBuyer=true
+  //   role=ADMIN          -> isAdmin=true
+  // New signups flip the right flag + leave the others false; users
+  // can opt in to the other role later via Settings.
+  isBuyer          Boolean   @default(false)
+  isNodeRunner     Boolean   @default(false)
+  isAdmin          Boolean   @default(false)
   emailVerified    Boolean   @default(false)
   twoFactorEnabled Boolean   @default(false)
   twoFactorSecret  String?
