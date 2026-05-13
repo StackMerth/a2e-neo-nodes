@@ -106,22 +106,39 @@ export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMen
         ref={triggerRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-3 p-2 rounded-md hover:bg-surface-hover transition-colors"
         aria-haspopup="menu"
         aria-expanded={open}
+        // In collapsed mode (TopHeader), lock to 36x36 to match the
+        // bell + theme toggle exactly. In expanded mode (legacy
+        // sidebar footer), stretch full width with name + role.
+        style={collapsed ? { width: 36, height: 36, flex: '0 0 36px' } : undefined}
+        className={
+          collapsed
+            ? 'inline-flex items-center justify-center rounded-md border border-border bg-surface-elevated hover:bg-surface-hover transition-colors'
+            : 'w-full flex items-center gap-3 p-2 rounded-md hover:bg-surface-hover transition-colors'
+        }
       >
-        <motion.div
-          className="user-avatar"
-          whileHover={{ scale: 1.05 }}
-          style={{ flexShrink: 0 }}
-        >
-          {avatarLetter}
-        </motion.div>
-        {!collapsed && (
-          <div className="flex flex-col text-left flex-1 min-w-0">
-            <span className="user-name truncate">{displayName}</span>
-            <span className="user-role">{roleLabel}</span>
-          </div>
+        {collapsed ? (
+          <span
+            className="inline-flex items-center justify-center w-7 h-7 rounded font-bold text-xs"
+            style={{ background: 'var(--primary)', color: '#ffffff' }}
+          >
+            {avatarLetter}
+          </span>
+        ) : (
+          <>
+            <motion.div
+              className="user-avatar"
+              whileHover={{ scale: 1.05 }}
+              style={{ flexShrink: 0 }}
+            >
+              {avatarLetter}
+            </motion.div>
+            <div className="flex flex-col text-left flex-1 min-w-0">
+              <span className="user-name truncate">{displayName}</span>
+              <span className="user-role">{roleLabel}</span>
+            </div>
+          </>
         )}
       </button>
 
