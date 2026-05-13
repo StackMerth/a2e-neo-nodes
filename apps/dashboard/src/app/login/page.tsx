@@ -76,7 +76,9 @@ export default function LoginPage() {
         animate="show"
         className="w-full max-w-[420px] relative z-10"
       >
-        {/* Brand */}
+        {/* Brand. Monogram tile + two-tone wordmark, matching the
+            sidebar treatment so the login screen reads as part of the
+            same app. No text wedged inside the tile. */}
         <motion.div variants={item} className="text-center mb-10">
           <div
             className="inline-flex items-center justify-center w-14 h-14 rounded-xl mb-6"
@@ -85,12 +87,32 @@ export default function LoginPage() {
               boxShadow: '0 12px 32px rgba(34, 197, 94, 0.25), 0 0 0 1px rgba(34, 197, 94, 0.15)',
             }}
           >
-            <span className="font-bold text-xl tracking-tight" style={{ color: '#0a0a0f' }}>
-              TokenOS DeAI
+            <span
+              className="font-display"
+              style={{
+                color: '#0a0a0f',
+                fontWeight: 900,
+                fontSize: '1.65rem',
+                letterSpacing: '-0.04em',
+                lineHeight: 1,
+              }}
+            >
+              T
             </span>
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight" style={{ color: 'var(--text-primary, #fff)' }}>
-            TokenOS DeAI Dashboard
+          <h1
+            className="font-display tracking-tight"
+            style={{
+              fontSize: '1.75rem',
+              fontWeight: 900,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            <span style={{ color: 'var(--text-primary, #fff)' }}>TokenOS</span>
+            <span style={{ color: '#22c55e' }}>_DeAI</span>
+            <span className="ml-2" style={{ color: 'var(--text-muted)', fontWeight: 500, fontSize: '1.1rem' }}>
+              Admin
+            </span>
           </h1>
           <p className="mt-1.5 text-sm" style={{ color: 'var(--text-muted)' }}>
             Sign in to continue
