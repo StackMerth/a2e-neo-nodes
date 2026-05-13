@@ -58,31 +58,10 @@ export function Sidebar() {
       initial="closed"
       style={{ width: sidebarOpen ? 280 : 80 }}
     >
-      {/* Logo */}
-      <div className="sidebar-header">
-        <motion.div
-          className="logo"
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => router.push('/dashboard')}
-        >
-          <div className="logo-icon">A2</div>
-          <AnimatePresence>
-            {sidebarOpen && (
-              <motion.span
-                className="logo-text"
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                transition={{ duration: 0.2 }}
-              >
-                Portal
-              </motion.span>
-            )}
-          </AnimatePresence>
-        </motion.div>
-
-        {sidebarOpen && (
+      {/* Sidebar header (logo + portal text) removed - TopHeader owns
+          the brand now. Only the expand/collapse control remains. */}
+      {sidebarOpen && (
+        <div className="flex justify-end px-4 py-3">
           <motion.button
             className="collapse-btn"
             onClick={() => setSidebarOpen(false)}
@@ -94,8 +73,8 @@ export function Sidebar() {
           >
             <PanelLeftClose size={20} />
           </motion.button>
-        )}
-      </div>
+        </div>
+      )}
 
       {!sidebarOpen && (
         <motion.div
