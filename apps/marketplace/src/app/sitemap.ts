@@ -11,7 +11,7 @@
  */
 import type { MetadataRoute } from 'next'
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://market.tokenos.ai'
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://marketplace.stackforgelab.tech'
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
 
 interface LeaderboardRow {

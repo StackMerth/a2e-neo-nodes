@@ -28,7 +28,7 @@ const jetbrainsMono = JetBrains_Mono({
   display: 'swap',
 })
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://market.tokenos.ai'
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://marketplace.stackforgelab.tech'
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
