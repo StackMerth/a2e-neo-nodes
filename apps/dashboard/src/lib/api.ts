@@ -1,6 +1,6 @@
 // API Client for TokenOS DeAI Engine
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
 // Legacy fallback API key. Used only if no Bearer token is available
 // (e.g. before login completes). Real admin requests authenticate with
 // the HMAC token stored in localStorage by useAuth on successful login.

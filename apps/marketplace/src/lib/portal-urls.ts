@@ -7,7 +7,7 @@
  * the actual portal origin. Falls back to user.tokenos.ai (production).
  */
 const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'https://user.tokenos.ai'
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
 
 export const portalUrls = {
   signup: `${PORTAL_URL}/signup`,

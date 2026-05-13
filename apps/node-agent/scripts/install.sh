@@ -2,7 +2,7 @@
 #
 # A²E Node Agent Installation Script
 #
-# Usage: curl -sSL https://tokenosdeai-api.onrender.com/install.sh | bash
+# Usage: curl -sSL https://a2e-api.onrender.com/install.sh | bash
 #    or: ./install.sh [options]
 #
 # Options:
@@ -23,7 +23,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-DOWNLOAD_BASE_URL="${A2E_DOWNLOAD_URL:-https://tokenosdeai-api.onrender.com/releases}"
+DOWNLOAD_BASE_URL="${A2E_DOWNLOAD_URL:-https://a2e-api.onrender.com/releases}"
 INSTALL_DIR="${A2E_INSTALL_DIR:-/opt/a2e-agent}"
 CONFIG_DIR="${A2E_CONFIG_DIR:-/etc/a2e-agent}"
 DATA_DIR="${A2E_DATA_DIR:-/var/lib/a2e-agent}"
@@ -224,7 +224,7 @@ install_service() {
     cat > /etc/systemd/system/a2e-agent.service << 'EOF'
 [Unit]
 Description=A²E Node Agent
-Documentation=https://tokenosdeai-api.onrender.com/docs
+Documentation=https://a2e-api.onrender.com/docs
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
@@ -299,8 +299,8 @@ configure_interactive() {
     echo ""
 
     # API URL
-    read -p "A²E API URL [https://tokenosdeai-api.onrender.com]: " api_url
-    api_url="${api_url:-https://tokenosdeai-api.onrender.com}"
+    read -p "A²E API URL [https://a2e-api.onrender.com]: " api_url
+    api_url="${api_url:-https://a2e-api.onrender.com}"
 
     # API Key
     read -p "API Key: " api_key

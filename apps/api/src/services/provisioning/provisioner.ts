@@ -50,7 +50,7 @@ export class NodeProvisioner extends EventEmitter {
     super()
     this.prisma = prisma
     this.provisionId = provisionId
-    this.apiUrl = process.env.A2E_API_URL || 'https://tokenosdeai-api.onrender.com'
+    this.apiUrl = process.env.A2E_API_URL || 'https://a2e-api.onrender.com'
     this.apiKey = apiKey
   }
 

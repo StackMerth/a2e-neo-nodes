@@ -92,7 +92,7 @@ export default function AddNodePage() {
 
   // Manual install
   const [copied, setCopied] = useState(false)
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://tokenosdeai-api.onrender.com'
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
   const [apiKey] = useState(() => `a2e-demo-${Math.random().toString(36).slice(2, 10)}`)
 
   const installCommand = `curl -fsSL ${apiUrl}/install.sh | sudo bash -s -- \\
