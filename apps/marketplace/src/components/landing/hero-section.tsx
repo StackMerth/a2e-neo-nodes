@@ -151,25 +151,28 @@ export function HeroSection() {
           isVisible ? "opacity-100" : "opacity-0"
         }`}
       >
-        <div className="flex justify-center gap-8 sm:gap-16 marquee whitespace-nowrap">
-          {[...Array(2)].map((_, i) => (
-            <div key={i} className="flex gap-8 sm:gap-16">
-              {[
-                { value: "60s", label: "pay to ssh", company: "AUTO ALLOCATOR" },
-                { value: "/min", label: "billing precision", company: "PER MINUTE METER" },
-                { value: "40%", label: "off retail", company: "SPOT TIER" },
-                { value: "11s", label: "median settlement", company: "SOLANA RAILS" },
-              ].map((stat) => (
-                <div key={`${stat.company}-${i}`} className="flex items-center gap-3 sm:gap-4">
-                  <span className="text-3xl sm:text-4xl lg:text-5xl font-display text-brand leading-none">{stat.value}</span>
-                  <span className="text-xs sm:text-sm text-muted-foreground leading-tight">
-                    {stat.label}
-                    <span className="block font-mono text-[10px] sm:text-xs mt-1">{stat.company}</span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          ))}
+        {/* Marquee: flat single flex with items rendered twice so the
+            -50% animation wraps pixel-perfectly. Outer flex must NOT
+            have justify-center or any extra gap, or the wrap point
+            shows a blank gap on every loop. */}
+        <div className="flex gap-8 sm:gap-16 marquee whitespace-nowrap w-max">
+          {(() => {
+            const stats = [
+              { value: "60s", label: "pay to ssh", company: "AUTO ALLOCATOR" },
+              { value: "/min", label: "billing precision", company: "PER MINUTE METER" },
+              { value: "40%", label: "off retail", company: "SPOT TIER" },
+              { value: "11s", label: "median settlement", company: "SOLANA RAILS" },
+            ];
+            return [...stats, ...stats].map((stat, i) => (
+              <div key={`${stat.company}-${i}`} className="flex items-center gap-3 sm:gap-4 shrink-0">
+                <span className="text-3xl sm:text-4xl lg:text-5xl font-display text-brand leading-none">{stat.value}</span>
+                <span className="text-xs sm:text-sm text-muted-foreground leading-tight">
+                  {stat.label}
+                  <span className="block font-mono text-[10px] sm:text-xs mt-1">{stat.company}</span>
+                </span>
+              </div>
+            ));
+          })()}
         </div>
       </div>
       
