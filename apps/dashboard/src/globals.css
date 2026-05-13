@@ -137,16 +137,19 @@
   --bg-input: #0d0d12;
   --bg-tertiary: #1f1f28;
 
-  /* Glass morphism. Border bumped to 0.15 for clearer card outlines. */
-  --glass-bg: rgba(17, 17, 24, 0.8);
-  --glass-border: rgba(255, 255, 255, 0.15);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  /* Glass morphism. Substantial frost so cards stand off the particle
+     background rather than reading as nearly-transparent panes. */
+  --glass-bg: rgba(20, 22, 32, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.22);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --glass-blur: 32px;
 
-  /* Text */
+  /* Text, brightened a step so labels and values on frosted cards
+     read with real contrast (old a1a1aa / 71717a blended in). */
   --text-primary: #ffffff;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --text-disabled: #52525b;
+  --text-secondary: #d1d5db;
+  --text-muted: #9ca3af;
+  --text-disabled: #6b7280;
 
   /* Borders */
   --border-color: rgba(255, 255, 255, 0.08);
