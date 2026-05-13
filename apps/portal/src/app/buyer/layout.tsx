@@ -8,6 +8,7 @@ import { useSidebar } from '@/components/layout/SidebarContext'
 import { BuyerSidebar } from '@/components/layout/BuyerSidebar'
 import { MobileMenuButton } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
+import { RoleIntroCallout } from '@/components/layout/RoleIntroCallout'
 
 const mainEase: [number, number, number, number] = [0.4, 0, 0.2, 1]
 
@@ -62,6 +63,9 @@ export default function BuyerLayout({ children }: { children: React.ReactNode })
         transition={{ duration: 0.3, ease: mainEase }}
       >
         <div className="page-container">
+          {/* Self-gating callout: only renders if this user does not
+              yet have isBuyer flag set. Hidden once enabled. */}
+          <RoleIntroCallout />
           {children}
           <Footer />
         </div>
