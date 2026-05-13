@@ -6,15 +6,12 @@ import { Menu, X } from "lucide-react";
 import { portalUrls } from "@/lib/portal-urls";
 import { ThemeToggle } from "@/components/theme-toggle";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://tokenosdeai-api.onrender.com";
-
 // Public-facing nav surfaces, all reachable without an account.
-const navLinks = [
+const navLinks: Array<{ name: string; href: string; external?: boolean }> = [
   { name: "Marketplace", href: "/marketplace" },
   { name: "Operators", href: "/leaderboard" },
   { name: "Stats", href: "/stats" },
   { name: "Pricing", href: "/#pricing" },
-  { name: "API Docs", href: `${API_URL}/docs`, external: true },
 ];
 
 export function Navigation() {
