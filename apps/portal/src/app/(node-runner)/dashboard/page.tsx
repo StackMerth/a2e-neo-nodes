@@ -1,36 +1,35 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import Link from 'next/link'
-import { motion } from 'framer-motion'
 import {
-  PieChart, Pie, Cell, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid
+  BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer,
+  PieChart, Pie, Cell,
 } from 'recharts'
 import {
-  LayoutDashboard,
   DollarSign,
   Server,
   Activity,
-  Zap,
   Wallet,
-  Cpu,
-  Clock,
-  RefreshCw,
-  PauseCircle,
-  PlayCircle,
   Plus,
+  ArrowDownToLine,
   Globe,
+  Cpu,
+  Zap,
 } from 'lucide-react'
+import Link from 'next/link'
 import { nodeRunner } from '@/lib/api'
 import { A2ELoader } from '@/components/ui/A2ELoader'
-import { Skeleton } from '@/components/ui/Skeleton'
-import { useToast } from '@/components/ui/Toast'
 import { useWebSocket } from '@/hooks/useWebSocket'
-
-/* -----------------------------------------------
-   Types
-   ----------------------------------------------- */
+import {
+  DashboardShell,
+  DashboardMainColumn,
+  DashboardRightRail,
+  SectionCard,
+  MetricTriad,
+  ClockCard,
+  QuickActions,
+  ResourceAllocation,
+} from '@/components/dashboard/FuturisticShell'
 
 interface DashboardData {
   earnings: { today: number; week: number; month: number; allTime: number }
@@ -41,44 +40,13 @@ interface DashboardData {
   dailyEarnings?: { date: string; amount: number }[]
 }
 
-type Period = 'today' | 'week' | 'month' | 'allTime'
-
-/* -----------------------------------------------
-   Animation Variants
-   ----------------------------------------------- */
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.05 },
-  },
-}
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 15 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] },
-  },
-}
-
-/* -----------------------------------------------
-   Chart colours
-   ----------------------------------------------- */
-
 const NODE_STATUS_COLORS: Record<string, string> = {
-  online: '#22c55e',
-  offline: '#ef4444',
-  maintenance: '#f59e0b',
-  paused: '#3b82f6',
-  inUse: '#6366f1',
+  Online:      '#22c55e',
+  Offline:     '#ef4444',
+  Maintenance: '#f59e0b',
+  Paused:      '#3b82f6',
+  'In Use':    '#8b5cf6',
 }
-
-/* -----------------------------------------------
-   Helpers
-   ----------------------------------------------- */
 
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat('en-US', {
@@ -88,54 +56,33 @@ const formatCurrency = (n: number) =>
     maximumFractionDigits: 2,
   }).format(n)
 
-const formatCompact = (n: number) => {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M'
-  if (n >= 10_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K'
-  return n.toLocaleString()
-}
-
-/* -----------------------------------------------
-   Custom Tooltip (shared by all recharts)
-   ----------------------------------------------- */
-
-interface TooltipPayloadItem {
-  name: string
-  value: number
-  color?: string
-}
-
-function ChartTooltip({ active, payload }: { active?: boolean; payload?: TooltipPayloadItem[] }) {
+interface TooltipPayloadItem { name: string; value: number; color?: string }
+function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipPayloadItem[]; label?: string }) {
   if (!active || !payload?.length) return null
   return (
-    <div className="dash-tooltip">
-      <p className="dash-tooltip-label">{payload[0].name}</p>
-      <p className="dash-tooltip-value">
-        {typeof payload[0].value === 'number' ? payload[0].value.toLocaleString() : payload[0].value}
+    <div className="rounded-md border border-border px-3 py-2" style={{ background: 'var(--bg-card)' }}>
+      <p className="font-mono text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>{label ?? payload[0].name}</p>
+      <p className="font-mono text-sm" style={{ color: 'var(--text-primary)' }}>
+        {typeof payload[0].value === 'number'
+          ? formatCurrency(payload[0].value)
+          : payload[0].value}
       </p>
     </div>
   )
 }
 
-/* -----------------------------------------------
-   Page Component
-   ----------------------------------------------- */
-
 export default function DashboardPage() {
-  const { toast } = useToast()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [period, setPeriod] = useState<Period>('month')
-  const [actionLoading, setActionLoading] = useState(false)
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
     try {
       const d = (await nodeRunner.dashboard()) as DashboardData
       setData(d)
-    } catch {
-      /* silently fail — user sees stale data or loading state */
-    } finally {
+    } catch { /* silent */ }
+    finally {
       setLoading(false)
       setRefreshing(false)
     }
@@ -147,34 +94,30 @@ export default function DashboardPage() {
     return () => clearInterval(interval)
   }, [loadData])
 
-  /* WebSocket real-time updates */
   const handleNodeEvent = useCallback(() => { loadData() }, [loadData])
   useWebSocket({
     events: {
       'node:statusChange': handleNodeEvent,
-      'node:offline': handleNodeEvent,
-      'node:registered': handleNodeEvent,
-      'job:completed': handleNodeEvent,
-      'job:failed': handleNodeEvent,
+      'node:offline':      handleNodeEvent,
+      'node:registered':   handleNodeEvent,
+      'job:completed':     handleNodeEvent,
+      'job:failed':        handleNodeEvent,
     },
   })
-
-  /* ---- Computed chart data ---- */
 
   const nodeStatusData = useMemo(() => {
     if (!data) return []
     const entries: { name: string; value: number; color: string }[] = []
-    if (data.nodes.online > 0) entries.push({ name: 'Online', value: data.nodes.online, color: NODE_STATUS_COLORS.online })
-    if (data.nodes.offline > 0) entries.push({ name: 'Offline', value: data.nodes.offline, color: NODE_STATUS_COLORS.offline })
-    if (data.nodes.maintenance > 0) entries.push({ name: 'Maintenance', value: data.nodes.maintenance, color: NODE_STATUS_COLORS.maintenance })
-    if ((data.nodes.paused ?? 0) > 0) entries.push({ name: 'Paused', value: data.nodes.paused ?? 0, color: NODE_STATUS_COLORS.paused })
-    if ((data.nodes.inUse ?? 0) > 0) entries.push({ name: 'In Use', value: data.nodes.inUse ?? 0, color: NODE_STATUS_COLORS.inUse })
+    if (data.nodes.online > 0)              entries.push({ name: 'Online',      value: data.nodes.online,            color: NODE_STATUS_COLORS.Online })
+    if (data.nodes.offline > 0)             entries.push({ name: 'Offline',     value: data.nodes.offline,           color: NODE_STATUS_COLORS.Offline })
+    if (data.nodes.maintenance > 0)         entries.push({ name: 'Maintenance', value: data.nodes.maintenance,       color: NODE_STATUS_COLORS.Maintenance })
+    if ((data.nodes.paused ?? 0) > 0)       entries.push({ name: 'Paused',      value: data.nodes.paused ?? 0,       color: NODE_STATUS_COLORS.Paused })
+    if ((data.nodes.inUse ?? 0) > 0)        entries.push({ name: 'In Use',      value: data.nodes.inUse ?? 0,        color: NODE_STATUS_COLORS['In Use'] })
     return entries
   }, [data])
 
   const dailyEarningsData = useMemo(() => {
     if (!data?.dailyEarnings?.length) {
-      // Generate placeholder last-30-day data from what we know
       const days: { date: string; amount: number }[] = []
       const now = new Date()
       for (let i = 29; i >= 0; i--) {
@@ -193,276 +136,185 @@ export default function DashboardPage() {
     }))
   }, [data])
 
-  const earningsValue = data?.earnings[period] ?? 0
-
-  /* ---- Loading state ---- */
-
   if (loading) {
     return <A2ELoader fullScreen={false} message="Loading your dashboard" />
   }
 
-  /* ---- Stat block definitions ---- */
-
-  const externallyListed = data?.nodes.externallyListed ?? 0
-
-  const stats: {
-    label: string
-    value: string
-    icon: React.ReactNode
-    colorClass: string
-  }[] = [
-    {
-      label: 'Total Earnings',
-      value: formatCurrency(data?.earnings.allTime ?? 0),
-      icon: <DollarSign size={18} />,
-      colorClass: 'green',
-    },
-    {
-      label: 'Active Nodes',
-      value: `${data?.nodes.online ?? 0}/${data?.nodes.total ?? 0}`,
-      icon: <Server size={18} />,
-      colorClass: 'blue',
-    },
-    {
-      label: 'Uptime %',
-      value: `${(data?.uptimePercent ?? 0).toFixed(1)}%`,
-      icon: <Activity size={18} />,
-      colorClass: 'purple',
-    },
-    {
-      label: 'Nodes In Use',
-      value: `${data?.nodes.inUse ?? 0}`,
-      icon: <Zap size={18} />,
-      colorClass: 'yellow',
-    },
-    {
-      label: 'Total Paid Out',
-      value: formatCurrency(data?.totalPaidOut ?? 0),
-      icon: <Wallet size={18} />,
-      colorClass: 'cyan',
-    },
-    {
-      label: 'Earnings Today',
-      value: formatCurrency(data?.earnings.today ?? 0),
-      icon: <Cpu size={18} />,
-      colorClass: 'orange',
-    },
-  ]
-
-  if (externallyListed > 0) {
-    stats.push({
-      label: 'Externally Listed',
-      value: `${externallyListed}`,
-      icon: <Globe size={18} />,
-      colorClass: 'orange',
-    })
-  }
-
-  /* ---- Render ---- */
+  const onlinePct = data && data.nodes.total > 0
+    ? (data.nodes.online / data.nodes.total) * 100
+    : 0
+  const utilizationPct = data && data.nodes.online > 0
+    ? ((data.nodes.inUse ?? 0) / data.nodes.online) * 100
+    : 0
 
   return (
-    <motion.div
-      className="dashboard-modern"
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
+    <DashboardShell
+      title="Node Runner Dashboard"
+      subtitle="Operator side"
+      liveLabel="LIVE"
+      onRefresh={() => loadData(true)}
+      refreshing={refreshing}
     >
-      {/* ========== Header ========== */}
-      <motion.div className="dash-header" variants={itemVariants}>
-        <div className="dash-header-left">
-          <h1><LayoutDashboard size={28} /> Dashboard</h1>
-        </div>
-        <div className="dash-header-right">
-          <div className="dash-date-badge">
-            <Clock size={14} />
-            {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+      <DashboardMainColumn>
+        {/* Earnings + nodes + jobs */}
+        <MetricTriad
+          metrics={[
+            {
+              label: 'Earnings (30d)',
+              value: formatCurrency(data?.earnings.month ?? 0),
+              detail: `${formatCurrency(data?.earnings.today ?? 0)} today`,
+              icon: DollarSign,
+              tone: 'green',
+            },
+            {
+              label: 'Nodes Online',
+              value: `${data?.nodes.online ?? 0} / ${data?.nodes.total ?? 0}`,
+              detail: `${(data?.nodes.inUse ?? 0)} renting now`,
+              icon: Server,
+              tone: 'cyan',
+            },
+            {
+              label: 'Jobs',
+              value: `${data?.jobs.completed ?? 0}`,
+              detail: `${data?.jobs.running ?? 0} running`,
+              icon: Activity,
+              tone: 'purple',
+            },
+          ]}
+        />
+
+        {/* Daily earnings bar chart */}
+        <SectionCard title="Earnings, last 30 days" icon={Zap}>
+          <div className="h-56 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dailyEarningsData} margin={{ top: 10, right: 12, bottom: 0, left: -12 }}>
+                <CartesianGrid stroke="var(--border-color)" strokeDasharray="3 3" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fill: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-jetbrains)' }}
+                  tickLine={false}
+                  axisLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fill: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-jetbrains)' }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip cursor={{ fill: 'rgba(34,197,94,0.1)' }} content={<ChartTooltip />} />
+                <Bar dataKey="amount" fill="var(--primary)" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
-          <button
-            className="dash-refresh-btn"
-            onClick={() => loadData(true)}
-            disabled={refreshing}
-            title="Refresh data"
-          >
-            <RefreshCw size={16} className={refreshing ? 'spin' : ''} />
-          </button>
-        </div>
-      </motion.div>
+        </SectionCard>
 
-      {/* ========== Stat Blocks ========== */}
-      <motion.div className="stat-blocks" variants={containerVariants}>
-        {stats.map((s) => (
-          <motion.div
-            key={s.label}
-            className={`stat-block ${s.colorClass}`}
-            variants={itemVariants}
-          >
-            <div className="stat-icon">{s.icon}</div>
-            <div className="stat-content">
-              <span className="stat-value">{s.value}</span>
-              <span className="stat-label">{s.label}</span>
+        {/* Nodes status mix */}
+        <SectionCard title="Node Status Mix" icon={Cpu}>
+          {nodeStatusData.length === 0 ? (
+            <div className="text-center py-8">
+              <Server size={32} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No nodes registered yet</p>
+              <Link
+                href="/deploy"
+                className="inline-flex items-center gap-1 mt-4 px-4 h-9 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors"
+              >
+                <Plus size={14} /> Add a node
+              </Link>
             </div>
-          </motion.div>
-        ))}
-      </motion.div>
-
-      {/* ========== Two-column: Node Status + Earnings Selector ========== */}
-      <motion.div className="dash-charts-row" style={{ gridTemplateColumns: '1fr 1fr' }} variants={itemVariants}>
-        {/* Node Status Donut */}
-        <div className="dash-chart-card">
-          <h3 className="dash-chart-title">Node Status</h3>
-          {nodeStatusData.length > 0 ? (
-            <div className="dash-chart-with-legend">
-              <div className="dash-pie-container">
-                <ResponsiveContainer width="100%" height={200}>
+          ) : (
+            <div className="flex flex-col sm:flex-row items-center gap-6">
+              <div className="h-40 w-40 relative">
+                <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={nodeStatusData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={78}
+                      innerRadius={40}
+                      outerRadius={70}
                       paddingAngle={2}
                       dataKey="value"
                     >
-                      {nodeStatusData.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
+                      {nodeStatusData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} stroke="transparent" />
                       ))}
                     </Pie>
                     <Tooltip content={<ChartTooltip />} />
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="dash-donut-center">
-                  <span className="dash-donut-value">{data?.nodes.total ?? 0}</span>
-                  <span className="dash-donut-label">Total</span>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="font-display text-2xl" style={{ color: 'var(--text-primary)' }}>
+                    {data?.nodes.total ?? 0}
+                  </span>
+                  <span className="font-mono text-[10px] tracking-[0.14em] uppercase" style={{ color: 'var(--text-muted)' }}>
+                    Total
+                  </span>
                 </div>
               </div>
-              <div className="dash-chart-legend">
-                {nodeStatusData.map((item, i) => (
-                  <div key={i} className="dash-legend-item">
-                    <span className="dash-legend-color" style={{ background: item.color }} />
-                    <span className="dash-legend-label">{item.name}</span>
-                    <span className="dash-legend-value">{item.value}</span>
+              <div className="flex-1 w-full space-y-2">
+                {nodeStatusData.map((entry) => (
+                  <div key={entry.name} className="flex items-center gap-3 text-sm">
+                    <span className="w-2.5 h-2.5 rounded-sm" style={{ background: entry.color }} />
+                    <span className="flex-1 font-mono text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+                      {entry.name}
+                    </span>
+                    <span className="font-mono text-sm" style={{ color: 'var(--text-primary)' }}>
+                      {entry.value}
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
-          ) : (
-            <div className="dash-chart-empty">No node data available</div>
           )}
-        </div>
+        </SectionCard>
+      </DashboardMainColumn>
 
-        {/* Earnings Period Selector */}
-        <div className="dash-chart-card" style={{ display: 'flex', flexDirection: 'column' }}>
-          <h3 className="dash-chart-title">Earnings</h3>
+      <DashboardRightRail>
+        <ClockCard />
 
-          {/* Period pills */}
-          <div style={{ display: 'flex', gap: '4px', padding: '4px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-lg)', width: 'fit-content' }}>
-            {(['today', 'week', 'month', 'allTime'] as Period[]).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  period === p
-                    ? 'text-white'
-                    : ''
-                }`}
-                style={{
-                  background: period === p ? 'var(--primary)' : 'transparent',
-                  color: period === p ? '#fff' : 'var(--text-muted)',
-                }}
-              >
-                {p === 'allTime' ? 'All Time' : p.charAt(0).toUpperCase() + p.slice(1)}
-              </button>
-            ))}
+        <QuickActions
+          actions={[
+            { label: 'Add Node',  href: '/deploy',      icon: Plus, emphasis: true },
+            { label: 'Nodes',     href: '/nodes',       icon: Server },
+            { label: 'Earnings',  href: '/earnings',    icon: DollarSign },
+            { label: 'Withdraw',  href: '/withdrawals', icon: ArrowDownToLine },
+          ]}
+        />
+
+        <ResourceAllocation
+          title="Network Health"
+          bars={[
+            {
+              label: 'Uptime (30d)',
+              value: data?.uptimePercent ?? 0,
+              tone: 'green',
+              detail: `${(data?.uptimePercent ?? 0).toFixed(1)}%`,
+            },
+            {
+              label: 'Online ratio',
+              value: onlinePct,
+              tone: 'cyan',
+              detail: `${data?.nodes.online ?? 0} / ${data?.nodes.total ?? 0}`,
+            },
+            {
+              label: 'Utilization',
+              value: utilizationPct,
+              tone: 'purple',
+              detail: `${data?.nodes.inUse ?? 0} renting`,
+            },
+          ]}
+        />
+
+        <SectionCard title="Paid Out" icon={Wallet}>
+          <p className="font-mono text-[11px] mb-2" style={{ color: 'var(--text-muted)' }}>
+            Lifetime payouts
+          </p>
+          <div className="font-display text-2xl tracking-tight" style={{ color: 'var(--text-primary)' }}>
+            {formatCurrency(data?.totalPaidOut ?? 0)}
           </div>
-
-          {/* Big number */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <span style={{ fontSize: '2.75rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.1 }}>
-              {formatCurrency(earningsValue)}
-            </span>
-            <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: 'var(--space-sm)' }}>
-              {period === 'today'
-                ? 'Earned today'
-                : period === 'week'
-                ? 'Last 7 days'
-                : period === 'month'
-                ? 'Last 30 days'
-                : 'Lifetime earnings'}
-            </span>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* ========== Daily Earnings Bar Chart (full width) ========== */}
-      <motion.div variants={itemVariants}>
-        <div className="dash-chart-card">
-          <h3 className="dash-chart-title">Daily Earnings (Last 30 Days)</h3>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={dailyEarningsData} margin={{ left: 10, right: 10, top: 10, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
-                tickFormatter={(v: number) => `$${v}`}
-              />
-              <Tooltip
-                contentStyle={{
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '8px',
-                  color: 'var(--text-primary)',
-                }}
-                formatter={(value) => [`$${Number(value).toFixed(2)}`, 'Earnings']}
-              />
-              <Bar dataKey="amount" fill="#22c55e" name="Earnings" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </motion.div>
-
-      {/* ========== Quick Actions ========== */}
-      <motion.div variants={itemVariants}>
-        <div className="dash-chart-card">
-          <h3 className="dash-chart-title">Quick Actions</h3>
-          <div style={{ display: 'flex', gap: 'var(--space-md)', flexWrap: 'wrap' }}>
-            <Link href="/deploy">
-              <button className="btn btn-primary">
-                <Plus size={16} />
-                Deploy New Node
-              </button>
-            </Link>
-            <button className="btn btn-secondary" disabled={actionLoading} onClick={async () => {
-              setActionLoading(true)
-              try {
-                const res = await nodeRunner.pauseAll()
-                toast('success', res.message)
-                loadData(true)
-              } catch (e) { toast('error', e instanceof Error ? e.message : 'Failed') }
-              finally { setActionLoading(false) }
-            }}>
-              <PauseCircle size={16} />
-              Pause All
-            </button>
-            <button className="btn btn-secondary" disabled={actionLoading} onClick={async () => {
-              setActionLoading(true)
-              try {
-                const res = await nodeRunner.resumeAll()
-                toast('success', res.message)
-                loadData(true)
-              } catch (e) { toast('error', e instanceof Error ? e.message : 'Failed') }
-              finally { setActionLoading(false) }
-            }}>
-              <PlayCircle size={16} />
-              Resume All
-            </button>
-          </div>
-        </div>
-      </motion.div>
-    </motion.div>
+          <p className="text-xs mt-2 flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
+            <Globe size={12} /> Settlement on Solana
+          </p>
+        </SectionCard>
+      </DashboardRightRail>
+    </DashboardShell>
   )
 }
