@@ -156,6 +156,26 @@ export const nodeRunner = {
     const qs = params ? '?' + new URLSearchParams(params).toString() : ''
     return apiFetch(`/v1/portal/node-runner/payouts${qs}`)
   },
+  // Payout-mode feature: read the current AUTO/MANUAL/SCHEDULED mode
+  // plus the live platform balance (computed from earnings - paid
+  // settlements at read time, so never drifts), and the "Withdraw
+  // now" trigger that bypasses any hold mode.
+  payoutMode: () =>
+    apiFetch<{ mode: 'AUTO' | 'MANUAL' | 'SCHEDULED'; scheduledAt: string | null; platformBalance: number }>(
+      '/v1/portal/node-runner/payouts/mode'
+    ),
+  withdrawNow: () =>
+    apiFetch<{
+      totalPaid: number
+      modeResetToAuto: boolean
+      settlements: Array<{
+        settlementId: string
+        success: boolean
+        txHash?: string
+        error?: string
+        amount: number
+      }>
+    }>('/v1/portal/node-runner/payouts/withdraw-now', { method: 'POST' }),
   settings: (data: unknown) => apiFetch('/v1/portal/node-runner/settings', { method: 'PATCH', body: data }),
   jobs: (params?: Record<string, string>) => {
     const qs = params ? '?' + new URLSearchParams(params).toString() : ''
