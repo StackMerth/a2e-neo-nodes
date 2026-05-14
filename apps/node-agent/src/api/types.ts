@@ -103,6 +103,36 @@ export interface HeartbeatResponse {
     heartbeatInterval?: number;
     jobPollInterval?: number;
   };
+  // Launch-blocker #2: server-driven SSH lifecycle. When present, the
+  // agent should run the corresponding action and report back via
+  // POST /v1/nodes/:id/ssh-sessions/:requestId/status.
+  sshSession?: SshSessionAction;
+}
+
+/**
+ * One pending SSH lifecycle action surfaced by the API. The agent
+ * acts on it once per request id and reports the resulting status
+ * back; subsequent heartbeats will not re-emit the same action.
+ */
+export type SshSessionAction =
+  | {
+      action: 'provision';
+      requestId: string;
+      username: string;
+      pubKey?: string;
+    }
+  | {
+      action: 'terminate';
+      requestId: string;
+      username: string;
+    };
+
+/**
+ * Agent → API callback payload for /v1/nodes/:id/ssh-sessions/:requestId/status.
+ */
+export interface SshSessionStatusUpdate {
+  status: 'PROVISIONING' | 'ACTIVE' | 'TERMINATED' | 'FAILED';
+  errorMessage?: string;
 }
 
 /**

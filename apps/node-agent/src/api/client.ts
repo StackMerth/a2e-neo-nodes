@@ -14,6 +14,7 @@ import type {
   JobCompleteRequest,
   JobFailRequest,
   ApiError,
+  SshSessionStatusUpdate,
 } from './types.js';
 
 const log = apiLogger();
@@ -283,6 +284,31 @@ export class ApiClient {
       { retries: 1 } // Only 1 retry for heartbeats
     );
     return response;
+  }
+
+  // ============ SSH Session Lifecycle (launch-blocker #2) ============
+
+  /**
+   * Report an SSH session lifecycle transition back to the API.
+   * Called by the session-manager after provisioning a user, after
+   * tearing one down, or when either operation fails.
+   */
+  async reportSshSessionStatus(
+    requestId: string,
+    payload: SshSessionStatusUpdate
+  ): Promise<void> {
+    if (!this.nodeId) {
+      throw new ApiClientError('Node not registered', undefined, 'NOT_REGISTERED', false);
+    }
+    log.info(
+      { nodeId: this.nodeId, requestId, status: payload.status },
+      'Reporting SSH session status'
+    );
+    await this.request<{ acknowledged: boolean }>(
+      'POST',
+      `/v1/nodes/${this.nodeId}/ssh-sessions/${requestId}/status`,
+      payload
+    );
   }
 
   // ============ Job Operations ============
