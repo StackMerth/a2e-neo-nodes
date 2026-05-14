@@ -167,7 +167,7 @@ export default function RequestComputePage() {
       title="Request Compute"
       subtitle="Select your GPU tier, quantity, and rental duration"
     >
-      <div className="lg:col-span-3 max-w-3xl mx-auto w-full space-y-6">
+      <div className="lg:col-span-3 w-full space-y-6">
         {/* GPU Tier */}
         <FormCard
           title="GPU Tier"
@@ -175,7 +175,7 @@ export default function RequestComputePage() {
           icon={Server}
         >
           <FormSection>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
               {GPU_TIERS.map(t => {
                 const isSelected = selectedTier === t.id
                 const ts = TIER_STYLES[t.id]!
