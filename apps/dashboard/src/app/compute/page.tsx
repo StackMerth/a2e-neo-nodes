@@ -1,28 +1,25 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { motion } from 'framer-motion'
 import {
   Server,
   CheckCircle,
   Clock,
   XCircle,
   Loader2,
-  RefreshCw,
   Lock,
   Key,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
-
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
-}
-const itemVar = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-}
+import {
+  DashboardShell,
+  MetricTriad,
+  SectionCard,
+  DataTableCard,
+  type DataTableColumn,
+  type MetricCardData,
+} from '@/components/dashboard/FuturisticShell'
 
 interface ComputeRequest {
   id: string
@@ -43,6 +40,8 @@ interface ComputeRequest {
   // WAITLISTED rows so the admin can see why a request was held.
   eligibilityFlags?: string[]
 }
+
+type ComputeRow = ComputeRequest & Record<string, unknown>
 
 interface TierAvailability {
   tier: string
@@ -178,16 +177,16 @@ export default function ComputeRequestsPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  // Details modal — opened from yellow flag chip OR info icon next to status.
-  // Single surface for "tell me everything about this row" (admin note + every
+  // Details modal: opened from yellow flag chip OR info icon next to status.
+  // Single surface for "tell me everything about this row" (admin note plus every
   // eligibility flag with a friendly description).
   const [detailsRequest, setDetailsRequest] = useState<ComputeRequest | null>(null)
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      // 'TERMINATED' is a derived client-side view of COMPLETED rows —
-      // ask the API for COMPLETED and filter on the client. 'all' fetches
+      // 'TERMINATED' is a derived client-side view of COMPLETED rows.
+      // Ask the API for COMPLETED and filter on the client. 'all' fetches
       // everything. Otherwise pass the status straight through.
       const apiStatus = filter === 'all'
         ? undefined
@@ -251,7 +250,7 @@ export default function ComputeRequestsPage() {
     try {
       setActionLoading(id)
       await api.compute.releaseHold(id)
-      setToast('Hold released — auto-allocator will pick this up within 10s')
+      setToast('Hold released, auto-allocator will pick this up within 10s')
       await loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to release hold')
@@ -449,373 +448,280 @@ export default function ComputeRequestsPage() {
     }
   }
 
-  if (loading && requests.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
-      </div>
-    )
-  }
+  const metrics: MetricCardData[] = [
+    { label: 'Pending Requests', value: counts.pending, icon: Clock, tone: 'orange' },
+    { label: 'Active Allocations', value: counts.active, icon: CheckCircle, tone: 'green' },
+    { label: 'Approved', value: counts.approved, icon: Server, tone: 'blue' },
+  ]
+
+  const columns: Array<DataTableColumn<ComputeRow>> = [
+    {
+      key: 'user',
+      header: 'Buyer',
+      render: (r) => (
+        <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+          {r.user?.email ?? 'N/A'}
+        </span>
+      ),
+    },
+    {
+      key: 'gpuTier',
+      header: 'GPU',
+      render: (r) => (
+        <span className="px-2 py-1 bg-accent/10 text-accent rounded text-sm font-medium">
+          {r.gpuTier}
+        </span>
+      ),
+    },
+    {
+      key: 'gpuCount',
+      header: 'Count',
+      mono: true,
+      render: (r) => r.gpuCount,
+    },
+    {
+      key: 'durationDays',
+      header: 'Duration',
+      mono: true,
+      render: (r) => `${r.durationDays}d`,
+    },
+    {
+      key: 'totalCost',
+      header: 'Cost',
+      align: 'right',
+      mono: true,
+      render: (r) => `$${r.totalCost.toLocaleString()}`,
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (r) => (
+        <div className="flex items-center gap-2">
+          {getStatusBadge(r.status)}
+          {r.adminNote && (
+            <button
+              type="button"
+              onClick={() => setDetailsRequest(r)}
+              title={`Note: ${r.adminNote.slice(0, 80)}${r.adminNote.length > 80 ? '…' : ''}`}
+              className="w-5 h-5 rounded-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 flex items-center justify-center text-xs font-bold transition-colors cursor-pointer"
+            >
+              i
+            </button>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'requestedAt',
+      header: 'Date',
+      mono: true,
+      render: (r) => new Date(r.requestedAt).toLocaleDateString(),
+    },
+    {
+      key: 'id',
+      header: 'Actions',
+      align: 'right',
+      render: (r) => (
+        <div className="flex items-center justify-end gap-2 flex-wrap">
+          {r.status === 'PENDING' && (
+            <>
+              {r.eligibilityFlags && r.eligibilityFlags.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setDetailsRequest(r)}
+                  className="px-2 py-1 text-xs rounded bg-accent/10 text-accent font-mono whitespace-nowrap hover:bg-accent/20 transition-colors cursor-pointer"
+                  title="Click for details"
+                >
+                  {r.eligibilityFlags.includes('WAITING_ON_CAPACITY')
+                    ? 'waiting on capacity'
+                    : r.eligibilityFlags.includes('MANUAL_REVIEW_PASSED')
+                      ? 'reviewed'
+                      : `${r.eligibilityFlags.length} flag(s)`}
+                </button>
+              )}
+              <button
+                onClick={() => handleApprove(r.id)}
+                disabled={actionLoading === r.id}
+                className="px-3 py-1.5 text-sm bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {actionLoading === r.id ? <Loader2 size={14} className="animate-spin" /> : 'Approve'}
+              </button>
+              <button
+                onClick={() => handleAutoAllocate(r.id)}
+                disabled={actionLoading === r.id}
+                className="px-3 py-1.5 text-sm bg-accent/10 text-accent hover:bg-accent/20 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Auto Allocate
+              </button>
+              <button
+                onClick={() => openRejectModal(r)}
+                className="px-3 py-1.5 text-sm text-error/70 hover:text-error transition-colors"
+              >
+                Reject
+              </button>
+            </>
+          )}
+          {r.status === 'WAITLISTED' && (
+            <>
+              {r.eligibilityFlags && r.eligibilityFlags.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setDetailsRequest(r)}
+                  className="px-2 py-1 text-xs rounded bg-warning/10 text-warning font-mono whitespace-nowrap hover:bg-warning/20 transition-colors cursor-pointer"
+                  title="Click to see why this request is held"
+                >
+                  {r.eligibilityFlags.filter(f => f.startsWith('HOLD_')).length} flag(s) ⓘ
+                </button>
+              )}
+              <button
+                onClick={() => handleReleaseHold(r.id)}
+                disabled={actionLoading === r.id}
+                className="px-3 py-1.5 text-sm bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {actionLoading === r.id ? <Loader2 size={14} className="animate-spin" /> : 'Release Hold'}
+              </button>
+              <button
+                onClick={() => openRejectModal(r)}
+                className="px-3 py-1.5 text-sm text-error/70 hover:text-error transition-colors"
+              >
+                Reject
+              </button>
+            </>
+          )}
+          {r.status === 'APPROVED' && (
+            <>
+              <button
+                onClick={() => handleAutoAllocate(r.id)}
+                disabled={actionLoading === r.id}
+                className="px-3 py-1.5 text-sm bg-accent/10 text-accent hover:bg-accent/20 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {actionLoading === r.id ? <Loader2 size={14} className="animate-spin" /> : 'Auto Allocate'}
+              </button>
+              <button
+                onClick={() => openAllocateModal(r)}
+                className="px-3 py-1.5 text-sm bg-accent-purple/10 text-accent-purple hover:bg-accent-purple/20 rounded-lg transition-colors"
+              >
+                Manual Allocate
+              </button>
+              <button
+                onClick={() => openActivateModal(r)}
+                className="px-3 py-1.5 text-sm bg-warning/10 text-warning hover:bg-warning/20 rounded-lg transition-colors"
+              >
+                Activate
+              </button>
+            </>
+          )}
+          {r.status === 'ALLOCATED' && (
+            <button
+              onClick={() => handleActivateDirect(r.id)}
+              disabled={actionLoading === r.id}
+              className="px-3 py-1.5 text-sm bg-accent text-white hover:bg-accent-hover rounded-lg transition-colors disabled:opacity-50"
+            >
+              {actionLoading === r.id ? <Loader2 size={14} className="animate-spin" /> : 'Activate'}
+            </button>
+          )}
+          {r.status === 'ACTIVE' && (
+            <button
+              onClick={() => handleComplete(r.id)}
+              disabled={actionLoading === r.id}
+              className="px-3 py-1.5 text-sm bg-text-muted/10 text-text-secondary hover:bg-text-muted/20 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {actionLoading === r.id ? <Loader2 size={14} className="animate-spin" /> : 'Complete'}
+            </button>
+          )}
+        </div>
+      ),
+    },
+  ]
+
+  const statusPills = (
+    <div className="flex items-center gap-2 flex-wrap">
+      {STATUS_FILTERS.map((sf) => {
+        const isActive = filter === sf.value
+        return (
+          <button
+            key={sf.value}
+            onClick={() => setFilter(sf.value)}
+            className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+            style={isActive
+              ? { background: 'var(--primary)', color: '#fff' }
+              : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }
+            }
+          >
+            {sf.label}
+            <span className="ml-1.5" style={{ color: isActive ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)' }}>
+              {getFilterCount(sf.value)}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
 
   return (
-    <motion.div className="space-y-6" variants={container} initial="hidden" animate="show">
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-4 right-4 z-50 bg-accent text-white px-4 py-3 rounded-lg shadow-lg animate-scaleIn">
-          {toast}
-        </div>
-      )}
-
-      {/* Header */}
-      <motion.div variants={itemVar} className="dash-header">
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-          <Server size={28} style={{ color: 'var(--primary)' }} />
-          Compute Requests
-          {counts.pending > 0 && (
-            <span className="px-2.5 py-1 text-sm font-semibold bg-warning/10 text-warning rounded-lg">
-              {counts.pending} pending
-            </span>
-          )}
-        </h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            onClick={() => loadData()}
-            className="px-3 py-2 text-sm bg-surface border border-border rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors flex items-center gap-2"
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
-        </div>
-      </motion.div>
-
-      {error && (
-        <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg">
-          {error}
-          <button
-            onClick={() => setError(null)}
-            className="ml-3 text-error/70 hover:text-error underline text-sm"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {/* KPI Stat Blocks */}
-      <motion.div variants={itemVar} className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div
-          className={`bg-surface border rounded-xl p-4 cursor-pointer transition-colors ${
-            filter === 'PENDING' ? 'border-warning' : 'border-border hover:border-warning/50'
-          }`}
-          onClick={() => setFilter(filter === 'PENDING' ? 'all' : 'PENDING')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-warning/10 rounded-lg flex items-center justify-center">
-              <Clock size={20} className="text-warning" />
-            </div>
-            <div>
-              <p className="text-text-muted text-sm">Pending Requests</p>
-              <p className="text-2xl font-bold text-warning">{counts.pending}</p>
-            </div>
+    <DashboardShell
+      title="Compute Requests"
+      subtitle={counts.pending > 0 ? `${counts.pending} pending review` : `${requests.length} requests`}
+      onRefresh={loadData}
+      refreshing={loading}
+    >
+      <div className="lg:col-span-3 space-y-6">
+        {/* Toast */}
+        {toast && (
+          <div className="fixed top-4 right-4 z-50 bg-accent text-white px-4 py-3 rounded-lg shadow-lg animate-scaleIn">
+            {toast}
           </div>
-        </div>
+        )}
 
-        <div
-          className={`bg-surface border rounded-xl p-4 cursor-pointer transition-colors ${
-            filter === 'ACTIVE' ? 'border-accent' : 'border-border hover:border-accent/50'
-          }`}
-          onClick={() => setFilter(filter === 'ACTIVE' ? 'all' : 'ACTIVE')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center">
-              <CheckCircle size={20} className="text-accent" />
-            </div>
-            <div>
-              <p className="text-text-muted text-sm">Active Allocations</p>
-              <p className="text-2xl font-bold text-accent">{counts.active}</p>
-            </div>
+        {error && (
+          <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg">
+            {error}
+            <button
+              onClick={() => setError(null)}
+              className="ml-3 text-error/70 hover:text-error underline text-sm"
+            >
+              Dismiss
+            </button>
           </div>
-        </div>
+        )}
 
-        <div
-          className={`bg-surface border rounded-xl p-4 cursor-pointer transition-colors ${
-            filter === 'APPROVED' ? 'border-blue-400' : 'border-border hover:border-blue-400/50'
-          }`}
-          onClick={() => setFilter(filter === 'APPROVED' ? 'all' : 'APPROVED')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
-              <Server size={20} className="text-blue-400" />
-            </div>
-            <div>
-              <p className="text-text-muted text-sm">Approved</p>
-              <p className="text-2xl font-bold text-blue-400">{counts.approved}</p>
-            </div>
-          </div>
-        </div>
+        <MetricTriad metrics={metrics} />
 
-        <div
-          className={`bg-surface border rounded-xl p-4 cursor-pointer transition-colors ${
-            filter === 'COMPLETED' ? 'border-text-muted' : 'border-border hover:border-text-muted/50'
-          }`}
-          onClick={() => setFilter(filter === 'COMPLETED' ? 'all' : 'COMPLETED')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-text-muted/10 rounded-lg flex items-center justify-center">
-              <XCircle size={20} className="text-text-muted" />
-            </div>
-            <div>
-              <p className="text-text-muted text-sm">Completed</p>
-              <p className="text-2xl font-bold text-text-muted">{counts.completed}</p>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Node Availability */}
-      <motion.div variants={itemVar}>
-        <div className="rounded-xl p-5" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-          <h2 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
-            <Server size={18} className="text-accent" />
-            Node Availability
-          </h2>
+        <SectionCard title="Node Availability" icon={Server}>
           {availability.length === 0 ? (
-            <p className="text-text-muted text-sm">No availability data</p>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No availability data</p>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
               {availability.map((tier) => (
-                <div key={tier.tier} className="bg-surface border border-border rounded-lg p-3">
-                  <p className="text-sm font-medium text-accent">{tier.tier}</p>
-                  <p className="text-lg font-bold text-text-primary">
-                    {tier.idle} <span className="text-text-muted text-sm font-normal">/ {tier.total}</span>
+                <div
+                  key={tier.tier}
+                  className="rounded-md p-3 border"
+                  style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-color)' }}
+                >
+                  <p className="text-sm font-medium" style={{ color: 'var(--primary)' }}>{tier.tier}</p>
+                  <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+                    {tier.idle} <span className="text-sm font-normal" style={{ color: 'var(--text-muted)' }}>/ {tier.total}</span>
                   </p>
-                  <p className="text-xs text-text-muted">idle nodes</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>idle nodes</p>
                 </div>
               ))}
             </div>
           )}
-        </div>
-      </motion.div>
+        </SectionCard>
 
-      {/* Status Filter Pills */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {STATUS_FILTERS.map((sf) => (
-          <button
-            key={sf.value}
-            onClick={() => setFilter(sf.value)}
-            className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
-              filter === sf.value
-                ? 'bg-accent text-white'
-                : 'bg-surface border border-border text-text-secondary hover:text-text-primary hover:bg-surface-hover'
-            }`}
-          >
-            {sf.label}
-            <span className={`ml-1.5 ${filter === sf.value ? 'text-white/70' : 'text-text-muted'}`}>
-              {getFilterCount(sf.value)}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {/* Requests Table */}
-      <div className="rounded-xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-text-primary">
-            {filter === 'all' ? 'All Requests' : `${STATUS_FILTERS.find(f => f.value === filter)?.label} Requests`}
-          </h2>
-          {filter !== 'all' && (
-            <button
-              onClick={() => setFilter('all')}
-              className="text-sm text-accent hover:underline"
-            >
-              Show all
-            </button>
-          )}
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-surface-hover">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase">Buyer</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase">GPU Tier</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase">Count</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase">Duration</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase">Cost</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase">Date</th>
-                <th className="px-6 py-3 text-right text-xs font-semibold text-text-muted uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {requests.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-text-muted">
-                    No compute requests found
-                  </td>
-                </tr>
-              ) : (
-                requests.map((req) => (
-                  <tr key={req.id} className="hover:bg-surface-hover transition-colors">
-                    <td className="px-6 py-4">
-                      <p className="font-medium text-text-primary text-sm">{req.user?.email ?? "N/A"}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="px-2 py-1 bg-accent/10 text-accent rounded text-sm font-medium">
-                        {req.gpuTier}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-text-primary font-medium">
-                      {req.gpuCount}
-                    </td>
-                    <td className="px-6 py-4 text-text-secondary text-sm">
-                      {req.durationDays}d
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-text-primary font-medium">
-                        ${req.totalCost.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        {getStatusBadge(req.status)}
-                        {/* Info icon on rows with an adminNote — clicking
-                            opens the Details modal so admins can read
-                            'Buyer terminated. Refund $X sent: DEV_...' or
-                            'Auto-completed: rental term reached' without
-                            digging into the API. */}
-                        {req.adminNote && (
-                          <button
-                            type="button"
-                            onClick={() => setDetailsRequest(req)}
-                            title={`Note: ${req.adminNote.slice(0, 80)}${req.adminNote.length > 80 ? '…' : ''}`}
-                            className="w-5 h-5 rounded-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 flex items-center justify-center text-xs font-bold transition-colors cursor-pointer"
-                          >
-                            i
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-text-muted text-sm">
-                      {new Date(req.requestedAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2 flex-wrap">
-                        {req.status === 'PENDING' && (
-                          <>
-                            {/* Click-through flag chip — opens Details modal
-                                with friendly descriptions of every flag plus
-                                the adminNote. Hover tooltip kept as a hint. */}
-                            {req.eligibilityFlags && req.eligibilityFlags.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setDetailsRequest(req)}
-                                className="px-2 py-1 text-xs rounded bg-accent/10 text-accent font-mono whitespace-nowrap hover:bg-accent/20 transition-colors cursor-pointer"
-                                title="Click for details"
-                              >
-                                {req.eligibilityFlags.includes('WAITING_ON_CAPACITY')
-                                  ? 'waiting on capacity'
-                                  : req.eligibilityFlags.includes('MANUAL_REVIEW_PASSED')
-                                    ? 'reviewed'
-                                    : `${req.eligibilityFlags.length} flag(s)`}
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleApprove(req.id)}
-                              disabled={actionLoading === req.id}
-                              className="px-3 py-1.5 text-sm bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors disabled:opacity-50"
-                            >
-                              {actionLoading === req.id ? <Loader2 size={14} className="animate-spin" /> : 'Approve'}
-                            </button>
-                            <button
-                              onClick={() => handleAutoAllocate(req.id)}
-                              disabled={actionLoading === req.id}
-                              className="px-3 py-1.5 text-sm bg-accent/10 text-accent hover:bg-accent/20 rounded-lg transition-colors disabled:opacity-50"
-                            >
-                              Auto Allocate
-                            </button>
-                            <button
-                              onClick={() => openRejectModal(req)}
-                              className="px-3 py-1.5 text-sm text-error/70 hover:text-error transition-colors"
-                            >
-                              Reject
-                            </button>
-                          </>
-                        )}
-                        {req.status === 'WAITLISTED' && (
-                          <>
-                            {req.eligibilityFlags && req.eligibilityFlags.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setDetailsRequest(req)}
-                                className="px-2 py-1 text-xs rounded bg-warning/10 text-warning font-mono whitespace-nowrap hover:bg-warning/20 transition-colors cursor-pointer"
-                                title="Click to see why this request is held"
-                              >
-                                {req.eligibilityFlags.filter(f => f.startsWith('HOLD_')).length} flag(s) ⓘ
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleReleaseHold(req.id)}
-                              disabled={actionLoading === req.id}
-                              className="px-3 py-1.5 text-sm bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors disabled:opacity-50"
-                            >
-                              {actionLoading === req.id ? <Loader2 size={14} className="animate-spin" /> : 'Release Hold'}
-                            </button>
-                            <button
-                              onClick={() => openRejectModal(req)}
-                              className="px-3 py-1.5 text-sm text-error/70 hover:text-error transition-colors"
-                            >
-                              Reject
-                            </button>
-                          </>
-                        )}
-                        {req.status === 'APPROVED' && (
-                          <>
-                            <button
-                              onClick={() => handleAutoAllocate(req.id)}
-                              disabled={actionLoading === req.id}
-                              className="px-3 py-1.5 text-sm bg-accent/10 text-accent hover:bg-accent/20 rounded-lg transition-colors disabled:opacity-50"
-                            >
-                              {actionLoading === req.id ? <Loader2 size={14} className="animate-spin" /> : 'Auto Allocate'}
-                            </button>
-                            <button
-                              onClick={() => openAllocateModal(req)}
-                              className="px-3 py-1.5 text-sm bg-accent-purple/10 text-accent-purple hover:bg-accent-purple/20 rounded-lg transition-colors"
-                            >
-                              Manual Allocate
-                            </button>
-                            <button
-                              onClick={() => openActivateModal(req)}
-                              className="px-3 py-1.5 text-sm bg-warning/10 text-warning hover:bg-warning/20 rounded-lg transition-colors"
-                            >
-                              Activate
-                            </button>
-                          </>
-                        )}
-                        {req.status === 'ALLOCATED' && (
-                          <button
-                            onClick={() => handleActivateDirect(req.id)}
-                            disabled={actionLoading === req.id}
-                            className="px-3 py-1.5 text-sm bg-accent text-white hover:bg-accent-hover rounded-lg transition-colors disabled:opacity-50"
-                          >
-                            {actionLoading === req.id ? <Loader2 size={14} className="animate-spin" /> : 'Activate'}
-                          </button>
-                        )}
-                        {req.status === 'ACTIVE' && (
-                          <button
-                            onClick={() => handleComplete(req.id)}
-                            disabled={actionLoading === req.id}
-                            className="px-3 py-1.5 text-sm bg-text-muted/10 text-text-secondary hover:bg-text-muted/20 rounded-lg transition-colors disabled:opacity-50"
-                          >
-                            {actionLoading === req.id ? <Loader2 size={14} className="animate-spin" /> : 'Complete'}
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DataTableCard<ComputeRow>
+          title={filter === 'all' ? 'All Requests' : `${STATUS_FILTERS.find(f => f.value === filter)?.label} Requests`}
+          icon={Server}
+          actions={statusPills}
+          columns={columns}
+          rows={requests as ComputeRow[]}
+          loading={loading && requests.length === 0}
+          empty={
+            <p className="text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+              No compute requests found
+            </p>
+          }
+        />
       </div>
 
       {/* Manual Allocate Modal */}
@@ -829,9 +735,9 @@ export default function ComputeRequestsPage() {
           <p className="text-text-muted">
             Manually allocate nodes for{' '}
             <span className="text-text-primary font-medium">{selectedRequest?.user?.email ?? "N/A"}</span>
-            {' '}&mdash;{' '}
+            {' '}({' '}
             <span className="text-accent font-medium">{selectedRequest?.gpuTier}</span>
-            {' '}x{selectedRequest?.gpuCount}
+            {' '}x{selectedRequest?.gpuCount})
           </p>
 
           <div>
@@ -943,9 +849,9 @@ export default function ComputeRequestsPage() {
           <p className="text-text-muted">
             Provide SSH access to activate{' '}
             <span className="text-text-primary font-medium">{selectedRequest?.user?.email ?? "N/A"}</span>
-            {' '}&mdash;{' '}
+            {' '}({' '}
             <span className="text-accent font-medium">{selectedRequest?.gpuTier}</span>
-            {' '}x{selectedRequest?.gpuCount}
+            {' '}x{selectedRequest?.gpuCount})
           </p>
 
           <div className="grid grid-cols-2 gap-4">
@@ -1084,7 +990,7 @@ export default function ComputeRequestsPage() {
         </form>
       </Modal>
 
-      {/* Details modal — shows adminNote + every eligibility flag with a
+      {/* Details modal shows adminNote and every eligibility flag with a
           friendly description. Triggered by either the yellow flag chip
           or the small 'i' info icon next to the status badge. */}
       <Modal
@@ -1106,7 +1012,7 @@ export default function ComputeRequestsPage() {
               </div>
               <div>
                 <p className="text-xs text-text-muted uppercase tracking-wide">GPU</p>
-                <p className="text-text-primary">{detailsRequest.gpuCount}× {detailsRequest.gpuTier}</p>
+                <p className="text-text-primary">{detailsRequest.gpuCount}x {detailsRequest.gpuTier}</p>
               </div>
               <div>
                 <p className="text-xs text-text-muted uppercase tracking-wide">Total Cost</p>
@@ -1144,7 +1050,7 @@ export default function ComputeRequestsPage() {
                         <div className="flex items-center gap-2 mb-1">
                           <span className={`text-xs font-mono font-semibold ${colors.text}`}>{flag}</span>
                           {meta && (
-                            <span className={`text-xs ${colors.text} opacity-80`}>· {meta.title}</span>
+                            <span className={`text-xs ${colors.text} opacity-80`}>{meta.title}</span>
                           )}
                         </div>
                         <p className="text-xs text-text-secondary">
@@ -1175,6 +1081,6 @@ export default function ComputeRequestsPage() {
           </div>
         )}
       </Modal>
-    </motion.div>
+    </DashboardShell>
   )
 }

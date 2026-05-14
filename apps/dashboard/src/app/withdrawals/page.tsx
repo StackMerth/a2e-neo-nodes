@@ -1,28 +1,23 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { motion } from 'framer-motion'
 import {
   Wallet,
   Clock,
   CheckCircle,
   Loader2,
-  RefreshCw,
-  XCircle,
   ExternalLink,
   ArrowRightCircle,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
-
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
-}
-const itemVar = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-}
+import {
+  DashboardShell,
+  MetricTriad,
+  DataTableCard,
+  type DataTableColumn,
+  type MetricCardData,
+} from '@/components/dashboard/FuturisticShell'
 
 interface Withdrawal {
   id: string
@@ -36,6 +31,8 @@ interface Withdrawal {
   createdAt: string
   updatedAt: string
 }
+
+type WithdrawalRow = Withdrawal & Record<string, unknown>
 
 interface Counts {
   pending: number
@@ -243,262 +240,172 @@ export default function WithdrawalsPage() {
     }
   }
 
-  if (loading && withdrawals.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
-      </div>
-    )
-  }
+  const metrics: MetricCardData[] = [
+    { label: 'Pending', value: counts.pending, icon: Clock, tone: 'orange' },
+    { label: 'Processing', value: counts.processing, icon: ArrowRightCircle, tone: 'purple' },
+    { label: 'Completed', value: counts.completed, icon: CheckCircle, tone: 'green' },
+  ]
 
-  return (
-    <motion.div className="space-y-6" variants={container} initial="hidden" animate="show">
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-4 right-4 z-50 bg-accent text-white px-4 py-3 rounded-lg shadow-lg animate-scaleIn">
-          {toast}
-        </div>
-      )}
-
-      {/* Header */}
-      <motion.div variants={itemVar} className="dash-header">
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-          <Wallet size={28} style={{ color: 'var(--primary)' }} />
-          Withdrawal Requests
-          {counts.pending > 0 && (
-            <span className="px-2.5 py-1 text-sm font-semibold bg-warning/10 text-warning rounded-lg">
-              {counts.pending} pending
-            </span>
+  const columns: Array<DataTableColumn<WithdrawalRow>> = [
+    {
+      key: 'nodeRunnerName',
+      header: 'Node Runner',
+      render: (w) => (
+        <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+          {w.nodeRunnerName}
+        </span>
+      ),
+    },
+    {
+      key: 'amount',
+      header: 'Amount',
+      align: 'right',
+      mono: true,
+      render: (w) => `$${w.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    },
+    {
+      key: 'walletAddress',
+      header: 'Wallet',
+      mono: true,
+      render: (w) => (
+        <span className="text-xs cursor-pointer hover:text-accent" title={w.walletAddress} style={{ color: 'var(--text-secondary)' }}>
+          {truncateAddress(w.walletAddress)}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (w) => getStatusBadge(w.status),
+    },
+    {
+      key: 'createdAt',
+      header: 'Date',
+      mono: true,
+      render: (w) => new Date(w.createdAt).toLocaleDateString(),
+    },
+    {
+      key: 'id',
+      header: 'Actions',
+      align: 'right',
+      render: (w) => (
+        <div className="flex items-center justify-end gap-2">
+          {w.status === 'PENDING' && (
+            <>
+              <button
+                onClick={() => handleApprove(w.id)}
+                disabled={actionLoading === w.id}
+                className="px-3 py-1.5 text-xs bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-md transition-colors disabled:opacity-50"
+              >
+                {actionLoading === w.id ? <Loader2 size={12} className="animate-spin" /> : 'Approve'}
+              </button>
+              <button
+                onClick={() => openRejectModal(w)}
+                className="px-3 py-1.5 text-xs text-error/70 hover:text-error transition-colors"
+              >
+                Reject
+              </button>
+            </>
           )}
-        </h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            onClick={() => loadData()}
-            className="px-3 py-2 text-sm bg-surface border border-border rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors flex items-center gap-2"
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
+          {w.status === 'APPROVED' && (
+            <button
+              onClick={() => handleProcess(w.id)}
+              disabled={actionLoading === w.id}
+              className="px-3 py-1.5 text-xs bg-accent-purple/10 text-accent-purple hover:bg-accent-purple/20 rounded-md transition-colors disabled:opacity-50"
+            >
+              {actionLoading === w.id ? <Loader2 size={12} className="animate-spin" /> : 'Process'}
+            </button>
+          )}
+          {w.status === 'PROCESSING' && (
+            <button
+              onClick={() => openCompleteModal(w)}
+              className="px-3 py-1.5 text-xs bg-accent/10 text-accent hover:bg-accent/20 rounded-md transition-colors"
+            >
+              Complete
+            </button>
+          )}
+          {w.status === 'COMPLETED' && w.txHash && (
+            <a
+              href={`https://solscan.io/tx/${w.txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 text-xs bg-accent/10 text-accent hover:bg-accent/20 rounded-md transition-colors inline-flex items-center gap-1.5"
+            >
+              View TX
+              <ExternalLink size={10} />
+            </a>
+          )}
         </div>
-      </motion.div>
+      ),
+    },
+  ]
 
-      {error && (
-        <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg">
-          {error}
-          <button
-            onClick={() => setError(null)}
-            className="ml-3 text-error/70 hover:text-error underline text-sm"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {/* KPI Stat Blocks */}
-      <motion.div variants={itemVar} className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div
-          className={`bg-surface border rounded-xl p-4 cursor-pointer transition-colors ${
-            filter === 'PENDING' ? 'border-warning' : 'border-border hover:border-warning/50'
-          }`}
-          onClick={() => setFilter(filter === 'PENDING' ? 'all' : 'PENDING')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-warning/10 rounded-lg flex items-center justify-center">
-              <Clock size={20} className="text-warning" />
-            </div>
-            <div>
-              <p className="text-text-muted text-sm">Pending</p>
-              <p className="text-2xl font-bold text-warning">{counts.pending}</p>
-            </div>
-          </div>
-        </div>
-
-        <div
-          className={`bg-surface border rounded-xl p-4 cursor-pointer transition-colors ${
-            filter === 'APPROVED' ? 'border-blue-400' : 'border-border hover:border-blue-400/50'
-          }`}
-          onClick={() => setFilter(filter === 'APPROVED' ? 'all' : 'APPROVED')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
-              <CheckCircle size={20} className="text-blue-400" />
-            </div>
-            <div>
-              <p className="text-text-muted text-sm">Approved</p>
-              <p className="text-2xl font-bold text-blue-400">{counts.approved}</p>
-            </div>
-          </div>
-        </div>
-
-        <div
-          className={`bg-surface border rounded-xl p-4 cursor-pointer transition-colors ${
-            filter === 'PROCESSING' ? 'border-accent-purple' : 'border-border hover:border-accent-purple/50'
-          }`}
-          onClick={() => setFilter(filter === 'PROCESSING' ? 'all' : 'PROCESSING')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-accent-purple/10 rounded-lg flex items-center justify-center">
-              <ArrowRightCircle size={20} className="text-accent-purple" />
-            </div>
-            <div>
-              <p className="text-text-muted text-sm">Processing</p>
-              <p className="text-2xl font-bold text-accent-purple">{counts.processing}</p>
-            </div>
-          </div>
-        </div>
-
-        <div
-          className={`bg-surface border rounded-xl p-4 cursor-pointer transition-colors ${
-            filter === 'COMPLETED' ? 'border-accent' : 'border-border hover:border-accent/50'
-          }`}
-          onClick={() => setFilter(filter === 'COMPLETED' ? 'all' : 'COMPLETED')}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center">
-              <CheckCircle size={20} className="text-accent" />
-            </div>
-            <div>
-              <p className="text-text-muted text-sm">Completed</p>
-              <p className="text-2xl font-bold text-accent">{counts.completed}</p>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Status Filter Pills */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {STATUS_FILTERS.map((sf) => (
+  const statusPills = (
+    <div className="flex items-center gap-2 flex-wrap">
+      {STATUS_FILTERS.map((sf) => {
+        const isActive = filter === sf.value
+        return (
           <button
             key={sf.value}
             onClick={() => setFilter(sf.value)}
-            className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
-              filter === sf.value
-                ? 'bg-accent text-white'
-                : 'bg-surface border border-border text-text-secondary hover:text-text-primary hover:bg-surface-hover'
-            }`}
+            className="px-3 py-1.5 text-xs font-medium rounded-md transition-colors"
+            style={isActive
+              ? { background: 'var(--primary)', color: '#fff' }
+              : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }
+            }
           >
             {sf.label}
-            <span className={`ml-1.5 ${filter === sf.value ? 'text-white/70' : 'text-text-muted'}`}>
+            <span className="ml-1.5" style={{ color: isActive ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)' }}>
               {getFilterCount(sf.value)}
             </span>
           </button>
-        ))}
-      </div>
+        )
+      })}
+    </div>
+  )
 
-      {/* Requests Table */}
-      <div className="rounded-xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-text-primary">
-            {filter === 'all' ? 'All Withdrawals' : `${STATUS_FILTERS.find(f => f.value === filter)?.label} Withdrawals`}
-          </h2>
-          {filter !== 'all' && (
+  return (
+    <DashboardShell
+      title="Withdrawal Requests"
+      subtitle={counts.pending > 0 ? `${counts.pending} pending review` : `${withdrawals.length} withdrawals`}
+      onRefresh={loadData}
+      refreshing={loading}
+    >
+      <div className="lg:col-span-3 space-y-6">
+        {/* Toast */}
+        {toast && (
+          <div className="fixed top-4 right-4 z-50 bg-accent text-white px-4 py-3 rounded-lg shadow-lg animate-scaleIn">
+            {toast}
+          </div>
+        )}
+
+        {error && (
+          <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg">
+            {error}
             <button
-              onClick={() => setFilter('all')}
-              className="text-sm text-accent hover:underline"
+              onClick={() => setError(null)}
+              className="ml-3 text-error/70 hover:text-error underline text-sm"
             >
-              Show all
+              Dismiss
             </button>
-          )}
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-surface-hover">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase">Node Runner</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase">Amount</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase">Wallet Address</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase">Date</th>
-                <th className="px-6 py-3 text-right text-xs font-semibold text-text-muted uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {withdrawals.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-text-muted">
-                    No withdrawal requests found
-                  </td>
-                </tr>
-              ) : (
-                withdrawals.map((w) => (
-                  <tr key={w.id} className="hover:bg-surface-hover transition-colors">
-                    <td className="px-6 py-4">
-                      <p className="font-medium text-text-primary text-sm">{w.nodeRunnerName}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-text-primary font-medium">
-                        ${w.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className="font-mono text-sm text-text-secondary cursor-pointer hover:text-accent transition-colors"
-                        title={w.walletAddress}
-                      >
-                        {truncateAddress(w.walletAddress)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {getStatusBadge(w.status)}
-                    </td>
-                    <td className="px-6 py-4 text-text-muted text-sm">
-                      {new Date(w.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {w.status === 'PENDING' && (
-                          <>
-                            <button
-                              onClick={() => handleApprove(w.id)}
-                              disabled={actionLoading === w.id}
-                              className="px-3 py-1.5 text-sm bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors disabled:opacity-50"
-                            >
-                              {actionLoading === w.id ? <Loader2 size={14} className="animate-spin" /> : 'Approve'}
-                            </button>
-                            <button
-                              onClick={() => openRejectModal(w)}
-                              className="px-3 py-1.5 text-sm text-error/70 hover:text-error transition-colors"
-                            >
-                              Reject
-                            </button>
-                          </>
-                        )}
-                        {w.status === 'APPROVED' && (
-                          <button
-                            onClick={() => handleProcess(w.id)}
-                            disabled={actionLoading === w.id}
-                            className="px-3 py-1.5 text-sm bg-accent-purple/10 text-accent-purple hover:bg-accent-purple/20 rounded-lg transition-colors disabled:opacity-50"
-                          >
-                            {actionLoading === w.id ? <Loader2 size={14} className="animate-spin" /> : 'Process'}
-                          </button>
-                        )}
-                        {w.status === 'PROCESSING' && (
-                          <button
-                            onClick={() => openCompleteModal(w)}
-                            className="px-3 py-1.5 text-sm bg-accent/10 text-accent hover:bg-accent/20 rounded-lg transition-colors"
-                          >
-                            Complete
-                          </button>
-                        )}
-                        {w.status === 'COMPLETED' && w.txHash && (
-                          <a
-                            href={`https://solscan.io/tx/${w.txHash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-3 py-1.5 text-sm bg-accent/10 text-accent hover:bg-accent/20 rounded-lg transition-colors inline-flex items-center gap-1.5"
-                          >
-                            View TX
-                            <ExternalLink size={12} />
-                          </a>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+          </div>
+        )}
+
+        <MetricTriad metrics={metrics} />
+
+        <DataTableCard<WithdrawalRow>
+          title={filter === 'all' ? 'All Withdrawals' : `${STATUS_FILTERS.find(f => f.value === filter)?.label} Withdrawals`}
+          icon={Wallet}
+          actions={statusPills}
+          columns={columns}
+          rows={withdrawals as WithdrawalRow[]}
+          loading={loading && withdrawals.length === 0}
+          empty={
+            <p className="text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+              No withdrawal requests found
+            </p>
+          }
+        />
       </div>
 
       {/* Complete Modal - Enter TX Hash */}
@@ -512,7 +419,7 @@ export default function WithdrawalsPage() {
           <p className="text-text-muted">
             Enter the on-chain transaction hash to confirm the withdrawal to{' '}
             <span className="text-text-primary font-medium">{selectedWithdrawal?.nodeRunnerName}</span>
-            {' '}&mdash;{' '}
+            {' '}for{' '}
             <span className="text-accent font-medium">
               ${selectedWithdrawal?.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
@@ -609,6 +516,6 @@ export default function WithdrawalsPage() {
           </div>
         </form>
       </Modal>
-    </motion.div>
+    </DashboardShell>
   )
 }

@@ -2,28 +2,20 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
 import {
   Server, Wifi, WifiOff, Pause, Wrench, Activity, Plus, Search,
-  RefreshCw, X, AlertCircle, CheckCircle, XCircle, AlertTriangle,
+  X, AlertCircle, CheckCircle,
   Clock, Heart, Play, Trash2,
 } from 'lucide-react'
-import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
-import { DistributionBar } from '@/components/ui/ProgressBar'
-import { Skeleton, SkeletonStatCard } from '@/components/ui/Skeleton'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { api } from '@/lib/api'
-
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
-}
-const item = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-}
+import {
+  DashboardShell,
+  SectionCard,
+  EmptyState,
+} from '@/components/dashboard/FuturisticShell'
 
 const GPU_TIERS = [
   { value: '', label: 'All Tiers' },
@@ -52,32 +44,6 @@ interface Node {
   region: string | null
   lastHeartbeat: string
   createdAt: string
-}
-
-function SkeletonNodesList() {
-  return (
-    <div className="space-y-3 mt-4">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="p-4 rounded-xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-          <div className="flex items-start justify-between">
-            <div className="flex-1 space-y-3">
-              <div className="flex items-center gap-2">
-                <Skeleton className="w-3 h-3 rounded-full" />
-                <Skeleton className="h-4 w-16" />
-                <Skeleton className="h-5 w-12 rounded-md" />
-              </div>
-              <Skeleton className="h-3 w-64" />
-              <Skeleton className="h-3 w-40" />
-            </div>
-            <div className="flex gap-2">
-              <Skeleton className="h-8 w-20 rounded-lg" />
-              <Skeleton className="h-8 w-16 rounded-lg" />
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
 }
 
 export default function NodesPage() {
@@ -131,16 +97,6 @@ export default function NodesPage() {
       return true
     })
   }, [nodes, statusFilter, tierFilter, searchQuery])
-
-  const stats = useMemo(() => {
-    const byStatus: Record<string, number> = {}
-    const byTier: Record<string, number> = {}
-    nodes.forEach((node) => {
-      byStatus[node.status] = (byStatus[node.status] || 0) + 1
-      byTier[node.gpuTier] = (byTier[node.gpuTier] || 0) + 1
-    })
-    return { byStatus, byTier }
-  }, [nodes])
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
@@ -219,17 +175,6 @@ export default function NodesPage() {
     }
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'ONLINE': return 'accent'
-      case 'DEGRADED': return 'orange'
-      case 'OFFLINE': return 'gray'
-      case 'PAUSED': return 'gray'
-      case 'MAINTENANCE': return 'blue'
-      default: return 'gray'
-    }
-  }
-
   const getStatusDotStyle = (status: string) => {
     switch (status) {
       case 'ONLINE': return { background: 'var(--success)', boxShadow: '0 0 8px var(--success)' }
@@ -263,371 +208,269 @@ export default function NodesPage() {
     }
   }
 
-  const statusDistribution = Object.entries(stats.byStatus).map(([status, count]) => ({
-    label: status,
-    value: count,
-    color: getStatusColor(status) as 'accent' | 'orange' | 'blue' | 'purple' | 'gray',
-  }))
+  const filterBar = (
+    <div className="flex gap-2 flex-wrap items-center">
+      <div className="flex-1 min-w-[180px]">
+        <Input
+          placeholder="Search by wallet or ID..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          icon={<Search size={14} />}
+        />
+      </div>
+      <Select
+        value={statusFilter}
+        onChange={(e) => setStatusFilter(e.target.value)}
+        options={STATUS_OPTIONS}
+        className="w-32"
+      />
+      <Select
+        value={tierFilter}
+        onChange={(e) => setTierFilter(e.target.value)}
+        options={GPU_TIERS}
+        className="w-32"
+      />
+      {(statusFilter || tierFilter || searchQuery) && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setStatusFilter('')
+            setTierFilter('')
+            setSearchQuery('')
+          }}
+          icon={<X size={14} />}
+        >
+          Clear
+        </Button>
+      )}
+      <Link href="/nodes/add">
+        <Button size="sm" icon={<Plus size={14} />}>Add Node</Button>
+      </Link>
+    </div>
+  )
 
   return (
-    <motion.div
-      className="space-y-8"
-      variants={container}
-      initial="hidden"
-      animate="show"
+    <DashboardShell
+      title="Nodes"
+      subtitle={`${nodes.length} node${nodes.length !== 1 ? 's' : ''} registered`}
+      onRefresh={loadNodes}
+      refreshing={loading}
     >
-      {/* Header */}
-      <motion.div variants={item} className="dash-header">
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-          <Server size={28} style={{ color: 'var(--primary)' }} />
-          Nodes
-        </h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Button onClick={loadNodes} variant="secondary" size="sm" icon={<RefreshCw size={16} />}>Refresh</Button>
-          <Link href="/nodes/add"><Button size="sm" icon={<Plus size={16} />}>Add Node</Button></Link>
-        </div>
-      </motion.div>
-
-      {/* Alerts */}
-      {error && (
-        <motion.div
-          variants={item}
-          className="p-4 rounded-xl flex items-center gap-3"
-          style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}
-        >
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(239,68,68,0.2)' }}>
-            <AlertCircle size={16} style={{ color: 'var(--danger)' }} />
-          </div>
-          <p style={{ color: 'var(--danger)' }} className="text-sm">{error}</p>
-          <button onClick={() => setError(null)} className="ml-auto" style={{ color: 'var(--danger)' }}>
-            <X size={16} />
-          </button>
-        </motion.div>
-      )}
-
-      {success && (
-        <motion.div
-          variants={item}
-          className="p-4 rounded-xl flex items-center gap-3"
-          style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}
-        >
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(34,197,94,0.2)' }}>
-            <CheckCircle size={16} style={{ color: 'var(--success)' }} />
-          </div>
-          <p style={{ color: 'var(--success)' }} className="text-sm">{success}</p>
-        </motion.div>
-      )}
-
-      {/* Stats Grid */}
-      <motion.div variants={item}>
-        {loading ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <SkeletonStatCard key={i} />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              label="Total Nodes"
-              value={nodes.length}
-              variant="accent"
-              animate
-              icon={<Server size={20} />}
-            />
-            <StatCard
-              label="Online"
-              value={stats.byStatus['ONLINE'] ?? 0}
-              variant="accent"
-              animate
-              icon={<Wifi size={20} />}
-              trend={nodes.length > 0 ? {
-                value: Math.round((stats.byStatus['ONLINE'] ?? 0) / nodes.length * 100),
-                isPositive: true
-              } : undefined}
-            />
-            <StatCard
-              label="Degraded"
-              value={stats.byStatus['DEGRADED'] ?? 0}
-              variant="orange"
-              animate
-              icon={<AlertTriangle size={20} />}
-            />
-            <StatCard
-              label="Offline"
-              value={stats.byStatus['OFFLINE'] ?? 0}
-              variant="purple"
-              animate
-              icon={<XCircle size={20} />}
-            />
+      <div className="lg:col-span-3 space-y-6">
+        {error && (
+          <div
+            className="p-4 rounded-md flex items-center gap-3"
+            style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}
+          >
+            <div className="w-8 h-8 rounded-md flex items-center justify-center shrink-0" style={{ background: 'rgba(239,68,68,0.2)' }}>
+              <AlertCircle size={16} style={{ color: 'var(--danger)' }} />
+            </div>
+            <p style={{ color: 'var(--danger)' }} className="text-sm">{error}</p>
+            <button onClick={() => setError(null)} className="ml-auto" style={{ color: 'var(--danger)' }}>
+              <X size={16} />
+            </button>
           </div>
         )}
-      </motion.div>
 
-      {/* Status Distribution */}
-      {!loading && nodes.length > 0 && (
-        <motion.div variants={item}>
-          <Card variant="glass" hover={false}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Node Status Distribution</h3>
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{nodes.length} total nodes</span>
+        {success && (
+          <div
+            className="p-4 rounded-md flex items-center gap-3"
+            style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}
+          >
+            <div className="w-8 h-8 rounded-md flex items-center justify-center shrink-0" style={{ background: 'rgba(34,197,94,0.2)' }}>
+              <CheckCircle size={16} style={{ color: 'var(--success)' }} />
             </div>
-            <DistributionBar segments={statusDistribution} size="lg" showLegend />
-          </Card>
-        </motion.div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Add Node Card */}
-        <motion.div variants={item}>
-          <div className="rounded-xl p-6 h-fit" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-emerald-400 flex items-center justify-center">
-                <Plus size={20} style={{ color: 'var(--bg-primary)' }} />
-              </div>
-              <div>
-                <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Add Node</h3>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Connect a GPU server to the network</p>
-              </div>
-            </div>
-
-            <Link href="/nodes/add">
-              <Button variant="gradient" className="w-full mb-6">
-                <Server size={16} className="mr-2" />
-                Add Node via SSH
-              </Button>
-            </Link>
-
-            <div className="pt-4" style={{ borderTop: '1px solid var(--border-color)' }}>
-              <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>Or register manually (for testing):</p>
-            </div>
-
-            <form onSubmit={handleRegister} className="space-y-4">
-              <Input
-                label="Wallet Address"
-                value={walletAddress}
-                onChange={(e) => setWalletAddress(e.target.value)}
-                placeholder="0x..."
-              />
-              <Select
-                label="GPU Tier"
-                value={gpuTier}
-                onChange={(e) => setGpuTier(e.target.value)}
-                options={GPU_TIERS.slice(1)}
-              />
-              <Input
-                label="Region (optional)"
-                value={region}
-                onChange={(e) => setRegion(e.target.value)}
-                placeholder="us-east-1"
-              />
-              <Button type="submit" loading={registering} variant="gradient" className="w-full">
-                Register Node
-              </Button>
-            </form>
+            <p style={{ color: 'var(--success)' }} className="text-sm">{success}</p>
           </div>
-        </motion.div>
+        )}
 
-        {/* Nodes List */}
-        <motion.div variants={item} className="lg:col-span-2">
-          <div className="rounded-xl p-6" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-400 flex items-center justify-center">
-                  <Server size={20} style={{ color: 'var(--bg-primary)' }} />
-                </div>
-                <div>
-                  <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Registered Nodes</h3>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{filteredNodes.length} of {nodes.length} nodes</p>
-                </div>
-              </div>
-              <Button variant="ghost" size="sm" onClick={loadNodes} icon={<RefreshCw size={16} />}>
-                Refresh
-              </Button>
-            </div>
-
-            <div className="flex flex-wrap gap-3 pb-4" style={{ borderBottom: '1px solid var(--border-color)' }}>
-              <div className="flex-1 min-w-[200px]">
-                <Input
-                  placeholder="Search by wallet or ID..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  icon={<Search size={16} />}
-                />
-              </div>
-              <Select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                options={STATUS_OPTIONS}
-                className="w-36"
-              />
-              <Select
-                value={tierFilter}
-                onChange={(e) => setTierFilter(e.target.value)}
-                options={GPU_TIERS}
-                className="w-36"
-              />
-              {(statusFilter || tierFilter || searchQuery) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setStatusFilter('')
-                    setTierFilter('')
-                    setSearchQuery('')
-                  }}
-                  icon={<X size={16} />}
-                >
-                  Clear
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1">
+            <SectionCard title="Register Node" icon={Plus}>
+              <Link href="/nodes/add" className="block mb-5">
+                <Button variant="gradient" className="w-full">
+                  <Server size={14} className="mr-2" />
+                  Add Node via SSH
                 </Button>
-              )}
-            </div>
-
-            {loading ? (
-              <SkeletonNodesList />
-            ) : filteredNodes.length === 0 ? (
-              <div className="py-16 text-center">
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: 'var(--bg-card-hover)' }}>
-                  <Server size={32} style={{ color: 'var(--text-muted)' }} />
-                </div>
-                <h3 className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-                  {nodes.length === 0 ? 'No nodes registered' : 'No nodes match your filters'}
-                </h3>
-                <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-                  {nodes.length === 0
-                    ? 'Register your first GPU node to get started'
-                    : 'Try adjusting your search or filter criteria'}
-                </p>
-                {nodes.length > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setStatusFilter('')
-                      setTierFilter('')
-                      setSearchQuery('')
-                    }}
-                  >
-                    Clear Filters
-                  </Button>
-                )}
+              </Link>
+              <div className="pt-4" style={{ borderTop: '1px solid var(--border-color)' }}>
+                <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>Or register manually (for testing):</p>
               </div>
-            ) : (
-              <div className="space-y-3 mt-4">
-                {filteredNodes.map((node) => (
-                  <div
-                    key={node.id}
-                    className="p-4 rounded-xl transition-all duration-300 group"
-                    style={{
-                      background: 'var(--glass-bg)',
-                      border: '1px solid var(--glass-border)',
-                    }}
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <Link href={`/nodes/${node.id}`} className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="w-3 h-3 rounded-full" style={getStatusDotStyle(node.status)} />
-                          <span
-                            className="px-2.5 py-1 text-xs font-medium rounded-lg inline-flex items-center gap-1"
-                            style={getStatusBadgeStyle(node.status)}
-                          >
-                            {getStatusIcon(node.status)}
-                            {node.status}
-                          </span>
-                          <span
-                            className="px-2.5 py-1 text-xs font-medium rounded-lg"
-                            style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--success)', border: '1px solid rgba(34,197,94,0.2)' }}
-                          >
-                            {node.gpuTier}
-                          </span>
-                          {node.region && (
+              <form onSubmit={handleRegister} className="space-y-4">
+                <Input
+                  label="Wallet Address"
+                  value={walletAddress}
+                  onChange={(e) => setWalletAddress(e.target.value)}
+                  placeholder="0x..."
+                />
+                <Select
+                  label="GPU Tier"
+                  value={gpuTier}
+                  onChange={(e) => setGpuTier(e.target.value)}
+                  options={GPU_TIERS.slice(1)}
+                />
+                <Input
+                  label="Region (optional)"
+                  value={region}
+                  onChange={(e) => setRegion(e.target.value)}
+                  placeholder="us-east-1"
+                />
+                <Button type="submit" loading={registering} variant="gradient" className="w-full">
+                  Register Node
+                </Button>
+              </form>
+            </SectionCard>
+          </div>
+
+          <div className="lg:col-span-2">
+            <SectionCard
+              title="Registered Nodes"
+              icon={Server}
+              actions={filterBar}
+            >
+              {loading ? (
+                <p className="font-mono text-xs text-center py-10" style={{ color: 'var(--text-muted)' }}>
+                  Loading...
+                </p>
+              ) : filteredNodes.length === 0 ? (
+                <EmptyState
+                  icon={Server}
+                  title={nodes.length === 0 ? 'No nodes registered' : 'No nodes match your filters'}
+                  description={
+                    nodes.length === 0
+                      ? 'Register your first GPU node to get started'
+                      : 'Try adjusting your search or filter criteria'
+                  }
+                  action={
+                    nodes.length > 0 ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setStatusFilter('')
+                          setTierFilter('')
+                          setSearchQuery('')
+                        }}
+                      >
+                        Clear Filters
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              ) : (
+                <div className="space-y-3">
+                  {filteredNodes.map((node) => (
+                    <div
+                      key={node.id}
+                      className="p-4 rounded-md transition-all duration-300 group"
+                      style={{
+                        background: 'var(--bg-elevated)',
+                        border: '1px solid var(--border-color)',
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <Link href={`/nodes/${node.id}`} className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3 mb-2 flex-wrap">
+                            <span className="w-3 h-3 rounded-full" style={getStatusDotStyle(node.status)} />
                             <span
-                              className="px-2.5 py-1 text-xs rounded-lg"
-                              style={{ background: 'var(--bg-card)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
+                              className="px-2.5 py-1 text-xs font-medium rounded-md inline-flex items-center gap-1"
+                              style={getStatusBadgeStyle(node.status)}
                             >
-                              {node.region}
+                              {getStatusIcon(node.status)}
+                              {node.status}
                             </span>
+                            <span
+                              className="px-2.5 py-1 text-xs font-medium rounded-md"
+                              style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--success)', border: '1px solid rgba(34,197,94,0.2)' }}
+                            >
+                              {node.gpuTier}
+                            </span>
+                            {node.region && (
+                              <span
+                                className="px-2.5 py-1 text-xs rounded-md"
+                                style={{ background: 'var(--bg-card)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
+                              >
+                                {node.region}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm font-mono truncate" style={{ color: 'var(--text-muted)' }}>
+                            {node.walletAddress}
+                          </p>
+                          <div className="flex items-center gap-4 mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                            <span className="flex items-center gap-1">
+                              <Clock size={12} />
+                              Last heartbeat: {new Date(node.lastHeartbeat).toLocaleString()}
+                            </span>
+                          </div>
+                        </Link>
+
+                        <div className="flex items-center gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => { e.preventDefault(); handleHeartbeat(node.id) }}
+                            disabled={actionLoading === node.id}
+                            icon={<Heart size={14} />}
+                          >
+                            {actionLoading === node.id ? '...' : 'Heartbeat'}
+                          </Button>
+
+                          {node.status === 'ONLINE' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => { e.preventDefault(); handleStatusChange(node.id, 'PAUSED') }}
+                              disabled={actionLoading === node.id}
+                              icon={<Pause size={14} />}
+                            >
+                              Pause
+                            </Button>
                           )}
+
+                          {node.status === 'PAUSED' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => { e.preventDefault(); handleStatusChange(node.id, 'ONLINE') }}
+                              disabled={actionLoading === node.id}
+                              icon={<Play size={14} />}
+                            >
+                              Resume
+                            </Button>
+                          )}
+
+                          {node.status !== 'MAINTENANCE' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => { e.preventDefault(); handleStatusChange(node.id, 'MAINTENANCE') }}
+                              disabled={actionLoading === node.id}
+                              icon={<Wrench size={14} />}
+                            >
+                              Maint.
+                            </Button>
+                          )}
+
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => { e.preventDefault(); handleDelete(node.id) }}
+                            disabled={actionLoading === node.id}
+                            icon={<Trash2 size={14} />}
+                          >
+                            Delete
+                          </Button>
                         </div>
-                        <p className="text-sm font-mono truncate transition-colors" style={{ color: 'var(--text-muted)' }}>
-                          {node.walletAddress}
-                        </p>
-                        <div className="flex items-center gap-4 mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-                          <span className="flex items-center gap-1">
-                            <Clock size={12} />
-                            Last heartbeat: {new Date(node.lastHeartbeat).toLocaleString()}
-                          </span>
-                        </div>
-                      </Link>
-
-                      <div className="flex items-center gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => { e.preventDefault(); handleHeartbeat(node.id) }}
-                          disabled={actionLoading === node.id}
-                          icon={<Heart size={16} />}
-                        >
-                          {actionLoading === node.id ? '...' : 'Heartbeat'}
-                        </Button>
-
-                        {node.status === 'ONLINE' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => { e.preventDefault(); handleStatusChange(node.id, 'PAUSED') }}
-                            disabled={actionLoading === node.id}
-                            className="text-warning hover:text-warning"
-                            icon={<Pause size={16} />}
-                          >
-                            Pause
-                          </Button>
-                        )}
-
-                        {node.status === 'PAUSED' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => { e.preventDefault(); handleStatusChange(node.id, 'ONLINE') }}
-                            disabled={actionLoading === node.id}
-                            className="text-accent hover:text-accent"
-                            icon={<Play size={16} />}
-                          >
-                            Resume
-                          </Button>
-                        )}
-
-                        {node.status !== 'MAINTENANCE' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => { e.preventDefault(); handleStatusChange(node.id, 'MAINTENANCE') }}
-                            disabled={actionLoading === node.id}
-                            className="text-accent-blue hover:text-accent-blue"
-                            icon={<Wrench size={16} />}
-                          >
-                            Maint.
-                          </Button>
-                        )}
-
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => { e.preventDefault(); handleDelete(node.id) }}
-                          disabled={actionLoading === node.id}
-                          className="text-error hover:text-error"
-                          icon={<Trash2 size={16} />}
-                        >
-                          Delete
-                        </Button>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </SectionCard>
           </div>
-        </motion.div>
+        </div>
       </div>
 
       <ConfirmModal
@@ -644,6 +487,6 @@ export default function NodesPage() {
         variant="danger"
         loading={actionLoading === nodeToDelete}
       />
-    </motion.div>
+    </DashboardShell>
   )
 }
