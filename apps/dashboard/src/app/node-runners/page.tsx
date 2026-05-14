@@ -2,15 +2,19 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Users, Plus, Edit, Trash2 } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { Users, DollarSign, Server, Plus, Edit, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
-import {
-  DashboardShell,
-  DataTableCard,
-  EmptyState,
-  type DataTableColumn,
-} from '@/components/dashboard/FuturisticShell'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface NodeRunner {
   id: string
@@ -21,8 +25,6 @@ interface NodeRunner {
   totalInvested: number
   createdAt: string
 }
-
-type NodeRunnerRow = NodeRunner & Record<string, unknown>
 
 export default function NodeRunnersPage() {
   const [nodeRunners, setNodeRunners] = useState<NodeRunner[]>([])
@@ -126,135 +128,191 @@ export default function NodeRunnersPage() {
     }
   }
 
-  const columns: Array<DataTableColumn<NodeRunnerRow>> = [
-    {
-      key: 'name',
-      header: 'Node Runner',
-      render: (r) => (
-        <div>
-          <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{r.name}</p>
-          {r.email && (
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{r.email}</p>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: 'walletAddress',
-      header: 'Wallet',
-      mono: true,
-      render: (r) => `${r.walletAddress.slice(0, 8)}...${r.walletAddress.slice(-6)}`,
-    },
-    {
-      key: 'nodeCount',
-      header: 'Nodes',
-      render: (r) => (
-        <span
-          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-          style={{
-            background: r.nodeCount > 0 ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
-            color: r.nodeCount > 0 ? 'var(--success)' : 'var(--warning)',
-          }}
-        >
-          {r.nodeCount} {r.nodeCount === 1 ? 'node' : 'nodes'}
-        </span>
-      ),
-    },
-    {
-      key: 'totalInvested',
-      header: 'Total Invested',
-      align: 'right',
-      mono: true,
-      render: (r) => `$${r.totalInvested.toLocaleString()}`,
-    },
-    {
-      key: 'createdAt',
-      header: 'Joined',
-      align: 'right',
-      mono: true,
-      render: (r) => new Date(r.createdAt).toLocaleDateString(),
-    },
-    {
-      key: 'id',
-      header: 'Actions',
-      align: 'right',
-      render: (r) => (
-        <div className="flex items-center justify-end gap-2">
-          <Link
-            href={`/node-runners/${r.id}`}
-            className="text-sm font-medium hover:underline"
-            style={{ color: 'var(--primary)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            View
-          </Link>
-          <button
-            onClick={(e) => { e.stopPropagation(); openEditModal(r) }}
-            className="text-sm flex items-center gap-1"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            <Edit size={14} />
-            Edit
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setDeleteRunner(r)
-              setShowDeleteModal(true)
-            }}
-            className="text-sm flex items-center gap-1"
-            style={{ color: 'var(--danger)' }}
-          >
-            <Trash2 size={14} />
-            Delete
-          </button>
-        </div>
-      ),
-    },
-  ]
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
+      </div>
+    )
+  }
 
   return (
-    <DashboardShell
-      title="Node Runners"
-      subtitle="Manage GPU node investors and their investments"
-      onRefresh={loadNodeRunners}
-      refreshing={loading}
-    >
-      <div className="lg:col-span-3 space-y-6">
-        {error && (
-          <div
-            className="px-4 py-3 rounded-md text-sm"
-            style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: 'var(--danger)' }}
-          >
-            {error}
-          </div>
-        )}
+    <motion.div className="space-y-6" variants={container} initial="hidden" animate="show">
+      {/* Header */}
+      <motion.div variants={item} className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Node Runners</h1>
+          <p style={{ color: 'var(--text-muted)' }} className="mt-1">Manage GPU node investors and their investments</p>
+        </div>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+        >
+          <Plus size={20} />
+          Add Node Runner
+        </button>
+      </motion.div>
 
-        <DataTableCard<NodeRunnerRow>
-          title="Node Runners"
-          icon={Users}
-          actions={
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="px-3 py-1.5 text-sm rounded-md font-medium transition-colors flex items-center gap-1"
-              style={{ background: 'var(--primary)', color: '#fff' }}
-            >
-              <Plus size={14} />
-              Add Node Runner
-            </button>
-          }
-          columns={columns}
-          rows={nodeRunners as NodeRunnerRow[]}
-          loading={loading}
-          empty={
-            <EmptyState
-              icon={Users}
-              title="No node runners yet"
-              description={'Click "Add Node Runner" to get started.'}
-            />
-          }
-        />
-      </div>
+      {error && (
+        <div className="bg-error/10 border border-error/20 text-error px-4 py-3 rounded-lg">
+          {error}
+        </div>
+      )}
+
+      {/* Stats Cards */}
+      <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: 'rgba(59,130,246,0.1)' }}>
+              <Users size={20} style={{ color: 'var(--info)' }} />
+            </div>
+            <div>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Total Node Runners</p>
+              <p className="text-2xl font-bold mt-1" style={{ color: 'var(--text-primary)' }}>{nodeRunners.length}</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: 'rgba(34,197,94,0.1)' }}>
+              <DollarSign size={20} style={{ color: 'var(--success)' }} />
+            </div>
+            <div>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Total Invested</p>
+              <p className="text-2xl font-bold mt-1" style={{ color: 'var(--success)' }}>
+                ${nodeRunners.reduce((sum, nr) => sum + nr.totalInvested, 0).toLocaleString()}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: 'rgba(139,92,246,0.1)' }}>
+              <Server size={20} style={{ color: '#8b5cf6' }} />
+            </div>
+            <div>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Active Nodes</p>
+              <p className="text-2xl font-bold mt-1" style={{ color: 'var(--text-primary)' }}>
+                {nodeRunners.reduce((sum, nr) => sum + nr.nodeCount, 0)}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl p-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: 'rgba(245,158,11,0.1)' }}>
+              <DollarSign size={20} style={{ color: 'var(--warning)' }} />
+            </div>
+            <div>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Avg Investment</p>
+              <p className="text-2xl font-bold mt-1" style={{ color: 'var(--text-primary)' }}>
+                ${nodeRunners.length > 0
+                  ? Math.round(nodeRunners.reduce((sum, nr) => sum + nr.totalInvested, 0) / nodeRunners.length).toLocaleString()
+                  : 0}
+              </p>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Node Runners Table */}
+      <motion.div variants={item} className="rounded-xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+        <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border-color)' }}>
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
+                Node Runner
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
+                Wallet Address
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
+                Nodes
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
+                Total Invested
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">
+                Joined
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-semibold text-text-muted uppercase tracking-wider">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {nodeRunners.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-6 py-12 text-center text-text-muted">
+                  No node runners yet. Click "Add Node Runner" to get started.
+                </td>
+              </tr>
+            ) : (
+              nodeRunners.map((runner) => (
+                <tr key={runner.id} className="hover:bg-surface-hover transition-colors">
+                  <td className="px-6 py-4">
+                    <div>
+                      <p className="font-medium text-text-primary">{runner.name}</p>
+                      {runner.email && (
+                        <p className="text-sm text-text-muted">{runner.email}</p>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <code className="text-sm text-text-secondary bg-background px-2 py-1 rounded">
+                      {runner.walletAddress.slice(0, 8)}...{runner.walletAddress.slice(-6)}
+                    </code>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      runner.nodeCount > 0
+                        ? 'bg-accent/10 text-accent'
+                        : 'bg-warning/10 text-warning'
+                    }`}>
+                      {runner.nodeCount} {runner.nodeCount === 1 ? 'node' : 'nodes'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-text-primary font-medium">
+                    ${runner.totalInvested.toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 text-text-muted text-sm">
+                    {new Date(runner.createdAt).toLocaleDateString()}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <Link
+                        href={`/node-runners/${runner.id}`}
+                        className="text-accent hover:text-accent-hover font-medium text-sm"
+                      >
+                        View
+                      </Link>
+                      <button
+                        onClick={() => openEditModal(runner)}
+                        className="text-text-muted hover:text-text-primary text-sm flex items-center gap-1"
+                      >
+                        <Edit size={14} />
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDeleteRunner(runner)
+                          setShowDeleteModal(true)
+                        }}
+                        className="text-error/70 hover:text-error text-sm flex items-center gap-1"
+                      >
+                        <Trash2 size={14} />
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+        </div>
+      </motion.div>
 
       {/* Create Modal */}
       <Modal
@@ -415,6 +473,14 @@ export default function NodeRunnersPage() {
           </div>
         </div>
       </Modal>
-    </DashboardShell>
+    </motion.div>
+  )
+}
+
+function _PlusIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+    </svg>
   )
 }

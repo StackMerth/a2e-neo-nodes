@@ -6,18 +6,14 @@
  * Default view: PENDING ratings awaiting approve/reject. Filter pills
  * also expose APPROVED + REJECTED for audit. Each row shows the rental
  * context (GPU, tier, cost) so the moderator can spot obvious mismatches
- * (e.g. 1-star comment about preemption on a SPOT rental, that's
+ * (e.g. 1-star comment about preemption on a SPOT rental — that's
  * working as designed, not the operator's fault).
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { Star, Check, X, Loader2, MessageSquare } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { Star, Check, X, Loader2, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api'
-import {
-  DashboardShell,
-  DataTableCard,
-  type DataTableColumn,
-} from '@/components/dashboard/FuturisticShell'
 
 type StatusFilter = 'PENDING' | 'APPROVED' | 'REJECTED' | 'all'
 
@@ -41,14 +37,15 @@ interface Rating {
   }
 }
 
-type RatingRow = Rating & Record<string, unknown>
-
 const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
   { label: 'Pending', value: 'PENDING' },
   { label: 'Approved', value: 'APPROVED' },
   { label: 'Rejected', value: 'REJECTED' },
   { label: 'All', value: 'all' },
 ]
+
+const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } }
+const item = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { duration: 0.25 } } }
 
 export default function RatingsModerationPage() {
   const [ratings, setRatings] = useState<Rating[]>([])
@@ -106,204 +103,183 @@ export default function RatingsModerationPage() {
     return counts.pending + counts.approved + counts.rejected
   }
 
-  const columns: Array<DataTableColumn<RatingRow>> = [
-    {
-      key: 'score',
-      header: 'Rating',
-      render: (r) => (
-        <div className="flex items-center gap-1">
-          {[1, 2, 3, 4, 5].map(n => (
-            <Star
-              key={n}
-              size={14}
-              fill={n <= r.score ? '#facc15' : 'transparent'}
-              style={{ color: n <= r.score ? '#facc15' : 'var(--text-muted)' }}
-            />
-          ))}
-        </div>
-      ),
-    },
-    {
-      key: 'comment',
-      header: 'Comment / Context',
-      render: (r) => (
-        <div className="max-w-md space-y-1">
-          {r.comment && (
-            <p className="text-sm italic" style={{ color: 'var(--text-primary)' }}>
-              &ldquo;{r.comment}&rdquo;
-            </p>
-          )}
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            {r.computeRequest.gpuCount}x {r.computeRequest.gpuTier} ({r.computeRequest.tier}) — ${r.computeRequest.totalCost.toFixed(2)}
+  return (
+    <motion.div className="space-y-6" variants={container} initial="hidden" animate="show">
+      <motion.div variants={item} className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">Ratings Moderation</h1>
+          <p className="text-sm mt-1 text-text-muted">
+            Review buyer-submitted ratings before they affect operator reputation scores or appear on public profiles.
           </p>
-          {r.moderationNote && (
-            <p
-              className="text-xs px-2 py-1 rounded mt-1 inline-block"
-              style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--text-secondary)', border: '1px solid rgba(239,68,68,0.2)' }}
-            >
-              Reject note: {r.moderationNote}
-            </p>
-          )}
         </div>
-      ),
-    },
-    {
-      key: 'nodeRunner',
-      header: 'Operator',
-      render: (r) => (
-        <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-          {r.nodeRunner.name}
-        </span>
-      ),
-    },
-    {
-      key: 'buyer',
-      header: 'Buyer',
-      mono: true,
-      render: (r) => (
-        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-          {r.buyer?.email ?? (r.buyer?.walletAddress ? `${r.buyer.walletAddress.slice(0, 10)}...` : 'unknown')}
-        </span>
-      ),
-    },
-    {
-      key: 'moderationStatus',
-      header: 'Status',
-      render: (r) => {
-        const color =
-          r.moderationStatus === 'APPROVED'
-            ? { bg: 'rgba(34,197,94,0.1)', text: 'var(--success)' }
-            : r.moderationStatus === 'REJECTED'
-              ? { bg: 'rgba(239,68,68,0.1)', text: 'var(--danger)' }
-              : { bg: 'rgba(245,158,11,0.1)', text: 'var(--warning)' }
-        return (
-          <span
-            className="text-xs font-medium px-2 py-0.5 rounded-full"
-            style={{ background: color.bg, color: color.text }}
-          >
-            {r.moderationStatus}
-          </span>
-        )
-      },
-    },
-    {
-      key: 'createdAt',
-      header: 'Submitted',
-      mono: true,
-      render: (r) => new Date(r.createdAt).toLocaleDateString(),
-    },
-    {
-      key: 'id',
-      header: 'Actions',
-      align: 'right',
-      render: (r) => {
-        if (r.moderationStatus !== 'PENDING') {
-          return <span className="text-xs" style={{ color: 'var(--text-muted)' }}>—</span>
-        }
-        const isExpanded = rejectingId === r.id
-        return (
-          <div className="flex items-center justify-end gap-2">
-            {isExpanded ? (
-              <>
-                <input
-                  type="text"
-                  placeholder="Optional reject note"
-                  value={rejectNote}
-                  onChange={(e) => setRejectNote(e.target.value)}
-                  maxLength={500}
-                  className="px-2 py-1 text-xs rounded-md w-40"
-                  style={{
-                    background: 'var(--bg-elevated)',
-                    color: 'var(--text-primary)',
-                    border: '1px solid var(--border-color)',
-                  }}
-                />
-                <button
-                  onClick={() => handleReject(r.id)}
-                  disabled={actionId === r.id}
-                  className="px-2.5 py-1 text-xs bg-error/10 text-error hover:bg-error/20 rounded-md disabled:opacity-50"
-                >
-                  {actionId === r.id ? <Loader2 size={12} className="animate-spin" /> : 'Confirm'}
-                </button>
-                <button
-                  onClick={() => { setRejectingId(null); setRejectNote('') }}
-                  className="px-2 py-1 text-xs"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => handleApprove(r.id)}
-                  disabled={actionId === r.id}
-                  className="px-2.5 py-1 text-xs bg-success/10 text-success hover:bg-success/20 rounded-md flex items-center gap-1 disabled:opacity-50"
-                >
-                  {actionId === r.id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                  Approve
-                </button>
-                <button
-                  onClick={() => { setRejectingId(r.id); setRejectNote('') }}
-                  className="px-2.5 py-1 text-xs bg-error/10 text-error hover:bg-error/20 rounded-md flex items-center gap-1"
-                >
-                  <X size={12} />
-                  Reject
-                </button>
-              </>
-            )}
-          </div>
-        )
-      },
-    },
-  ]
+        <button
+          onClick={loadData}
+          disabled={loading}
+          className="px-3 py-1.5 text-sm bg-surface border border-border text-text-secondary hover:text-text-primary rounded-lg flex items-center gap-2"
+        >
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          Refresh
+        </button>
+      </motion.div>
 
-  const statusPills = (
-    <div className="flex items-center gap-2 flex-wrap">
-      {STATUS_FILTERS.map(sf => {
-        const isActive = filter === sf.value
-        return (
+      {/* Filter pills */}
+      <motion.div variants={item} className="flex items-center gap-2 flex-wrap">
+        {STATUS_FILTERS.map(sf => (
           <button
             key={sf.value}
             onClick={() => setFilter(sf.value)}
-            className="px-3 py-1.5 text-xs font-medium rounded-md transition-colors"
-            style={isActive
-              ? { background: 'var(--primary)', color: '#fff' }
-              : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }
-            }
+            className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
+              filter === sf.value
+                ? 'bg-accent text-white'
+                : 'bg-surface border border-border text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+            }`}
           >
             {sf.label}
-            <span className="ml-1.5" style={{ color: isActive ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)' }}>
+            <span className={`ml-1.5 ${filter === sf.value ? 'text-white/70' : 'text-text-muted'}`}>
               {getCount(sf.value)}
             </span>
           </button>
-        )
-      })}
-    </div>
-  )
+        ))}
+      </motion.div>
 
-  return (
-    <DashboardShell
-      title="Ratings Moderation"
-      subtitle={counts.pending > 0 ? `${counts.pending} awaiting review` : `${ratings.length} ratings`}
-      onRefresh={loadData}
-      refreshing={loading}
-    >
-      <div className="lg:col-span-3">
-        <DataTableCard<RatingRow>
-          title="Buyer Ratings"
-          icon={MessageSquare}
-          actions={statusPills}
-          columns={columns}
-          rows={ratings as RatingRow[]}
-          loading={loading && ratings.length === 0}
-          empty={
-            <p className="text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-              No ratings in <strong>{filter}</strong> state.
-            </p>
-          }
-        />
-      </div>
-    </DashboardShell>
+      {/* Ratings list */}
+      <motion.div variants={item} className="space-y-3">
+        {loading && ratings.length === 0 && (
+          <div className="text-center py-12 text-text-muted">Loading...</div>
+        )}
+        {!loading && ratings.length === 0 && (
+          <div className="text-center py-12 text-text-muted">
+            No ratings in <strong>{filter}</strong> state.
+          </div>
+        )}
+        {ratings.map(r => {
+          const isExpanded = rejectingId === r.id
+          const statusColor =
+            r.moderationStatus === 'APPROVED'
+              ? 'text-success'
+              : r.moderationStatus === 'REJECTED'
+                ? 'text-error'
+                : 'text-warning'
+          return (
+            <div
+              key={r.id}
+              className="rounded-xl p-5"
+              style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map(n => (
+                      <Star
+                        key={n}
+                        size={18}
+                        fill={n <= r.score ? '#facc15' : 'transparent'}
+                        style={{ color: n <= r.score ? '#facc15' : 'var(--text-muted)' }}
+                      />
+                    ))}
+                  </div>
+                  <span className={`text-xs font-mono uppercase ${statusColor}`}>
+                    {r.moderationStatus}
+                  </span>
+                </div>
+                <span className="text-xs text-text-muted">
+                  {new Date(r.createdAt).toLocaleString()}
+                </span>
+              </div>
+
+              {r.comment && (
+                <p className="text-sm mb-3 text-text-primary italic">&ldquo;{r.comment}&rdquo;</p>
+              )}
+
+              <div className="grid grid-cols-2 gap-3 text-xs mb-3">
+                <div>
+                  <span className="text-text-muted">Operator: </span>
+                  <span className="text-text-primary font-medium">{r.nodeRunner.name}</span>
+                </div>
+                <div>
+                  <span className="text-text-muted">Buyer: </span>
+                  <span className="text-text-primary font-mono">
+                    {r.buyer?.email ?? (r.buyer?.walletAddress ? `${r.buyer.walletAddress.slice(0, 10)}...` : 'unknown')}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-text-muted">Rental: </span>
+                  <span className="text-text-primary">
+                    {r.computeRequest.gpuCount}× {r.computeRequest.gpuTier} ({r.computeRequest.tier})
+                  </span>
+                </div>
+                <div>
+                  <span className="text-text-muted">Cost: </span>
+                  <span className="text-text-primary">${r.computeRequest.totalCost.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {r.moderationNote && (
+                <div
+                  className="mb-3 p-2 rounded-lg text-xs"
+                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}
+                >
+                  <span className="text-text-muted">Reject note: </span>
+                  <span className="text-text-secondary">{r.moderationNote}</span>
+                </div>
+              )}
+
+              {r.moderationStatus === 'PENDING' && (
+                <div className="flex gap-2 items-end">
+                  {isExpanded ? (
+                    <>
+                      <input
+                        type="text"
+                        placeholder="Optional reject note (audit only)"
+                        value={rejectNote}
+                        onChange={(e) => setRejectNote(e.target.value)}
+                        maxLength={500}
+                        className="flex-1 px-3 py-2 text-xs rounded-lg"
+                        style={{
+                          background: 'var(--bg-card)',
+                          color: 'var(--text-primary)',
+                          border: '1px solid var(--border-color)',
+                        }}
+                      />
+                      <button
+                        onClick={() => handleReject(r.id)}
+                        disabled={actionId === r.id}
+                        className="px-3 py-1.5 text-sm bg-error/10 text-error hover:bg-error/20 rounded-lg disabled:opacity-50"
+                      >
+                        {actionId === r.id ? <Loader2 size={14} className="animate-spin" /> : 'Confirm Reject'}
+                      </button>
+                      <button
+                        onClick={() => { setRejectingId(null); setRejectNote('') }}
+                        className="px-3 py-1.5 text-sm text-text-muted hover:text-text-primary"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => handleApprove(r.id)}
+                        disabled={actionId === r.id}
+                        className="px-3 py-1.5 text-sm bg-success/10 text-success hover:bg-success/20 rounded-lg flex items-center gap-1 disabled:opacity-50"
+                      >
+                        {actionId === r.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => { setRejectingId(r.id); setRejectNote('') }}
+                        className="px-3 py-1.5 text-sm bg-error/10 text-error hover:bg-error/20 rounded-lg flex items-center gap-1"
+                      >
+                        <X size={14} />
+                        Reject
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </motion.div>
+    </motion.div>
   )
 }

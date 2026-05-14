@@ -2,22 +2,23 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
-import {
-  CreditCard, CircleCheck, ExternalLink, Download, Receipt,
-  XCircle, Code, ShieldCheck, Clock, Search, List,
-} from 'lucide-react'
+import { motion } from 'framer-motion'
+import { CreditCard, CircleCheck, Loader2, ExternalLink, RefreshCw, Download, Receipt, XCircle, Code, DollarSign, Wallet, ShieldCheck, Clock, Search, List } from 'lucide-react'
+import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/Modal'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
-import {
-  DashboardShell,
-  MetricTriad,
-  SectionCard,
-  DataTableCard,
-  type DataTableColumn,
-  type MetricCardData,
-} from '@/components/dashboard/FuturisticShell'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface Payment {
   id: string
@@ -31,8 +32,6 @@ interface Payment {
   createdAt: string
   confirmedAt: string | null
 }
-
-type PaymentRow = Payment & Record<string, unknown>
 
 interface PaymentStats {
   currentMode: string
@@ -75,7 +74,7 @@ export default function PaymentsPage() {
   const [batchProcessing, setBatchProcessing] = useState(false)
   const [showBatchModal, setShowBatchModal] = useState(false)
   const [useOnchainBatch, setUseOnchainBatch] = useState(true)
-  const [, setWalletBalance] = useState<{ sol: number; usdc: number; isDevMode: boolean } | null>(null)
+  const [walletBalance, setWalletBalance] = useState<{ sol: number; usdc: number; isDevMode: boolean } | null>(null)
 
   useEffect(() => {
     loadData()
@@ -175,7 +174,7 @@ export default function PaymentsPage() {
   const getStatusBadge = (status: string, isDevMode: boolean) => {
     if (isDevMode) {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium bg-warning/10 text-warning border border-warning/20 rounded">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-warning/10 text-warning border border-warning/20 rounded-lg">
           <span className="w-1.5 h-1.5 rounded-full bg-warning" />
           DEV
         </span>
@@ -192,7 +191,7 @@ export default function PaymentsPage() {
       FAILED: 'bg-error',
     }
     return (
-      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium border rounded ${styles[status] || 'bg-gray-500/10 text-gray-400 border-gray-500/20'}`}>
+      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium border rounded-lg ${styles[status] || 'bg-gray-500/10 text-gray-400 border-gray-500/20'}`}>
         <span className={`w-1.5 h-1.5 rounded-full ${dotColors[status] || 'bg-gray-400'}`} />
         {status}
       </span>
@@ -200,283 +199,319 @@ export default function PaymentsPage() {
   }
 
   const totalPendingAmount = pendingSettlements.reduce((sum, s) => sum + s.amount, 0)
-  const pendingPaymentsCount = stats ? (stats.stats.total - stats.stats.confirmed - stats.stats.failed) : 0
 
-  const metrics: MetricCardData[] = [
-    { label: 'Total Payments', value: stats?.stats.total ?? 0, icon: Receipt, tone: 'green' },
-    { label: 'Pending', value: pendingPaymentsCount, icon: Clock, tone: 'blue' },
-    { label: 'Completed', value: stats?.stats.confirmed ?? 0, icon: CircleCheck, tone: 'green' },
-  ]
-
-  const columns: Array<DataTableColumn<PaymentRow>> = [
-    {
-      key: 'id',
-      header: 'ID',
-      mono: true,
-      render: (p) => (
-        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-          {p.id.substring(0, 12)}...
-        </span>
-      ),
-    },
-    {
-      key: 'amount',
-      header: 'Amount',
-      align: 'right',
-      mono: true,
-      render: (p) => (
-        <span>
-          ${p.amount.toFixed(2)}
-          <span className="ml-1" style={{ color: 'var(--text-muted)' }}>{p.currency}</span>
-        </span>
-      ),
-    },
-    {
-      key: 'recipientAddress',
-      header: 'Recipient',
-      mono: true,
-      render: (p) => (
-        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-          {p.recipientAddress.substring(0, 8)}...{p.recipientAddress.slice(-4)}
-        </span>
-      ),
-    },
-    {
-      key: 'txHash',
-      header: 'Tx Hash',
-      mono: true,
-      render: (p) =>
-        p.txHash ? (
-          <a
-            href={`https://solscan.io/tx/${p.txHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs hover:underline flex items-center gap-1"
-            style={{ color: 'var(--primary)' }}
-          >
-            {p.txHash.substring(0, 12)}...
-            <ExternalLink className="w-3 h-3" />
-          </a>
-        ) : (
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>-</span>
-        ),
-    },
-    {
-      key: 'status',
-      header: 'Status',
-      render: (p) => getStatusBadge(p.status, p.isDevMode),
-    },
-    {
-      key: 'createdAt',
-      header: 'Created',
-      mono: true,
-      render: (p) => (
-        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          {new Date(p.createdAt).toLocaleDateString()}
-        </span>
-      ),
-    },
-    {
-      key: 'settlementId',
-      header: 'Actions',
-      align: 'right',
-      render: (p) => (
-        <div className="flex items-center justify-end gap-2">
-          <Link
-            href={`/settlements/${p.settlementId}`}
-            className="px-3 py-1 text-xs rounded-md transition-colors"
-            style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
-          >
-            View
-          </Link>
-          {p.txHash && !p.isDevMode && (
-            <button
-              onClick={() => handleVerify(p.txHash!)}
-              disabled={verifying === p.txHash}
-              className="px-3 py-1 text-xs bg-accent/10 text-accent rounded-md hover:bg-accent/20 disabled:opacity-50"
-            >
-              {verifying === p.txHash ? 'Verifying...' : 'Verify'}
-            </button>
-          )}
+  return (
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
+      {/* Header */}
+      <motion.div variants={item} className="dash-header">
+        <div className="dash-header-left">
+          <h1><CreditCard size={28} /> Payments</h1>
         </div>
-      ),
-    },
-  ]
+        <div className="dash-header-right">
+          <Button onClick={handleExportCSV} variant="outline" size="sm" icon={<Download className="w-4 h-4" />}>
+            Export CSV
+          </Button>
+          <button className="dash-refresh-btn" onClick={loadData} title="Refresh data">
+            <RefreshCw size={16} />
+          </button>
+        </div>
+      </motion.div>
 
-  const filterPills = (
-    <div className="flex items-center gap-2 flex-wrap">
-      <div className="flex gap-1 p-1 rounded-md" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
-        {['all', 'PENDING', 'CONFIRMED', 'FAILED'].map((status) => {
-          const isActive = filter === status
-          return (
+      {/* KPI Stat Blocks */}
+      <motion.div variants={item} className="stat-blocks">
+        <div className="stat-block green">
+          <div className="stat-icon"><Receipt size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{stats?.stats.total ?? 0}</span>
+            <span className="stat-label">Total Payments</span>
+          </div>
+        </div>
+        <div className="stat-block blue">
+          <div className="stat-icon"><Clock size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{stats ? (stats.stats.total - stats.stats.confirmed - stats.stats.failed) : 0}</span>
+            <span className="stat-label">Pending</span>
+          </div>
+        </div>
+        <div className="stat-block green">
+          <div className="stat-icon"><CircleCheck size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{stats?.stats.confirmed ?? 0}</span>
+            <span className="stat-label">Completed</span>
+          </div>
+        </div>
+        <div className="stat-block red">
+          <div className="stat-icon"><XCircle size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{stats?.stats.failed ?? 0}</span>
+            <span className="stat-label">Failed</span>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Mode Banner */}
+      {stats && (
+        <div className={`p-4 rounded-2xl border flex items-center gap-4 ${
+          stats.currentMode === 'dev'
+            ? 'bg-gradient-to-r from-warning/10 to-orange-500/5 border-warning/30'
+            : 'bg-gradient-to-r from-accent/10 to-emerald-500/5 border-accent/30'
+        }`}>
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+            stats.currentMode === 'dev' ? 'bg-warning/20' : 'bg-accent/20'
+          }`}>
+            {stats.currentMode === 'dev' ? (
+              <Code className="w-6 h-6 text-warning" />
+            ) : (
+              <ShieldCheck className="w-6 h-6 text-accent" />
+            )}
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-3">
+              <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                stats.currentMode === 'dev'
+                  ? 'bg-warning/20 text-warning'
+                  : 'bg-accent/20 text-accent'
+              }`}>
+                {stats.currentMode.toUpperCase()} MODE
+              </span>
+            </div>
+            <p className="text-sm text-text-secondary mt-1">{stats.modeDescription}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Pending Settlements */}
+      {pendingSettlements.length > 0 && (
+        <Card variant="glass" hover={false}>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-warning to-orange-400 flex items-center justify-center">
+                <Clock className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-text-primary">Pending Settlements</h3>
+                <p className="text-xs text-text-muted">{pendingSettlements.length} settlements • ${totalPendingAmount.toFixed(2)} total</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={selectAllPending} variant="ghost" size="sm">
+                Select All
+              </Button>
+              <Button
+                onClick={() => setShowBatchModal(true)}
+                disabled={selectedSettlements.length === 0}
+                variant="primary"
+                size="sm"
+              >
+                Process ({selectedSettlements.length})
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {pendingSettlements.map((settlement) => (
+              <div
+                key={settlement.nodeId}
+                onClick={() => toggleSettlementSelection(settlement.nodeId)}
+                className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${
+                  selectedSettlements.includes(settlement.nodeId)
+                    ? 'bg-accent/5 border-accent/30 shadow-[0_0_0_1px_rgba(34,197,94,0.2)]'
+                    : 'bg-background/50 border-border/50 hover:border-accent/30'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedSettlements.includes(settlement.nodeId)}
+                  onChange={() => toggleSettlementSelection(settlement.nodeId)}
+                  className="w-4 h-4 rounded border-border accent-accent"
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-text-primary">
+                    <Link href={`/nodes/${settlement.nodeId}`} className="hover:text-accent" onClick={(e) => e.stopPropagation()}>
+                      Node: {settlement.nodeId.substring(0, 12)}...
+                    </Link>
+                  </p>
+                  <p className="text-xs text-text-muted font-mono">{settlement.walletAddress.substring(0, 20)}...</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-semibold text-accent">${settlement.amount.toFixed(2)}</p>
+                  <p className="text-xs text-text-muted">{settlement.jobCount} jobs</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Filter and Search */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex gap-1 p-1 bg-surface rounded-xl">
+          {['all', 'PENDING', 'CONFIRMED', 'FAILED'].map((status) => (
             <button
               key={status}
-              onClick={() => { setFilter(status); setPage(1) }}
-              className="px-3 py-1 text-xs font-medium rounded transition-colors"
-              style={isActive
-                ? { background: 'var(--primary)', color: '#fff' }
-                : { color: 'var(--text-secondary)' }
-              }
+              onClick={() => {
+                setFilter(status)
+                setPage(1)
+              }}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+                filter === status
+                  ? 'bg-accent text-white shadow-lg shadow-accent/20'
+                  : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+              }`}
             >
               {status === 'all' ? 'All' : status}
             </button>
-          )
-        })}
+          ))}
+        </div>
+        <div className="flex-1 max-w-md relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by address, tx hash, or ID..."
+            className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border rounded-xl text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+          />
+        </div>
       </div>
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search..."
-          className="pl-9 pr-3 py-1.5 text-xs rounded-md w-48 focus:outline-none"
-          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-        />
-      </div>
-      <Button onClick={handleExportCSV} variant="outline" size="sm" icon={<Download className="w-3.5 h-3.5" />}>
-        Export
-      </Button>
-    </div>
-  )
 
-  return (
-    <DashboardShell
-      title="Payments"
-      subtitle={pagination ? `${pagination.total} total payments` : `${payments.length} payments`}
-      onRefresh={loadData}
-      refreshing={loading}
-    >
-      <div className="lg:col-span-3 space-y-6">
-        <MetricTriad metrics={metrics} />
+      {/* Payments Table */}
+      <Card variant="glass" hover={false}>
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-purple-400 flex items-center justify-center">
+            <List className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-text-primary">Payment History</h3>
+            <p className="text-xs text-text-muted">{pagination?.total ?? 0} total payments</p>
+          </div>
+        </div>
 
-        {/* Mode Banner */}
-        {stats && (
-          <div
-            className="p-4 rounded-md flex items-center gap-4"
-            style={{
-              background: stats.currentMode === 'dev' ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)',
-              border: `1px solid ${stats.currentMode === 'dev' ? 'rgba(245,158,11,0.3)' : 'rgba(34,197,94,0.3)'}`,
-            }}
-          >
-            <div
-              className="w-10 h-10 rounded-md flex items-center justify-center"
-              style={{ background: stats.currentMode === 'dev' ? 'rgba(245,158,11,0.2)' : 'rgba(34,197,94,0.2)' }}
-            >
-              {stats.currentMode === 'dev' ? (
-                <Code className="w-5 h-5 text-warning" />
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">ID</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Amount</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Recipient</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Tx Hash</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Status</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Created</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                      <p className="text-text-muted">Loading payments...</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredPayments.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-12">
+                    <EmptyState
+                      icon={<Receipt className="w-8 h-8" />}
+                      title={search ? 'No payments match your search' : 'No payments found'}
+                      description={search ? 'Try adjusting your search terms' : 'Payment records will appear here once settlements are processed'}
+                    />
+                  </td>
+                </tr>
               ) : (
-                <ShieldCheck className="w-5 h-5 text-accent" />
+                filteredPayments.map((payment) => (
+                  <tr key={payment.id} className="border-b border-border/50 hover:bg-surface-hover/50 transition-colors">
+                    <td className="py-4 px-4">
+                      <span className="text-xs font-mono text-text-secondary bg-surface-hover px-2 py-1 rounded">{payment.id.substring(0, 12)}...</span>
+                    </td>
+                    <td className="py-4 px-4">
+                      <span className="font-semibold text-text-primary">${payment.amount.toFixed(2)}</span>
+                      <span className="text-xs text-text-muted ml-1">{payment.currency}</span>
+                    </td>
+                    <td className="py-4 px-4">
+                      <span className="text-xs font-mono text-text-secondary">
+                        {payment.recipientAddress.substring(0, 8)}...{payment.recipientAddress.slice(-4)}
+                      </span>
+                    </td>
+                    <td className="py-4 px-4">
+                      {payment.txHash ? (
+                        <a
+                          href={`https://solscan.io/tx/${payment.txHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs font-mono text-accent hover:underline flex items-center gap-1"
+                        >
+                          {payment.txHash.substring(0, 12)}...
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : (
+                        <span className="text-xs text-text-muted">-</span>
+                      )}
+                    </td>
+                    <td className="py-4 px-4">{getStatusBadge(payment.status, payment.isDevMode)}</td>
+                    <td className="py-4 px-4">
+                      <span className="text-xs text-text-muted">
+                        {new Date(payment.createdAt).toLocaleDateString()}
+                      </span>
+                    </td>
+                    <td className="py-4 px-4">
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/settlements/${payment.settlementId}`}
+                          className="px-3 py-1.5 text-xs bg-surface-hover text-text-secondary rounded-lg hover:bg-border transition-colors"
+                        >
+                          View
+                        </Link>
+                        {payment.txHash && !payment.isDevMode && (
+                          <button
+                            onClick={() => handleVerify(payment.txHash!)}
+                            disabled={verifying === payment.txHash}
+                            className="px-3 py-1.5 text-xs bg-accent/10 text-accent rounded-lg hover:bg-accent/20 disabled:opacity-50"
+                          >
+                            {verifying === payment.txHash ? 'Verifying...' : 'Verify'}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
-            </div>
-            <div className="flex-1">
-              <span
-                className="px-2.5 py-0.5 rounded text-xs font-bold"
-                style={{
-                  background: stats.currentMode === 'dev' ? 'rgba(245,158,11,0.2)' : 'rgba(34,197,94,0.2)',
-                  color: stats.currentMode === 'dev' ? 'var(--warning)' : 'var(--success)',
-                }}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {pagination && pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between p-4 border-t border-border">
+            <p className="text-sm text-text-muted">
+              Showing {((page - 1) * pagination.limit) + 1} to {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                variant="outline"
+                size="sm"
               >
-                {stats.currentMode.toUpperCase()} MODE
+                Previous
+              </Button>
+              <span className="px-4 py-2 text-sm text-text-muted">
+                {page} / {pagination.totalPages}
               </span>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>{stats.modeDescription}</p>
+              <Button
+                onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
+                disabled={page === pagination.totalPages}
+                variant="outline"
+                size="sm"
+              >
+                Next
+              </Button>
             </div>
           </div>
         )}
-
-        {/* Pending Settlements */}
-        {pendingSettlements.length > 0 && (
-          <SectionCard
-            title="Pending Settlements"
-            icon={Clock}
-            badge={
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                ({pendingSettlements.length} settlements, ${totalPendingAmount.toFixed(2)} total)
-              </span>
-            }
-            actions={
-              <div className="flex gap-2">
-                <Button onClick={selectAllPending} variant="ghost" size="sm">
-                  Select All
-                </Button>
-                <Button
-                  onClick={() => setShowBatchModal(true)}
-                  disabled={selectedSettlements.length === 0}
-                  variant="primary"
-                  size="sm"
-                >
-                  Process ({selectedSettlements.length})
-                </Button>
-              </div>
-            }
-          >
-            <div className="space-y-2">
-              {pendingSettlements.map((settlement) => (
-                <div
-                  key={settlement.nodeId}
-                  onClick={() => toggleSettlementSelection(settlement.nodeId)}
-                  className="flex items-center gap-4 p-3 rounded-md border cursor-pointer transition-all"
-                  style={selectedSettlements.includes(settlement.nodeId)
-                    ? { background: 'rgba(34,197,94,0.05)', borderColor: 'rgba(34,197,94,0.3)' }
-                    : { background: 'var(--bg-elevated)', borderColor: 'var(--border-color)' }
-                  }
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedSettlements.includes(settlement.nodeId)}
-                    onChange={() => toggleSettlementSelection(settlement.nodeId)}
-                    className="w-4 h-4 rounded border-border accent-accent"
-                  />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      <Link
-                        href={`/nodes/${settlement.nodeId}`}
-                        className="hover:text-accent"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        Node: {settlement.nodeId.substring(0, 12)}...
-                      </Link>
-                    </p>
-                    <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
-                      {settlement.walletAddress.substring(0, 20)}...
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold" style={{ color: 'var(--primary)' }}>${settlement.amount.toFixed(2)}</p>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{settlement.jobCount} jobs</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </SectionCard>
-        )}
-
-        <DataTableCard<PaymentRow>
-          title="Payment History"
-          icon={List}
-          actions={filterPills}
-          columns={columns}
-          rows={filteredPayments as PaymentRow[]}
-          loading={loading && payments.length === 0}
-          empty={
-            <div className="text-center py-8">
-              <Receipt className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
-              <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                {search ? 'No payments match your search' : 'No payments found'}
-              </p>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                {search ? 'Try adjusting your search terms' : 'Payment records will appear here once settlements are processed'}
-              </p>
-            </div>
-          }
-          pagination={pagination ? {
-            page,
-            pageSize: pagination.limit,
-            total: pagination.total,
-            onPageChange: setPage,
-          } : undefined}
-        />
-      </div>
+      </Card>
 
       {/* Batch Processing Modal */}
       <ConfirmModal
@@ -493,10 +528,7 @@ export default function PaymentsPage() {
       {/* On-chain Batch Toggle */}
       {showBatchModal && selectedSettlements.length <= 15 && (
         <div className="fixed inset-0 z-40 flex items-center justify-center pointer-events-none">
-          <div
-            className="absolute bottom-32 rounded-md p-4 pointer-events-auto"
-            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
-          >
+          <div className="absolute bottom-32 bg-surface border border-border rounded-xl p-4 shadow-xl pointer-events-auto">
             <label className="flex items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"
@@ -505,17 +537,129 @@ export default function PaymentsPage() {
                 className="w-4 h-4 rounded border-border accent-accent"
               />
               <div>
-                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                  Single on-chain transaction
-                </span>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  Saves gas fees by batching payments
-                </p>
+                <span className="text-sm font-medium text-text-primary">Single on-chain transaction</span>
+                <p className="text-xs text-text-muted">Saves gas fees by batching payments</p>
               </div>
             </label>
           </div>
         </div>
       )}
-    </DashboardShell>
+    </motion.div>
+  )
+}
+
+// =============================================================================
+// ICONS
+// =============================================================================
+
+function CreditCardIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+    </svg>
+  )
+}
+
+function RefreshIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
+  )
+}
+
+function DownloadIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+    </svg>
+  )
+}
+
+function ReceiptIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
+    </svg>
+  )
+}
+
+function CheckCircleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function XCircleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function CodeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+    </svg>
+  )
+}
+
+function DollarIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function WalletIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+    </svg>
+  )
+}
+
+function CheckShieldIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+    </svg>
+  )
+}
+
+function ClockIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function SearchIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+    </svg>
+  )
+}
+
+function ListIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+    </svg>
+  )
+}
+
+function ExternalLinkIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+    </svg>
   )
 }
