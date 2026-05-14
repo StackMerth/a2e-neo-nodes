@@ -24,7 +24,7 @@ export interface SettlementCalculation {
 // platform from holding unbounded operator balances; the inactivity
 // sweep makes sure dormant accounts can't leave money rotting in the
 // system forever. Both are env-tunable for ops flexibility.
-const PLATFORM_BALANCE_CAP_USD = Number(process.env.PAYOUT_BALANCE_CAP_USD ?? 10000)
+const PLATFORM_BALANCE_CAP_USD = Number(process.env.PAYOUT_BALANCE_CAP_USD ?? 50000)
 const INACTIVITY_SWEEP_DAYS = Number(process.env.PAYOUT_INACTIVITY_DAYS ?? 180)
 
 // Cooling-off period — earnings sit in "pending" state for this many
@@ -50,7 +50,7 @@ function cooldownBoundary(now: Date = new Date()): Date {
  *                  portal)
  *   - SCHEDULED  — fire on/after payoutScheduledAt, then reset the
  *                  operator back to AUTO (one-shot)
- * Two safety nets bypass these gates: a $10K cap on platform-held
+ * Two safety nets bypass these gates: a $50K cap on platform-held
  * balance and 180-day inactivity since the last settlement. Both
  * force a payout regardless of mode and are tagged with forceReason
  * for the audit trail.

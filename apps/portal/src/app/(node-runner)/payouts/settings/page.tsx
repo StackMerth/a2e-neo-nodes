@@ -262,7 +262,7 @@ export default function PayoutSettingsPage() {
                 color: 'var(--text-muted)',
               }}
             >
-              Earnings sit in cool-down for {cooldownHours} hours after they accrue, giving us a buyer-dispute window. After that, the amount moves to <span className="text-primary font-semibold" style={{ color: 'var(--primary)' }}>Available</span> and you can withdraw at any time. Two safety nets fire even if you&rsquo;re on hold: the platform forces a payout when your balance exceeds $10,000, or after 180 days of inactivity.
+              Earnings sit in cool-down for {cooldownHours} hours after they accrue, giving us a buyer-dispute window. After that, the amount moves to <span className="text-primary font-semibold" style={{ color: 'var(--primary)' }}>Available</span> and you can withdraw at any time. Two safety nets fire even if you&rsquo;re on hold: the platform forces a payout when your balance exceeds $50,000, or after 180 days of inactivity.
             </div>
           </FormSection>
         </FormCard>
