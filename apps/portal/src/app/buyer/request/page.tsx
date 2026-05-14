@@ -114,15 +114,26 @@ export default function RequestComputePage() {
   const router = useRouter()
   const { toast } = useToast()
   const [selectedTier, setSelectedTier] = useState<string | null>(null)
+  // M5.10c: optional preferred-operator slug. Set from URL when the
+  // buyer arrives via "Rent from this operator" on the marketplace.
+  // Buyer can dismiss the chip; submission body sends the slug only
+  // if still present.
+  const [preferredOperatorSlug, setPreferredOperatorSlug] = useState<string | null>(null)
 
   // M5.10b: when the buyer arrives from the marketplace /rent page,
   // the URL carries ?gpuTier=H100 so the form lands with that tier
   // pre-selected. Only honor known tier codes.
+  // M5.10c: also reads ?operator=<slug> for the soft operator
+  // preference. Slug validated server-side at submit time.
   const searchParams = useSearchParams()
   useEffect(() => {
-    const fromQuery = searchParams?.get('gpuTier')
-    if (fromQuery && GPU_TIERS.some(t => t.id === fromQuery)) {
-      setSelectedTier(fromQuery)
+    const tierFromQuery = searchParams?.get('gpuTier')
+    if (tierFromQuery && GPU_TIERS.some(t => t.id === tierFromQuery)) {
+      setSelectedTier(tierFromQuery)
+    }
+    const opFromQuery = searchParams?.get('operator')
+    if (opFromQuery && /^[a-z0-9-]{1,120}$/.test(opFromQuery)) {
+      setPreferredOperatorSlug(opFromQuery)
     }
     // Run once on mount; ignore subsequent searchParams changes so a
     // user clicking around the form doesn't get reset.
@@ -166,6 +177,7 @@ export default function RequestComputePage() {
         tier: rentalTier,
         commitmentDays: rentalTier === 'RESERVED' ? commitmentDays : undefined,
         requiredRegion: requiredRegion || null,
+        preferredOperatorSlug: preferredOperatorSlug || null,
       }) as { id: string }
       toast('success', 'Compute request submitted successfully')
       router.push(`/buyer/requests/${result.id}`)
@@ -182,6 +194,43 @@ export default function RequestComputePage() {
       subtitle="Select your GPU tier, quantity, and rental duration"
     >
       <div className="lg:col-span-3 w-full space-y-6">
+        {/* M5.10c: preferred-operator pill. Shows when the buyer
+            arrived from "Rent from this operator" on the marketplace.
+            Soft preference - the allocator falls back to the general
+            pool if this operator has no idle capacity at allocation
+            time. Buyer can dismiss to drop the preference. */}
+        {preferredOperatorSlug && (
+          <div
+            className="rounded-lg p-3 flex items-center gap-3 flex-wrap"
+            style={{
+              background: 'rgba(34,197,94,0.08)',
+              border: '1px solid rgba(34,197,94,0.30)',
+            }}
+          >
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em]" style={{ color: 'var(--primary)' }}>
+              Preferred operator
+            </span>
+            <span className="font-mono text-xs px-2 py-0.5 rounded-sm" style={{
+              color: 'var(--text-primary)',
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid var(--border-color)',
+            }}>
+              {preferredOperatorSlug}
+            </span>
+            <p className="text-xs flex-1 min-w-[200px]" style={{ color: 'var(--text-secondary)' }}>
+              Allocator will try this operator first. Falls back to the rest of the network if they have no idle capacity.
+            </p>
+            <button
+              type="button"
+              onClick={() => setPreferredOperatorSlug(null)}
+              className="text-xs font-mono px-2 py-1 rounded-sm hover:opacity-80 transition-opacity"
+              style={{ color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
+            >
+              Remove
+            </button>
+          </div>
+        )}
+
         {/* GPU Tier */}
         <FormCard
           title="GPU Tier"

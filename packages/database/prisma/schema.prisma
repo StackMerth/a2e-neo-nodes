@@ -982,6 +982,14 @@ model ComputeRequest {
   // ap-south-1.
   requiredRegion  String?
 
+  // M5.10c: soft operator preference. When the buyer clicks "Rent
+  // from this operator" on the marketplace, this is set to that
+  // NodeRunner.id. The allocator uses it as a tier-1 sort key (prefer
+  // nodes owned by this runner) but does NOT hard-filter - if the
+  // preferred operator has zero idle capacity the request still falls
+  // back to the general pool on the same tick. Null = no preference.
+  preferredOperatorId String?
+
   // Pricing
   ratePerDay      Float                // Rate at time of request
   totalCost       Float                // gpuCount × ratePerDay × durationDays

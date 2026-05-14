@@ -16,6 +16,7 @@ import { Star } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
+import { OperatorRentCta, OperatorAvailabilityGrid } from '@/components/rent/operator-rent'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
 
@@ -138,6 +139,18 @@ export default async function OperatorPage({ params }: { params: { slug: string 
             {op.uptimePercent30d != null ? `, ${op.uptimePercent30d.toFixed(1)}% uptime over the last 30 days` : ''}
             {op.availableAsSpot ? ', accepts spot inventory' : ''}.
           </p>
+          {/* M5.10c: per-operator Rent CTA. Default tier is the most-
+              numerous GPU tier this operator runs, falling back to
+              H100 when they have no inventory yet. */}
+          {Object.keys(tierBreakdown).length > 0 && (
+            <div>
+              <OperatorRentCta
+                operatorSlug={op.slug}
+                operatorName={op.name}
+                defaultTier={Object.entries(tierBreakdown).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'H100'}
+              />
+            </div>
+          )}
         </header>
 
         <Separator />
@@ -154,23 +167,14 @@ export default async function OperatorPage({ params }: { params: { slug: string 
           <Stat label="Regions" value={String(regions.length)} unit={regions.slice(0, 2).join(', ') || 'unspecified'} />
         </section>
 
-        {/* GPU breakdown */}
-        {Object.keys(tierBreakdown).length > 0 && (
-          <section className="space-y-4">
-            <h2 className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-              GPU inventory
-            </h2>
-            <div className="flex flex-wrap gap-x-8 gap-y-3 font-mono text-base text-foreground">
-              {Object.entries(tierBreakdown).map(([tier, count]) => (
-                <span key={tier}>
-                  <span className="text-foreground">{count}</span>
-                  <span className="text-muted-foreground"> × </span>
-                  <span className="text-foreground">{tier}</span>
-                </span>
-              ))}
-            </div>
-          </section>
-        )}
+        {/* M5.10c: per-tier availability grid. Replaces the read-only
+            "GPU inventory" block - each tile is now a Rent button. */}
+        <OperatorAvailabilityGrid
+          operatorSlug={op.slug}
+          tiers={Object.entries(tierBreakdown)
+            .map(([gpuTier, count]) => ({ gpuTier, count }))
+            .sort((a, b) => b.count - a.count)}
+        />
 
         <Separator />
 

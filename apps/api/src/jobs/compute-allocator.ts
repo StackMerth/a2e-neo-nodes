@@ -195,13 +195,26 @@ async function processRequest(
     },
   })
 
-  // M3 sort: reputation desc (nulls last) -> heartbeat desc
+  // M5.10c soft operator preference: if the buyer asked to rent from
+  // a specific operator on the marketplace, the request carries
+  // preferredOperatorId. We don't hard-filter (that would starve the
+  // request when the preferred operator has no idle capacity); we
+  // just push their nodes to the front of the sort.
+  const preferredOperatorId = (cr as { preferredOperatorId?: string | null }).preferredOperatorId ?? null
+
+  // M3 + M5.10c sort: preferredOperator match -> reputation desc
+  // (nulls last) -> heartbeat desc
   const idleNodes = candidates
     .sort((a, b) => {
-      // -Infinity for null score so it always sorts AFTER any real score
+      // Tier-1: preferred operator wins.
+      const aPref = preferredOperatorId && a.nodeRunner?.id === preferredOperatorId ? 1 : 0
+      const bPref = preferredOperatorId && b.nodeRunner?.id === preferredOperatorId ? 1 : 0
+      if (aPref !== bPref) return bPref - aPref
+      // Tier-2: -Infinity for null score so it always sorts AFTER any real score
       const aScore = a.nodeRunner?.reputationScore ?? -Infinity
       const bScore = b.nodeRunner?.reputationScore ?? -Infinity
       if (aScore !== bScore) return bScore - aScore
+      // Tier-3: most recent heartbeat
       return b.lastHeartbeat.getTime() - a.lastHeartbeat.getTime()
     })
     .slice(0, cr.gpuCount)
