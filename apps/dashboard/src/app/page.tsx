@@ -1,28 +1,23 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
+import { motion } from 'framer-motion'
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
 } from 'recharts'
 import {
+  LayoutDashboard,
   Server,
   GitBranch,
   Clock,
   DollarSign,
+  RefreshCw,
   AlertTriangle,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { SystemHealth } from '@/components/dashboard/SystemHealth'
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
 import { A2ELoader } from '@/components/ui/A2ELoader'
-import {
-  DashboardShell,
-  DashboardMainColumn,
-  DashboardRightRail,
-  SectionCard,
-  MetricTriad,
-  ClockCard,
-} from '@/components/dashboard/FuturisticShell'
 
 /* -----------------------------------------------
    Types
@@ -33,6 +28,27 @@ interface Stats {
   jobs: { total: number; last24h: number; byMarket: Record<string, number>; byStatus: Record<string, number> }
   routing: { decisionsLast24h: number; avgDecisionTimeMs: number; byMarket: Record<string, number> }
   earnings: { last24h: { total: number; gpuSeconds: number; jobCount: number } }
+}
+
+/* -----------------------------------------------
+   Animation Variants
+   ----------------------------------------------- */
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.06 },
+  },
+}
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 15 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.35, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] },
+  },
 }
 
 /* -----------------------------------------------
@@ -65,9 +81,36 @@ interface TooltipPayloadItem {
 function ChartTooltip({ active, payload }: { active?: boolean; payload?: TooltipPayloadItem[] }) {
   if (!active || !payload?.length) return null
   return (
-    <div className="rounded-md border border-border px-3 py-2" style={{ background: 'var(--bg-card)' }}>
-      <p className="font-mono text-[11px] mb-1" style={{ color: 'var(--text-muted)' }}>{payload[0].name}</p>
-      <p className="font-mono text-sm" style={{ color: 'var(--text-primary)' }}>{payload[0].value}</p>
+    <div className="dash-tooltip">
+      <p className="dash-tooltip-label">{payload[0].name}</p>
+      <p className="dash-tooltip-value">{payload[0].value}</p>
+    </div>
+  )
+}
+
+/* -----------------------------------------------
+   Shimmer Skeleton
+   ----------------------------------------------- */
+
+function ShimmerBlock({ className }: { className?: string }) {
+  return <div className={`animate-shimmer rounded-lg ${className ?? ''}`} />
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="dashboard-modern" style={{ gap: 'var(--space-lg)' }}>
+      <ShimmerBlock className="h-14 w-full" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'var(--space-md)' }}>
+        {[1, 2, 3, 4].map((i) => (
+          <ShimmerBlock key={i} className="h-24" />
+        ))}
+      </div>
+      <div className="dash-charts-row">
+        <ShimmerBlock className="h-72" />
+        <ShimmerBlock className="h-72" />
+      </div>
+      <ShimmerBlock className="h-48 w-full" />
+      <ShimmerBlock className="h-64 w-full" />
     </div>
   )
 }
@@ -134,6 +177,38 @@ export default function OverviewPage() {
     return entries
   }, [stats])
 
+  /* -- Stat block definitions -- */
+
+  const statBlocks = useMemo(() => {
+    if (!stats) return []
+    return [
+      {
+        label: 'Active Nodes',
+        value: String(stats.nodes.total),
+        icon: <Server size={18} />,
+        colorClass: 'green',
+      },
+      {
+        label: 'Routing Decisions 24h',
+        value: String(stats.routing.decisionsLast24h),
+        icon: <GitBranch size={18} />,
+        colorClass: 'blue',
+      },
+      {
+        label: 'Avg Decision Time',
+        value: `${stats.routing.avgDecisionTimeMs.toFixed(1)}ms`,
+        icon: <Clock size={18} />,
+        colorClass: 'purple',
+      },
+      {
+        label: 'Earnings 24h',
+        value: `$${stats.earnings.last24h.total.toFixed(2)}`,
+        icon: <DollarSign size={18} />,
+        colorClass: 'orange',
+      },
+    ]
+  }, [stats])
+
   /* -- Loading state -- */
 
   if (loading) {
@@ -144,170 +219,176 @@ export default function OverviewPage() {
 
   if (error && !stats) {
     return (
-      <DashboardShell title="TokenOS DeAI Engine Overview" subtitle="Network operations" onRefresh={() => loadStats(true)} refreshing={refreshing}>
-        <div className="lg:col-span-3">
-          <SectionCard>
-            <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-              <div
-                className="w-14 h-14 rounded-full inline-flex items-center justify-center mb-4"
-                style={{ background: 'rgba(239, 68, 68, 0.12)' }}
-              >
-                <AlertTriangle size={28} style={{ color: '#ef4444' }} />
-              </div>
-              <h2 className="font-display text-lg mb-1" style={{ color: 'var(--text-primary)' }}>
-                Connection Error
-              </h2>
-              <p className="text-sm max-w-sm mb-5" style={{ color: 'var(--text-muted)' }}>
-                {error}
-              </p>
-              <button className="btn btn-primary" onClick={() => loadStats()}>
-                Try Again
-              </button>
-            </div>
-          </SectionCard>
+      <div className="dashboard-modern" style={{ justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+        <div className="dash-chart-card" style={{ maxWidth: 420, textAlign: 'center', padding: 'var(--space-xl)' }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: 'var(--radius-lg)',
+            background: 'rgba(239, 68, 68, 0.12)', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', margin: '0 auto var(--space-md)',
+          }}>
+            <AlertTriangle size={28} style={{ color: '#ef4444' }} />
+          </div>
+          <h2 style={{ fontSize: '1.125rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-sm)' }}>
+            Connection Error
+          </h2>
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: 'var(--space-lg)' }}>
+            {error}
+          </p>
+          <button className="btn btn-primary" onClick={() => loadStats()}>
+            Try Again
+          </button>
         </div>
-      </DashboardShell>
+      </div>
     )
   }
 
   /* -- Render -- */
 
   return (
-    <DashboardShell
-      title="TokenOS DeAI Engine Overview"
-      subtitle="Network operations"
-      liveLabel="LIVE"
-      onRefresh={() => loadStats(true)}
-      refreshing={refreshing}
+    <motion.div
+      className="dashboard-modern"
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
     >
-      <DashboardMainColumn>
-        <MetricTriad
-          metrics={[
-            {
-              label: 'Active Nodes',
-              value: String(stats?.nodes.total ?? 0),
-              icon: Server,
-              tone: 'green',
-            },
-            {
-              label: 'Routing Decisions 24h',
-              value: String(stats?.routing.decisionsLast24h ?? 0),
-              detail: `Avg ${(stats?.routing.avgDecisionTimeMs ?? 0).toFixed(1)}ms`,
-              icon: GitBranch,
-              tone: 'blue',
-            },
-            {
-              label: 'Earnings 24h',
-              value: `$${(stats?.earnings.last24h.total ?? 0).toFixed(2)}`,
-              detail: `${stats?.earnings.last24h.jobCount ?? 0} jobs`,
-              icon: DollarSign,
-              tone: 'orange',
-            },
-          ]}
-        />
+      {/* ========== Header ========== */}
+      <motion.div className="dash-header" variants={itemVariants}>
+        <div className="dash-header-left">
+          <h1><LayoutDashboard size={28} /> TokenOS DeAI Engine Overview</h1>
+        </div>
+        <div className="dash-header-right">
+          <div className="dash-date-badge">
+            <Clock size={14} />
+            {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+          </div>
+          <button
+            className="dash-refresh-btn"
+            onClick={() => loadStats(true)}
+            disabled={refreshing}
+            title="Refresh data"
+          >
+            <RefreshCw size={16} className={refreshing ? 'spin' : ''} />
+          </button>
+        </div>
+      </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <SectionCard title="Jobs by Market" icon={GitBranch}>
-            {jobsByMarket.length > 0 ? (
-              <div className="flex items-center gap-4">
-                <div className="h-48 w-48 relative shrink-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={jobsByMarket}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={50}
-                        outerRadius={78}
-                        paddingAngle={2}
-                        dataKey="value"
-                      >
-                        {jobsByMarket.map((entry, i) => (
-                          <Cell key={i} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<ChartTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="font-display text-2xl" style={{ color: 'var(--text-primary)' }}>{totalJobs}</span>
-                    <span className="font-mono text-[10px] tracking-[0.14em] uppercase" style={{ color: 'var(--text-muted)' }}>Total</span>
-                  </div>
-                </div>
-                <div className="flex-1 min-w-0 space-y-1.5">
-                  {jobsByMarket.map((item, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm">
-                      <span className="w-2 h-2 rounded-sm" style={{ background: item.color }} />
-                      <span className="flex-1 font-mono text-[11px] truncate" style={{ color: 'var(--text-secondary)' }}>{item.name}</span>
-                      <span className="font-mono text-sm" style={{ color: 'var(--text-primary)' }}>{item.value}</span>
-                    </div>
-                  ))}
+      {/* ========== Stat Blocks ========== */}
+      <motion.div className="stat-blocks" variants={containerVariants}>
+        {statBlocks.map((s) => (
+          <motion.div
+            key={s.label}
+            className={`stat-block ${s.colorClass}`}
+            variants={itemVariants}
+          >
+            <div className="stat-icon">{s.icon}</div>
+            <div className="stat-content">
+              <span className="stat-value">{s.value}</span>
+              <span className="stat-label">{s.label}</span>
+            </div>
+          </motion.div>
+        ))}
+      </motion.div>
+
+      {/* ========== Two-column: Jobs by Market + Node Status ========== */}
+      <motion.div className="dash-charts-row" variants={itemVariants}>
+        {/* Jobs by Market Donut */}
+        <div className="dash-chart-card">
+          <h3 className="dash-chart-title">Jobs by Market</h3>
+          {jobsByMarket.length > 0 ? (
+            <div className="dash-chart-with-legend">
+              <div className="dash-pie-container">
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie
+                      data={jobsByMarket}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={78}
+                      paddingAngle={2}
+                      dataKey="value"
+                    >
+                      {jobsByMarket.map((entry, i) => (
+                        <Cell key={i} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<ChartTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="dash-donut-center">
+                  <span className="dash-donut-value">{totalJobs}</span>
+                  <span className="dash-donut-label">Total</span>
                 </div>
               </div>
-            ) : (
-              <p className="text-sm py-8 text-center" style={{ color: 'var(--text-muted)' }}>No jobs routed yet</p>
-            )}
-          </SectionCard>
-
-          <SectionCard title="Node Status" icon={Server}>
-            {nodeStatusData.length > 0 ? (
-              <div className="flex items-center gap-4">
-                <div className="h-48 w-48 relative shrink-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={nodeStatusData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={50}
-                        outerRadius={78}
-                        paddingAngle={2}
-                        dataKey="value"
-                      >
-                        {nodeStatusData.map((entry, i) => (
-                          <Cell key={i} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<ChartTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="font-display text-2xl" style={{ color: 'var(--text-primary)' }}>{stats?.nodes.total ?? 0}</span>
-                    <span className="font-mono text-[10px] tracking-[0.14em] uppercase" style={{ color: 'var(--text-muted)' }}>Nodes</span>
+              <div className="dash-chart-legend">
+                {jobsByMarket.map((item, i) => (
+                  <div key={i} className="dash-legend-item">
+                    <span className="dash-legend-color" style={{ background: item.color }} />
+                    <span className="dash-legend-label">{item.name}</span>
+                    <span className="dash-legend-value">{item.value}</span>
                   </div>
-                </div>
-                <div className="flex-1 min-w-0 space-y-1.5">
-                  {nodeStatusData.map((item, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm">
-                      <span className="w-2 h-2 rounded-sm" style={{ background: item.color }} />
-                      <span className="flex-1 font-mono text-[11px] truncate" style={{ color: 'var(--text-secondary)' }}>{item.name}</span>
-                      <span className="font-mono text-sm" style={{ color: 'var(--text-primary)' }}>{item.value}</span>
-                    </div>
-                  ))}
-                </div>
+                ))}
               </div>
-            ) : (
-              <p className="text-sm py-8 text-center" style={{ color: 'var(--text-muted)' }}>No nodes registered</p>
-            )}
-          </SectionCard>
+            </div>
+          ) : (
+            <div className="dash-chart-empty">No jobs routed yet</div>
+          )}
         </div>
 
-        <SectionCard title="System Health" icon={Clock} noPadding>
-          <div className="p-5 sm:p-6">
-            <SystemHealth />
-          </div>
-        </SectionCard>
+        {/* Node Status Donut */}
+        <div className="dash-chart-card">
+          <h3 className="dash-chart-title">Node Status</h3>
+          {nodeStatusData.length > 0 ? (
+            <div className="dash-chart-with-legend">
+              <div className="dash-pie-container">
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie
+                      data={nodeStatusData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={78}
+                      paddingAngle={2}
+                      dataKey="value"
+                    >
+                      {nodeStatusData.map((entry, i) => (
+                        <Cell key={i} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<ChartTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="dash-donut-center">
+                  <span className="dash-donut-value">{stats?.nodes.total ?? 0}</span>
+                  <span className="dash-donut-label">Nodes</span>
+                </div>
+              </div>
+              <div className="dash-chart-legend">
+                {nodeStatusData.map((item, i) => (
+                  <div key={i} className="dash-legend-item">
+                    <span className="dash-legend-color" style={{ background: item.color }} />
+                    <span className="dash-legend-label">{item.name}</span>
+                    <span className="dash-legend-value">{item.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="dash-chart-empty">No nodes registered</div>
+          )}
+        </div>
+      </motion.div>
 
-        <SectionCard title="Recent Activity" icon={Clock} noPadding>
-          <div className="p-5 sm:p-6">
-            <ActivityFeed />
-          </div>
-        </SectionCard>
-      </DashboardMainColumn>
+      {/* ========== System Health (full width) ========== */}
+      <motion.div variants={itemVariants}>
+        <SystemHealth />
+      </motion.div>
 
-      <DashboardRightRail>
-        <ClockCard />
-      </DashboardRightRail>
-    </DashboardShell>
+      {/* ========== Recent Activity (full width) ========== */}
+      <motion.div variants={itemVariants}>
+        <ActivityFeed />
+      </motion.div>
+    </motion.div>
   )
 }

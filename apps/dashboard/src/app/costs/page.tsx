@@ -1,20 +1,25 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Receipt, Plus, DollarSign, FolderOpen, TrendingUp, List, AlertTriangle, X, Check, Zap, Server as ServerIcon, Wrench, TrendingDown, Globe, MoreHorizontal } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { Receipt, Plus, Trash2, DollarSign, FolderOpen, TrendingUp, List, RefreshCw, AlertTriangle, X, Check, Zap, Server as ServerIcon, Wrench, TrendingDown, Globe, MoreHorizontal } from 'lucide-react'
+import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input, Select } from '@/components/ui/Input'
 import { Modal, ConfirmModal } from '@/components/ui/Modal'
 import { DistributionBar } from '@/components/ui/ProgressBar'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
-import {
-  DashboardShell,
-  DashboardMainColumn,
-  DashboardRightRail,
-  SectionCard,
-  MetricTriad,
-} from '@/components/dashboard/FuturisticShell'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 interface Cost {
   id: string
@@ -48,8 +53,8 @@ export default function CostsPage() {
   const [costs, setCosts] = useState<Cost[]>([])
   const [summary, setSummary] = useState<CostSummary | null>(null)
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const [days, setDays] = useState(30)
 
   // Modal states
@@ -68,9 +73,8 @@ export default function CostsPage() {
     nodeId: '',
   })
 
-  const loadCosts = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true)
-    else setLoading(true)
+  const loadCosts = useCallback(async () => {
+    setLoading(true)
     try {
       const [costsData, summaryData] = await Promise.all([
         api.costs.list({ limit: 50 }),
@@ -83,7 +87,6 @@ export default function CostsPage() {
       setError(err instanceof Error ? err.message : 'Failed to load costs')
     } finally {
       setLoading(false)
-      setRefreshing(false)
     }
   }, [days])
 
@@ -198,20 +201,17 @@ export default function CostsPage() {
     : null
 
   return (
-    <DashboardShell
-      title="Cost Management"
-      subtitle="Operational expense tracking"
-      liveLabel="LIVE"
-      onRefresh={() => loadCosts(true)}
-      refreshing={refreshing}
-    >
-      <DashboardMainColumn>
-        <div className="flex items-center justify-end gap-3">
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
+      {/* Header */}
+      <motion.div variants={item} className="dash-header">
+        <div className="dash-header-left">
+          <h1><Receipt size={28} /> Cost Management</h1>
+        </div>
+        <div className="dash-header-right">
           <select
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
-            className="px-4 py-2.5 bg-surface border border-border rounded-xl text-sm focus:outline-none focus:border-accent"
-            style={{ color: 'var(--text-primary)' }}
+            className="px-4 py-2.5 bg-surface border border-border rounded-xl text-sm text-text-primary focus:outline-none focus:border-accent"
           >
             <option value={7}>Last 7 days</option>
             <option value={14}>Last 14 days</option>
@@ -222,51 +222,86 @@ export default function CostsPage() {
             Add Cost
           </Button>
         </div>
+      </motion.div>
 
-        <MetricTriad
-          metrics={[
-            {
-              label: 'Total Costs',
-              value: formatCurrency(summary?.total ?? 0),
-              icon: DollarSign,
-              tone: 'orange',
-            },
-            {
-              label: 'Entries',
-              value: String(costs.length),
-              detail: `${summary?.byCategory ? Object.keys(summary.byCategory).length : 0} categories`,
-              icon: Receipt,
-              tone: 'blue',
-            },
-            {
-              label: 'Top Category',
-              value: topCategory ? formatCurrency(topCategory[1]) : '$0.00',
-              detail: topCategory?.[0] ?? '-',
-              icon: TrendingUp,
-              tone: 'purple',
-            },
-          ]}
-        />
-
-        {error && (
-          <div className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-error/20 flex items-center justify-center shrink-0">
-              <AlertTriangle className="w-4 h-4 text-error" />
-            </div>
-            <p className="text-error text-sm">{error}</p>
-            <button onClick={() => setError(null)} className="ml-auto text-error/60 hover:text-error">
-              <X className="w-4 h-4" />
-            </button>
+      {/* KPI Stat Blocks */}
+      <motion.div variants={item} className="stat-blocks">
+        <div className="stat-block red">
+          <div className="stat-icon"><DollarSign size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{formatCurrency(summary?.total ?? 0)}</span>
+            <span className="stat-label">Total Costs</span>
           </div>
-        )}
+        </div>
+        <div className="stat-block amber">
+          <div className="stat-icon"><Receipt size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{costs.length}</span>
+            <span className="stat-label">This Month</span>
+          </div>
+        </div>
+        <div className="stat-block blue">
+          <div className="stat-icon"><FolderOpen size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{summary?.byCategory ? Object.keys(summary.byCategory).length : 0}</span>
+            <span className="stat-label">Categories</span>
+          </div>
+        </div>
+        <div className="stat-block purple">
+          <div className="stat-icon"><TrendingUp size={20} /></div>
+          <div className="stat-content">
+            <span className="stat-value">{topCategory ? formatCurrency(topCategory[1]) : '$0.00'}</span>
+            <span className="stat-label">Avg per Node</span>
+          </div>
+        </div>
+      </motion.div>
 
-        {!loading && summary && summary.total > 0 && (
-          <SectionCard title="Cost Distribution" icon={FolderOpen} badge={<span className="text-lg font-bold text-error ml-2">{formatCurrency(summary.total)}</span>}>
-            <DistributionBar segments={distributionSegments} size="lg" showLegend />
-          </SectionCard>
-        )}
+      {/* Alerts */}
+      {error && (
+        <div className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3 animate-slideUp">
+          <div className="w-8 h-8 rounded-lg bg-error/20 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-4 h-4 text-error" />
+          </div>
+          <p className="text-error text-sm">{error}</p>
+          <button onClick={() => setError(null)} className="ml-auto text-error/60 hover:text-error">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
-        <SectionCard title="Categories" icon={FolderOpen}>
+      {success && (
+        <div className="p-4 bg-accent/10 border border-accent/20 rounded-xl flex items-center gap-3 animate-slideUp">
+          <div className="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center shrink-0">
+            <Check className="w-4 h-4 text-accent" />
+          </div>
+          <p className="text-accent text-sm">{success}</p>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-10 h-10 border-2 border-error border-t-transparent rounded-full animate-spin" />
+            <p className="text-text-muted">Loading costs data...</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Cost Distribution */}
+          {summary && summary.total > 0 && (
+            <Card variant="glass" hover={false}>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-sm font-medium text-text-primary">Cost Distribution</h3>
+                  <p className="text-xs text-text-muted">Breakdown by category for the last {days} days</p>
+                </div>
+                <span className="text-lg font-bold text-error">{formatCurrency(summary.total)}</span>
+              </div>
+              <DistributionBar segments={distributionSegments} size="lg" showLegend />
+            </Card>
+          )}
+
+          {/* Category Cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {COST_CATEGORIES.map(({ value, label }) => {
               const amount = summary?.byCategory?.[value] ?? 0
@@ -274,114 +309,111 @@ export default function CostsPage() {
                 ? (amount / summary.total) * 100
                 : 0
               return (
-                <div key={value} className="text-center p-4 rounded-md border border-border" style={{ background: 'var(--bg-elevated)' }}>
+                <Card
+                  key={value}
+                  variant="glass"
+                  className="text-center"
+                  hover={amount > 0}
+                >
                   <div className={`inline-flex items-center justify-center w-10 h-10 rounded-xl mb-3 ${getCategoryBadgeStyle(value).split(' ')[0]}`}>
                     {getCategoryIcon(value)}
                   </div>
                   <p className={`text-xs font-medium mb-2 ${getCategoryBadgeStyle(value).split(' ')[1]}`}>
                     {label}
                   </p>
-                  <p className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                  <p className="text-xl font-bold text-text-primary">
                     {formatCurrency(amount)}
                   </p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  <p className="text-xs text-text-muted mt-1">
                     {percentage.toFixed(1)}%
                   </p>
-                </div>
+                </Card>
               )
             })}
           </div>
-        </SectionCard>
 
-        <SectionCard title="Cost Entries" icon={List}>
-          {costs.length === 0 ? (
-            <div className="py-12 text-center">
-              <Receipt className="w-12 h-12 mx-auto mb-4" style={{ color: 'var(--text-muted)' }} />
-              <h3 className="font-display text-lg mb-1" style={{ color: 'var(--text-primary)' }}>No cost entries</h3>
-              <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>
-                Start tracking your operational expenses by adding a cost entry.
-              </p>
-              <Button onClick={() => setShowCreateModal(true)} variant="primary" size="sm">
-                Add Your First Cost
-              </Button>
+          {/* Cost Entries Table */}
+          <Card variant="glass" hover={false}>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-error to-orange-400 flex items-center justify-center">
+                <List className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-text-primary">Cost Entries</h3>
+                <p className="text-xs text-text-muted">Individual cost records</p>
+              </div>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left py-3 px-4 text-xs uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Category</th>
-                    <th className="text-left py-3 px-4 text-xs uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Description</th>
-                    <th className="text-left py-3 px-4 text-xs uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Period</th>
-                    <th className="text-right py-3 px-4 text-xs uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Amount</th>
-                    <th className="text-right py-3 px-4 text-xs uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {costs.map((cost) => (
-                    <tr key={cost.id} className="border-b border-border/50 hover:bg-surface-hover/50 transition-colors">
-                      <td className="py-4 px-4">
-                        <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-lg text-xs font-medium border ${getCategoryBadgeStyle(cost.category)}`}>
-                          {getCategoryIcon(cost.category)}
-                          {cost.category}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4">
-                        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                          {cost.description || '-'}
-                        </span>
-                        {cost.nodeId && (
-                          <span className="ml-2 text-xs bg-surface-hover px-2 py-0.5 rounded" style={{ color: 'var(--text-muted)' }}>
-                            Node: {cost.nodeId.substring(0, 8)}...
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-4 px-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-                        {new Date(cost.periodStart).toLocaleDateString()} - {new Date(cost.periodEnd).toLocaleDateString()}
-                      </td>
-                      <td className="py-4 px-4 text-right">
-                        <span className="text-sm text-error font-semibold">
-                          {formatCurrency(cost.amount)}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 text-right">
-                        <button
-                          onClick={() => {
-                            setDeletingId(cost.id)
-                            setShowDeleteModal(true)
-                          }}
-                          className="px-3 py-1.5 text-xs bg-error/10 text-error rounded-lg hover:bg-error/20 transition-colors"
-                        >
-                          Delete
-                        </button>
-                      </td>
+
+            {costs.length === 0 ? (
+              <EmptyState
+                icon={<Receipt className="w-8 h-8" />}
+                title="No cost entries"
+                description="Start tracking your operational expenses by adding a cost entry."
+                action={
+                  <Button onClick={() => setShowCreateModal(true)} variant="primary" size="sm">
+                    Add Your First Cost
+                  </Button>
+                }
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-3 px-4 text-xs text-text-muted uppercase tracking-wider">Category</th>
+                      <th className="text-left py-3 px-4 text-xs text-text-muted uppercase tracking-wider">Description</th>
+                      <th className="text-left py-3 px-4 text-xs text-text-muted uppercase tracking-wider">Period</th>
+                      <th className="text-right py-3 px-4 text-xs text-text-muted uppercase tracking-wider">Amount</th>
+                      <th className="text-right py-3 px-4 text-xs text-text-muted uppercase tracking-wider">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </SectionCard>
-      </DashboardMainColumn>
-
-      <DashboardRightRail>
-        <SectionCard title="Snapshot" icon={Check}>
-          <div className="space-y-3">
-            <div className="flex justify-between items-baseline">
-              <span className="font-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-muted)' }}>Entries</span>
-              <span className="font-display text-sm" style={{ color: 'var(--text-primary)' }}>{costs.length}</span>
-            </div>
-            <div className="flex justify-between items-baseline">
-              <span className="font-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-muted)' }}>Categories</span>
-              <span className="font-display text-sm" style={{ color: 'var(--text-primary)' }}>{summary?.byCategory ? Object.keys(summary.byCategory).length : 0}</span>
-            </div>
-            <div className="flex justify-between items-baseline">
-              <span className="font-mono text-[11px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-muted)' }}>Period</span>
-              <span className="font-display text-sm" style={{ color: 'var(--text-primary)' }}>{days}d</span>
-            </div>
-          </div>
-        </SectionCard>
-      </DashboardRightRail>
+                  </thead>
+                  <tbody>
+                    {costs.map((cost) => (
+                      <tr key={cost.id} className="border-b border-border/50 hover:bg-surface-hover/50 transition-colors">
+                        <td className="py-4 px-4">
+                          <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-lg text-xs font-medium border ${getCategoryBadgeStyle(cost.category)}`}>
+                            {getCategoryIcon(cost.category)}
+                            {cost.category}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className="text-sm text-text-secondary">
+                            {cost.description || '-'}
+                          </span>
+                          {cost.nodeId && (
+                            <span className="ml-2 text-xs text-text-muted bg-surface-hover px-2 py-0.5 rounded">
+                              Node: {cost.nodeId.substring(0, 8)}...
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-4 px-4 text-sm text-text-muted">
+                          {new Date(cost.periodStart).toLocaleDateString()} - {new Date(cost.periodEnd).toLocaleDateString()}
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          <span className="text-sm text-error font-semibold">
+                            {formatCurrency(cost.amount)}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          <button
+                            onClick={() => {
+                              setDeletingId(cost.id)
+                              setShowDeleteModal(true)
+                            }}
+                            className="px-3 py-1.5 text-xs bg-error/10 text-error rounded-lg hover:bg-error/20 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </>
+      )}
 
       {/* Create Cost Modal */}
       <Modal
@@ -392,7 +424,7 @@ export default function CostsPage() {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+            <label className="block text-sm font-medium text-text-primary mb-2">
               Category
             </label>
             <Select
@@ -403,7 +435,7 @@ export default function CostsPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+            <label className="block text-sm font-medium text-text-primary mb-2">
               Amount (USD)
             </label>
             <Input
@@ -417,7 +449,7 @@ export default function CostsPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+            <label className="block text-sm font-medium text-text-primary mb-2">
               Description (optional)
             </label>
             <Input
@@ -430,7 +462,7 @@ export default function CostsPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+              <label className="block text-sm font-medium text-text-primary mb-2">
                 Period Start
               </label>
               <Input
@@ -440,7 +472,7 @@ export default function CostsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+              <label className="block text-sm font-medium text-text-primary mb-2">
                 Period End
               </label>
               <Input
@@ -452,7 +484,7 @@ export default function CostsPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+            <label className="block text-sm font-medium text-text-primary mb-2">
               Node ID (optional)
             </label>
             <Input
@@ -464,16 +496,27 @@ export default function CostsPage() {
           </div>
 
           <div className="flex gap-3 pt-4">
-            <Button onClick={() => setShowCreateModal(false)} variant="outline" className="flex-1" disabled={processing}>
+            <Button
+              onClick={() => setShowCreateModal(false)}
+              variant="outline"
+              className="flex-1"
+              disabled={processing}
+            >
               Cancel
             </Button>
-            <Button onClick={handleCreateCost} variant="primary" className="flex-1" loading={processing}>
+            <Button
+              onClick={handleCreateCost}
+              variant="primary"
+              className="flex-1"
+              loading={processing}
+            >
               Add Cost
             </Button>
           </div>
         </div>
       </Modal>
 
+      {/* Delete Confirmation Modal */}
       <ConfirmModal
         isOpen={showDeleteModal}
         onClose={() => {
@@ -487,6 +530,133 @@ export default function CostsPage() {
         variant="danger"
         loading={processing}
       />
-    </DashboardShell>
+    </motion.div>
+  )
+}
+
+// =============================================================================
+// ICONS
+// =============================================================================
+
+function ReceiptIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
+    </svg>
+  )
+}
+
+function RefreshIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
+  )
+}
+
+function PlusIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+    </svg>
+  )
+}
+
+function AlertIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+  )
+}
+
+function CloseIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  )
+}
+
+function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    </svg>
+  )
+}
+
+function DollarIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function FolderIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+    </svg>
+  )
+}
+
+function TrendingUpIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+    </svg>
+  )
+}
+
+function ListIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+    </svg>
+  )
+}
+
+function BoltIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+    </svg>
+  )
+}
+
+// ServerIcon removed - using lucide-react import
+
+function WrenchIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  )
+}
+
+function ChartDownIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
+    </svg>
+  )
+}
+
+function GlobeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function DotsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
+    </svg>
   )
 }

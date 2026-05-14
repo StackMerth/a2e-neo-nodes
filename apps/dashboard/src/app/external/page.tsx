@@ -2,10 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
 import {
   Globe,
+  RefreshCw,
   AlertTriangle,
   Clock,
+  Shield,
+  Server,
+  TrendingUp,
+  ChevronDown,
+  ChevronUp,
   ArrowUp,
   ArrowDown,
   Save,
@@ -15,8 +22,6 @@ import {
   Activity,
   DollarSign,
   Beaker,
-  Settings as SettingsIcon,
-  Server,
 } from 'lucide-react'
 import {
   LineChart,
@@ -28,17 +33,20 @@ import {
   CartesianGrid,
   Legend,
 } from 'recharts'
+import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
-import {
-  DashboardShell,
-  DashboardMainColumn,
-  DashboardRightRail,
-  SectionCard,
-  MetricTriad,
-} from '@/components/dashboard/FuturisticShell'
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+}
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+}
 
 type ExternalMarket = 'AKASH' | 'IONET' | 'VASTAI'
 type DeploymentStatus = 'PENDING' | 'ACTIVE' | 'TERMINATING' | 'TERMINATED' | 'FAILED'
@@ -80,9 +88,9 @@ type DeploymentsResponse = Awaited<ReturnType<typeof api.external.deployments>>
 type EarningsResponse = Awaited<ReturnType<typeof api.external.earnings>>
 
 function timeAgo(date: string | null | undefined): string {
-  if (!date) return '-'
+  if (!date) return '—'
   const d = new Date(date)
-  if (Number.isNaN(d.getTime())) return '-'
+  if (Number.isNaN(d.getTime())) return '—'
   const diffMs = Date.now() - d.getTime()
   const abs = Math.abs(diffMs)
   const sec = Math.round(abs / 1000)
@@ -107,9 +115,10 @@ export default function ExternalMarketsPage() {
   const [deployments, setDeployments] = useState<DeploymentsResponse | null>(null)
   const [earnings, setEarnings] = useState<EarningsResponse | null>(null)
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null)
 
+  const [configExpanded, setConfigExpanded] = useState(true)
   const [config, setConfig] = useState<OverflowConfigForm | null>(null)
   const [configDirty, setConfigDirty] = useState(false)
   const [configSaving, setConfigSaving] = useState(false)
@@ -123,8 +132,7 @@ export default function ExternalMarketsPage() {
   } | null>(null)
   const [delistRunning, setDelistRunning] = useState(false)
 
-  const loadAll = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true)
+  const loadAll = useCallback(async () => {
     try {
       const to = new Date()
       const from = new Date(to.getTime() - 30 * 86400_000)
@@ -139,6 +147,7 @@ export default function ExternalMarketsPage() {
       setDeployments(deploymentsData)
       setEarnings(earningsData)
 
+      // Only overwrite config form when the user has no unsaved edits.
       setConfig((prev) => {
         if (prev && configDirty) return prev
         return {
@@ -154,18 +163,18 @@ export default function ExternalMarketsPage() {
         }
       })
 
+      setLastUpdated(new Date().toISOString())
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load external market data')
     } finally {
       setLoading(false)
-      setRefreshing(false)
     }
   }, [statusFilter, configDirty])
 
   useEffect(() => {
     loadAll()
-    const interval = setInterval(() => loadAll(), 10_000)
+    const interval = setInterval(loadAll, 10_000)
     return () => clearInterval(interval)
   }, [loadAll])
 
@@ -247,6 +256,10 @@ export default function ExternalMarketsPage() {
     }
   }
 
+  // Build an earnings time series for the chart. The /earnings endpoint
+  // returns aggregates rather than a daily time series, so we render the
+  // 30-day totals as a single labelled point per market alongside summary
+  // cards — consistent with the task brief's fallback instruction.
   const earningsChartData = useMemo(() => {
     if (!earnings) return []
     return [
@@ -269,427 +282,454 @@ export default function ExternalMarketsPage() {
   const counts = deployments?.counts ?? { PENDING: 0, ACTIVE: 0, TERMINATING: 0, TERMINATED: 0, FAILED: 0 }
 
   return (
-    <DashboardShell
-      title="External Markets"
-      subtitle="Akash, IO.net, Vast.ai overflow"
-      liveLabel={status?.simulationMode ? 'SIMULATION' : 'LIVE'}
-      onRefresh={() => loadAll(true)}
-      refreshing={refreshing}
-    >
-      <DashboardMainColumn>
-        <MetricTriad
-          metrics={[
-            {
-              label: 'Total External (30d)',
-              value: formatCurrency(earnings?.totalUsd ?? 0),
-              icon: DollarSign,
-              tone: 'green',
-            },
-            {
-              label: 'Active Deployments',
-              value: String(counts.ACTIVE ?? 0),
-              detail: `${counts.PENDING ?? 0} pending`,
-              icon: Activity,
-              tone: 'blue',
-            },
-            {
-              label: 'Markets',
-              value: String(status?.markets.filter(m => m.healthy).length ?? 0),
-              detail: `of ${MARKETS.length} healthy`,
-              icon: Globe,
-              tone: 'purple',
-            },
-          ]}
-        />
-
-        {error && (
-          <div className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-error/10 flex items-center justify-center flex-shrink-0">
-              <AlertTriangle className="w-5 h-5 text-error" />
-            </div>
-            <p className="text-error text-sm">{error}</p>
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-8">
+      {/* Header */}
+      <motion.div variants={item}>
+        <div className="dash-header">
+          <div className="dash-header-left">
+            <h1><Globe size={28} /> External Markets</h1>
+            <p className="text-sm text-text-muted mt-1">Monitor overflow on Akash, IO.net, and Vast.ai</p>
+            {lastUpdated && (
+              <span className="dash-date-badge">
+                <Clock size={14} />
+                Updated {new Date(lastUpdated).toLocaleTimeString()}
+              </span>
+            )}
           </div>
-        )}
+          <div className="dash-header-right flex items-center gap-3">
+            {status?.simulationMode && (
+              <span className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full bg-warning/10 text-warning border border-warning/30">
+                <Beaker className="w-3.5 h-3.5" />
+                Simulation Mode
+              </span>
+            )}
+            <button className="dash-refresh-btn" onClick={loadAll} title="Refresh">
+              <RefreshCw className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </motion.div>
 
-        {!loading && config && (
-          <SectionCard
-            title="Overflow Configuration"
-            icon={SettingsIcon}
-            actions={
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleSaveConfig}
-                disabled={!configDirty || configSaving}
-                loading={configSaving}
-                icon={<Save className="w-4 h-4" />}
+      {error && (
+        <motion.div variants={item} className="p-4 bg-error/10 border border-error/20 rounded-xl flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-error/10 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle className="w-5 h-5 text-error" />
+          </div>
+          <p className="text-error text-sm">{error}</p>
+        </motion.div>
+      )}
+
+      {loading && !status ? (
+        <div className="flex flex-col items-center justify-center py-20">
+          <div className="w-12 h-12 rounded-xl bg-surface-hover flex items-center justify-center mb-4">
+            <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+          </div>
+          <p className="text-text-muted">Loading external markets...</p>
+        </div>
+      ) : (
+        <>
+          {/* B) Overflow Config */}
+          {config && (
+            <motion.div variants={item}>
+              <Card
+                variant="glass"
+                className="bg-white/5 backdrop-blur-xl border border-white/10"
+                action={
+                  <button
+                    onClick={() => setConfigExpanded((v) => !v)}
+                    className="p-2 rounded-lg hover:bg-surface-hover transition-colors text-text-muted"
+                    title={configExpanded ? 'Collapse' : 'Expand'}
+                  >
+                    {configExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  </button>
+                }
+                title="Overflow Configuration"
+                description="Controls when and how idle capacity spills to external markets"
               >
-                Save
-              </Button>
-            }
-          >
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <ToggleRow
-                  label="Overflow enabled"
-                  helpText="Master switch for external market routing"
-                  checked={config.enabled}
-                  onChange={(v) => mutateConfig({ enabled: v })}
-                  disabled={configSaving}
-                />
-                <ToggleRow
-                  label="Simulation mode"
-                  helpText={
-                    config.simulationMode
-                      ? 'Safe, no real deployments will be created'
-                      : 'Live mode requires API credentials'
-                  }
-                  warning={!config.simulationMode}
-                  checked={config.simulationMode}
-                  onChange={(v) => mutateConfig({ simulationMode: v })}
-                  disabled={configSaving}
-                />
-              </div>
+                {configExpanded && (
+                  <div className="space-y-6 mt-4">
+                    {/* Toggles */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <ToggleRow
+                        label="Overflow enabled"
+                        helpText="Master switch for external market routing"
+                        checked={config.enabled}
+                        onChange={(v) => mutateConfig({ enabled: v })}
+                        disabled={configSaving}
+                      />
+                      <ToggleRow
+                        label="Simulation mode"
+                        helpText={
+                          config.simulationMode
+                            ? 'Safe — no real deployments will be created'
+                            : 'Live mode requires API credentials'
+                        }
+                        warning={!config.simulationMode}
+                        checked={config.simulationMode}
+                        onChange={(v) => mutateConfig({ simulationMode: v })}
+                        disabled={configSaving}
+                      />
+                    </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                <NumberField
-                  label="Idle threshold (minutes)"
-                  helpText="Minutes a node must be idle before overflow kicks in"
-                  value={config.idleThresholdMinutes}
-                  min={1}
-                  max={1440}
-                  onChange={(v) => mutateConfig({ idleThresholdMinutes: v })}
-                  disabled={configSaving}
-                />
-                <NumberField
-                  label="Demand threshold (%)"
-                  helpText="Internal utilisation ceiling before overflowing"
-                  value={config.demandThresholdPercent}
-                  min={0}
-                  max={100}
-                  onChange={(v) => mutateConfig({ demandThresholdPercent: v })}
-                  disabled={configSaving}
-                />
-                <NumberField
-                  label="Margin protection (%)"
-                  helpText="Skip external routing if margin falls below this"
-                  value={config.marginProtectionPercent}
-                  min={0}
-                  max={100}
-                  onChange={(v) => mutateConfig({ marginProtectionPercent: v })}
-                  disabled={configSaving}
-                />
-                <NumberField
-                  label="Grace period (seconds)"
-                  helpText="Wait before delisting when internal demand returns"
-                  value={config.gracePeriodSeconds}
-                  min={0}
-                  max={3600}
-                  onChange={(v) => mutateConfig({ gracePeriodSeconds: v })}
-                  disabled={configSaving}
-                />
-              </div>
+                    {/* Numeric inputs */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                      <NumberField
+                        label="Idle threshold (minutes)"
+                        helpText="Minutes a node must be idle before overflow kicks in"
+                        value={config.idleThresholdMinutes}
+                        min={1}
+                        max={1440}
+                        onChange={(v) => mutateConfig({ idleThresholdMinutes: v })}
+                        disabled={configSaving}
+                      />
+                      <NumberField
+                        label="Demand threshold (%)"
+                        helpText="Internal utilisation ceiling before overflowing"
+                        value={config.demandThresholdPercent}
+                        min={0}
+                        max={100}
+                        onChange={(v) => mutateConfig({ demandThresholdPercent: v })}
+                        disabled={configSaving}
+                      />
+                      <NumberField
+                        label="Margin protection (%)"
+                        helpText="Skip external routing if margin falls below this"
+                        value={config.marginProtectionPercent}
+                        min={0}
+                        max={100}
+                        onChange={(v) => mutateConfig({ marginProtectionPercent: v })}
+                        disabled={configSaving}
+                      />
+                      <NumberField
+                        label="Grace period (seconds)"
+                        helpText="Wait before delisting when internal demand returns"
+                        value={config.gracePeriodSeconds}
+                        min={0}
+                        max={3600}
+                        onChange={(v) => mutateConfig({ gracePeriodSeconds: v })}
+                        disabled={configSaving}
+                      />
+                    </div>
 
-              <div>
-                <p className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Preferred markets</p>
-                <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-                  Higher priority markets are tried first when overflowing
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {config.preferredMarkets.map((market, idx) => (
-                    <div
-                      key={market}
-                      className="inline-flex items-center gap-2 pl-3 pr-1 py-1.5 rounded-lg border border-white/10 bg-white/5"
-                    >
-                      <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                        {idx + 1}. {MARKET_LABELS[market]}
-                      </span>
-                      <div className="flex">
-                        <button
-                          onClick={() => moveMarket(market, -1)}
-                          disabled={idx === 0 || configSaving}
-                          className="p-1 rounded hover:bg-surface-hover transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          style={{ color: 'var(--text-muted)' }}
-                          title="Move up"
-                        >
-                          <ArrowUp size={14} />
-                        </button>
-                        <button
-                          onClick={() => moveMarket(market, 1)}
-                          disabled={idx === config.preferredMarkets.length - 1 || configSaving}
-                          className="p-1 rounded hover:bg-surface-hover transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          style={{ color: 'var(--text-muted)' }}
-                          title="Move down"
-                        >
-                          <ArrowDown size={14} />
-                        </button>
+                    {/* Preferred markets */}
+                    <div>
+                      <p className="text-sm font-medium text-text-primary mb-2">Preferred markets</p>
+                      <p className="text-xs text-text-muted mb-3">
+                        Higher priority markets are tried first when overflowing
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {config.preferredMarkets.map((market, idx) => (
+                          <div
+                            key={market}
+                            className="inline-flex items-center gap-2 pl-3 pr-1 py-1.5 rounded-lg border border-white/10 bg-white/5"
+                          >
+                            <span className="text-sm font-medium text-text-primary">
+                              {idx + 1}. {MARKET_LABELS[market]}
+                            </span>
+                            <div className="flex">
+                              <button
+                                onClick={() => moveMarket(market, -1)}
+                                disabled={idx === 0 || configSaving}
+                                className="p-1 rounded hover:bg-surface-hover transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-text-muted"
+                                title="Move up"
+                              >
+                                <ArrowUp size={14} />
+                              </button>
+                              <button
+                                onClick={() => moveMarket(market, 1)}
+                                disabled={idx === config.preferredMarkets.length - 1 || configSaving}
+                                className="p-1 rounded hover:bg-surface-hover transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-text-muted"
+                                title="Move down"
+                              >
+                                <ArrowDown size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                </div>
+
+                    {/* Save button */}
+                    <div className="flex items-center gap-3 pt-2 border-t border-white/10">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={handleSaveConfig}
+                        disabled={!configDirty || configSaving}
+                        loading={configSaving}
+                        icon={<Save className="w-4 h-4" />}
+                      >
+                        Save changes
+                      </Button>
+                      {configDirty && !configSaving && (
+                        <span className="text-xs text-warning">Unsaved changes</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </Card>
+            </motion.div>
+          )}
+
+          {/* C) Market status cards */}
+          <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {(status?.markets ?? []).map((market) => (
+              <MarketStatusCard key={market.market} market={market} />
+            ))}
+          </motion.div>
+
+          {/* D) Active deployments */}
+          <motion.div variants={item}>
+            <Card
+              variant="glass"
+              className="bg-white/5 backdrop-blur-xl border border-white/10"
+              title="Active Deployments"
+              description="External deployments currently live on third-party markets"
+            >
+              {/* Status filter chips */}
+              <div className="flex items-center gap-2 flex-wrap mt-4 mb-4">
+                {STATUS_FILTERS.map((f) => (
+                  <button
+                    key={f.label}
+                    onClick={() => setStatusFilter(f.value)}
+                    className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${
+                      statusFilter === f.value
+                        ? 'bg-accent text-background'
+                        : 'bg-surface text-text-secondary hover:bg-surface-hover'
+                    }`}
+                  >
+                    {f.label}
+                    {f.value && f.value.split(',').length === 1 && (
+                      <span className="ml-1.5 opacity-70">
+                        ({counts[f.value as DeploymentStatus] ?? 0})
+                      </span>
+                    )}
+                  </button>
+                ))}
               </div>
 
-              {configDirty && !configSaving && (
-                <p className="text-xs text-warning">Unsaved changes</p>
-              )}
-            </div>
-          </SectionCard>
-        )}
-
-        <SectionCard title="Active Deployments" icon={Server}>
-          <div className="flex items-center gap-2 flex-wrap mb-4">
-            {STATUS_FILTERS.map((f) => (
-              <button
-                key={f.label}
-                onClick={() => setStatusFilter(f.value)}
-                className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-all ${
-                  statusFilter === f.value
-                    ? 'bg-accent text-background'
-                    : 'bg-surface hover:bg-surface-hover'
-                }`}
-                style={statusFilter === f.value ? undefined : { color: 'var(--text-secondary)' }}
-              >
-                {f.label}
-                {f.value && f.value.split(',').length === 1 && (
-                  <span className="ml-1.5 opacity-70">
-                    ({counts[f.value as DeploymentStatus] ?? 0})
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wider border-b border-white/10" style={{ color: 'var(--text-muted)' }}>
-                  <th className="py-3 px-3 font-medium">Node</th>
-                  <th className="py-3 px-3 font-medium">GPU</th>
-                  <th className="py-3 px-3 font-medium">Market</th>
-                  <th className="py-3 px-3 font-medium">Status</th>
-                  <th className="py-3 px-3 font-medium text-right">Rate/hr</th>
-                  <th className="py-3 px-3 font-medium text-right">Cost</th>
-                  <th className="py-3 px-3 font-medium text-right">Earnings</th>
-                  <th className="py-3 px-3 font-medium">Age</th>
-                  <th className="py-3 px-3 font-medium w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeDeployments.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="py-10 text-center" style={{ color: 'var(--text-muted)' }}>
-                      No deployments match this filter
-                    </td>
-                  </tr>
-                ) : (
-                  activeDeployments.map((d) => (
-                    <tr key={d.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                      <td className="py-3 px-3">
-                        <Link
-                          href={`/nodes/${d.nodeId}`}
-                          className="text-accent hover:underline font-mono text-xs"
-                        >
-                          {d.nodeId.slice(0, 8)}...
-                        </Link>
-                      </td>
-                      <td className="py-3 px-3" style={{ color: 'var(--text-primary)' }}>{d.node.gpuTier}</td>
-                      <td className="py-3 px-3">
-                        <MarketPill market={d.market} />
-                      </td>
-                      <td className="py-3 px-3">
-                        <StatusBadge status={d.status as DeploymentStatus} />
-                      </td>
-                      <td className="py-3 px-3 text-right tabular-nums" style={{ color: 'var(--text-primary)' }}>
-                        ${d.ratePerHour.toFixed(2)}
-                      </td>
-                      <td className="py-3 px-3 text-right text-error tabular-nums">
-                        {formatCurrency(d.costAccumulated)}
-                      </td>
-                      <td className="py-3 px-3 text-right text-accent tabular-nums">
-                        {formatCurrency(d.earningsAccumulated)}
-                      </td>
-                      <td className="py-3 px-3" style={{ color: 'var(--text-muted)' }}>
-                        {timeAgo(d.createdAt)}
-                      </td>
-                      <td className="py-3 px-3 relative">
-                        {(d.status === 'ACTIVE' || d.status === 'PENDING') && (
-                          <>
-                            <button
-                              onClick={() =>
-                                setActionMenuFor(actionMenuFor === d.id ? null : d.id)
-                              }
-                              className="p-1.5 rounded-lg hover:bg-surface-hover transition-colors"
-                              style={{ color: 'var(--text-muted)' }}
-                              title="Actions"
+              {/* Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-text-muted uppercase tracking-wider border-b border-white/10">
+                      <th className="py-3 px-3 font-medium">Node</th>
+                      <th className="py-3 px-3 font-medium">GPU</th>
+                      <th className="py-3 px-3 font-medium">Market</th>
+                      <th className="py-3 px-3 font-medium">Status</th>
+                      <th className="py-3 px-3 font-medium text-right">Rate/hr</th>
+                      <th className="py-3 px-3 font-medium text-right">Cost</th>
+                      <th className="py-3 px-3 font-medium text-right">Earnings</th>
+                      <th className="py-3 px-3 font-medium">Age</th>
+                      <th className="py-3 px-3 font-medium w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeDeployments.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="py-10 text-center text-text-muted">
+                          No deployments match this filter
+                        </td>
+                      </tr>
+                    ) : (
+                      activeDeployments.map((d) => (
+                        <tr key={d.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                          <td className="py-3 px-3">
+                            <Link
+                              href={`/nodes/${d.nodeId}`}
+                              className="text-accent hover:underline font-mono text-xs"
                             >
-                              <MoreVertical size={16} />
-                            </button>
-                            {actionMenuFor === d.id && (
+                              {d.nodeId.slice(0, 8)}…
+                            </Link>
+                          </td>
+                          <td className="py-3 px-3 text-text-primary">{d.node.gpuTier}</td>
+                          <td className="py-3 px-3">
+                            <MarketPill market={d.market} />
+                          </td>
+                          <td className="py-3 px-3">
+                            <StatusBadge status={d.status as DeploymentStatus} />
+                          </td>
+                          <td className="py-3 px-3 text-right text-text-primary tabular-nums">
+                            ${d.ratePerHour.toFixed(2)}
+                          </td>
+                          <td className="py-3 px-3 text-right text-error tabular-nums">
+                            {formatCurrency(d.costAccumulated)}
+                          </td>
+                          <td className="py-3 px-3 text-right text-accent tabular-nums">
+                            {formatCurrency(d.earningsAccumulated)}
+                          </td>
+                          <td className="py-3 px-3 text-text-muted">
+                            {timeAgo(d.createdAt)}
+                          </td>
+                          <td className="py-3 px-3 relative">
+                            {(d.status === 'ACTIVE' || d.status === 'PENDING') && (
                               <>
-                                <div
-                                  className="fixed inset-0 z-10"
-                                  onClick={() => setActionMenuFor(null)}
-                                />
-                                <div className="absolute right-0 top-full mt-1 w-48 bg-surface border border-border rounded-lg shadow-xl z-20 overflow-hidden">
-                                  <button
-                                    onClick={() => {
-                                      setActionMenuFor(null)
-                                      setDelistTarget({
-                                        nodeId: d.nodeId,
-                                        deploymentId: d.id,
-                                        mode: 'safe',
-                                      })
-                                    }}
-                                    className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover transition-colors"
-                                  >
-                                    Delist (SAFE)
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setActionMenuFor(null)
-                                      setDelistTarget({
-                                        nodeId: d.nodeId,
-                                        deploymentId: d.id,
-                                        mode: 'force',
-                                      })
-                                    }}
-                                    className="w-full text-left px-4 py-2 text-sm text-error hover:bg-error/10 transition-colors"
-                                  >
-                                    Delist (FORCE)
-                                  </button>
-                                </div>
+                                <button
+                                  onClick={() =>
+                                    setActionMenuFor(actionMenuFor === d.id ? null : d.id)
+                                  }
+                                  className="p-1.5 rounded-lg hover:bg-surface-hover transition-colors text-text-muted"
+                                  title="Actions"
+                                >
+                                  <MoreVertical size={16} />
+                                </button>
+                                {actionMenuFor === d.id && (
+                                  <>
+                                    <div
+                                      className="fixed inset-0 z-10"
+                                      onClick={() => setActionMenuFor(null)}
+                                    />
+                                    <div className="absolute right-0 top-full mt-1 w-48 bg-surface border border-border rounded-lg shadow-xl z-20 overflow-hidden">
+                                      <button
+                                        onClick={() => {
+                                          setActionMenuFor(null)
+                                          setDelistTarget({
+                                            nodeId: d.nodeId,
+                                            deploymentId: d.id,
+                                            mode: 'safe',
+                                          })
+                                        }}
+                                        className="w-full text-left px-4 py-2 text-sm hover:bg-surface-hover transition-colors"
+                                      >
+                                        Delist (SAFE)
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setActionMenuFor(null)
+                                          setDelistTarget({
+                                            nodeId: d.nodeId,
+                                            deploymentId: d.id,
+                                            mode: 'force',
+                                          })
+                                        }}
+                                        className="w-full text-left px-4 py-2 text-sm text-error hover:bg-error/10 transition-colors"
+                                      >
+                                        Delist (FORCE)
+                                      </button>
+                                    </div>
+                                  </>
+                                )}
                               </>
                             )}
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
-
-        <SectionCard
-          title="External Earnings"
-          icon={DollarSign}
-          badge={earnings && (
-            <span className="font-mono text-[11px] uppercase tracking-[0.14em] ml-2" style={{ color: 'var(--text-muted)' }}>
-              {new Date(earnings.periodStart).toLocaleDateString()} - {new Date(earnings.periodEnd).toLocaleDateString()}
-            </span>
-          )}
-        >
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <EarningsSummaryCard
-                label="Total External"
-                value={formatCurrency(earnings?.totalUsd ?? 0)}
-                color="#22c55e"
-                icon={<DollarSign className="w-4 h-4" />}
-              />
-              {MARKETS.map((market) => (
-                <EarningsSummaryCard
-                  key={market}
-                  label={MARKET_LABELS[market]}
-                  value={formatCurrency(earnings?.byMarket[market] ?? 0)}
-                  color={MARKET_COLORS[market]}
-                  icon={<Globe className="w-4 h-4" />}
-                />
-              ))}
-            </div>
-
-            {earningsChartData.length > 0 && (earnings?.totalUsd ?? 0) > 0 ? (
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={earningsChartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
-                      tickFormatter={(v: number) => `$${v}`}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: 'var(--glass-bg)',
-                        border: '1px solid var(--glass-border)',
-                        borderRadius: '8px',
-                        color: 'var(--text-primary)',
-                      }}
-                      formatter={(value) => [`$${Number(value).toFixed(2)}`, '']}
-                    />
-                    <Legend />
-                    {MARKETS.map((market) => (
-                      <Line
-                        key={market}
-                        type="monotone"
-                        dataKey={market}
-                        name={MARKET_LABELS[market]}
-                        stroke={MARKET_COLORS[market]}
-                        strokeWidth={2}
-                        dot={{ r: 4 }}
-                      />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
-            ) : (
-              <div className="h-32 flex items-center justify-center text-sm" style={{ color: 'var(--text-muted)' }}>
-                No external earnings recorded in this window
-              </div>
-            )}
+            </Card>
+          </motion.div>
 
-            {earnings && earnings.byNode.length > 0 && (
-              <div>
-                <p className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>Top earning nodes</p>
-                <div className="space-y-2">
-                  {earnings.byNode.slice(0, 5).map((n) => (
-                    <div
-                      key={n.nodeId}
-                      className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10"
-                    >
-                      <Link
-                        href={`/nodes/${n.nodeId}`}
-                        className="text-sm text-accent hover:underline font-mono"
-                      >
-                        {n.nodeId.slice(0, 10)}...
-                      </Link>
-                      <span className="text-sm font-medium tabular-nums" style={{ color: 'var(--text-primary)' }}>
-                        {formatCurrency(n.totalUsd)}
-                      </span>
-                    </div>
+          {/* E) External earnings — summary cards + chart */}
+          <motion.div variants={item}>
+            <Card
+              variant="glass"
+              className="bg-white/5 backdrop-blur-xl border border-white/10"
+              title="External Earnings"
+              description={
+                earnings
+                  ? `${new Date(earnings.periodStart).toLocaleDateString()} → ${new Date(earnings.periodEnd).toLocaleDateString()}`
+                  : 'Last 30 days'
+              }
+            >
+              <div className="space-y-6 mt-4">
+                {/* Summary cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <EarningsSummaryCard
+                    label="Total External"
+                    value={formatCurrency(earnings?.totalUsd ?? 0)}
+                    color="#22c55e"
+                    icon={<DollarSign className="w-4 h-4" />}
+                  />
+                  {MARKETS.map((market) => (
+                    <EarningsSummaryCard
+                      key={market}
+                      label={MARKET_LABELS[market]}
+                      value={formatCurrency(earnings?.byMarket[market] ?? 0)}
+                      color={MARKET_COLORS[market]}
+                      icon={<Globe className="w-4 h-4" />}
+                    />
                   ))}
                 </div>
+
+                {/* Chart */}
+                {earningsChartData.length > 0 && (earnings?.totalUsd ?? 0) > 0 ? (
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={earningsChartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                        <XAxis
+                          dataKey="date"
+                          tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                          tickFormatter={(v: number) => `$${v}`}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            background: 'var(--glass-bg)',
+                            border: '1px solid var(--glass-border)',
+                            borderRadius: '8px',
+                            color: 'var(--text-primary)',
+                          }}
+                          formatter={(value) => [`$${Number(value).toFixed(2)}`, '']}
+                        />
+                        <Legend />
+                        {MARKETS.map((market) => (
+                          <Line
+                            key={market}
+                            type="monotone"
+                            dataKey={market}
+                            name={MARKET_LABELS[market]}
+                            stroke={MARKET_COLORS[market]}
+                            strokeWidth={2}
+                            dot={{ r: 4 }}
+                          />
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-32 flex items-center justify-center text-text-muted text-sm">
+                    No external earnings recorded in this window
+                  </div>
+                )}
+
+                {/* Top earners */}
+                {earnings && earnings.byNode.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-text-primary mb-3">Top earning nodes</p>
+                    <div className="space-y-2">
+                      {earnings.byNode.slice(0, 5).map((n) => (
+                        <div
+                          key={n.nodeId}
+                          className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10"
+                        >
+                          <Link
+                            href={`/nodes/${n.nodeId}`}
+                            className="text-sm text-accent hover:underline font-mono"
+                          >
+                            {n.nodeId.slice(0, 10)}…
+                          </Link>
+                          <span className="text-sm font-medium text-text-primary tabular-nums">
+                            {formatCurrency(n.totalUsd)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </SectionCard>
-      </DashboardMainColumn>
-
-      <DashboardRightRail>
-        {(status?.markets ?? []).map((market) => (
-          <MarketStatusCard key={market.market} market={market} />
-        ))}
-
-        {status?.simulationMode && (
-          <SectionCard title="Mode" icon={Beaker}>
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full bg-warning/10 text-warning border border-warning/30">
-              <Beaker className="w-3.5 h-3.5" />
-              Simulation Mode
-            </div>
-            <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
-              No real deployments are created in simulation mode.
-            </p>
-          </SectionCard>
-        )}
-      </DashboardRightRail>
+            </Card>
+          </motion.div>
+        </>
+      )}
 
       <ConfirmModal
         isOpen={delistTarget !== null}
@@ -705,7 +745,7 @@ export default function ExternalMarketsPage() {
         variant={delistTarget?.mode === 'force' ? 'danger' : 'warning'}
         loading={delistRunning}
       />
-    </DashboardShell>
+    </motion.div>
   )
 }
 
@@ -731,8 +771,8 @@ function ToggleRow({
   return (
     <div className="flex items-start justify-between gap-4 p-4 bg-white/5 rounded-xl border border-white/10">
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{label}</p>
-        <p className={`text-xs mt-1 ${warning ? 'text-warning' : ''}`} style={warning ? undefined : { color: 'var(--text-muted)' }}>{helpText}</p>
+        <p className="text-sm font-medium text-text-primary">{label}</p>
+        <p className={`text-xs mt-1 ${warning ? 'text-warning' : 'text-text-muted'}`}>{helpText}</p>
       </div>
       <button
         type="button"
@@ -774,7 +814,7 @@ function NumberField({
   return (
     <div className="p-4 bg-white/5 rounded-xl border border-white/10">
       <label className="block">
-        <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{label}</span>
+        <span className="text-sm font-medium text-text-primary">{label}</span>
         <input
           type="number"
           value={value}
@@ -785,10 +825,9 @@ function NumberField({
             if (!Number.isNaN(parsed)) onChange(parsed)
           }}
           disabled={disabled}
-          className="mt-2 w-full px-3 py-2 text-sm bg-surface border border-border rounded-lg focus:outline-none focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed tabular-nums"
-          style={{ color: 'var(--text-primary)' }}
+          className="mt-2 w-full px-3 py-2 text-sm bg-surface border border-border rounded-lg text-text-primary focus:outline-none focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed tabular-nums"
         />
-        <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>{helpText}</p>
+        <p className="text-xs text-text-muted mt-2">{helpText}</p>
       </label>
     </div>
   )
@@ -801,54 +840,65 @@ function MarketStatusCard({
 }) {
   const { dotColor, label, badgeStyle } = getHealthStyle(market)
   return (
-    <SectionCard title={MARKET_LABELS[market.market]} icon={Globe} badge={
-      <span className={`px-2.5 py-1 text-xs font-medium rounded-lg ml-2 ${badgeStyle}`}>
-        {!market.enabled
-          ? 'Disabled'
-          : market.autoDisabled
-            ? 'Auto-disabled'
-            : 'Enabled'}
-      </span>
-    }>
-      <div className="flex items-center gap-2 mb-3">
-        <span className={`w-2 h-2 rounded-full ${dotColor}`} />
-        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</span>
+    <Card variant="glass" className="bg-white/5 backdrop-blur-xl border border-white/10">
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
+            <Globe className="w-5 h-5 text-text-secondary" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold text-text-primary">
+              {MARKET_LABELS[market.market]}
+            </h3>
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`w-2 h-2 rounded-full ${dotColor}`} />
+              <span className="text-xs text-text-muted">{label}</span>
+            </div>
+          </div>
+        </div>
+        <span className={`px-2.5 py-1 text-xs font-medium rounded-lg ${badgeStyle}`}>
+          {!market.enabled
+            ? 'Disabled'
+            : market.autoDisabled
+              ? 'Auto-disabled'
+              : 'Enabled'}
+        </span>
       </div>
 
       <div className="space-y-2 mb-4 text-xs">
         <div className="flex items-center justify-between">
-          <span style={{ color: 'var(--text-muted)' }}>Failures</span>
-          <span className={market.failureCount > 0 ? 'text-error font-medium' : ''} style={market.failureCount > 0 ? undefined : { color: 'var(--text-secondary)' }}>
+          <span className="text-text-muted">Failures</span>
+          <span className={market.failureCount > 0 ? 'text-error font-medium' : 'text-text-secondary'}>
             {market.failureCount}
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span style={{ color: 'var(--text-muted)' }}>Last success</span>
-          <span style={{ color: 'var(--text-secondary)' }}>{timeAgo(market.lastSuccess)}</span>
+          <span className="text-text-muted">Last success</span>
+          <span className="text-text-secondary">{timeAgo(market.lastSuccess)}</span>
         </div>
         <div className="flex items-center justify-between">
-          <span style={{ color: 'var(--text-muted)' }}>Last failure</span>
-          <span style={{ color: 'var(--text-secondary)' }}>{timeAgo(market.lastFailure)}</span>
+          <span className="text-text-muted">Last failure</span>
+          <span className="text-text-secondary">{timeAgo(market.lastFailure)}</span>
         </div>
       </div>
 
       <div className="pt-3 border-t border-white/10">
-        <p className="text-xs mb-2 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Current rates ($/hr)</p>
+        <p className="text-xs text-text-muted mb-2 uppercase tracking-wider">Current rates ($/hr)</p>
         <div className="grid grid-cols-3 gap-2 text-xs">
           {GPU_TIERS.map((tier) => {
             const rate = market.latestRates[tier]
             return (
               <div key={tier} className="text-center p-2 bg-white/5 rounded border border-white/5">
-                <p style={{ color: 'var(--text-muted)' }}>{tier}</p>
-                <p className="font-semibold tabular-nums mt-0.5" style={{ color: 'var(--text-primary)' }}>
-                  {rate && rate.available ? `$${rate.ratePerHour.toFixed(2)}` : '-'}
+                <p className="text-text-muted">{tier}</p>
+                <p className="font-semibold text-text-primary tabular-nums mt-0.5">
+                  {rate && rate.available ? `$${rate.ratePerHour.toFixed(2)}` : '—'}
                 </p>
               </div>
             )
           })}
         </div>
       </div>
-    </SectionCard>
+    </Card>
   )
 }
 
@@ -944,9 +994,9 @@ function EarningsSummaryCard({
     <div className="p-4 bg-white/5 rounded-xl border border-white/10">
       <div className="flex items-center gap-2 mb-2">
         <span style={{ color }}>{icon}</span>
-        <span className="text-xs uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{label}</span>
+        <span className="text-xs text-text-muted uppercase tracking-wider">{label}</span>
       </div>
-      <p className="text-2xl font-bold tabular-nums" style={{ color }}>
+      <p className="text-2xl font-bold text-text-primary tabular-nums" style={{ color }}>
         {value}
       </p>
     </div>
