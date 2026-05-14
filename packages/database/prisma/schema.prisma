@@ -239,6 +239,23 @@ model NodeRunner {
   payoutDayOfWeek  Int?     // 0=Sunday, 1=Monday, etc. (for WEEKLY)
   payoutDayOfMonth Int?     // 1-28 (for MONTHLY)
 
+  // Payout mode. Controls how earnings flow from the platform to the
+  // operator's wallet:
+  //   AUTO       — default. Settlement worker fires when threshold +
+  //                frequency conditions hit (legacy behavior).
+  //   MANUAL     — earnings accumulate on the platform indefinitely;
+  //                the operator clicks "Withdraw now" to trigger a
+  //                payout against the unpaid balance.
+  //   SCHEDULED  — accumulate until payoutScheduledAt; on/after that
+  //                date the worker fires the full unpaid balance and
+  //                resets mode back to AUTO.
+  // Two safety nets enforced by the settlement worker regardless of
+  // mode: a $10K cap on platform-held balance forces a payout, and
+  // 180-day account inactivity forces a sweep so dormant balances
+  // never sit forever.
+  payoutMode        PayoutMode  @default(AUTO)
+  payoutScheduledAt DateTime?
+
   // M3: reputation. reputationScore is 0-100, recomputed daily by the
   // reputation-scorer worker from uptime + ratings + completed jobs.
   // Tier is derived from score (BRONZE/SILVER/GOLD/PLATINUM thresholds).
@@ -294,6 +311,15 @@ enum ReputationTier {
   SILVER
   GOLD
   PLATINUM
+}
+
+// Payout mode for a NodeRunner. Drives the settlement worker's
+// decision tree. See NodeRunner.payoutMode for the per-mode behavior
+// and the $10K-cap / 180-day-inactivity safety nets.
+enum PayoutMode {
+  AUTO
+  MANUAL
+  SCHEDULED
 }
 
 // M5.7 / D2: operator referral program.
