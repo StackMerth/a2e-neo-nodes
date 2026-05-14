@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Server, CircleCheck, Hash, Layers, Calendar, FileText, Wallet, Receipt, Globe } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
@@ -114,6 +114,20 @@ export default function RequestComputePage() {
   const router = useRouter()
   const { toast } = useToast()
   const [selectedTier, setSelectedTier] = useState<string | null>(null)
+
+  // M5.10b: when the buyer arrives from the marketplace /rent page,
+  // the URL carries ?gpuTier=H100 so the form lands with that tier
+  // pre-selected. Only honor known tier codes.
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    const fromQuery = searchParams?.get('gpuTier')
+    if (fromQuery && GPU_TIERS.some(t => t.id === fromQuery)) {
+      setSelectedTier(fromQuery)
+    }
+    // Run once on mount; ignore subsequent searchParams changes so a
+    // user clicking around the form doesn't get reset.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [gpuCount, setGpuCount] = useState(1)
   const [duration, setDuration] = useState(30)
   const [purpose, setPurpose] = useState('')
