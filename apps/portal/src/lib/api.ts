@@ -208,6 +208,10 @@ export const buyer = {
     // allocator falls back to general pool if this operator has no
     // idle capacity. Null/undefined means no preference.
     preferredOperatorSlug?: string | null
+    // M6 / launch-blocker #2 dependency: buyer's SSH public key. The
+    // agent installs this into the rental user's authorized_keys at
+    // provision time. Required for real (non-test-mode) rentals.
+    sshPubKey?: string
   }) =>
     apiFetch('/v1/buyer/compute/request', { method: 'POST', body: data }),
   requests: (params?: Record<string, string>) => {

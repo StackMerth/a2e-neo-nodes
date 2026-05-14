@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Server, CircleCheck, Hash, Layers, Calendar, FileText, Wallet, Receipt, Globe } from 'lucide-react'
+import { Server, CircleCheck, Hash, Layers, Calendar, FileText, Wallet, Receipt, Globe, KeyRound } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -34,6 +34,14 @@ const HOURLY_RATES: Record<string, number> = {
   B300: 17.99,
   GB300: 20.81,
 }
+
+// M6: lightweight client-side validation for the buyer's SSH public key.
+// Matches the canonical openssh public key formats: ssh-rsa, ssh-ed25519,
+// ssh-dss, and the three ecdsa-sha2-nistp* variants, optionally followed
+// by a comment. The API runs the authoritative validation; this is just
+// to catch obvious paste mistakes before submit.
+const SSH_PUBKEY_REGEX =
+  /^(ssh-(rsa|ed25519|dss)|ecdsa-sha2-nistp(256|384|521))\s+[A-Za-z0-9+/=]+(\s+.+)?$/
 
 const TIER_STYLES: Record<string, { border: string; bg: string; text: string; glow: string; ring: string }> = {
   H100: {
@@ -142,6 +150,7 @@ export default function RequestComputePage() {
   const [gpuCount, setGpuCount] = useState(1)
   const [duration, setDuration] = useState(30)
   const [purpose, setPurpose] = useState('')
+  const [sshPubKey, setSshPubKey] = useState('')
   const [txHash, setTxHash] = useState('')
   const [submitting, setSubmitting] = useState(false)
   // M3: pricing tier + commitment slider for RESERVED
@@ -165,6 +174,15 @@ export default function RequestComputePage() {
       toast('error', 'Please select a GPU tier and enter a transaction hash')
       return
     }
+    const trimmedPubKey = sshPubKey.trim()
+    if (!trimmedPubKey) {
+      toast('error', 'Paste your SSH public key so the operator can authorize your connection')
+      return
+    }
+    if (!SSH_PUBKEY_REGEX.test(trimmedPubKey)) {
+      toast('error', 'SSH key does not look right. It should start with ssh-rsa, ssh-ed25519, or ecdsa-sha2-...')
+      return
+    }
 
     setSubmitting(true)
     try {
@@ -178,6 +196,7 @@ export default function RequestComputePage() {
         commitmentDays: rentalTier === 'RESERVED' ? commitmentDays : undefined,
         requiredRegion: requiredRegion || null,
         preferredOperatorSlug: preferredOperatorSlug || null,
+        sshPubKey: trimmedPubKey,
       }) as { id: string }
       toast('success', 'Compute request submitted successfully')
       router.push(`/buyer/requests/${result.id}`)
@@ -552,6 +571,90 @@ export default function RequestComputePage() {
               value={purpose}
               onChange={e => setPurpose(e.target.value)}
             />
+          </FormSection>
+        </FormCard>
+
+        {/* M6: SSH public key. Required because the agent on the
+            operator's machine installs this into the rental user's
+            authorized_keys at provision time — without it, the rental
+            lands in FAILED status. */}
+        <FormCard
+          title="SSH public key"
+          description="Required. The operator's machine will authorize this key so you can SSH in once the rental activates."
+          icon={KeyRound}
+        >
+          <FormSection>
+            <textarea
+              className="w-full rounded-lg px-4 py-2.5 transition-colors font-mono text-xs min-h-[100px] resize-y"
+              style={{
+                background: 'var(--bg-elevated)',
+                border:
+                  sshPubKey.trim() === '' || SSH_PUBKEY_REGEX.test(sshPubKey.trim())
+                    ? '1px solid var(--border-color)'
+                    : '1px solid rgba(239, 68, 68, 0.5)',
+                color: 'var(--text-primary)',
+              }}
+              placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... you@laptop"
+              value={sshPubKey}
+              onChange={e => setSshPubKey(e.target.value)}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+            />
+            {sshPubKey.trim() !== '' && !SSH_PUBKEY_REGEX.test(sshPubKey.trim()) && (
+              <p className="text-xs mt-2" style={{ color: '#ef4444' }}>
+                Doesn&rsquo;t look like an SSH public key. It should start with{' '}
+                <code>ssh-rsa</code>, <code>ssh-ed25519</code>, or{' '}
+                <code>ecdsa-sha2-nistp...</code>.
+              </p>
+            )}
+            <details className="mt-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+              <summary className="cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
+                How do I find my public key?
+              </summary>
+              <div className="mt-2 space-y-2 leading-relaxed">
+                <p>
+                  On macOS or Linux, open a terminal and run{' '}
+                  <code
+                    className="px-1.5 py-0.5 rounded"
+                    style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}
+                  >
+                    cat ~/.ssh/id_ed25519.pub
+                  </code>{' '}
+                  (or{' '}
+                  <code
+                    className="px-1.5 py-0.5 rounded"
+                    style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}
+                  >
+                    ~/.ssh/id_rsa.pub
+                  </code>{' '}
+                  for older RSA keys), then copy the entire single line.
+                </p>
+                <p>
+                  On Windows, open PowerShell and run{' '}
+                  <code
+                    className="px-1.5 py-0.5 rounded"
+                    style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}
+                  >
+                    Get-Content $env:USERPROFILE\.ssh\id_ed25519.pub
+                  </code>
+                  .
+                </p>
+                <p>
+                  No key yet? Generate one with{' '}
+                  <code
+                    className="px-1.5 py-0.5 rounded"
+                    style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}
+                  >
+                    ssh-keygen -t ed25519
+                  </code>{' '}
+                  and accept the defaults — your public key lands at the path above.
+                </p>
+                <p style={{ color: 'var(--text-muted)' }}>
+                  Paste the <strong>public</strong> key (.pub file). Never share your private key.
+                </p>
+              </div>
+            </details>
           </FormSection>
         </FormCard>
 
