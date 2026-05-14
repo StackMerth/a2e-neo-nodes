@@ -64,6 +64,7 @@ import {
   portalReferralRoutes,
   publicStatsRoutes,
   publicChatRoutes,
+  byogRoutes,
 } from './routes'
 import { setupWebSocket } from './websocket'
 import { setNotificationSocket } from './services/notification/service.js'
@@ -217,6 +218,7 @@ async function start() {
     await server.register(portalReferralRoutes)
     await server.register(publicStatsRoutes)
     await server.register(publicChatRoutes)
+    await server.register(byogRoutes)
 
     const redisConnection = server.redis as unknown as import('bullmq').ConnectionOptions
     const rateFetcherQueue = createRateFetcherQueue(redisConnection)
