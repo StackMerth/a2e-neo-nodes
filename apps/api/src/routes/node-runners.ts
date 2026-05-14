@@ -198,6 +198,13 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
         walletAddress: nodeRunner.walletAddress,
         createdAt: nodeRunner.createdAt.toISOString(),
 
+        // Payout lock (admin hard-hold during disputes). Both fields
+        // are null in the steady state. When lockedUntil is in the
+        // future, the worker + Withdraw Now refuse payouts for this
+        // operator.
+        payoutLockUntil: nodeRunner.payoutLockUntil?.toISOString() ?? null,
+        payoutLockReason: nodeRunner.payoutLockReason ?? null,
+
         // Financial summary
         financials: {
           totalInvested: Math.round(totalInvested * 100) / 100,
