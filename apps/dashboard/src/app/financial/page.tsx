@@ -106,9 +106,6 @@ export default function FinancialPage() {
   const [configForm, setConfigForm] = useState<Partial<SettlementConfig & { solanaRpcUrl?: string; payerPrivateKey?: string; usdcMint?: string }>>({})
   const [savingConfig, setSavingConfig] = useState(false)
   const [walletBalance, setWalletBalance] = useState<WalletBalance | null>(null)
-  const [editingSolanaConfig, setEditingSolanaConfig] = useState(false)
-  const [solanaForm, setSolanaForm] = useState<{ rpcUrl: string; privateKey: string; usdcMint: string }>({ rpcUrl: '', privateKey: '', usdcMint: '' })
-  const [savingSolana, setSavingSolana] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -198,25 +195,6 @@ export default function FinancialPage() {
       addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed to save configuration' })
     } finally {
       setSavingConfig(false)
-    }
-  }
-
-  async function handleSaveSolanaConfig() {
-    setSavingSolana(true)
-    try {
-      await api.settlements.updateConfig({
-        solanaRpcUrl: solanaForm.rpcUrl || undefined,
-        payerPrivateKey: solanaForm.privateKey || undefined,
-        usdcMint: solanaForm.usdcMint || undefined,
-      })
-      setEditingSolanaConfig(false)
-      setSolanaForm({ rpcUrl: '', privateKey: '', usdcMint: '' })
-      loadData()
-      addToast({ type: 'success', title: 'Solana Config Updated', message: 'Set PAYMENT_MODE=live to enable live payments.' })
-    } catch (err) {
-      addToast({ type: 'error', title: 'Error', message: err instanceof Error ? err.message : 'Failed to save Solana configuration' })
-    } finally {
-      setSavingSolana(false)
     }
   }
 
@@ -825,82 +803,48 @@ export default function FinancialPage() {
         </div>
       </Card>
 
-      {/* Solana Configuration */}
-      <Card variant="glass" title="Solana Payment Configuration" description="Configure on-chain payment settings">
-        <div className="mt-4">
-          {!editingSolanaConfig ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 bg-surface/50 rounded-xl border border-border/50">
-                  <p className="text-xs text-text-muted uppercase mb-1 font-medium">RPC Endpoint</p>
-                  <p className="text-sm font-mono text-text-primary truncate">
-                    {settlementConfig?.solanaRpcUrl || 'Not configured (using devnet)'}
-                  </p>
-                </div>
-                <div className="p-4 bg-surface/50 rounded-xl border border-border/50">
-                  <p className="text-xs text-text-muted uppercase mb-1 font-medium">USDC Mint</p>
-                  <p className="text-sm font-mono text-text-primary truncate">
-                    {settlementConfig?.usdcMint || 'Default (mainnet USDC)'}
-                  </p>
-                </div>
-                <div className="p-4 bg-surface/50 rounded-xl border border-border/50">
-                  <p className="text-xs text-text-muted uppercase mb-1 font-medium">Payer Wallet</p>
-                  <p className="text-sm text-text-primary">
-                    {paymentMode?.payerConfigured ? (
-                      <span className="text-accent flex items-center gap-2">
-                        <Check className="w-4 h-4" /> Configured
-                      </span>
-                    ) : (
-                      <span className="text-warning flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4" /> Not configured
-                      </span>
-                    )}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <Button
-                  onClick={() => setEditingSolanaConfig(true)}
-                  variant="secondary"
-                  size="sm"
-                  icon={<Pencil className="w-4 h-4" />}
-                >
-                  Configure Solana
-                </Button>
-                {!paymentMode?.devMode && (
-                  <span className="text-xs text-accent font-medium">Live payments enabled</span>
+      {/* Solana Configuration — read-only. Since blocker M1-#7, all
+          three fields (RPC URL, payer key, USDC mint) are sourced from
+          env vars on the API service, not from the DB. The card just
+          surfaces the live state for at-a-glance verification. */}
+      <Card variant="glass" title="Solana Payment Configuration" description="Live config (sourced from API env vars)">
+        <div className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 bg-surface/50 rounded-xl border border-border/50">
+              <p className="text-xs text-text-muted uppercase mb-1 font-medium">RPC Endpoint</p>
+              <p className="text-sm font-mono text-text-primary truncate">
+                {settlementConfig?.solanaRpcUrl || 'Not configured (using devnet)'}
+              </p>
+            </div>
+            <div className="p-4 bg-surface/50 rounded-xl border border-border/50">
+              <p className="text-xs text-text-muted uppercase mb-1 font-medium">USDC Mint</p>
+              <p className="text-sm font-mono text-text-primary truncate">
+                {settlementConfig?.usdcMint || 'Default (mainnet USDC)'}
+              </p>
+            </div>
+            <div className="p-4 bg-surface/50 rounded-xl border border-border/50">
+              <p className="text-xs text-text-muted uppercase mb-1 font-medium">Payer Wallet</p>
+              <p className="text-sm text-text-primary">
+                {paymentMode?.payerConfigured ? (
+                  <span className="text-accent flex items-center gap-2">
+                    <Check className="w-4 h-4" /> Configured
+                  </span>
+                ) : (
+                  <span className="text-warning flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" /> Not configured
+                  </span>
                 )}
-              </div>
+              </p>
             </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="p-4 bg-warning/10 border border-warning/30 rounded-xl flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-warning font-medium">Configured via environment variables</p>
-                  <p className="text-xs text-text-muted mt-1">
-                    Since blocker M1-#7, Solana config is read from <code>SOLANA_PAYER_KEY</code>, <code>SOLANA_RPC_URL</code>, and <code>SOLANA_USDC_MINT</code> on the API service. Edit these in Render's Environment tab; the boot log&apos;s <code>[solana]</code> lines confirm which source each field came from.
-                  </p>
-                </div>
-              </div>
-              {/* The editable RPC URL / Payer Private Key / USDC Mint
-                  inputs were removed when the read path moved to
-                  env-first (M1-#7 + #4). Leaving them in the admin UI
-                  was the original launch-blocker — admins could see and
-                  rotate the plaintext key through the browser. The DB
-                  columns still exist as a fallback for transition but
-                  are no longer editable from here; the only way to
-                  change the values now is via Render env. */}
-              <div className="flex gap-3">
-                <Button
-                  onClick={() => setEditingSolanaConfig(false)}
-                  variant="secondary"
-                  size="sm"
-                >
-                  Close
-                </Button>
-              </div>
-            </div>
+          </div>
+          <div className="p-3 bg-surface/30 border border-border/30 rounded-xl flex items-start gap-3">
+            <AlertTriangle className="w-4 h-4 text-text-muted flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-text-muted leading-relaxed">
+              These values are read from <code className="text-text-secondary">SOLANA_PAYER_KEY</code>, <code className="text-text-secondary">SOLANA_RPC_URL</code>, and <code className="text-text-secondary">SOLANA_USDC_MINT</code> on the API service. To change them, edit Render&apos;s Environment tab and redeploy. The boot log&apos;s <code className="text-text-secondary">[solana]</code> lines confirm which source each field came from.
+            </p>
+          </div>
+          {!paymentMode?.devMode && (
+            <p className="text-xs text-accent font-medium">Live payments enabled</p>
           )}
         </div>
       </Card>
