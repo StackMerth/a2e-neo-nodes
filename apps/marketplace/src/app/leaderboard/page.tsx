@@ -12,6 +12,7 @@
 import Link from 'next/link'
 import { Navigation } from '@/components/landing/navigation'
 import { FooterSection } from '@/components/landing/footer-section'
+import { ListingRentButton } from '@/components/rent/listing-rent-button'
 import { cn } from '@/lib/utils'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
@@ -172,23 +173,24 @@ function ReputationTable({ data }: { data: ReputationResponse }) {
       {/* Header row */}
       <div className="grid grid-cols-12 gap-4 pb-4 border-b border-foreground/10 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
         <div className="col-span-1">Rank</div>
-        <div className="col-span-5">Operator</div>
+        <div className="col-span-4">Operator</div>
         <div className="col-span-2 text-right md:text-left">Tier</div>
         <div className="col-span-2 text-right md:text-left">Score</div>
         <div className="col-span-2 text-right">Volume</div>
+        <div className="col-span-1 text-right">Action</div>
       </div>
 
       <ul className="divide-y divide-foreground/10">
         {data.rows.map((r) => (
-          <li key={r.operatorSlug}>
+          <li key={r.operatorSlug} className="grid grid-cols-12 gap-4 items-baseline py-5 px-2 hover:bg-foreground/[0.015] transition-colors">
             <Link
               href={`/operator/${r.operatorSlug}`}
-              className="grid grid-cols-12 gap-4 items-baseline py-5 px-2 hover-lift hover:bg-foreground/[0.015] transition-colors"
+              className="contents hover-lift"
             >
               <div className="col-span-1 font-mono text-base text-muted-foreground">
                 {String(r.rank).padStart(2, '0')}
               </div>
-              <div className="col-span-5">
+              <div className="col-span-4">
                 <p className="font-display text-xl text-foreground">{r.operatorName}</p>
                 <p className="font-mono text-[11px] text-muted-foreground mt-1">
                   {r.totalNodes} {r.totalNodes === 1 ? 'node' : 'nodes'}
@@ -210,6 +212,13 @@ function ReputationTable({ data }: { data: ReputationResponse }) {
                 <p className="font-mono text-[11px] text-muted-foreground">jobs done</p>
               </div>
             </Link>
+            {/* M5.10c: per-row Rent CTA. Default tier H100 - the
+                request form lets the buyer change it before paying.
+                Click stops propagation so the operator link doesn't
+                also fire. */}
+            <div className="col-span-1 text-right">
+              <ListingRentButton operatorSlug={r.operatorSlug} gpuTier="H100" />
+            </div>
           </li>
         ))}
       </ul>

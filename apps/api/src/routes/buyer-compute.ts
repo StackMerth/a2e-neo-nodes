@@ -39,6 +39,13 @@ const requestSchema = z.object({
   // eu-west-1, ap-south-1). Empty / null means "Any" — allocator
   // skips the region filter entirely.
   requiredRegion: z.string().max(64).optional().nullable(),
+
+  // M5.10c: optional operator preference. Slug from the marketplace
+  // (e.g. "seed-gold-runner"). Server resolves to NodeRunner.id and
+  // stores it on ComputeRequest.preferredOperatorId. Soft preference:
+  // the allocator sorts that operator's nodes first but falls back to
+  // the general pool when they have no idle capacity.
+  preferredOperatorSlug: z.string().max(120).optional().nullable(),
 }).refine(
   data => data.tier !== 'RESERVED' || data.commitmentDays !== undefined,
   { message: 'commitmentDays required for RESERVED tier', path: ['commitmentDays'] },
@@ -137,7 +144,20 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
     }
 
-    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion } = parsed.data
+    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion, preferredOperatorSlug } = parsed.data
+
+    // M5.10c: resolve preferred operator slug to NodeRunner.id. Silently
+    // ignore unknown slugs (don't fail the request - the allocator just
+    // proceeds without the soft preference if the operator can't be
+    // matched).
+    let preferredOperatorId: string | null = null
+    if (preferredOperatorSlug) {
+      const match = await fastify.prisma.nodeRunner.findUnique({
+        where: { slug: preferredOperatorSlug },
+        select: { id: true },
+      })
+      preferredOperatorId = match?.id ?? null
+    }
     const baseRatePerDay = GPU_DAILY_RATES[gpuTier] ?? 140.15
     // M3: tier discount applied to ratePerDay so all downstream
     // calculations (totalCost, ratePerMinute set by allocator, refund
@@ -221,6 +241,9 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         // allocator's `requiredRegion ? { region } : {}` branch picks
         // "Any" rather than filtering for the empty string.
         requiredRegion: requiredRegion?.trim() || null,
+        // M5.10c: soft operator preference. May still be null if the
+        // slug didn't resolve; allocator treats null as no preference.
+        preferredOperatorId,
       },
     })
 

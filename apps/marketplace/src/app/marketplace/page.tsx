@@ -16,6 +16,7 @@ import { notFound } from 'next/navigation'
 import { Navigation } from '@/components/landing/navigation'
 import { FooterSection } from '@/components/landing/footer-section'
 import { cn } from '@/lib/utils'
+import { ListingRentButton } from '@/components/rent/listing-rent-button'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
 
@@ -284,13 +285,17 @@ function ListingRow({ listing }: { listing: Listing }) {
             </p>
           </div>
 
-          {/* CTA */}
-          <div className="col-span-12 md:col-span-2 md:text-right">
+          {/* CTA - per-row Rent button (M5.10c). Click stops propagation
+              so the surrounding row link to /operator/[slug] doesn't
+              fire. Buyers who want the profile still click anywhere
+              else in the row. */}
+          <div className="col-span-12 md:col-span-2 md:text-right flex md:justify-end items-center gap-3">
+            <ListingRentButton operatorSlug={listing.operatorSlug} gpuTier={listing.gpuTier} />
             <span className={cn(
-              'font-mono text-xs uppercase tracking-[0.18em]',
+              'font-mono text-xs uppercase tracking-[0.18em] hidden md:inline',
               'text-foreground/60 hover:text-foreground transition-colors',
             )}>
-              View operator →
+              View →
             </span>
           </div>
         </div>

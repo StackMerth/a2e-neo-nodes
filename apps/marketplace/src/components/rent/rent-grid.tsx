@@ -235,7 +235,18 @@ function Sparkline({ values, width = 320, height = 80 }: { values: number[]; wid
 
 type Tab = 'signin' | 'signup'
 
-function RentModal({ tier, onClose }: { tier: string; onClose: () => void }) {
+/**
+ * Auth-and-handoff modal. Used both by RentGrid (with a tier only)
+ * and by the operator profile + catalog pages (with tier + operator
+ * slug) so the rental form lands with both preselected.
+ */
+export function RentModal({
+  tier, operatorSlug, onClose,
+}: {
+  tier: string
+  operatorSlug?: string
+  onClose: () => void
+}) {
   const [tab, setTab] = useState<Tab>('signup')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -281,7 +292,11 @@ function RentModal({ tier, onClose }: { tier: string; onClose: () => void }) {
       }
       // Hand off to portal: portal's /auth/handoff reads the fragment,
       // stores tokens in its own localStorage, then redirects to dest.
-      const dest = `/buyer/request?gpuTier=${encodeURIComponent(tier)}`
+      // M5.10c: pass operator slug too when the modal was opened from
+      // an operator-specific surface (profile / catalog / leaderboard).
+      const destParts: string[] = [`gpuTier=${encodeURIComponent(tier)}`]
+      if (operatorSlug) destParts.push(`operator=${encodeURIComponent(operatorSlug)}`)
+      const dest = `/buyer/request?${destParts.join('&')}`
       const hash = new URLSearchParams({
         access: json.accessToken,
         refresh: json.refreshToken,
@@ -332,7 +347,10 @@ function RentModal({ tier, onClose }: { tier: string; onClose: () => void }) {
         </div>
 
         <p className="text-sm text-muted-foreground mb-5">
-          Sign in or create a buyer account to continue. The rental wizard opens next with {tier} pre-selected.
+          Sign in or create a buyer account to continue. The rental wizard opens next with {tier} pre-selected
+          {operatorSlug && (
+            <> and <span className="font-mono text-foreground">{operatorSlug}</span> as your preferred operator</>
+          )}.
         </p>
 
         {/* Tabs */}

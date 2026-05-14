@@ -8,8 +8,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 
 // Public-facing nav surfaces, all reachable without an account.
 const navLinks: Array<{ name: string; href: string; external?: boolean }> = [
-  { name: "Rent", href: "/rent" },
   { name: "Marketplace", href: "/marketplace" },
+  { name: "Rent", href: "/rent" },
   { name: "Operators", href: "/leaderboard" },
   { name: "Stats", href: "/stats" },
   { name: "Pricing", href: "/#pricing" },
