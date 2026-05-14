@@ -3,6 +3,7 @@ import { getApiClient } from '../api/client.js';
 import type { HeartbeatRequest, NodeStatus, NodeCommand } from '../api/types.js';
 import { UpdateManager } from '../utils/updater.js';
 import { heartbeatLogger } from '../utils/logger.js';
+import { SshSessionManager } from '../ssh/session-manager.js';
 
 const log = heartbeatLogger();
 
@@ -18,11 +19,22 @@ export class HeartbeatService {
   private consecutiveFailures: number = 0;
   private readonly maxConsecutiveFailures: number = 5;
   private readonly maxBackoffMultiplier: number = 8; // Max 8x the base interval
+  // Launch-blocker #2: handles SSH session lifecycle actions surfaced
+  // by the API in heartbeat responses. Lazily constructed because the
+  // API client is set up after the agent registers.
+  private sshSessionManager: SshSessionManager | null = null;
 
   constructor(agent: Agent, intervalSeconds: number) {
     this.agent = agent;
     this.baseInterval = intervalSeconds * 1000;
     this.interval = this.baseInterval;
+  }
+
+  private getSshSessionManager(): SshSessionManager {
+    if (!this.sshSessionManager) {
+      this.sshSessionManager = new SshSessionManager(getApiClient());
+    }
+    return this.sshSessionManager;
   }
 
   /**
@@ -139,6 +151,20 @@ export class HeartbeatService {
       if (response.config) {
         log.info({ config: response.config }, 'Received config update from server');
         this.applyConfigUpdate(response.config);
+      }
+
+      // Launch-blocker #2: dispatch SSH lifecycle actions. dispatch() is
+      // non-blocking (fire-and-forget); the session manager dedupes
+      // in-flight ops and reports status via the API status callback.
+      if (response.sshSession) {
+        log.info(
+          {
+            action: response.sshSession.action,
+            requestId: response.sshSession.requestId,
+          },
+          'Received SSH session action from server'
+        );
+        this.getSshSessionManager().dispatch(response.sshSession);
       }
 
       log.debug('Heartbeat sent successfully');
