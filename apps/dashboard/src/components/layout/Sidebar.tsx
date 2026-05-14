@@ -252,10 +252,11 @@ export function Sidebar() {
                 <Link
                   key={item.path}
                   href={item.path}
-                  // Tapping any nav item expands the sidebar to reveal
-                  // the labels alongside the icons. Click-outside on
-                  // the page closes it again (see asideRef useEffect).
-                  onClick={() => setSidebarOpen(true)}
+                  // Tapping any nav item collapses the sidebar so the
+                  // destination page is in focus immediately. On narrow
+                  // viewports this dismisses the mobile overlay; on
+                  // desktop it shrinks back to the icon rail.
+                  onClick={() => setSidebarOpen(false)}
                   className={`nav-item ${isActive ? 'active' : ''}`}
                   title={!sidebarOpen ? item.label : undefined}
                 >
