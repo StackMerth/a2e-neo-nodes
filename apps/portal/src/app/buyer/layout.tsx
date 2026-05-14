@@ -6,7 +6,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/hooks/useAuth'
 import { useSidebar } from '@/components/layout/SidebarContext'
 import { BuyerSidebar } from '@/components/layout/BuyerSidebar'
-import { MobileMenuButton } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { RoleIntroCallout } from '@/components/layout/RoleIntroCallout'
 import { TopHeader } from '@/components/layout/TopHeader'
@@ -42,7 +41,6 @@ export default function BuyerLayout({ children }: { children: React.ReactNode })
   return (
     <div className="app-layout pt-16">
       <TopHeader />
-      <MobileMenuButton />
       <BuyerSidebar />
 
       {/* Mobile Overlay */}

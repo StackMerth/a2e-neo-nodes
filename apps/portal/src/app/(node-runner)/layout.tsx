@@ -6,7 +6,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/hooks/useAuth'
 import { useSidebar } from '@/components/layout/SidebarContext'
 import { Sidebar } from '@/components/layout/Sidebar'
-import { MobileMenuButton } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { RoleIntroCallout } from '@/components/layout/RoleIntroCallout'
 import { TopHeader } from '@/components/layout/TopHeader'
@@ -41,7 +40,6 @@ export default function NodeRunnerLayout({ children }: { children: React.ReactNo
   return (
     <div className="app-layout pt-16">
       <TopHeader />
-      <MobileMenuButton />
       <Sidebar />
 
       {/* Mobile Overlay */}
