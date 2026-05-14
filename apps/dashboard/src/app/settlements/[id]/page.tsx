@@ -1,23 +1,19 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
 import { ArrowLeft, ExternalLink, CreditCard, Server, FileText, Briefcase, Receipt, DollarSign, Clock } from 'lucide-react'
-import { Card } from '@/components/ui/Card'
 import { ConfirmModal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
-
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
-}
-const item = {
-  hidden: { opacity: 0, y: 12 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-}
+import {
+  DashboardShell,
+  DashboardMainColumn,
+  DashboardRightRail,
+  SectionCard,
+  MetricTriad,
+} from '@/components/dashboard/FuturisticShell'
 
 interface Settlement {
   id: string
@@ -51,12 +47,12 @@ interface Settlement {
 
 export default function SettlementDetailPage() {
   const params = useParams()
-  const router = useRouter()
   const { addToast } = useToast()
   const settlementId = params.id as string
 
   const [settlement, setSettlement] = useState<Settlement | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [showCompleteModal, setShowCompleteModal] = useState(false)
   const [showFailModal, setShowFailModal] = useState(false)
@@ -67,8 +63,9 @@ export default function SettlementDetailPage() {
     loadSettlement()
   }, [settlementId])
 
-  async function loadSettlement() {
-    setLoading(true)
+  async function loadSettlement(isRefresh = false) {
+    if (isRefresh) setRefreshing(true)
+    else setLoading(true)
     try {
       const data = await api.settlements.get(settlementId)
       setSettlement(data)
@@ -76,6 +73,7 @@ export default function SettlementDetailPage() {
       console.error('Failed to load settlement:', err)
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
@@ -144,294 +142,216 @@ export default function SettlementDetailPage() {
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      PENDING: 'bg-yellow-500/20 text-yellow-400',
-      PROCESSING: 'bg-blue-500/20 text-blue-400',
-      COMPLETED: 'bg-accent/20 text-accent',
-      FAILED: 'bg-error/20 text-error',
-    }
-    return <span className={`px-3 py-1 text-sm font-medium rounded-full ${colors[status] || 'bg-gray-500/20 text-gray-400'}`}>{status}</span>
-  }
-
-  if (loading) {
+  if (loading || !settlement) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin w-8 h-8 border-2 border-accent border-t-transparent rounded-full" />
-      </div>
-    )
-  }
-
-  if (!settlement) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-text-muted">Settlement not found</p>
-        <Link href="/financial" className="text-accent hover:underline mt-2 inline-block">
-          Back to Financial
-        </Link>
-      </div>
+      <DashboardShell title="Settlement" subtitle="Loading...">
+        <div className="lg:col-span-3">
+          <SectionCard>
+            <p className="text-sm py-8 text-center" style={{ color: 'var(--text-muted)' }}>
+              {loading ? 'Loading settlement...' : 'Settlement not found'}
+            </p>
+            {!loading && (
+              <div className="text-center">
+                <Link href="/financial" className="text-accent hover:underline mt-2 inline-block">
+                  Back to Financial
+                </Link>
+              </div>
+            )}
+          </SectionCard>
+        </div>
+      </DashboardShell>
     )
   }
 
   return (
-    <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
-      {/* Header */}
-      <motion.div variants={item}>
-        <Link href="/financial" className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-accent transition-colors mb-4">
+    <DashboardShell
+      title={`Settlement: ${settlement.id.slice(0, 8)}`}
+      subtitle={settlement.status}
+      onRefresh={() => loadSettlement(true)}
+      refreshing={refreshing}
+    >
+      <DashboardMainColumn>
+        <Link href="/financial" className="inline-flex items-center gap-1.5 text-sm hover:text-accent transition-colors -mt-2" style={{ color: 'var(--text-muted)' }}>
           <ArrowLeft size={16} />
           Back to Settlements
         </Link>
-        <div className="dash-header">
-          <div className="dash-header-left">
-            <h1><Receipt size={28} /> Settlement: {settlement.id.slice(0, 8)}</h1>
-            <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-lg text-sm font-medium ${
-              settlement.status === 'COMPLETED' ? 'bg-accent/10 text-accent border border-accent/20' :
-              settlement.status === 'FAILED' ? 'bg-error/10 text-error border border-error/20' :
-              settlement.status === 'PROCESSING' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
-              'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
-            }`}>
-              {settlement.status}
-            </span>
-          </div>
-          <div className="dash-header-right">
-            {settlement.status === 'PENDING' && (
-              <>
-                <button
-                  onClick={handleProcess}
-                  disabled={processing}
-                  className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 text-sm font-medium"
-                >
-                  {processing ? 'Processing...' : 'Process Payment'}
-                </button>
-                <button
-                  onClick={() => setShowCompleteModal(true)}
-                  className="px-4 py-2 bg-surface-hover text-text-primary rounded-lg hover:bg-accent/10 text-sm font-medium"
-                >
-                  Mark Complete
-                </button>
-                <button
-                  onClick={() => setShowFailModal(true)}
-                  className="px-4 py-2 bg-error/10 text-error rounded-lg hover:bg-error/20 text-sm font-medium"
-                >
-                  Mark Failed
-                </button>
-              </>
-            )}
-            {settlement.status === 'FAILED' && (
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-lg text-sm font-medium ${
+            settlement.status === 'COMPLETED' ? 'bg-accent/10 text-accent border border-accent/20' :
+            settlement.status === 'FAILED' ? 'bg-error/10 text-error border border-error/20' :
+            settlement.status === 'PROCESSING' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+            'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+          }`}>
+            {settlement.status}
+          </span>
+          <div className="flex-1" />
+          {settlement.status === 'PENDING' && (
+            <>
               <button
-                onClick={handleRetry}
+                onClick={handleProcess}
                 disabled={processing}
                 className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 text-sm font-medium"
               >
-                {processing ? 'Retrying...' : 'Retry Settlement'}
+                {processing ? 'Processing...' : 'Process Payment'}
               </button>
-            )}
-          </div>
+              <button
+                onClick={() => setShowCompleteModal(true)}
+                className="px-4 py-2 bg-surface-hover rounded-lg hover:bg-accent/10 text-sm font-medium"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Mark Complete
+              </button>
+              <button
+                onClick={() => setShowFailModal(true)}
+                className="px-4 py-2 bg-error/10 text-error rounded-lg hover:bg-error/20 text-sm font-medium"
+              >
+                Mark Failed
+              </button>
+            </>
+          )}
+          {settlement.status === 'FAILED' && (
+            <button
+              onClick={handleRetry}
+              disabled={processing}
+              className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-50 text-sm font-medium"
+            >
+              {processing ? 'Retrying...' : 'Retry Settlement'}
+            </button>
+          )}
         </div>
-      </motion.div>
 
-      {/* KPI Blocks */}
-      <motion.div variants={item} className="stat-blocks">
-        <div className="stat-block green">
-          <div className="stat-icon"><DollarSign size={20} /></div>
-          <div className="stat-content">
-            <span className="stat-value">${settlement.amount.toFixed(2)}</span>
-            <span className="stat-label">Amount</span>
-          </div>
-        </div>
-        <div className="stat-block blue">
-          <div className="stat-icon">
-            <span className={`w-2.5 h-2.5 rounded-full ${
-              settlement.status === 'COMPLETED' ? 'bg-accent' :
-              settlement.status === 'FAILED' ? 'bg-error' :
-              settlement.status === 'PROCESSING' ? 'bg-blue-400' : 'bg-yellow-400'
-            }`} />
-          </div>
-          <div className="stat-content">
-            <span className="stat-value">{settlement.status}</span>
-            <span className="stat-label">Status</span>
-          </div>
-        </div>
-        <div className="stat-block purple">
-          <div className="stat-icon"><Briefcase size={20} /></div>
-          <div className="stat-content">
-            <span className="stat-value">{settlement.jobCount}</span>
-            <span className="stat-label">Job Count</span>
-          </div>
-        </div>
-        <div className="stat-block orange">
-          <div className="stat-icon"><Clock size={20} /></div>
-          <div className="stat-content">
-            <span className="stat-value">{new Date(settlement.periodStart).toLocaleDateString()} - {new Date(settlement.periodEnd).toLocaleDateString()}</span>
-            <span className="stat-label">Period</span>
-          </div>
-        </div>
-      </motion.div>
+        <MetricTriad
+          metrics={[
+            {
+              label: 'Amount',
+              value: `$${settlement.amount.toFixed(2)}`,
+              detail: settlement.currency,
+              icon: DollarSign,
+              tone: 'green',
+            },
+            {
+              label: 'Job Count',
+              value: String(settlement.jobCount),
+              icon: Briefcase,
+              tone: 'purple',
+            },
+            {
+              label: 'Period',
+              value: new Date(settlement.periodStart).toLocaleDateString(),
+              detail: `to ${new Date(settlement.periodEnd).toLocaleDateString()}`,
+              icon: Clock,
+              tone: 'orange',
+            },
+          ]}
+        />
 
-      {/* Settlement Info */}
-      <motion.div variants={item} className="grid md:grid-cols-2 gap-6">
-        <Card className="p-6" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
-              <FileText className="w-4 h-4 text-accent" />
-            </div>
-            <h3 className="font-semibold text-text-primary">Settlement Information</h3>
+        <SectionCard title={`Jobs Included (${settlement.jobs?.length ?? 0})`} icon={Briefcase}>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-2 px-3 text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>Job ID</th>
+                  <th className="text-left py-2 px-3 text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>Deployment</th>
+                  <th className="text-left py-2 px-3 text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>Duration</th>
+                  <th className="text-left py-2 px-3 text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>Earnings</th>
+                  <th className="text-left py-2 px-3 text-xs font-medium uppercase" style={{ color: 'var(--text-muted)' }}>Completed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(settlement.jobs ?? []).map((job) => (
+                  <tr key={job.id} className="border-b border-border/50 hover:bg-surface-hover/50">
+                    <td className="py-2 px-3">
+                      <Link href={`/jobs/${job.id}`} className="text-accent hover:underline font-mono text-sm">
+                        {job.id.substring(0, 12)}...
+                      </Link>
+                    </td>
+                    <td className="py-2 px-3" style={{ color: 'var(--text-primary)' }}>{job.deploymentId}</td>
+                    <td className="py-2 px-3" style={{ color: 'var(--text-muted)' }}>
+                      {(job.durationSeconds / 3600).toFixed(2)}h
+                    </td>
+                    <td className="py-2 px-3 font-medium text-accent">${job.earnings.toFixed(2)}</td>
+                    <td className="py-2 px-3 text-sm" style={{ color: 'var(--text-muted)' }}>
+                      {new Date(job.completedAt).toLocaleDateString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        </SectionCard>
+      </DashboardMainColumn>
+
+      <DashboardRightRail>
+        <SectionCard title="Settlement Info" icon={FileText}>
           <dl className="space-y-3">
-            <div className="flex justify-between">
-              <dt className="text-text-muted">Amount</dt>
-              <dd className="font-medium text-text-primary">${settlement.amount.toFixed(2)} {settlement.currency}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-text-muted">Job Count</dt>
-              <dd className="text-text-primary">{settlement.jobCount}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-text-muted">Period</dt>
-              <dd className="text-text-primary text-sm">
-                {new Date(settlement.periodStart).toLocaleDateString()} - {new Date(settlement.periodEnd).toLocaleDateString()}
-              </dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-text-muted">Created</dt>
-              <dd className="text-text-primary text-sm">{new Date(settlement.createdAt).toLocaleString()}</dd>
-            </div>
+            <Row label="Amount" value={`$${settlement.amount.toFixed(2)} ${settlement.currency}`} />
+            <Row label="Job Count" value={String(settlement.jobCount)} />
+            <Row label="Created" value={new Date(settlement.createdAt).toLocaleString()} small />
             {settlement.processedAt && (
-              <div className="flex justify-between">
-                <dt className="text-text-muted">Processed</dt>
-                <dd className="text-text-primary text-sm">{new Date(settlement.processedAt).toLocaleString()}</dd>
-              </div>
+              <Row label="Processed" value={new Date(settlement.processedAt).toLocaleString()} small />
             )}
           </dl>
-        </Card>
+        </SectionCard>
 
-        <Card className="p-6" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-8 h-8 rounded-lg bg-accent-blue/10 flex items-center justify-center">
-              <Server className="w-4 h-4 text-accent-blue" />
-            </div>
-            <h3 className="font-semibold text-text-primary">Node Information</h3>
-          </div>
+        <SectionCard title="Node" icon={Server}>
           <dl className="space-y-3">
             <div className="flex justify-between">
-              <dt className="text-text-muted">Node ID</dt>
+              <dt className="text-sm" style={{ color: 'var(--text-muted)' }}>Node ID</dt>
               <dd>
                 <Link href={`/nodes/${settlement.nodeId}`} className="text-accent hover:underline font-mono text-sm">
-                  {settlement.nodeId.substring(0, 12)}...
+                  {settlement.nodeId.substring(0, 8)}...
                 </Link>
               </dd>
             </div>
-            <div className="flex justify-between">
-              <dt className="text-text-muted">GPU Tier</dt>
-              <dd className="text-text-primary">{settlement.gpuTier}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-text-muted">Wallet Address</dt>
-              <dd className="text-text-primary font-mono text-sm truncate max-w-[200px]" title={settlement.walletAddress}>
+            <Row label="GPU Tier" value={settlement.gpuTier} />
+            <div className="flex flex-col">
+              <dt className="text-sm mb-1" style={{ color: 'var(--text-muted)' }}>Wallet</dt>
+              <dd className="font-mono text-xs break-all" style={{ color: 'var(--text-primary)' }}>
                 {settlement.walletAddress}
               </dd>
             </div>
           </dl>
-        </Card>
-      </motion.div>
+        </SectionCard>
 
-      {/* Payment Information */}
-      {(settlement.txHash || settlement.payment) && (
-        <motion.div variants={item}>
-        <Card className="p-6" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-8 h-8 rounded-lg bg-accent-purple/10 flex items-center justify-center">
-              <CreditCard className="w-4 h-4 text-accent-purple" />
-            </div>
-            <h3 className="font-semibold text-text-primary">Payment Information</h3>
-          </div>
-          <dl className="space-y-3">
-            {settlement.txHash && (
-              <div className="flex justify-between items-center">
-                <dt className="text-text-muted">Transaction Hash</dt>
-                <dd>
-                  <a
-                    href={`https://solscan.io/tx/${settlement.txHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-accent hover:underline font-mono text-sm inline-flex items-center gap-1"
-                  >
-                    {settlement.txHash.substring(0, 20)}...
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+        {(settlement.txHash || settlement.payment) && (
+          <SectionCard title="Transaction" icon={CreditCard}>
+            <dl className="space-y-3">
+              {settlement.txHash && (
+                <div className="flex flex-col">
+                  <dt className="text-sm mb-1" style={{ color: 'var(--text-muted)' }}>Tx Hash</dt>
+                  <dd>
+                    <a
+                      href={`https://solscan.io/tx/${settlement.txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-accent hover:underline font-mono text-xs inline-flex items-center gap-1 break-all"
+                    >
+                      {settlement.txHash.substring(0, 24)}...
+                      <ExternalLink className="w-3 h-3 shrink-0" />
+                    </a>
+                  </dd>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <dt className="text-sm" style={{ color: 'var(--text-muted)' }}>Confirmed</dt>
+                <dd className={settlement.txConfirmed ? 'text-accent' : 'text-warning'}>
+                  {settlement.txConfirmed ? 'Yes' : 'Pending'}
                 </dd>
               </div>
-            )}
-            <div className="flex justify-between">
-              <dt className="text-text-muted">Confirmed</dt>
-              <dd className={settlement.txConfirmed ? 'text-accent' : 'text-warning'}>
-                {settlement.txConfirmed ? 'Yes' : 'Pending'}
-              </dd>
-            </div>
-            {settlement.payment && (
-              <>
-                <div className="flex justify-between">
-                  <dt className="text-text-muted">Payment Status</dt>
-                  <dd className="text-text-primary">{settlement.payment.status}</dd>
-                </div>
-                {settlement.payment.confirmedAt && (
-                  <div className="flex justify-between">
-                    <dt className="text-text-muted">Confirmed At</dt>
-                    <dd className="text-text-primary text-sm">{new Date(settlement.payment.confirmedAt).toLocaleString()}</dd>
-                  </div>
-                )}
-              </>
-            )}
-          </dl>
-        </Card>
-        </motion.div>
-      )}
+              {settlement.payment && (
+                <>
+                  <Row label="Payment" value={settlement.payment.status} />
+                  {settlement.payment.confirmedAt && (
+                    <Row label="Confirmed at" value={new Date(settlement.payment.confirmedAt).toLocaleString()} small />
+                  )}
+                </>
+              )}
+            </dl>
+          </SectionCard>
+        )}
+      </DashboardRightRail>
 
-      {/* Jobs in Settlement */}
-      <motion.div variants={item}>
-      <Card className="p-6" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center">
-            <Briefcase className="w-4 h-4 text-orange-400" />
-          </div>
-          <h3 className="font-semibold text-text-primary">Jobs Included ({settlement.jobs?.length ?? 0})</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left py-2 px-3 text-xs font-medium text-text-muted uppercase">Job ID</th>
-                <th className="text-left py-2 px-3 text-xs font-medium text-text-muted uppercase">Deployment</th>
-                <th className="text-left py-2 px-3 text-xs font-medium text-text-muted uppercase">Duration</th>
-                <th className="text-left py-2 px-3 text-xs font-medium text-text-muted uppercase">Earnings</th>
-                <th className="text-left py-2 px-3 text-xs font-medium text-text-muted uppercase">Completed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(settlement.jobs ?? []).map((job) => (
-                <tr key={job.id} className="border-b border-border/50 hover:bg-surface-hover/50">
-                  <td className="py-2 px-3">
-                    <Link href={`/jobs/${job.id}`} className="text-accent hover:underline font-mono text-sm">
-                      {job.id.substring(0, 12)}...
-                    </Link>
-                  </td>
-                  <td className="py-2 px-3 text-text-primary">{job.deploymentId}</td>
-                  <td className="py-2 px-3 text-text-muted">
-                    {(job.durationSeconds / 3600).toFixed(2)}h
-                  </td>
-                  <td className="py-2 px-3 font-medium text-accent">${job.earnings.toFixed(2)}</td>
-                  <td className="py-2 px-3 text-text-muted text-sm">
-                    {new Date(job.completedAt).toLocaleDateString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-      </motion.div>
-
-      {/* Complete Modal */}
       <ConfirmModal
         isOpen={showCompleteModal}
         onClose={() => setShowCompleteModal(false)}
@@ -446,11 +366,11 @@ export default function SettlementDetailPage() {
           value={txHashInput}
           onChange={(e) => setTxHashInput(e.target.value)}
           placeholder="Enter transaction hash..."
-          className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary mb-4 focus:outline-none focus:border-accent"
+          className="w-full px-3 py-2 bg-background border border-border rounded-lg mb-4 focus:outline-none focus:border-accent"
+          style={{ color: 'var(--text-primary)' }}
         />
       </ConfirmModal>
 
-      {/* Fail Modal */}
       <ConfirmModal
         isOpen={showFailModal}
         onClose={() => setShowFailModal(false)}
@@ -466,9 +386,19 @@ export default function SettlementDetailPage() {
           value={failReason}
           onChange={(e) => setFailReason(e.target.value)}
           placeholder="Enter reason..."
-          className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary mb-4 focus:outline-none focus:border-accent"
+          className="w-full px-3 py-2 bg-background border border-border rounded-lg mb-4 focus:outline-none focus:border-accent"
+          style={{ color: 'var(--text-primary)' }}
         />
       </ConfirmModal>
-    </motion.div>
+    </DashboardShell>
+  )
+}
+
+function Row({ label, value, small = false }: { label: string; value: string; small?: boolean }) {
+  return (
+    <div className="flex justify-between">
+      <dt className="text-sm" style={{ color: 'var(--text-muted)' }}>{label}</dt>
+      <dd className={small ? 'text-sm' : ''} style={{ color: 'var(--text-primary)' }}>{value}</dd>
+    </div>
   )
 }
