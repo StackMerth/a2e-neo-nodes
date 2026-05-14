@@ -50,15 +50,24 @@ const USDC_MINTS = {
   devnet: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU', // Devnet USDC
 }
 
-// Logged at most once per process so the env-vs-DB source of the payer
-// key is visible in Render boot logs without spamming every request.
-let _payerKeySourceLogged = false
-function logPayerKeySource(source: 'env' | 'db' | 'missing'): void {
-  if (_payerKeySourceLogged) return
-  _payerKeySourceLogged = true
-  if (source === 'env') {
+// Logged at most once per process so the env-vs-DB source of each Solana
+// config field is visible in Render boot logs without spamming every
+// request. All three reads (payer key, RPC URL, USDC mint) prefer env
+// vars over the SettlementConfig DB columns; the DB columns are kept as
+// a transition fallback and will be retired once admin UI hardening
+// removes the editable plaintext fields (blocker M1-#7 follow-up).
+let _configSourcesLogged = false
+function logConfigSources(s: {
+  payerKey: 'env' | 'db' | 'missing'
+  rpcUrl: 'env' | 'db' | 'default'
+  usdcMint: 'env' | 'db' | 'missing'
+}): void {
+  if (_configSourcesLogged) return
+  _configSourcesLogged = true
+
+  if (s.payerKey === 'env') {
     console.log('[solana] payer key loaded from SOLANA_PAYER_KEY env var')
-  } else if (source === 'db') {
+  } else if (s.payerKey === 'db') {
     console.warn(
       '[solana] WARNING: payer key loaded from SettlementConfig DB column. ' +
         'Set SOLANA_PAYER_KEY env var and drop the DB value before going live. ' +
@@ -67,6 +76,22 @@ function logPayerKeySource(source: 'env' | 'db' | 'missing'): void {
   } else {
     console.log('[solana] no payer key configured; dev-mode mocking will be used')
   }
+
+  if (s.rpcUrl === 'env') {
+    console.log('[solana] RPC URL loaded from SOLANA_RPC_URL env var')
+  } else if (s.rpcUrl === 'db') {
+    console.log('[solana] RPC URL loaded from SettlementConfig DB column')
+  } else {
+    console.log('[solana] RPC URL not configured; defaulting to devnet')
+  }
+
+  if (s.usdcMint === 'env') {
+    console.log('[solana] USDC mint loaded from SOLANA_USDC_MINT env var')
+  } else if (s.usdcMint === 'db') {
+    console.log('[solana] USDC mint loaded from SettlementConfig DB column')
+  } else {
+    console.log('[solana] USDC mint not set; processPayment will infer by network')
+  }
 }
 
 export async function getSolanaConfig(prisma: PrismaClient): Promise<SolanaConfig> {
@@ -74,21 +99,39 @@ export async function getSolanaConfig(prisma: PrismaClient): Promise<SolanaConfi
     where: { id: 'default' },
   })
 
-  // Prefer env var; fall back to DB column for the migration window.
-  // The DB column is being deprecated (blocker M1-#7) and will be removed
-  // once #4 (production wallet provisioning) plants the key in env.
+  // Payer key (blocker M1-#7): env first, DB fallback during migration.
   const envKey = process.env.SOLANA_PAYER_KEY?.trim()
   const dbKey = config?.payerPrivateKey?.trim()
   const payerPrivateKey = envKey || dbKey || ''
-  logPayerKeySource(envKey ? 'env' : dbKey ? 'db' : 'missing')
 
-  const hasRealConfig = config?.solanaRpcUrl && payerPrivateKey
+  // RPC URL (blocker #4): env first so production mainnet URL is wired
+  // without touching DB. Falls back to DB column, then devnet default.
+  const envRpc = process.env.SOLANA_RPC_URL?.trim()
+  const dbRpc = config?.solanaRpcUrl?.trim()
+  const rpcUrl = envRpc || dbRpc || 'https://api.devnet.solana.com'
+
+  // USDC mint (blocker #4): env first so mainnet USDC mint can be set
+  // without an admin write. Falls back to DB column, then undefined
+  // (processPayment infers from network in that case).
+  const envMint = process.env.SOLANA_USDC_MINT?.trim()
+  const dbMint = config?.usdcMint?.trim()
+  const usdcMint = envMint || dbMint || undefined
+
+  logConfigSources({
+    payerKey: envKey ? 'env' : dbKey ? 'db' : 'missing',
+    rpcUrl: envRpc ? 'env' : dbRpc ? 'db' : 'default',
+    usdcMint: envMint ? 'env' : dbMint ? 'db' : 'missing',
+  })
+
+  // Live mode requires both a real RPC URL (not the devnet default) and
+  // a payer key. Otherwise we stay in dev mode and mock transactions.
+  const hasRealConfig = (envRpc || dbRpc) && payerPrivateKey
   const devMode = process.env.PAYMENT_MODE !== 'live' || !hasRealConfig
 
   return {
-    rpcUrl: config?.solanaRpcUrl ?? 'https://api.devnet.solana.com',
+    rpcUrl,
     payerPrivateKey,
-    usdcMint: config?.usdcMint ?? undefined,
+    usdcMint,
     devMode,
   }
 }
