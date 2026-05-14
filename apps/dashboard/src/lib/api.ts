@@ -952,6 +952,8 @@ export const api = {
         email: string | null
         walletAddress: string
         createdAt: string
+        payoutLockUntil: string | null
+        payoutLockReason: string | null
         financials: {
           totalInvested: number
           totalEarnings: number
@@ -986,6 +988,12 @@ export const api = {
           provisionedAt: string | null
         }>
       }>(`/v1/node-runners/${id}`),
+
+    setPayoutLock: (id: string, body: { lockedUntil: string | null; reason?: string }) =>
+      apiFetch<{ nodeRunnerId: string; lockedUntil: string | null; reason: string | null }>(
+        `/v1/node-runners/${id}/payout-lock`,
+        { method: 'PATCH', body: JSON.stringify(body) }
+      ),
 
     create: (data: { name: string; email?: string; walletAddress: string }) =>
       apiFetch<{

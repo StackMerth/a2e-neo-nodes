@@ -31,7 +31,7 @@ const INACTIVITY_SWEEP_DAYS = Number(process.env.PAYOUT_INACTIVITY_DAYS ?? 180)
 // hours after they accrue, then become withdrawable. Gives the
 // platform a buyer-dispute window without making us legally
 // custodial for long stretches.
-const COOLDOWN_HOURS = Number(process.env.PAYOUT_COOLDOWN_HOURS ?? 48)
+const COOLDOWN_HOURS = Number(process.env.PAYOUT_COOLDOWN_HOURS ?? 12)
 
 /** Returns the boundary timestamp: heartbeats older than this are "available". */
 function cooldownBoundary(now: Date = new Date()): Date {

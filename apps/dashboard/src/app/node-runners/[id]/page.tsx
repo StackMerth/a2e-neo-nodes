@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, DollarSign, TrendingUp, Wallet, Clock, BarChart3, Server, Users } from 'lucide-react'
+import { ArrowLeft, Plus, DollarSign, TrendingUp, Wallet, Clock, BarChart3, Server, Users, Lock, Unlock, AlertTriangle } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
 
@@ -22,6 +22,8 @@ interface NodeRunnerDetail {
   email: string | null
   walletAddress: string
   createdAt: string
+  payoutLockUntil: string | null
+  payoutLockReason: string | null
   financials: {
     totalInvested: number
     totalEarnings: number
@@ -86,6 +88,32 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
   const [showInvestmentModal, setShowInvestmentModal] = useState(false)
   const [newInvestment, setNewInvestment] = useState({ amount: '', gpuTier: 'H100', txHash: '' })
   const [creatingInvestment, setCreatingInvestment] = useState(false)
+
+  // Payout lock controls. Inline dialog when admin wants to set or
+  // clear the hold on this operator's payouts.
+  const [lockOpen, setLockOpen] = useState(false)
+  const [lockUntil, setLockUntil] = useState('')
+  const [lockReason, setLockReason] = useState('')
+  const [savingLock, setSavingLock] = useState(false)
+
+  async function applyLock(clear: boolean) {
+    if (!runner) return
+    setSavingLock(true)
+    try {
+      await api.nodeRunners.setPayoutLock(runner.id, {
+        lockedUntil: clear ? null : new Date(lockUntil).toISOString(),
+        reason: clear ? undefined : lockReason || undefined,
+      })
+      setLockOpen(false)
+      setLockUntil('')
+      setLockReason('')
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update payout lock')
+    } finally {
+      setSavingLock(false)
+    }
+  }
 
   useEffect(() => {
     loadData()
@@ -170,6 +198,115 @@ export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id:
             </button>
           </div>
         </div>
+      </motion.div>
+
+      {/* Payout lock — admin hard-hold during disputes. Hidden under
+          a thin status line when not engaged; expands to a full red
+          banner with a Clear button when locked. */}
+      <motion.div variants={item}>
+        {(() => {
+          const lockedNow = runner.payoutLockUntil && new Date(runner.payoutLockUntil) > new Date()
+          if (lockedNow) {
+            return (
+              <div
+                className="rounded-xl p-4 flex items-start gap-3"
+                style={{
+                  background: 'rgba(239,68,68,0.08)',
+                  border: '1px solid rgba(239,68,68,0.4)',
+                }}
+              >
+                <Lock size={20} style={{ color: '#ef4444', flexShrink: 0, marginTop: 2 }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold" style={{ color: '#ef4444' }}>
+                    Payouts locked until {new Date(runner.payoutLockUntil!).toLocaleString()}
+                  </p>
+                  {runner.payoutLockReason && (
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                      Reason: {runner.payoutLockReason}
+                    </p>
+                  )}
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Settlement worker + Withdraw Now both refuse for this operator while the lock is active.
+                  </p>
+                </div>
+                <button
+                  onClick={() => applyLock(true)}
+                  disabled={savingLock}
+                  className="px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+                  style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.4)' }}
+                >
+                  <Unlock size={14} className="inline mr-1" />
+                  {savingLock ? 'Clearing...' : 'Clear lock'}
+                </button>
+              </div>
+            )
+          }
+
+          if (lockOpen) {
+            return (
+              <div
+                className="rounded-xl p-4 space-y-3"
+                style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.3)' }}
+              >
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={16} style={{ color: 'var(--warning, #f59e0b)' }} />
+                  <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    Lock payouts for this operator
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    Locked until
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={lockUntil}
+                    onChange={(e) => setLockUntil(e.target.value)}
+                    className="w-full rounded-md px-3 py-2 text-sm bg-surface border border-border text-text-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    Reason (shown to the operator on their dashboard)
+                  </label>
+                  <input
+                    type="text"
+                    value={lockReason}
+                    onChange={(e) => setLockReason(e.target.value)}
+                    placeholder="e.g. Pending buyer dispute on rental abc123"
+                    className="w-full rounded-md px-3 py-2 text-sm bg-surface border border-border text-text-primary"
+                  />
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => { setLockOpen(false); setLockUntil(''); setLockReason('') }}
+                    disabled={savingLock}
+                    className="px-3 py-1.5 rounded-md text-sm text-text-muted hover:text-text-primary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => applyLock(false)}
+                    disabled={savingLock || !lockUntil}
+                    className="px-3 py-1.5 rounded-md text-sm font-medium bg-accent hover:bg-accent-hover text-white disabled:opacity-50"
+                  >
+                    {savingLock ? 'Locking...' : 'Apply lock'}
+                  </button>
+                </div>
+              </div>
+            )
+          }
+
+          return (
+            <button
+              onClick={() => setLockOpen(true)}
+              className="text-xs font-mono uppercase tracking-[0.16em] inline-flex items-center gap-1.5 hover:opacity-80"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <Lock size={12} /> Lock payouts
+            </button>
+          )
+        })()}
       </motion.div>
 
       {/* KPI Blocks */}
