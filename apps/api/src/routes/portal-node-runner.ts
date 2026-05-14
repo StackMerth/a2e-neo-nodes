@@ -688,7 +688,17 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     payoutFrequency: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']).optional(),
     payoutDayOfWeek: z.number().int().min(0).max(6).optional(),
     payoutDayOfMonth: z.number().int().min(1).max(28).optional(),
-  })
+    // Payout-mode feature: lets operators hold rewards on the platform.
+    // AUTO is the legacy default; MANUAL skips auto-payout entirely;
+    // SCHEDULED holds until payoutScheduledAt then fires once. The
+    // settlement engine + scheduler enforce the actual lifecycle.
+    payoutMode: z.enum(['AUTO', 'MANUAL', 'SCHEDULED']).optional(),
+    payoutScheduledAt: z.string().datetime().nullable().optional(),
+  }).refine(
+    (data) =>
+      data.payoutMode !== 'SCHEDULED' || data.payoutScheduledAt != null,
+    { message: 'payoutScheduledAt is required when payoutMode is SCHEDULED', path: ['payoutScheduledAt'] },
+  )
 
   /**
    * PATCH /v1/portal/node-runner/settings
@@ -712,12 +722,110 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       }
     }
 
+    // payoutScheduledAt arrives as an ISO string from the form; Prisma
+    // needs a Date object. Other fields pass through unchanged.
+    const { payoutScheduledAt, ...rest } = parsed.data
+    const updateData: Record<string, unknown> = { ...rest }
+    if (payoutScheduledAt !== undefined) {
+      updateData.payoutScheduledAt = payoutScheduledAt ? new Date(payoutScheduledAt) : null
+    }
+    // Switching out of SCHEDULED nulls the date so a future toggle back
+    // to SCHEDULED requires picking a fresh date.
+    if (parsed.data.payoutMode && parsed.data.payoutMode !== 'SCHEDULED') {
+      updateData.payoutScheduledAt = null
+    }
+
     const updated = await fastify.prisma.nodeRunner.update({
       where: { id: nr.id },
-      data: parsed.data,
+      data: updateData,
     })
 
     reply.send({ nodeRunner: updated })
+  })
+
+  // ===================================================================
+  // PAYOUT MODE — read current mode + computed platform balance, and
+  // the "Withdraw now" trigger that bypasses any MANUAL/SCHEDULED hold.
+  // ===================================================================
+
+  /**
+   * GET /v1/portal/node-runner/payouts/mode
+   * Returns: { mode, scheduledAt, platformBalance }
+   */
+  fastify.get('/v1/portal/node-runner/payouts/mode', async (request, reply) => {
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+    const { getOperatorPlatformBalance } = await import('../services/settlement/engine.js')
+    const platformBalance = await getOperatorPlatformBalance(fastify.prisma, nr.id)
+
+    reply.send({
+      mode: nr.payoutMode,
+      scheduledAt: nr.payoutScheduledAt?.toISOString() ?? null,
+      platformBalance,
+    })
+  })
+
+  /**
+   * POST /v1/portal/node-runner/payouts/withdraw-now
+   * Immediately fires settlements for every node with an unpaid
+   * balance, regardless of payoutMode. If the operator was on
+   * SCHEDULED, the worker resets them to AUTO once the settlement
+   * completes (via the same clearScheduledPayout hook the regular
+   * scheduler uses).
+   */
+  fastify.post('/v1/portal/node-runner/payouts/withdraw-now', async (request, reply) => {
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+    const { calculateOperatorSettlements, createSettlement, markSettlementProcessing, markSettlementCompleted, markSettlementFailed, clearScheduledPayout } =
+      await import('../services/settlement/engine.js')
+    const { getSolanaConfig, processPayment } = await import('../services/payment/solana.js')
+
+    const calcs = await calculateOperatorSettlements(fastify.prisma, nr.id, new Date())
+    if (calcs.length === 0) {
+      return reply.code(409).send({
+        error: 'No balance',
+        message: 'No unpaid earnings available to withdraw',
+      })
+    }
+
+    const solanaConfig = await getSolanaConfig(fastify.prisma)
+
+    const results: Array<{ settlementId: string; success: boolean; txHash?: string; error?: string; amount: number }> = []
+    let totalPaid = 0
+
+    for (const calc of calcs) {
+      try {
+        const settlementId = await createSettlement(fastify.prisma, calc)
+        await markSettlementProcessing(fastify.prisma, settlementId)
+        const result = await processPayment(solanaConfig, calc.walletAddress, calc.amount, 'USDC')
+        if (result.success && result.txHash) {
+          await markSettlementCompleted(fastify.prisma, settlementId, result.txHash)
+          totalPaid += calc.amount
+          results.push({ settlementId, success: true, txHash: result.txHash, amount: calc.amount })
+        } else {
+          await markSettlementFailed(fastify.prisma, settlementId, result.error ?? 'Payment failed')
+          results.push({ settlementId, success: false, error: result.error ?? 'Payment failed', amount: calc.amount })
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        results.push({ settlementId: '', success: false, error: msg, amount: calc.amount })
+      }
+    }
+
+    // If the operator was on SCHEDULED, the manual withdraw consumes
+    // the scheduled-payout intent. Flip them back to AUTO.
+    if (nr.payoutMode === 'SCHEDULED') {
+      await clearScheduledPayout(fastify.prisma, nr.id)
+    }
+
+    const anySuccess = results.some((r) => r.success)
+    reply.code(anySuccess ? 200 : 502).send({
+      totalPaid,
+      settlements: results,
+      modeResetToAuto: nr.payoutMode === 'SCHEDULED',
+    })
   })
 
   // ===================================================================
