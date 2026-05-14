@@ -33,10 +33,17 @@ import type { GpuTier, NodeType, NodeStatus } from '@a2e/database'
 
 const API_URL_DEFAULT = 'https://a2e-api.onrender.com'
 const TOKEN_TTL_DAYS = 7
-const INSTALL_SCRIPT_PATH = path.resolve(
-  process.cwd(),
-  '../node-agent/scripts/install.sh'
-)
+
+// install.sh lives in the node-agent workspace. Depending on whether the
+// API process is launched from the repo root or from apps/api, the
+// relative path differs. The first existing path wins. We also support
+// an env-var override (A2E_INSTALL_SCRIPT_PATH) for non-standard layouts.
+const INSTALL_SCRIPT_CANDIDATES = [
+  process.env.A2E_INSTALL_SCRIPT_PATH,
+  path.resolve(__dirname, '../../../node-agent/scripts/install.sh'),
+  path.resolve(process.cwd(), 'apps/node-agent/scripts/install.sh'),
+  path.resolve(process.cwd(), '../node-agent/scripts/install.sh'),
+].filter((p): p is string => Boolean(p))
 
 const REGION_REGEX = /^(US-WEST|US-EAST|EU|APAC|SA|OC)$/
 
@@ -169,11 +176,20 @@ export async function byogRoutes(fastify: FastifyInstance) {
           .send('# Install token expired; mint a fresh one from the portal.\nexit 1\n')
       }
 
-      let scriptBody: string
-      try {
-        scriptBody = await readFile(INSTALL_SCRIPT_PATH, 'utf8')
-      } catch (err) {
-        request.log.error({ err, path: INSTALL_SCRIPT_PATH }, '[byog] install.sh missing')
+      let scriptBody: string | null = null
+      for (const candidate of INSTALL_SCRIPT_CANDIDATES) {
+        try {
+          scriptBody = await readFile(candidate, 'utf8')
+          break
+        } catch {
+          // try the next candidate
+        }
+      }
+      if (!scriptBody) {
+        request.log.error(
+          { candidates: INSTALL_SCRIPT_CANDIDATES },
+          '[byog] install.sh not found in any candidate path'
+        )
         return reply
           .code(500)
           .type('text/plain')
