@@ -1,0 +1,296 @@
+import type { FastifyInstance } from 'fastify'
+import { z } from 'zod'
+import crypto from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+import type { GpuTier, NodeType, NodeStatus } from '@a2e/database'
+
+/*
+ * Launch-blocker #1 — BYOG one-liner install flow.
+ *
+ *   1. Operator clicks "+ Add Node" in the portal → POST /v1/byog/issue-token
+ *      mints a one-shot InstallToken and returns the curl one-liner.
+ *
+ *   2. Operator copies the one-liner and runs it on their GPU machine:
+ *         curl https://api.tokenos.ai/v1/byog/install?token=xxx | bash
+ *      The install route (no auth) returns the install.sh content with the
+ *      token, API URL, and region pre-substituted.
+ *
+ *   3. The install script detects GPU/system specs and calls POST
+ *      /v1/byog/claim with the install token in the body. The route:
+ *         - validates the token (exists, not expired, not consumed)
+ *         - creates a Node row owned by the operator who minted the token
+ *         - generates a permanent node-specific API key (a2e-node-…)
+ *         - marks the InstallToken as consumed (one-shot)
+ *         - returns {nodeId, apiKey, region} for the agent to persist
+ *
+ *   4. The node-agent then heartbeats to /v1/nodes/:nodeId/heartbeat using
+ *      the permanent apiKey, same as any other BYOG node.
+ *
+ * Vendor flow (Akash/IO.net/Vast.ai) is wholly separate and never touches
+ * any of these routes.
+ */
+
+const API_URL_DEFAULT = 'https://a2e-api.onrender.com'
+const TOKEN_TTL_DAYS = 7
+const INSTALL_SCRIPT_PATH = path.resolve(
+  process.cwd(),
+  '../node-agent/scripts/install.sh'
+)
+
+const REGION_REGEX = /^(US-WEST|US-EAST|EU|APAC|SA|OC)$/
+
+const issueTokenSchema = z.object({
+  region: z.string().regex(REGION_REGEX).optional(),
+})
+
+const claimSchema = z.object({
+  installToken: z.string().min(16).max(64),
+  specs: z.object({
+    gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER']),
+    gpuModel: z.string().optional(),
+    gpuCount: z.number().optional(),
+    gpuVram: z.number().optional(),
+    gpuDriver: z.string().optional(),
+    cudaVersion: z.string().optional(),
+    hostname: z.string().optional(),
+    os: z.string().optional(),
+    osVersion: z.string().optional(),
+    totalMemory: z.number().optional(),
+    diskAvailable: z.number().optional(),
+    totalCpus: z.number().optional(),
+    dockerVersion: z.string().optional(),
+    agentVersion: z.string().optional(),
+  }),
+})
+
+function makeToken(): string {
+  // 24 random bytes → 32 base64url chars. Plenty of entropy and stays
+  // safe in URL query strings.
+  return crypto.randomBytes(24).toString('base64url')
+}
+
+function makeNodeApiKey(): string {
+  // Matches the `a2e-node-` prefix convention at nodes.ts:107 so the
+  // existing X-API-Key handler recognizes it as a node-specific key.
+  return `a2e-node-${crypto.randomBytes(20).toString('base64url')}`
+}
+
+function apiUrl(): string {
+  return process.env.A2E_API_URL || API_URL_DEFAULT
+}
+
+export async function byogRoutes(fastify: FastifyInstance) {
+  // -------------------------------------------------------------------
+  // 1. Operator mints a one-shot install token from the portal.
+  // -------------------------------------------------------------------
+  fastify.post(
+    '/v1/byog/issue-token',
+    {
+      preHandler: [fastify.authenticate, fastify.requireRole('NODE_RUNNER', 'ADMIN')],
+    },
+    async (request, reply) => {
+      const parsed = issueTokenSchema.safeParse(request.body ?? {})
+      if (!parsed.success) {
+        return reply.code(400).send({
+          error: 'Validation Error',
+          message: parsed.error.errors[0]?.message ?? 'Invalid input',
+        })
+      }
+
+      const userId = request.user!.userId
+      const nodeRunner = await fastify.prisma.nodeRunner.findUnique({
+        where: { userId },
+      })
+      if (!nodeRunner) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'No node runner profile. Complete onboarding first.',
+        })
+      }
+
+      const token = makeToken()
+      const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000)
+
+      await fastify.prisma.installToken.create({
+        data: {
+          token,
+          nodeRunnerId: nodeRunner.id,
+          region: parsed.data.region,
+          expiresAt,
+        },
+      })
+
+      const installCommand = `curl -fsSL ${apiUrl()}/v1/byog/install?token=${token} | bash`
+
+      reply.code(201).send({
+        token,
+        installCommand,
+        expiresAt: expiresAt.toISOString(),
+      })
+    }
+  )
+
+  // -------------------------------------------------------------------
+  // 2. Public install endpoint. Returns the install.sh with the token,
+  //    API URL, and region pre-substituted as bash variables at the
+  //    top of the file. No auth; the token IS the auth.
+  // -------------------------------------------------------------------
+  fastify.get<{ Querystring: { token?: string } }>(
+    '/v1/byog/install',
+    async (request, reply) => {
+      const token = request.query.token?.trim()
+      if (!token) {
+        return reply
+          .code(400)
+          .type('text/plain')
+          .send('# Missing ?token= query param.\nexit 1\n')
+      }
+
+      const row = await fastify.prisma.installToken.findUnique({
+        where: { token },
+      })
+      if (!row) {
+        return reply
+          .code(404)
+          .type('text/plain')
+          .send('# Install token not found.\nexit 1\n')
+      }
+      if (row.consumedAt) {
+        return reply
+          .code(410)
+          .type('text/plain')
+          .send('# Install token already consumed.\nexit 1\n')
+      }
+      if (row.expiresAt < new Date()) {
+        return reply
+          .code(410)
+          .type('text/plain')
+          .send('# Install token expired; mint a fresh one from the portal.\nexit 1\n')
+      }
+
+      let scriptBody: string
+      try {
+        scriptBody = await readFile(INSTALL_SCRIPT_PATH, 'utf8')
+      } catch (err) {
+        request.log.error({ err, path: INSTALL_SCRIPT_PATH }, '[byog] install.sh missing')
+        return reply
+          .code(500)
+          .type('text/plain')
+          .send('# install.sh not bundled with this deploy.\nexit 1\n')
+      }
+
+      // Inject the token + API URL + region as exported bash variables at
+      // the top of the script. The script reads them and runs non-
+      // interactively when they're set.
+      const header = [
+        '#!/usr/bin/env bash',
+        `export INSTALL_TOKEN=${JSON.stringify(token)}`,
+        `export A2E_API_URL=${JSON.stringify(apiUrl())}`,
+        row.region ? `export A2E_REGION=${JSON.stringify(row.region)}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n')
+
+      // Strip any existing shebang from the original script so our
+      // injected header sits at line 1.
+      const bodyWithoutShebang = scriptBody.replace(/^#!.*\n/, '')
+
+      reply
+        .code(200)
+        .type('text/x-shellscript')
+        .send(`${header}\n\n${bodyWithoutShebang}`)
+    }
+  )
+
+  // -------------------------------------------------------------------
+  // 3. Install script calls this with the token + detected specs.
+  //    Validates the token, creates the Node row, issues a permanent
+  //    api key, marks the token consumed.
+  // -------------------------------------------------------------------
+  fastify.post('/v1/byog/claim', async (request, reply) => {
+    const parsed = claimSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'Validation Error',
+        message: parsed.error.errors[0]?.message ?? 'Invalid input',
+        details: parsed.error.errors,
+      })
+    }
+
+    const { installToken, specs } = parsed.data
+
+    const tokenRow = await fastify.prisma.installToken.findUnique({
+      where: { token: installToken },
+    })
+    if (!tokenRow) {
+      return reply.code(404).send({
+        error: 'Not Found',
+        message: 'Install token not found',
+      })
+    }
+    if (tokenRow.consumedAt) {
+      return reply.code(410).send({
+        error: 'Gone',
+        message: 'Install token already consumed',
+      })
+    }
+    if (tokenRow.expiresAt < new Date()) {
+      return reply.code(410).send({
+        error: 'Gone',
+        message: 'Install token expired',
+      })
+    }
+
+    // Build a wallet identifier for the node. NodeRunner already owns a
+    // Solana wallet; nodes underneath them get a synthetic identifier
+    // derived from the hostname + a random suffix so multiple installs
+    // on the same hostname don't collide on Node.walletAddress.
+    const walletAddress = `byog-${specs.hostname ?? 'node'}-${crypto.randomBytes(4).toString('hex')}`
+    const apiKey = makeNodeApiKey()
+
+    // Atomic: create the Node and flip the InstallToken in one transaction
+    // so we never leak a Node row with no consumer or a "consumed" token
+    // without a Node.
+    const node = await fastify.prisma.$transaction(async (tx) => {
+      const created = await tx.node.create({
+        data: {
+          walletAddress,
+          gpuTier: specs.gpuTier as GpuTier,
+          nodeType: 'BYOG' as NodeType,
+          region: tokenRow.region,
+          nodeRunnerId: tokenRow.nodeRunnerId,
+          apiKey,
+          agentVersion: specs.agentVersion,
+          status: 'ONLINE' as NodeStatus,
+          lastHeartbeat: new Date(),
+        },
+      })
+
+      await tx.installToken.update({
+        where: { id: tokenRow.id },
+        data: {
+          consumedAt: new Date(),
+          consumedByNodeId: created.id,
+        },
+      })
+
+      return created
+    })
+
+    fastify.io?.emit('node:registered', {
+      id: node.id,
+      walletAddress: node.walletAddress,
+      gpuTier: node.gpuTier,
+      status: node.status,
+      source: 'byog',
+      timestamp: new Date().toISOString(),
+    })
+
+    reply.code(201).send({
+      nodeId: node.id,
+      apiKey,
+      region: node.region,
+    })
+  })
+}
