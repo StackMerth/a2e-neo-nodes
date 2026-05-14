@@ -29,6 +29,7 @@ import {
   Rocket, List, Plus,
 } from 'lucide-react'
 import { nodeRunner, buyer } from '@/lib/api'
+import { PORTAL_ACTIONS, type PortalActionCommand } from './commands'
 
 interface NavItem {
   type: 'nav'
@@ -63,7 +64,12 @@ interface RentalItem {
   status: string
 }
 
-type SearchResult = NavItem | NodeItem | DeploymentItem | RentalItem
+interface ActionItem {
+  type: 'action'
+  cmd: PortalActionCommand
+}
+
+type SearchResult = NavItem | NodeItem | DeploymentItem | RentalItem | ActionItem
 
 const NAV_ITEMS: NavItem[] = [
   { type: 'nav', label: 'Dashboard',         hint: 'Operator overview',        href: '/dashboard',    icon: LayoutDashboard },
@@ -172,14 +178,23 @@ export function GlobalSearch() {
   const results = useMemo<SearchResult[]>(() => {
     const q = query.trim().toLowerCase()
     if (!q) {
-      // Empty query: show a useful default (a slice of nav pages).
-      return NAV_ITEMS.slice(0, 8)
+      // Empty query: a useful default mix - top nav + all actions.
+      return [
+        ...NAV_ITEMS.slice(0, 6),
+        ...PORTAL_ACTIONS.map<ActionItem>(cmd => ({ type: 'action', cmd })),
+      ]
     }
     const out: SearchResult[] = []
 
     for (const n of NAV_ITEMS) {
       if (n.label.toLowerCase().includes(q) || n.hint.toLowerCase().includes(q)) {
         out.push(n)
+      }
+    }
+
+    for (const cmd of PORTAL_ACTIONS) {
+      if (cmd.label.toLowerCase().includes(q) || cmd.hint.toLowerCase().includes(q)) {
+        out.push({ type: 'action', cmd })
       }
     }
 
@@ -232,7 +247,29 @@ export function GlobalSearch() {
     setHighlight(0)
   }, [query, open])
 
-  const onSelect = useCallback((r: SearchResult) => {
+  const onSelect = useCallback(async (r: SearchResult) => {
+    if (r.type === 'action') {
+      // Run the action against the portal API. Close the palette
+      // first so the user immediately sees their app again; the
+      // command itself surfaces its own toast on the page.
+      setOpen(false)
+      setQuery('')
+      try {
+        await r.cmd.exec({
+          push: (href) => router.push(href),
+          toast: (kind, message) => {
+            // Lightweight inline toast - just an alert for now since
+            // the portal doesn't expose its useToast() context here.
+            // Could wire into the real toast in a follow-up.
+            if (kind === 'error') console.error('[command]', message)
+            else console.log('[command]', message)
+          },
+        })
+      } catch (e) {
+        console.error('[command failed]', e)
+      }
+      return
+    }
     setOpen(false)
     setQuery('')
     switch (r.type) {
@@ -323,8 +360,16 @@ export function GlobalSearch() {
               <ul>
                 {results.map((r, idx) => {
                   const isActive = idx === highlight
+                  const key = r.type === 'nav'    ? `nav-${r.href}`
+                            : r.type === 'action' ? `act-${r.cmd.id}`
+                            : `${r.type}-${r.id}`
+                  // Actions get a primary-toned chip so they read as
+                  // "do something" instead of "go somewhere".
+                  const chipKind = r.type === 'action' ? 'action'
+                                 : r.type === 'nav'    ? null
+                                 : r.type
                   return (
-                    <li key={`${r.type}-${'id' in r ? r.id : (r as NavItem).href}`}>
+                    <li key={key}>
                       <button
                         type="button"
                         onMouseEnter={() => setHighlight(idx)}
@@ -337,16 +382,20 @@ export function GlobalSearch() {
                       >
                         <ResultIcon r={r} />
                         <ResultBody r={r} />
-                        {r.type !== 'nav' && (
+                        {chipKind && (
                           <span
                             className="font-mono text-[10px] px-2 py-0.5 rounded-sm shrink-0"
-                            style={{
+                            style={chipKind === 'action' ? {
+                              color: 'var(--primary)',
+                              background: 'rgba(34,197,94,0.10)',
+                              border: '1px solid rgba(34,197,94,0.30)',
+                            } : {
                               color: 'var(--text-muted)',
                               background: 'var(--surface-elevated)',
                               border: '1px solid var(--border-color)',
                             }}
                           >
-                            {r.type}
+                            {chipKind}
                           </span>
                         )}
                       </button>
@@ -372,10 +421,21 @@ function ResultIcon({ r }: { r: SearchResult }) {
   if (r.type === 'deployment') {
     return <Package className="w-4 h-4 shrink-0" style={{ color: 'var(--primary)' }} />
   }
+  if (r.type === 'action') {
+    return <r.cmd.icon className="w-4 h-4 shrink-0" style={{ color: 'var(--primary)' }} />
+  }
   return <Zap className="w-4 h-4 shrink-0" style={{ color: 'var(--primary)' }} />
 }
 
 function ResultBody({ r }: { r: SearchResult }) {
+  if (r.type === 'action') {
+    return (
+      <div className="flex-1 min-w-0">
+        <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{r.cmd.label}</p>
+        <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>{r.cmd.hint}</p>
+      </div>
+    )
+  }
   if (r.type === 'nav') {
     return (
       <div className="flex-1 min-w-0">
