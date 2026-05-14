@@ -130,9 +130,14 @@ export function StatCard({
   animate = true,
 }: StatCardProps) {
   return (
+    // The grid-cols-6 layout on the Reports page can squeeze each card
+    // down to ~170px. Grid items default to min-width: auto (won't
+    // shrink below content), so we override with min-w-0 + overflow-hidden
+    // here. Without this every truncate further down is a no-op.
     <div
       className={`
-        bg-surface border rounded-xl p-6
+        min-w-0 overflow-hidden
+        bg-surface border rounded-xl p-4 sm:p-6
         transition-all duration-300 ease-out-expo
         hover:shadow-card-hover hover:-translate-y-0.5
         ${statVariantStyles[variant]}
@@ -140,31 +145,35 @@ export function StatCard({
         ${className}
       `}
     >
-      <div className="flex items-start justify-between mb-3">
-        <p className="text-xs text-text-muted uppercase tracking-wider font-medium">
+      <div className="flex items-start justify-between mb-3 gap-2">
+        <p className="text-xs text-text-muted uppercase tracking-wider font-medium min-w-0 truncate">
           {label}
         </p>
         {icon && (
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconVariantStyles[variant]}`}>
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${iconVariantStyles[variant]}`}>
             {icon}
           </div>
         )}
       </div>
 
-      {/* min-w-0 on the flex parent lets the value shrink below its
-          content width; without it, long USD figures like $91,690.28
-          overflow the card on narrower grid columns. block + truncate
-          on the value gives a graceful ellipsis when the responsive
-          font shrink still isn't enough. */}
+      {/* The value uses an inline clamp() so the font scales smoothly
+          with the card width: 18px floor at the narrowest, 32px ceiling
+          on big screens. Combined with truncate + min-w-0 the ellipsis
+          still kicks in if even 18px is too wide. Inline style beats
+          any Tailwind cache miss; this works in every browser the dash
+          targets without waiting for the JIT to compile new classes. */}
       <div className="flex items-baseline gap-1 min-w-0">
         {prefix && (
-          <span className="text-lg font-medium text-accent flex-shrink-0">{prefix}</span>
+          <span className="text-base sm:text-lg font-medium text-accent flex-shrink-0">{prefix}</span>
         )}
-        <span className="block min-w-0 truncate font-bold text-text-primary tabular-nums text-2xl md:text-3xl xl:text-4xl">
+        <span
+          className="block min-w-0 flex-1 truncate font-bold text-text-primary tabular-nums"
+          style={{ fontSize: 'clamp(1.125rem, 2.2vw + 0.4rem, 2rem)', lineHeight: 1.15 }}
+        >
           {value}
         </span>
         {suffix && (
-          <span className="text-sm text-text-muted ml-1 flex-shrink-0">{suffix}</span>
+          <span className="text-xs sm:text-sm text-text-muted ml-1 flex-shrink-0">{suffix}</span>
         )}
       </div>
 
