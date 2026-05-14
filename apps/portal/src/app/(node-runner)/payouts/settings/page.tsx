@@ -56,6 +56,20 @@ function toLocalDatetimeInput(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+// Render an ISO timestamp as a short countdown phrase. Pending funds
+// use this to show the operator when the next chunk unlocks without
+// requiring a live ticker — slight staleness on the minute is fine.
+function formatRelative(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now()
+  if (ms <= 0) return 'now'
+  const mins = Math.round(ms / 60000)
+  if (mins < 60) return `in ${mins} minute${mins === 1 ? '' : 's'}`
+  const hours = Math.round(mins / 60)
+  if (hours < 48) return `in ${hours} hour${hours === 1 ? '' : 's'}`
+  const days = Math.round(hours / 24)
+  return `in ${days} day${days === 1 ? '' : 's'}`
+}
+
 export default function PayoutSettingsPage() {
   const { toast } = useToast()
   const [name, setName] = useState('')
@@ -67,7 +81,10 @@ export default function PayoutSettingsPage() {
   const [dayOfMonth, setDayOfMonth] = useState(1)
   const [mode, setMode] = useState<PayoutMode>('AUTO')
   const [scheduledAt, setScheduledAt] = useState<string>('') // datetime-local string
-  const [platformBalance, setPlatformBalance] = useState(0)
+  const [available, setAvailable] = useState(0)
+  const [pending, setPending] = useState(0)
+  const [nextUnlockAt, setNextUnlockAt] = useState<string | null>(null)
+  const [cooldownHours, setCooldownHours] = useState(48)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [withdrawing, setWithdrawing] = useState(false)
@@ -88,7 +105,10 @@ export default function PayoutSettingsPage() {
       if (modeInfo) {
         setMode(modeInfo.mode)
         setScheduledAt(modeInfo.scheduledAt ? toLocalDatetimeInput(modeInfo.scheduledAt) : '')
-        setPlatformBalance(modeInfo.platformBalance)
+        setAvailable(modeInfo.available)
+        setPending(modeInfo.pending)
+        setNextUnlockAt(modeInfo.nextUnlockAt)
+        setCooldownHours(modeInfo.cooldownHours)
       }
     } catch {
       /* ignore */
@@ -129,11 +149,11 @@ export default function PayoutSettingsPage() {
   }
 
   async function handleWithdrawNow() {
-    if (platformBalance <= 0) {
-      toast('error', 'No unpaid balance to withdraw')
+    if (available <= 0) {
+      toast('error', pending > 0 ? `No unlocked balance yet. $${pending.toFixed(2)} is still in cool-down.` : 'No unpaid balance to withdraw')
       return
     }
-    if (!confirm(`Withdraw $${platformBalance.toFixed(2)} from the platform to your wallet?`)) {
+    if (!confirm(`Withdraw $${available.toFixed(2)} from the platform to your wallet?`)) {
       return
     }
     setWithdrawing(true)
@@ -173,44 +193,76 @@ export default function PayoutSettingsPage() {
           <ArrowLeft size={12} /> Back to Payouts
         </Link>
 
-        {/* Platform balance + Withdraw now. Sits outside the main form so
-            withdrawing doesn't get blocked by unsaved form changes. */}
+        {/* Platform balance — split into Available (past the cool-down)
+            and Pending (still in cool-down). Lives outside the main
+            form so withdrawing isn't blocked by unsaved settings
+            changes. */}
         <FormCard
           title="Platform Balance"
           description="Earnings sitting on the platform, not yet paid out to your wallet"
           icon={PiggyBank}
         >
           <FormSection>
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <p className="font-display text-4xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
-                  ${platformBalance.toFixed(2)}
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div
+                className="rounded-md p-4"
+                style={{
+                  background: 'rgba(34,197,94,0.06)',
+                  border: '1px solid rgba(34,197,94,0.25)',
+                }}
+              >
+                <p className="text-xs font-mono uppercase tracking-[0.16em] mb-2" style={{ color: 'var(--primary)' }}>
+                  Available
+                </p>
+                <p className="font-display text-3xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                  ${available.toFixed(2)}
                 </p>
                 <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                  {platformBalance > 0
-                    ? 'Available to withdraw right now.'
-                    : 'No unpaid earnings. New earnings will appear here as nodes accumulate uptime.'}
+                  {available > 0 ? 'Withdrawable right now.' : 'Nothing past the cool-down yet.'}
                 </p>
               </div>
+              <div
+                className="rounded-md p-4"
+                style={{
+                  background: 'rgba(245,158,11,0.06)',
+                  border: '1px solid rgba(245,158,11,0.25)',
+                }}
+              >
+                <p className="text-xs font-mono uppercase tracking-[0.16em] mb-2" style={{ color: 'var(--warning, #f59e0b)' }}>
+                  Pending ({cooldownHours}h cool-down)
+                </p>
+                <p className="font-display text-3xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                  ${pending.toFixed(2)}
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  {pending > 0 && nextUnlockAt
+                    ? `First chunk unlocks ${formatRelative(nextUnlockAt)}.`
+                    : 'No earnings in cool-down.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-4">
               <Button
                 type="button"
                 onClick={handleWithdrawNow}
                 loading={withdrawing}
-                disabled={platformBalance <= 0}
+                disabled={available <= 0}
               >
                 <ArrowDownToLine size={16} className="mr-2" />
-                Withdraw now
+                Withdraw ${available.toFixed(2)}
               </Button>
             </div>
+
             <div
-              className="mt-4 text-xs rounded-md p-3"
+              className="mt-4 text-xs rounded-md p-3 leading-relaxed"
               style={{
                 background: 'rgba(245,158,11,0.08)',
                 border: '1px solid rgba(245,158,11,0.2)',
                 color: 'var(--text-muted)',
               }}
             >
-              Two safety nets fire even if you&rsquo;re on hold: the platform forces a payout when your balance exceeds $10,000, or after 180 days of account inactivity. Withdraws are queued for the next allocator tick and arrive within a few seconds of confirmation.
+              Earnings sit in cool-down for {cooldownHours} hours after they accrue, giving us a buyer-dispute window. After that, the amount moves to <span className="text-primary font-semibold" style={{ color: 'var(--primary)' }}>Available</span> and you can withdraw at any time. Two safety nets fire even if you&rsquo;re on hold: the platform forces a payout when your balance exceeds $10,000, or after 180 days of inactivity.
             </div>
           </FormSection>
         </FormCard>

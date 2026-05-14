@@ -750,19 +750,26 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
 
   /**
    * GET /v1/portal/node-runner/payouts/mode
-   * Returns: { mode, scheduledAt, platformBalance }
+   * Returns: { mode, scheduledAt, available, pending, nextUnlockAt,
+   *   cooldownHours, platformBalance (alias of available) }
    */
   fastify.get('/v1/portal/node-runner/payouts/mode', async (request, reply) => {
     const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
     if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
 
-    const { getOperatorPlatformBalance } = await import('../services/settlement/engine.js')
-    const platformBalance = await getOperatorPlatformBalance(fastify.prisma, nr.id)
+    const { getOperatorBalanceBreakdown } = await import('../services/settlement/engine.js')
+    const breakdown = await getOperatorBalanceBreakdown(fastify.prisma, nr.id)
 
     reply.send({
       mode: nr.payoutMode,
       scheduledAt: nr.payoutScheduledAt?.toISOString() ?? null,
-      platformBalance,
+      available: breakdown.available,
+      pending: breakdown.pending,
+      nextUnlockAt: breakdown.nextUnlockAt,
+      cooldownHours: breakdown.cooldownHours,
+      // platformBalance keeps the existing key name so older client
+      // versions don't break. New UI reads `available`.
+      platformBalance: breakdown.available,
     })
   })
 
