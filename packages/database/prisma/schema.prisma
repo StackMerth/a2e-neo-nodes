@@ -274,6 +274,10 @@ model NodeRunner {
   // runner in the first place.
   referralsMade      Referral[] @relation("ReferrerEdge")
   referralReceived   Referral?  @relation("RefereeEdge")
+  // Launch-blocker #1 / BYOG: one-shot install tokens the operator
+  // mints from "+ Add Node" in the portal. Each token authorizes a
+  // single curl|bash install on one machine.
+  installTokens      InstallToken[]
 
   @@index([walletAddress])
   @@index([userId])
@@ -460,6 +464,40 @@ model Heartbeat {
   timestamp   DateTime @default(now())
 
   @@index([nodeId, timestamp])
+}
+
+// ============================================================================
+// BYOG INSTALL TOKENS (launch-blocker #1)
+// ============================================================================
+
+// One-shot token authorizing a single BYOG node install. Issued from the
+// operator portal ("+ Add Node"), embedded in the install.sh curl URL,
+// consumed when the agent first calls /v1/byog/claim. After claim, the
+// token row is marked consumed and cannot be re-used. Unconsumed tokens
+// expire after `expiresAt` (default 7 days from creation).
+model InstallToken {
+  id                String      @id @default(cuid())
+  // URL-safe random string (~32 chars). The value the operator pastes
+  // into the curl one-liner; never re-displayed in the portal after
+  // creation, treat like a password.
+  token             String      @unique
+
+  // Owner
+  nodeRunnerId      String
+  nodeRunner        NodeRunner  @relation(fields: [nodeRunnerId], references: [id], onDelete: Cascade)
+
+  // Region operator pre-selected at mint time. Pre-populates Node.region
+  // so the install script never has to prompt for it.
+  region            String?
+
+  // Lifecycle. consumedByNodeId is the Node row created from this token.
+  consumedAt        DateTime?
+  consumedByNodeId  String?     @unique
+  expiresAt         DateTime
+  createdAt         DateTime    @default(now())
+
+  @@index([nodeRunnerId])
+  @@index([expiresAt])
 }
 
 // ============================================================================
