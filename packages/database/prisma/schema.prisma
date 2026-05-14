@@ -664,6 +664,15 @@ model Earning {
   earnings      Float    @default(0)
   jobCount      Int      @default(0)
 
+  // Cooling-off period. Earnings sit in "pending" state until availableAt
+  // passes, then become withdrawable. Default 48h after creation gives
+  // the platform a buyer-dispute window without making us legally
+  // custodial for long periods. Admin can manually shift availableAt
+  // earlier (release on appeal) or later (extend hold during a dispute).
+  // The settlement engine and "Withdraw now" path filter on availableAt
+  // so locked funds physically can't leave the platform.
+  availableAt   DateTime @default(dbgenerated("CURRENT_TIMESTAMP + INTERVAL '48 hours'"))
+
   // Timestamps
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -671,6 +680,7 @@ model Earning {
   @@unique([nodeId, date, market])
   @@index([nodeId, date])
   @@index([date])
+  @@index([availableAt])
 }
 
 // ============================================================================

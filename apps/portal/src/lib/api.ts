@@ -161,9 +161,16 @@ export const nodeRunner = {
   // settlements at read time, so never drifts), and the "Withdraw
   // now" trigger that bypasses any hold mode.
   payoutMode: () =>
-    apiFetch<{ mode: 'AUTO' | 'MANUAL' | 'SCHEDULED'; scheduledAt: string | null; platformBalance: number }>(
-      '/v1/portal/node-runner/payouts/mode'
-    ),
+    apiFetch<{
+      mode: 'AUTO' | 'MANUAL' | 'SCHEDULED'
+      scheduledAt: string | null
+      available: number
+      pending: number
+      nextUnlockAt: string | null
+      cooldownHours: number
+      /** @deprecated alias of `available`, kept for compatibility */
+      platformBalance: number
+    }>('/v1/portal/node-runner/payouts/mode'),
   withdrawNow: () =>
     apiFetch<{
       totalPaid: number

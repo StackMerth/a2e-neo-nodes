@@ -27,6 +27,17 @@ export interface SettlementCalculation {
 const PLATFORM_BALANCE_CAP_USD = Number(process.env.PAYOUT_BALANCE_CAP_USD ?? 10000)
 const INACTIVITY_SWEEP_DAYS = Number(process.env.PAYOUT_INACTIVITY_DAYS ?? 180)
 
+// Cooling-off period — earnings sit in "pending" state for this many
+// hours after they accrue, then become withdrawable. Gives the
+// platform a buyer-dispute window without making us legally
+// custodial for long stretches.
+const COOLDOWN_HOURS = Number(process.env.PAYOUT_COOLDOWN_HOURS ?? 48)
+
+/** Returns the boundary timestamp: heartbeats older than this are "available". */
+function cooldownBoundary(now: Date = new Date()): Date {
+  return new Date(now.getTime() - COOLDOWN_HOURS * 60 * 60 * 1000)
+}
+
 /**
  * Calculate pending settlements based on UPTIME (not jobs).
  * Earnings = uptime hours × hourly rate for GPU tier
@@ -53,6 +64,12 @@ export async function calculatePendingSettlements(
   })
 
   const minimumPayout = config?.minimumPayout ?? 10
+
+  // Cooling-off: never settle earnings still inside the dispute
+  // window. Clamp the period end to (now - COOLDOWN_HOURS) so the
+  // worker only acts on funds that have already crossed the boundary.
+  const boundary = cooldownBoundary(periodEnd)
+  const effectivePeriodEnd = boundary < periodEnd ? boundary : periodEnd
 
   const nodes = await prisma.node.findMany({
     select: {
@@ -92,12 +109,12 @@ export async function calculatePendingSettlements(
     }
 
     // Skip if period is too short (less than 1 hour)
-    if (periodEnd.getTime() - periodStart.getTime() < 3600000) {
+    if (effectivePeriodEnd.getTime() - periodStart.getTime() < 3600000) {
       continue
     }
 
-    // Calculate uptime-based earnings
-    const uptimeEarnings = await calculateUptimeEarnings(prisma, node.id, periodStart, periodEnd)
+    // Calculate uptime-based earnings — only up to the cooldown boundary
+    const uptimeEarnings = await calculateUptimeEarnings(prisma, node.id, periodStart, effectivePeriodEnd)
 
     if (!uptimeEarnings || uptimeEarnings.earnings < minimumPayout) {
       continue
@@ -110,7 +127,7 @@ export async function calculatePendingSettlements(
     const scheduledAt = runner?.payoutScheduledAt ?? null
 
     const isOverCap = uptimeEarnings.earnings >= PLATFORM_BALANCE_CAP_USD
-    const isInactive = periodEnd.getTime() - periodStart.getTime() > inactivityMs
+    const isInactive = effectivePeriodEnd.getTime() - periodStart.getTime() > inactivityMs
     const forceReason: SettlementCalculation['forceReason'] = isOverCap
       ? 'BALANCE_CAP'
       : isInactive
@@ -127,7 +144,7 @@ export async function calculatePendingSettlements(
         // SCHEDULED with no date is treated like MANUAL — operator may
         // be midway through configuring it. Don't fire until they pick.
         if (!scheduledAt) continue
-        if (periodEnd.getTime() < scheduledAt.getTime()) continue
+        if (effectivePeriodEnd.getTime() < scheduledAt.getTime()) continue
         isScheduledFire = true
       }
     }
@@ -138,7 +155,7 @@ export async function calculatePendingSettlements(
       amount: uptimeEarnings.earnings,
       uptimeHours: uptimeEarnings.uptimeHours,
       periodStart,
-      periodEnd,
+      periodEnd: effectivePeriodEnd,
       nodeRunnerId: runner?.id,
       isScheduledFire,
       forceReason,
@@ -167,26 +184,103 @@ export async function clearScheduledPayout(
   })
 }
 
+export interface OperatorBalanceBreakdown {
+  /** Sum of earnings already past the cooling-off window. Withdrawable. */
+  available: number
+  /** Sum of earnings still within the cooling-off window. Visible but locked. */
+  pending: number
+  /** When the earliest pending dollar unlocks. Null if no pending balance. */
+  nextUnlockAt: string | null
+  /** Configured cool-down so the UI can show the window length. */
+  cooldownHours: number
+}
+
 /**
- * Compute the unpaid platform balance for an operator — sum of
- * uptime earnings since their last COMPLETED settlement across all
- * their nodes. Used by the portal payouts page and the "Withdraw now"
- * endpoint to surface the actionable amount.
+ * Returns the split of available vs pending balance for an operator,
+ * plus the next unlock timestamp. The dashboard renders this directly.
+ */
+export async function getOperatorBalanceBreakdown(
+  prisma: PrismaClient,
+  nodeRunnerId: string
+): Promise<OperatorBalanceBreakdown> {
+  const now = new Date()
+  const boundary = cooldownBoundary(now)
+
+  const nodes = await prisma.node.findMany({
+    where: { nodeRunnerId },
+    select: { id: true },
+  })
+  if (nodes.length === 0) {
+    return { available: 0, pending: 0, nextUnlockAt: null, cooldownHours: COOLDOWN_HOURS }
+  }
+
+  let available = 0
+  let pending = 0
+  let earliestUnlock: Date | null = null
+
+  for (const node of nodes) {
+    const lastSettlement = await prisma.settlement.findFirst({
+      where: { nodeId: node.id, status: 'COMPLETED' },
+      orderBy: { periodEnd: 'desc' },
+    })
+    const periodStart =
+      lastSettlement?.periodEnd ?? new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+
+    // Available portion: any uptime that happened before the cooldown
+    // boundary. Only compute if there's at least an hour of available
+    // window to avoid noise.
+    if (boundary.getTime() > periodStart.getTime() + 3600000) {
+      const availableUptime = await calculateUptimeEarnings(prisma, node.id, periodStart, boundary)
+      if (availableUptime?.earnings) available += availableUptime.earnings
+    }
+
+    // Pending portion: uptime since the cooldown boundary. The next
+    // unlock is the earliest heartbeat in that window + COOLDOWN_HOURS.
+    const pendingStart = boundary.getTime() > periodStart.getTime() ? boundary : periodStart
+    if (now.getTime() > pendingStart.getTime() + 60_000) {
+      const pendingUptime = await calculateUptimeEarnings(prisma, node.id, pendingStart, now)
+      if (pendingUptime?.earnings) {
+        pending += pendingUptime.earnings
+        const firstHeartbeat = await prisma.heartbeat.findFirst({
+          where: { nodeId: node.id, timestamp: { gte: pendingStart, lte: now } },
+          orderBy: { timestamp: 'asc' },
+          select: { timestamp: true },
+        })
+        if (firstHeartbeat) {
+          const unlockAt = new Date(firstHeartbeat.timestamp.getTime() + COOLDOWN_HOURS * 60 * 60 * 1000)
+          if (!earliestUnlock || unlockAt < earliestUnlock) earliestUnlock = unlockAt
+        }
+      }
+    }
+  }
+
+  return {
+    available,
+    pending,
+    nextUnlockAt: earliestUnlock?.toISOString() ?? null,
+    cooldownHours: COOLDOWN_HOURS,
+  }
+}
+
+/**
+ * Compute the WITHDRAWABLE platform balance for an operator — sum of
+ * earnings past the cooling-off window. Pending balance is excluded
+ * by design; this is the amount "Withdraw now" can move.
  */
 export async function getOperatorPlatformBalance(
   prisma: PrismaClient,
   nodeRunnerId: string
 ): Promise<number> {
-  const calcs = await calculateOperatorSettlements(prisma, nodeRunnerId, new Date(), 0)
-  return calcs.reduce((sum, c) => sum + c.amount, 0)
+  const breakdown = await getOperatorBalanceBreakdown(prisma, nodeRunnerId)
+  return breakdown.available
 }
 
 /**
  * Build per-node settlement calculations for ONE operator regardless
  * of their payoutMode. This is the engine behind the "Withdraw now"
  * button: even if the operator is on MANUAL or SCHEDULED hold, they
- * can still force an immediate payout. minimumPayout defaults to 0
- * (override $10 system default) so even small balances are claimable.
+ * can still force an immediate payout — BUT only against the portion
+ * past the cooldown window. Pending earnings stay locked.
  */
 export async function calculateOperatorSettlements(
   prisma: PrismaClient,
@@ -194,6 +288,11 @@ export async function calculateOperatorSettlements(
   periodEnd: Date,
   minimumPayout: number = 0
 ): Promise<SettlementCalculation[]> {
+  // Clamp periodEnd to the cooldown boundary so we never try to
+  // settle earnings still inside the cooling-off window.
+  const boundary = cooldownBoundary(periodEnd)
+  const effectivePeriodEnd = boundary < periodEnd ? boundary : periodEnd
+
   const nodes = await prisma.node.findMany({
     where: { nodeRunnerId },
     select: { id: true, walletAddress: true },
@@ -207,9 +306,9 @@ export async function calculateOperatorSettlements(
     })
     const periodStart =
       lastSettlement?.periodEnd ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    if (periodEnd.getTime() - periodStart.getTime() < 3600000) continue
+    if (effectivePeriodEnd.getTime() - periodStart.getTime() < 3600000) continue
 
-    const uptime = await calculateUptimeEarnings(prisma, node.id, periodStart, periodEnd)
+    const uptime = await calculateUptimeEarnings(prisma, node.id, periodStart, effectivePeriodEnd)
     if (!uptime || uptime.earnings < minimumPayout) continue
 
     out.push({
@@ -218,7 +317,7 @@ export async function calculateOperatorSettlements(
       amount: uptime.earnings,
       uptimeHours: uptime.uptimeHours,
       periodStart,
-      periodEnd,
+      periodEnd: effectivePeriodEnd,
       nodeRunnerId,
     })
   }
