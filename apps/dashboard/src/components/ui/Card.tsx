@@ -151,15 +151,20 @@ export function StatCard({
         )}
       </div>
 
-      <div className="flex items-baseline gap-1">
+      {/* min-w-0 on the flex parent lets the value shrink below its
+          content width; without it, long USD figures like $91,690.28
+          overflow the card on narrower grid columns. block + truncate
+          on the value gives a graceful ellipsis when the responsive
+          font shrink still isn't enough. */}
+      <div className="flex items-baseline gap-1 min-w-0">
         {prefix && (
-          <span className="text-lg font-medium text-accent">{prefix}</span>
+          <span className="text-lg font-medium text-accent flex-shrink-0">{prefix}</span>
         )}
-        <span className="text-3xl md:text-4xl font-bold text-text-primary tabular-nums">
+        <span className="block min-w-0 truncate font-bold text-text-primary tabular-nums text-2xl md:text-3xl xl:text-4xl">
           {value}
         </span>
         {suffix && (
-          <span className="text-sm text-text-muted ml-1">{suffix}</span>
+          <span className="text-sm text-text-muted ml-1 flex-shrink-0">{suffix}</span>
         )}
       </div>
 
