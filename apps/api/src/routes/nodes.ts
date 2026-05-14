@@ -489,13 +489,130 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         })
       }
 
+      // Launch-blocker #2: surface the pending SSH session action to the
+      // agent. PENDING -> agent needs to provision (useradd + key install).
+      // TERMINATING -> agent needs to tear down. PROVISIONING/ACTIVE/
+      // TERMINATED/FAILED -> agent is mid-flight or done; nothing to emit.
+      let sshSession: {
+        action: 'provision' | 'terminate'
+        requestId: string
+        username: string
+        pubKey?: string
+      } | undefined
+      if (updatedNode.assignedComputeRequestId) {
+        const cr = await fastify.prisma.computeRequest.findUnique({
+          where: { id: updatedNode.assignedComputeRequestId },
+          select: {
+            id: true,
+            sshSessionStatus: true,
+            sshUsername: true,
+            sshPubKey: true,
+          },
+        })
+        if (cr?.sshUsername) {
+          if (cr.sshSessionStatus === 'PENDING') {
+            sshSession = {
+              action: 'provision',
+              requestId: cr.id,
+              username: cr.sshUsername,
+              pubKey: cr.sshPubKey ?? undefined,
+            }
+          } else if (cr.sshSessionStatus === 'TERMINATING') {
+            sshSession = {
+              action: 'terminate',
+              requestId: cr.id,
+              username: cr.sshUsername,
+            }
+          }
+        }
+      }
+
       reply.send({
         acknowledged: true,
         status: updatedNode.status,
         lastHeartbeat: updatedNode.lastHeartbeat.toISOString(),
         recorded: true,
         commands: commands.length > 0 ? commands : undefined,
+        sshSession,
       })
+    }
+  )
+
+  // Launch-blocker #2: agent reports SSH lifecycle transitions here.
+  // Authorized by the node's own API key (same as heartbeat) and a
+  // sanity check that the node is in the request's allocatedNodeIds.
+  const sshStatusSchema = z.object({
+    status: z.enum(['PROVISIONING', 'ACTIVE', 'TERMINATED', 'FAILED']),
+    errorMessage: z.string().max(2048).optional(),
+  })
+
+  fastify.post(
+    '/v1/nodes/:id/ssh-sessions/:requestId/status',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id: nodeId, requestId } = request.params as { id: string; requestId: string }
+      const parsed = sshStatusSchema.safeParse(request.body)
+      if (!parsed.success) {
+        return reply.code(400).send({
+          error: 'Validation Error',
+          message: parsed.error.errors[0]?.message ?? 'Invalid input',
+        })
+      }
+
+      const cr = await fastify.prisma.computeRequest.findUnique({
+        where: { id: requestId },
+        select: { id: true, allocatedNodeIds: true, sshSessionStatus: true },
+      })
+      if (!cr) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Compute request not found' })
+      }
+      if (!cr.allocatedNodeIds.includes(nodeId)) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'This node is not assigned to the requested compute rental',
+        })
+      }
+
+      const now = new Date()
+      const updateData: {
+        sshSessionStatus: typeof parsed.data.status
+        sshProvisionedAt?: Date
+        sshTerminatedAt?: Date
+        sshErrorMessage?: string | null
+      } = {
+        sshSessionStatus: parsed.data.status,
+      }
+      if (parsed.data.status === 'ACTIVE') updateData.sshProvisionedAt = now
+      if (parsed.data.status === 'TERMINATED') updateData.sshTerminatedAt = now
+      if (parsed.data.status === 'FAILED') {
+        updateData.sshErrorMessage = parsed.data.errorMessage ?? 'unspecified agent failure'
+      }
+
+      await fastify.prisma.$transaction(async (tx) => {
+        await tx.computeRequest.update({
+          where: { id: requestId },
+          data: updateData,
+        })
+        // On TERMINATED, release the node back to the idle pool so the
+        // allocator can reassign it on the next tick.
+        if (parsed.data.status === 'TERMINATED') {
+          await tx.node.update({
+            where: { id: nodeId },
+            data: { assignedComputeRequestId: null },
+          })
+        }
+      })
+
+      fastify.io?.emit('ssh-session:status', {
+        nodeId,
+        requestId,
+        status: parsed.data.status,
+        timestamp: now.toISOString(),
+      })
+
+      reply.send({ acknowledged: true, status: parsed.data.status, requestId })
     }
   )
 }
