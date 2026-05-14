@@ -50,18 +50,44 @@ const USDC_MINTS = {
   devnet: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU', // Devnet USDC
 }
 
+// Logged at most once per process so the env-vs-DB source of the payer
+// key is visible in Render boot logs without spamming every request.
+let _payerKeySourceLogged = false
+function logPayerKeySource(source: 'env' | 'db' | 'missing'): void {
+  if (_payerKeySourceLogged) return
+  _payerKeySourceLogged = true
+  if (source === 'env') {
+    console.log('[solana] payer key loaded from SOLANA_PAYER_KEY env var')
+  } else if (source === 'db') {
+    console.warn(
+      '[solana] WARNING: payer key loaded from SettlementConfig DB column. ' +
+        'Set SOLANA_PAYER_KEY env var and drop the DB value before going live. ' +
+        '(blocker M1-#7)'
+    )
+  } else {
+    console.log('[solana] no payer key configured; dev-mode mocking will be used')
+  }
+}
+
 export async function getSolanaConfig(prisma: PrismaClient): Promise<SolanaConfig> {
   const config = await prisma.settlementConfig.findUnique({
     where: { id: 'default' },
   })
 
-  // Check if we're in dev mode (no real Solana config)
-  const hasRealConfig = config?.solanaRpcUrl && config?.payerPrivateKey
+  // Prefer env var; fall back to DB column for the migration window.
+  // The DB column is being deprecated (blocker M1-#7) and will be removed
+  // once #4 (production wallet provisioning) plants the key in env.
+  const envKey = process.env.SOLANA_PAYER_KEY?.trim()
+  const dbKey = config?.payerPrivateKey?.trim()
+  const payerPrivateKey = envKey || dbKey || ''
+  logPayerKeySource(envKey ? 'env' : dbKey ? 'db' : 'missing')
+
+  const hasRealConfig = config?.solanaRpcUrl && payerPrivateKey
   const devMode = process.env.PAYMENT_MODE !== 'live' || !hasRealConfig
 
   return {
     rpcUrl: config?.solanaRpcUrl ?? 'https://api.devnet.solana.com',
-    payerPrivateKey: config?.payerPrivateKey ?? '',
+    payerPrivateKey,
     usdcMint: config?.usdcMint ?? undefined,
     devMode,
   }
