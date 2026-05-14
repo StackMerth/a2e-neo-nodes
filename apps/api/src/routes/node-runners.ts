@@ -27,6 +27,13 @@ const confirmInvestmentSchema = z.object({
   cryptoCurrency: z.string().optional(),
 })
 
+// Admin payout-lock body. lockedUntil = ISO string or null to clear.
+// Reason is surfaced to the operator on the locked-payout error message.
+const payoutLockSchema = z.object({
+  lockedUntil: z.string().datetime().nullable(),
+  reason: z.string().max(500).optional(),
+})
+
 export async function nodeRunnerRoutes(fastify: FastifyInstance) {
   // ==================== NODE RUNNERS ====================
 
@@ -702,6 +709,55 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
           provisionedAt: inv.provisionedAt?.toISOString() ?? null,
         })),
         total: investments.length,
+      })
+    }
+  )
+
+  // PATCH /v1/node-runners/:id/payout-lock — admin-applied hard hold
+  // on this operator's payouts. While lockedUntil is in the future,
+  // the settlement worker skips them entirely AND Withdraw Now returns
+  // 403 with the lockedUntil + reason so the operator sees what's
+  // happening. Used by support during buyer disputes / fraud probes.
+  fastify.patch(
+    '/v1/node-runners/:id/payout-lock',
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const parsed = payoutLockSchema.safeParse(request.body)
+      if (!parsed.success) {
+        return reply.code(400).send({
+          error: 'Validation Error',
+          message: parsed.error.errors[0]?.message ?? 'Invalid input',
+        })
+      }
+
+      const existing = await fastify.prisma.nodeRunner.findUnique({
+        where: { id },
+        select: { id: true },
+      })
+      if (!existing) {
+        return reply.code(404).send({ error: 'Node runner not found' })
+      }
+
+      const updated = await fastify.prisma.nodeRunner.update({
+        where: { id },
+        data: {
+          payoutLockUntil: parsed.data.lockedUntil ? new Date(parsed.data.lockedUntil) : null,
+          // Clear the reason when the lock is cleared so a future
+          // lock starts with a fresh note rather than an old one.
+          payoutLockReason: parsed.data.lockedUntil ? parsed.data.reason ?? null : null,
+        },
+        select: {
+          id: true,
+          payoutLockUntil: true,
+          payoutLockReason: true,
+        },
+      })
+
+      reply.send({
+        nodeRunnerId: updated.id,
+        lockedUntil: updated.payoutLockUntil?.toISOString() ?? null,
+        reason: updated.payoutLockReason,
       })
     }
   )

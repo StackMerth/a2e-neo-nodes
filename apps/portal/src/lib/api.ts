@@ -171,10 +171,11 @@ export const nodeRunner = {
       /** @deprecated alias of `available`, kept for compatibility */
       platformBalance: number
     }>('/v1/portal/node-runner/payouts/mode'),
-  withdrawNow: () =>
+  withdrawNow: (body?: { walletAddress?: string; saveWallet?: boolean }) =>
     apiFetch<{
       totalPaid: number
       modeResetToAuto: boolean
+      destinationWallet: string
       settlements: Array<{
         settlementId: string
         success: boolean
@@ -182,7 +183,7 @@ export const nodeRunner = {
         error?: string
         amount: number
       }>
-    }>('/v1/portal/node-runner/payouts/withdraw-now', { method: 'POST' }),
+    }>('/v1/portal/node-runner/payouts/withdraw-now', { method: 'POST', body: body ?? {} }),
   settings: (data: unknown) => apiFetch('/v1/portal/node-runner/settings', { method: 'PATCH', body: data }),
   jobs: (params?: Record<string, string>) => {
     const qs = params ? '?' + new URLSearchParams(params).toString() : ''
