@@ -8,11 +8,41 @@ export interface SettlementCalculation {
   uptimeHours: number
   periodStart: Date
   periodEnd: Date
+  // Set when this calculation comes from a NodeRunner whose payoutMode
+  // is SCHEDULED and whose scheduled date has passed. After the
+  // settlement completes, the scheduler resets that operator back to
+  // AUTO (see clearScheduledPayout below) so SCHEDULED is one-shot.
+  nodeRunnerId?: string
+  isScheduledFire?: boolean
+  // Diagnostic — when set, the settlement was fired despite the
+  // operator's hold preference (MANUAL/SCHEDULED) because a safety
+  // net kicked in. Surfaced in the Settlement.adminNote for audit.
+  forceReason?: 'BALANCE_CAP' | 'INACTIVITY'
 }
+
+// Safety nets enforced regardless of payoutMode. The cap protects the
+// platform from holding unbounded operator balances; the inactivity
+// sweep makes sure dormant accounts can't leave money rotting in the
+// system forever. Both are env-tunable for ops flexibility.
+const PLATFORM_BALANCE_CAP_USD = Number(process.env.PAYOUT_BALANCE_CAP_USD ?? 10000)
+const INACTIVITY_SWEEP_DAYS = Number(process.env.PAYOUT_INACTIVITY_DAYS ?? 180)
 
 /**
  * Calculate pending settlements based on UPTIME (not jobs).
  * Earnings = uptime hours × hourly rate for GPU tier
+ *
+ * Per-NodeRunner payoutMode drives whether each settlement fires now
+ * or stays accumulating on the platform:
+ *   - AUTO       — fire on every tick when above minimumPayout
+ *   - MANUAL     — never fire on its own (operator clicks "Withdraw
+ *                  now" to trigger an immediate settlement via the
+ *                  portal)
+ *   - SCHEDULED  — fire on/after payoutScheduledAt, then reset the
+ *                  operator back to AUTO (one-shot)
+ * Two safety nets bypass these gates: a $10K cap on platform-held
+ * balance and 180-day inactivity since the last settlement. Both
+ * force a payout regardless of mode and are tagged with forceReason
+ * for the audit trail.
  */
 export async function calculatePendingSettlements(
   prisma: PrismaClient,
@@ -25,10 +55,22 @@ export async function calculatePendingSettlements(
   const minimumPayout = config?.minimumPayout ?? 10
 
   const nodes = await prisma.node.findMany({
-    select: { id: true, walletAddress: true },
+    select: {
+      id: true,
+      walletAddress: true,
+      nodeRunnerId: true,
+      nodeRunner: {
+        select: {
+          id: true,
+          payoutMode: true,
+          payoutScheduledAt: true,
+        },
+      },
+    },
   })
 
   const settlements: SettlementCalculation[] = []
+  const inactivityMs = INACTIVITY_SWEEP_DAYS * 24 * 60 * 60 * 1000
 
   for (const node of nodes) {
     // Find last COMPLETED settlement to determine period start
@@ -61,6 +103,35 @@ export async function calculatePendingSettlements(
       continue
     }
 
+    // Per-operator payout mode decision tree. Default to AUTO for
+    // nodes without a linked NodeRunner so legacy behavior is preserved.
+    const runner = node.nodeRunner
+    const mode = runner?.payoutMode ?? 'AUTO'
+    const scheduledAt = runner?.payoutScheduledAt ?? null
+
+    const isOverCap = uptimeEarnings.earnings >= PLATFORM_BALANCE_CAP_USD
+    const isInactive = periodEnd.getTime() - periodStart.getTime() > inactivityMs
+    const forceReason: SettlementCalculation['forceReason'] = isOverCap
+      ? 'BALANCE_CAP'
+      : isInactive
+        ? 'INACTIVITY'
+        : undefined
+
+    let isScheduledFire = false
+    if (!forceReason) {
+      if (mode === 'MANUAL') {
+        // Operator is holding the balance on purpose. Skip this tick.
+        continue
+      }
+      if (mode === 'SCHEDULED') {
+        // SCHEDULED with no date is treated like MANUAL — operator may
+        // be midway through configuring it. Don't fire until they pick.
+        if (!scheduledAt) continue
+        if (periodEnd.getTime() < scheduledAt.getTime()) continue
+        isScheduledFire = true
+      }
+    }
+
     settlements.push({
       nodeId: node.id,
       walletAddress: node.walletAddress,
@@ -68,10 +139,64 @@ export async function calculatePendingSettlements(
       uptimeHours: uptimeEarnings.uptimeHours,
       periodStart,
       periodEnd,
+      nodeRunnerId: runner?.id,
+      isScheduledFire,
+      forceReason,
     })
   }
 
   return settlements
+}
+
+/**
+ * Called by the scheduler after a SCHEDULED-mode settlement completes
+ * successfully. Resets the operator back to AUTO and clears the
+ * scheduled date so the mode is a one-shot — operators have to
+ * explicitly opt back into SCHEDULED for the next cycle.
+ */
+export async function clearScheduledPayout(
+  prisma: PrismaClient,
+  nodeRunnerId: string
+): Promise<void> {
+  await prisma.nodeRunner.update({
+    where: { id: nodeRunnerId },
+    data: {
+      payoutMode: 'AUTO',
+      payoutScheduledAt: null,
+    },
+  })
+}
+
+/**
+ * Compute the unpaid platform balance for an operator — sum of
+ * uptime earnings since their last COMPLETED settlement across all
+ * their nodes. Used by the portal payouts page and the "Withdraw now"
+ * endpoint to surface the actionable amount.
+ */
+export async function getOperatorPlatformBalance(
+  prisma: PrismaClient,
+  nodeRunnerId: string
+): Promise<number> {
+  const nodes = await prisma.node.findMany({
+    where: { nodeRunnerId },
+    select: { id: true },
+  })
+  if (nodes.length === 0) return 0
+
+  const now = new Date()
+  let total = 0
+  for (const node of nodes) {
+    const lastSettlement = await prisma.settlement.findFirst({
+      where: { nodeId: node.id, status: 'COMPLETED' },
+      orderBy: { periodEnd: 'desc' },
+    })
+    const periodStart =
+      lastSettlement?.periodEnd ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    if (now.getTime() - periodStart.getTime() < 3600000) continue
+    const uptime = await calculateUptimeEarnings(prisma, node.id, periodStart, now)
+    if (uptime?.earnings) total += uptime.earnings
+  }
+  return total
 }
 
 export async function createSettlement(

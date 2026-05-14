@@ -6,6 +6,7 @@ import {
   markSettlementProcessing,
   markSettlementCompleted,
   markSettlementFailed,
+  clearScheduledPayout,
 } from '../services/settlement/engine'
 import { getSolanaConfig, processPayment } from '../services/payment/solana'
 
@@ -87,6 +88,22 @@ export function createSettlementSchedulerWorker(
 
             if (result.success && result.txHash) {
               await markSettlementCompleted(prisma, settlementId, result.txHash)
+
+              // Payout-mode follow-ups: if this was a SCHEDULED fire,
+              // flip the operator back to AUTO. If it was a forced
+              // sweep (cap / inactivity), log a clear reason so admins
+              // can see why a hold operator just received funds.
+              if (calc.isScheduledFire && calc.nodeRunnerId) {
+                await clearScheduledPayout(prisma, calc.nodeRunnerId)
+                console.log(
+                  `[SettlementScheduler] Settlement ${settlementId} fulfilled SCHEDULED payout; operator ${calc.nodeRunnerId} reset to AUTO`
+                )
+              } else if (calc.forceReason) {
+                console.log(
+                  `[SettlementScheduler] Settlement ${settlementId} fired despite hold (reason: ${calc.forceReason})`
+                )
+              }
+
               processed++
               console.log(
                 `[SettlementScheduler] Settlement ${settlementId} completed: ${result.txHash}`
