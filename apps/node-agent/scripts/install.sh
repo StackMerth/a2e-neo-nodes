@@ -276,11 +276,24 @@ run_configure() {
     # Check if config already exists
     if [[ -f "$CONFIG_DIR/agent.yaml" ]]; then
         echo -e "${YELLOW}Configuration file already exists at $CONFIG_DIR/agent.yaml${NC}"
-        read -p "Do you want to reconfigure? [y/N] " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            return
+        # Token mode: never prompt. Just overwrite the config; the new
+        # token claim supersedes whatever was there.
+        if [[ -z "${INSTALL_TOKEN:-}" ]]; then
+            read -p "Do you want to reconfigure? [y/N] " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                return
+            fi
         fi
+    fi
+
+    # Non-interactive token mode (launch-blocker #1 — BYOG curl|bash).
+    # Triggered by the install endpoint exporting INSTALL_TOKEN before
+    # running this script. Skips the interactive wizard and the
+    # `a2e-agent configure` subcommand entirely.
+    if [[ -n "${INSTALL_TOKEN:-}" ]]; then
+        configure_with_token
+        return
     fi
 
     # Run the configure script
@@ -290,6 +303,160 @@ run_configure() {
         # Fallback to interactive prompts
         configure_interactive
     fi
+}
+
+# Extract a top-level string field from a flat JSON blob without
+# depending on jq/python3. Handles {"key":"value"} with either spaces or
+# no spaces around the colon. Returns empty string on miss.
+json_field() {
+    local field="$1"
+    local body="$2"
+    echo "$body" | grep -o "\"$field\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" \
+        | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/' \
+        | head -n 1
+}
+
+# Non-interactive configuration triggered when INSTALL_TOKEN is set
+# (the curl|bash flow from the operator portal). Detects GPU + system
+# specs, POSTs them along with the install token to /v1/byog/claim,
+# parses the returned credentials, and writes agent.yaml.
+configure_with_token() {
+    local api_url="${A2E_API_URL:-https://a2e-api.onrender.com}"
+    local region="${A2E_REGION:-}"
+
+    log "Non-interactive install (token mode), claiming node against ${api_url}..."
+
+    # Detect GPU tier from nvidia-smi.
+    local gpu_tier="OTHER"
+    local gpu_model=""
+    local gpu_count=0
+    local gpu_vram=0
+    local gpu_driver=""
+    if command -v nvidia-smi &> /dev/null; then
+        gpu_model=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 | xargs)
+        gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader 2>/dev/null | head -1 | xargs)
+        gpu_vram=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | xargs)
+        gpu_driver=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | xargs)
+        case "$gpu_model" in
+            *H100*)  gpu_tier="H100" ;;
+            *H200*)  gpu_tier="H200" ;;
+            *B200*)  gpu_tier="B200" ;;
+            *B300*)  gpu_tier="B300" ;;
+            *GB300*) gpu_tier="GB300" ;;
+        esac
+    fi
+
+    # CUDA version (from nvcc if installed, else from nvidia-smi).
+    local cuda_version=""
+    if command -v nvcc &> /dev/null; then
+        cuda_version=$(nvcc --version 2>/dev/null | grep -oE 'release [0-9]+\.[0-9]+' | awk '{print $2}')
+    fi
+    if [[ -z "$cuda_version" ]] && command -v nvidia-smi &> /dev/null; then
+        cuda_version=$(nvidia-smi 2>/dev/null | grep -oE 'CUDA Version: [0-9]+\.[0-9]+' | awk '{print $3}' | head -1)
+    fi
+
+    local hostname_val os_val os_version_val total_memory_mb disk_avail_gb total_cpus docker_version
+    hostname_val=$(hostname 2>/dev/null || echo "unknown")
+    os_val=$(uname -s 2>/dev/null || echo "unknown")
+    os_version_val=$(uname -r 2>/dev/null || echo "unknown")
+    total_memory_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+    disk_avail_gb=$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -d 'G ' || echo 0)
+    total_cpus=$(nproc 2>/dev/null || echo 0)
+    docker_version=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',' || echo "")
+    local agent_version="${VERSION}"
+
+    log "Detected: ${gpu_count}x ${gpu_model:-unknown GPU} (${gpu_tier}, ${gpu_vram}MB VRAM, driver ${gpu_driver:-?})"
+    [[ -n "$cuda_version" ]] && log "CUDA: ${cuda_version}"
+
+    # Build the JSON payload. Numbers are unquoted; strings quoted. We
+    # only include optional fields when they have a non-empty value to
+    # keep the payload tidy on the wire.
+    local payload
+    payload=$(cat <<EOF
+{
+  "installToken": "${INSTALL_TOKEN}",
+  "specs": {
+    "gpuTier": "${gpu_tier}",
+    "gpuModel": "${gpu_model}",
+    "gpuCount": ${gpu_count:-0},
+    "gpuVram": ${gpu_vram:-0},
+    "gpuDriver": "${gpu_driver}",
+    "cudaVersion": "${cuda_version}",
+    "hostname": "${hostname_val}",
+    "os": "${os_val}",
+    "osVersion": "${os_version_val}",
+    "totalMemory": ${total_memory_mb:-0},
+    "diskAvailable": ${disk_avail_gb:-0},
+    "totalCpus": ${total_cpus:-0},
+    "dockerVersion": "${docker_version}",
+    "agentVersion": "${agent_version}"
+  }
+}
+EOF
+)
+
+    local response http_code
+    response=$(curl -fsS -w "\n%{http_code}" \
+        -H "Content-Type: application/json" \
+        -X POST \
+        --data "${payload}" \
+        "${api_url}/v1/byog/claim" 2>&1) || {
+        error "Claim request to ${api_url}/v1/byog/claim failed: ${response}"
+    }
+    http_code=$(echo "$response" | tail -n 1)
+    local body
+    body=$(echo "$response" | sed '$d')
+
+    if [[ "$http_code" != "201" && "$http_code" != "200" ]]; then
+        error "Claim returned HTTP ${http_code}: ${body}"
+    fi
+
+    local node_id node_api_key node_region
+    node_id=$(json_field "nodeId" "$body")
+    node_api_key=$(json_field "apiKey" "$body")
+    node_region=$(json_field "region" "$body")
+
+    if [[ -z "$node_id" || -z "$node_api_key" ]]; then
+        error "Claim response missing nodeId or apiKey: ${body}"
+    fi
+
+    log "Node claimed: ${node_id} (region: ${node_region:-unspecified})"
+
+    cat > "$CONFIG_DIR/agent.yaml" << EOF
+# A²E Node Agent Configuration
+# Generated by install.sh (BYOG token mode) on $(date -Iseconds)
+
+server:
+  apiUrl: ${api_url}
+  apiKey: ${node_api_key}
+
+node:
+  id: ${node_id}
+  name: ${hostname_val}
+  gpuTier: ${gpu_tier}
+  region: ${node_region}
+
+docker:
+  socketPath: /var/run/docker.sock
+  gpuRuntime: nvidia
+
+heartbeat:
+  intervalSeconds: 30
+
+logging:
+  level: info
+  pretty: false
+
+security:
+  sandboxProfile: standard
+  trustedRegistries:
+    - docker.io
+    - nvcr.io
+    - gcr.io
+EOF
+
+    chmod 600 "$CONFIG_DIR/agent.yaml"
+    log "Configuration saved to $CONFIG_DIR/agent.yaml"
 }
 
 # Interactive configuration (fallback)
@@ -494,17 +661,35 @@ main() {
     install_service
     run_configure
 
+    # Token-mode auto-start: the config is fully populated, no human
+    # intervention needed before bringing the agent online.
+    if [[ -n "${INSTALL_TOKEN:-}" && "$INSTALL_SERVICE" == "true" ]] \
+        && command -v systemctl &> /dev/null; then
+        log "Starting a2e-agent service..."
+        systemctl start a2e-agent || warn "Failed to start a2e-agent; check journalctl -u a2e-agent"
+    fi
+
     echo ""
     echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║     Installation Complete!            ║${NC}"
     echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
     echo ""
-    echo "Next steps:"
-    echo "  1. Review configuration: $CONFIG_DIR/agent.yaml"
-    echo "  2. Start the agent: systemctl start a2e-agent"
-    echo "  3. Check status: systemctl status a2e-agent"
-    echo "  4. View logs: journalctl -u a2e-agent -f"
-    echo ""
+    if [[ -n "${INSTALL_TOKEN:-}" ]]; then
+        echo "Node is online. The portal will show your first heartbeat within ~30s."
+        echo ""
+        echo "Useful commands:"
+        echo "  - Status:  systemctl status a2e-agent"
+        echo "  - Logs:    journalctl -u a2e-agent -f"
+        echo "  - Config:  $CONFIG_DIR/agent.yaml"
+        echo ""
+    else
+        echo "Next steps:"
+        echo "  1. Review configuration: $CONFIG_DIR/agent.yaml"
+        echo "  2. Start the agent: systemctl start a2e-agent"
+        echo "  3. Check status: systemctl status a2e-agent"
+        echo "  4. View logs: journalctl -u a2e-agent -f"
+        echo ""
+    fi
 }
 
 main "$@"
