@@ -117,6 +117,14 @@ async function completeRental(
         // even if they cached it. Mirrors what the terminate route does.
         sshSessionToken: null,
         sshSessionTokenExpiresAt: null,
+        // Launch-blocker #2: flag the SSH session for agent teardown.
+        // The agent will see TERMINATING in its next heartbeat response,
+        // pkill + userdel the rental user, and report TERMINATED via
+        // POST /v1/nodes/:id/ssh-sessions/:requestId/status — which is
+        // where the node finally returns to the idle pool. The reaper
+        // (apps/api/src/jobs/ssh-session-reaper.ts) is the failsafe if
+        // the agent never comes back.
+        sshSessionStatus: 'TERMINATING',
         adminNote: 'Auto-completed: rental term reached',
       },
     })
@@ -124,14 +132,10 @@ async function completeRental(
       // Lost the race — buyer's terminate already moved this to COMPLETED.
       return { processed: false }
     }
-
-    // Release every assigned node back to the idle pool.
-    if (cr.allocatedNodeIds.length > 0) {
-      await tx.node.updateMany({
-        where: { id: { in: cr.allocatedNodeIds } },
-        data: { assignedComputeRequestId: null },
-      })
-    }
+    // Note: assignedComputeRequestId is intentionally NOT nulled here.
+    // The agent's TERMINATED callback (or the reaper) does that, which
+    // is what keeps the buyer's authorized_keys from leaking past
+    // rental end.
 
     // Bump trust signals — buyer rode out the full term, that's a
     // successful rental for the eligibility engine.

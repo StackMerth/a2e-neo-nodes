@@ -469,11 +469,12 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
           // Clear ephemeral SSH so leaked credentials become useless.
           sshSessionToken: null,
           sshSessionTokenExpiresAt: null,
+          // Launch-blocker #2: signal agent teardown. The node will
+          // return to the idle pool only after the agent's TERMINATED
+          // callback (or the reaper's 10-minute failsafe) — until
+          // then the buyer's installed pubkey can't outlive the rental.
+          sshSessionStatus: 'TERMINATING',
         },
-      }),
-      fastify.prisma.node.updateMany({
-        where: { assignedComputeRequestId: id },
-        data: { assignedComputeRequestId: null },
       }),
       fastify.prisma.user.update({
         where: { id: userId },

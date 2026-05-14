@@ -126,6 +126,7 @@ import {
   createRentalExpiryWorker,
   scheduleRentalExpiry,
 } from './jobs/rental-expiry'
+import { createSshSessionReaperWorker } from './jobs/ssh-session-reaper'
 import {
   createSeedKeepAliveQueue,
   createSeedKeepAliveWorker,
@@ -302,6 +303,12 @@ async function start() {
     createRentalExpiryWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleRentalExpiry(rentalExpiryQueue)
     server.log.info('Rental expiry worker initialized (60s tick)')
+
+    // Launch-blocker #2: SSH session reaper. Failsafe for agent-confirmed
+    // teardown — force-releases nodes stuck on TERMINATING rentals after
+    // 10 min so an offline agent can't lock inventory forever.
+    createSshSessionReaperWorker({ redis: redisConnection, prisma: server.prisma })
+    server.log.info('SSH session reaper initialized (60s tick, 10min stuck threshold)')
 
     // Test-only: seed-node keep-alive (env-gated). When
     // SEED_KEEP_ALIVE_ENABLED=1, every 30s bumps every `seed-node-*` row
