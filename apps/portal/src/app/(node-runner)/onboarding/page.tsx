@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Check, Copy, Download, Loader2, AlertCircle, ChevronRight, Terminal, ListChecks, Cpu } from 'lucide-react'
-import { nodeRunner } from '@/lib/api'
+import { Check, Copy, Loader2, AlertCircle, ChevronRight, Terminal, ListChecks, Cpu } from 'lucide-react'
+import { nodeRunner, byog } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import {
   DashboardShell,
@@ -115,71 +115,168 @@ export default function OnboardingPage() {
         )}
 
         {currentStep === 1 && (
-          <FormCard
-            title="Install the TokenOS DeAI Agent"
-            description="Run this command on your GPU server to install the node agent"
-            icon={Terminal}
-            footer={
-              <div className="flex gap-3 w-full justify-between">
-                <Button variant="ghost" onClick={() => setCurrentStep(0)}>Back</Button>
-                <Button onClick={() => setCurrentStep(2)}>I&apos;ve installed it</Button>
-              </div>
-            }
-          >
-            <FormSection>
-              <div
-                className="relative rounded-md p-4 font-mono text-sm"
-                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
-              >
-                <code style={{ color: 'var(--primary)' }} className="break-all">
-                  curl -sSL https://a2e-api.onrender.com/v1/releases/install.sh | bash
-                </code>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(
-                      'curl -sSL https://a2e-api.onrender.com/v1/releases/install.sh | bash'
-                    )
-                  }}
-                  className="absolute top-3 right-3 p-1.5 rounded-md transition-colors"
-                  style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}
-                  title="Copy to clipboard"
-                  type="button"
-                >
-                  <Copy size={16} />
-                </button>
-              </div>
-
-              <div
-                className="p-4 rounded-md"
-                style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)' }}
-              >
-                <p className="text-sm font-medium mb-1" style={{ color: 'var(--primary)' }}>What this does:</p>
-                <ul className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
-                  <li>- Downloads the TokenOS DeAI agent binary for your platform</li>
-                  <li>- Installs it as a systemd service</li>
-                  <li>- Configures GPU detection and Docker integration</li>
-                  <li>- Registers your node with the TokenOS DeAI network</li>
-                </ul>
-              </div>
-
-              <div>
-                <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>Or download manually:</p>
-                <div className="flex gap-3">
-                  <Button variant="secondary" size="sm" type="button">
-                    <Download size={14} className="mr-1" />Linux x64
-                  </Button>
-                  <Button variant="secondary" size="sm" type="button">
-                    <Download size={14} className="mr-1" />Linux ARM64
-                  </Button>
-                </div>
-              </div>
-            </FormSection>
-          </FormCard>
+          <InstallStep
+            onBack={() => setCurrentStep(0)}
+            onContinue={() => setCurrentStep(2)}
+          />
         )}
 
         {currentStep === 2 && <VerifyStep onBack={() => setCurrentStep(1)} />}
       </div>
     </DashboardShell>
+  )
+}
+
+const REGIONS = ['US-WEST', 'US-EAST', 'EU', 'APAC', 'SA', 'OC'] as const
+type Region = (typeof REGIONS)[number]
+
+function InstallStep({ onBack, onContinue }: { onBack: () => void; onContinue: () => void }) {
+  const [region, setRegion] = useState<Region | ''>('')
+  const [loading, setLoading] = useState(true)
+  const [installCmd, setInstallCmd] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  async function generate(forRegion: Region | '') {
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await byog.issueToken(forRegion || undefined)
+      setInstallCmd(result.installCommand)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to generate install command')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Mint the token once on mount. Region changes regenerate via the
+  // region buttons below; we don't want to thrash tokens on every render.
+  useEffect(() => {
+    void generate('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function onPickRegion(r: Region | '') {
+    setRegion(r)
+    void generate(r)
+  }
+
+  function copy() {
+    if (!installCmd) return
+    void navigator.clipboard.writeText(installCmd)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <FormCard
+      title="Install the TokenOS DeAI Agent"
+      description="Run this command on your GPU server to install and register the node agent"
+      icon={Terminal}
+      footer={
+        <div className="flex gap-3 w-full justify-between">
+          <Button variant="ghost" onClick={onBack}>Back</Button>
+          <Button onClick={onContinue} disabled={!installCmd}>
+            I&apos;ve installed it <ChevronRight size={16} className="ml-1" />
+          </Button>
+        </div>
+      }
+    >
+      <FormSection>
+        {/* Region picker. Pre-tagging the token with a region means the
+            install script never has to prompt; it just writes the region
+            into agent.yaml at registration time. */}
+        <div>
+          <label className="text-xs uppercase tracking-wider mb-2 block" style={{ color: 'var(--text-muted)' }}>
+            Region (optional)
+          </label>
+          <div className="flex gap-2 flex-wrap mb-2">
+            <button
+              key="any"
+              type="button"
+              onClick={() => onPickRegion('')}
+              className="px-3 py-1.5 rounded-md text-xs transition-colors"
+              style={
+                region === ''
+                  ? { background: 'var(--primary)', color: '#fff' }
+                  : { background: 'var(--bg-elevated)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }
+              }
+            >
+              Any
+            </button>
+            {REGIONS.map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => onPickRegion(r)}
+                className="px-3 py-1.5 rounded-md text-xs transition-colors"
+                style={
+                  region === r
+                    ? { background: 'var(--primary)', color: '#fff' }
+                    : { background: 'var(--bg-elevated)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }
+                }
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Buyers can filter by region. Pick the closest one to your hardware; you can change it later in node settings.
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="rounded-md p-4 flex items-center gap-3" style={{ background: 'var(--bg-elevated)' }}>
+            <Loader2 size={16} className="animate-spin" style={{ color: 'var(--primary)' }} />
+            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Generating install command...</span>
+          </div>
+        ) : error ? (
+          <div className="rounded-md p-4" style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.2)' }}>
+            <p className="text-sm mb-3" style={{ color: 'var(--error)' }}>{error}</p>
+            <Button variant="secondary" size="sm" onClick={() => generate(region)}>Try again</Button>
+          </div>
+        ) : installCmd ? (
+          <div
+            className="relative rounded-md p-4 font-mono text-sm"
+            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
+          >
+            <code style={{ color: 'var(--primary)' }} className="break-all pr-12">{installCmd}</code>
+            <button
+              onClick={copy}
+              className="absolute top-3 right-3 p-1.5 rounded-md transition-colors"
+              style={{ background: 'var(--bg-card-hover)', color: copied ? 'var(--primary)' : 'var(--text-muted)' }}
+              title="Copy to clipboard"
+              type="button"
+            >
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+            </button>
+          </div>
+        ) : null}
+
+        <div
+          className="p-4 rounded-md"
+          style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)' }}
+        >
+          <p className="text-sm font-medium mb-1" style={{ color: 'var(--primary)' }}>What this does:</p>
+          <ul className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
+            <li>- Downloads the TokenOS DeAI agent binary for your platform</li>
+            <li>- Installs it as a systemd service</li>
+            <li>- Configures GPU detection and Docker integration</li>
+            <li>- Registers your node with the TokenOS DeAI network</li>
+            <li>- Auto-starts the agent (first heartbeat within ~30s)</li>
+          </ul>
+        </div>
+
+        <div
+          className="p-3 rounded-md text-xs"
+          style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.15)', color: 'var(--text-muted)' }}
+        >
+          The install token is single-use and expires in 7 days. Each token
+          claims one machine; mint a new one for each additional node.
+        </div>
+      </FormSection>
+    </FormCard>
   )
 }
 

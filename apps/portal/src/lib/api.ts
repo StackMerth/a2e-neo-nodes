@@ -178,6 +178,17 @@ export const nodeRunner = {
   referral: () => apiFetch('/v1/portal/referral'),
 }
 
+// BYOG install-token API (launch-blocker #1). Mints a one-shot token
+// and returns the curl|bash command the operator copies into a terminal
+// on their GPU machine.
+export const byog = {
+  issueToken: (region?: string) =>
+    apiFetch<{ token: string; installCommand: string; expiresAt: string }>(
+      '/v1/byog/issue-token',
+      { method: 'POST', body: region ? { region } : {} }
+    ),
+}
+
 // Buyer API
 export const buyer = {
   dashboard: () => apiFetch('/v1/buyer/dashboard'),
