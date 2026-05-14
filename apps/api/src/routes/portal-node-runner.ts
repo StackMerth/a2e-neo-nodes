@@ -773,17 +773,50 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     })
   })
 
+  // Solana base58 wallet address: 32-44 chars, only base58 chars.
+  // Validated client-side too; this is the server-side gate.
+  const SOLANA_ADDR_REGEX = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
+
+  const withdrawNowSchema = z.object({
+    // Per-withdraw destination. If omitted, falls back to the
+    // operator's saved walletAddress. Optional 'save' flag persists
+    // the new address back to the profile.
+    walletAddress: z.string().regex(SOLANA_ADDR_REGEX).optional(),
+    saveWallet: z.boolean().optional(),
+  })
+
   /**
    * POST /v1/portal/node-runner/payouts/withdraw-now
    * Immediately fires settlements for every node with an unpaid
-   * balance, regardless of payoutMode. If the operator was on
-   * SCHEDULED, the worker resets them to AUTO once the settlement
-   * completes (via the same clearScheduledPayout hook the regular
-   * scheduler uses).
+   * balance, regardless of payoutMode. Honors per-withdraw wallet
+   * override; refuses while an admin hard-hold is active.
+   *
+   * If the operator was on SCHEDULED, the manual withdraw consumes
+   * that intent and flips them back to AUTO.
    */
   fastify.post('/v1/portal/node-runner/payouts/withdraw-now', async (request, reply) => {
     const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
     if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+    const parsed = withdrawNowSchema.safeParse(request.body ?? {})
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'Validation Error',
+        message: parsed.error.errors[0]?.message ?? 'Invalid input',
+      })
+    }
+
+    // Admin hard-hold check. Returns the unlock timestamp so the UI
+    // can render a clear countdown / reason instead of a generic 403.
+    if (nr.payoutLockUntil && nr.payoutLockUntil > new Date()) {
+      return reply.code(403).send({
+        error: 'Payouts locked',
+        message: nr.payoutLockReason ?? 'Payouts are administratively locked',
+        lockedUntil: nr.payoutLockUntil.toISOString(),
+      })
+    }
+
+    const destinationWallet = parsed.data.walletAddress ?? nr.walletAddress
 
     const { calculateOperatorSettlements, createSettlement, markSettlementProcessing, markSettlementCompleted, markSettlementFailed, clearScheduledPayout } =
       await import('../services/settlement/engine.js')
@@ -804,9 +837,13 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
 
     for (const calc of calcs) {
       try {
-        const settlementId = await createSettlement(fastify.prisma, calc)
+        // Override per-settlement wallet with the buyer-supplied
+        // destination so all earnings route to the same address even
+        // if individual Node rows have stale wallet values.
+        const overriddenCalc = { ...calc, walletAddress: destinationWallet }
+        const settlementId = await createSettlement(fastify.prisma, overriddenCalc)
         await markSettlementProcessing(fastify.prisma, settlementId)
-        const result = await processPayment(solanaConfig, calc.walletAddress, calc.amount, 'USDC')
+        const result = await processPayment(solanaConfig, destinationWallet, calc.amount, 'USDC')
         if (result.success && result.txHash) {
           await markSettlementCompleted(fastify.prisma, settlementId, result.txHash)
           totalPaid += calc.amount
@@ -821,6 +858,19 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       }
     }
 
+    // Persist the new wallet to the profile if the operator opted in.
+    if (parsed.data.walletAddress && parsed.data.saveWallet && parsed.data.walletAddress !== nr.walletAddress) {
+      try {
+        await fastify.prisma.nodeRunner.update({
+          where: { id: nr.id },
+          data: { walletAddress: parsed.data.walletAddress },
+        })
+      } catch {
+        // Wallet uniqueness collision — ignore. The withdrawal still
+        // succeeded; saving the new address is a nice-to-have.
+      }
+    }
+
     // If the operator was on SCHEDULED, the manual withdraw consumes
     // the scheduled-payout intent. Flip them back to AUTO.
     if (nr.payoutMode === 'SCHEDULED') {
@@ -831,6 +881,7 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     reply.code(anySuccess ? 200 : 502).send({
       totalPaid,
       settlements: results,
+      destinationWallet,
       modeResetToAuto: nr.payoutMode === 'SCHEDULED',
     })
   })

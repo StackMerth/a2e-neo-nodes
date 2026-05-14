@@ -253,8 +253,20 @@ model NodeRunner {
   // mode: a $50K cap on platform-held balance forces a payout, and
   // 180-day account inactivity forces a sweep so dormant balances
   // never sit forever.
-  payoutMode        PayoutMode  @default(AUTO)
+  // New operators default to MANUAL — pure custodial UX. They have to
+  // click Withdraw to receive funds. Existing rows pre-feature land on
+  // AUTO and stay there until they actively change it; we don't migrate
+  // them silently.
+  payoutMode        PayoutMode  @default(MANUAL)
   payoutScheduledAt DateTime?
+
+  // Admin-applied hard hold on payouts. While set and in the future,
+  // both the settlement worker and the Withdraw Now endpoint refuse
+  // to fire for this operator. Used by support during buyer disputes
+  // or fraud investigations. payoutLockReason is surfaced to the
+  // operator so they understand why their payouts are frozen.
+  payoutLockUntil   DateTime?
+  payoutLockReason  String?
 
   // M3: reputation. reputationScore is 0-100, recomputed daily by the
   // reputation-scorer worker from uptime + ratings + completed jobs.

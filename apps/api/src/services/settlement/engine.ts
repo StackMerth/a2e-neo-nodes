@@ -81,6 +81,7 @@ export async function calculatePendingSettlements(
           id: true,
           payoutMode: true,
           payoutScheduledAt: true,
+          payoutLockUntil: true,
         },
       },
     },
@@ -88,8 +89,15 @@ export async function calculatePendingSettlements(
 
   const settlements: SettlementCalculation[] = []
   const inactivityMs = INACTIVITY_SWEEP_DAYS * 24 * 60 * 60 * 1000
+  const now = periodEnd
 
   for (const node of nodes) {
+    // Admin hard-hold. Skip outright while the lock is in the future,
+    // regardless of mode or safety nets. Support team uses this during
+    // buyer disputes / fraud investigations.
+    if (node.nodeRunner?.payoutLockUntil && node.nodeRunner.payoutLockUntil > now) {
+      continue
+    }
     // Find last COMPLETED settlement to determine period start
     // NOTE: Only use COMPLETED to prevent stuck PENDING settlements from blocking new ones
     const lastSettlement = await prisma.settlement.findFirst({

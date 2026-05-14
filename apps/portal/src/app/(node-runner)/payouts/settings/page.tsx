@@ -88,6 +88,12 @@ export default function PayoutSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [withdrawing, setWithdrawing] = useState(false)
+  // Withdraw dialog: inline expansion with editable destination wallet.
+  // Pre-fills with the operator's saved wallet; optional save flag
+  // persists the override back to the profile.
+  const [withdrawOpen, setWithdrawOpen] = useState(false)
+  const [withdrawWallet, setWithdrawWallet] = useState('')
+  const [saveWallet, setSaveWallet] = useState(false)
 
   async function loadAll() {
     try {
@@ -148,28 +154,47 @@ export default function PayoutSettingsPage() {
     }
   }
 
-  async function handleWithdrawNow() {
+  function openWithdrawDialog() {
     if (available <= 0) {
       toast('error', pending > 0 ? `No unlocked balance yet. $${pending.toFixed(2)} is still in cool-down.` : 'No unpaid balance to withdraw')
       return
     }
-    if (!confirm(`Withdraw $${available.toFixed(2)} from the platform to your wallet?`)) {
+    setWithdrawWallet(wallet) // pre-fill with the saved wallet
+    setSaveWallet(false)
+    setWithdrawOpen(true)
+  }
+
+  const SOLANA_ADDR_REGEX = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
+  const withdrawWalletValid = SOLANA_ADDR_REGEX.test(withdrawWallet.trim())
+
+  async function handleWithdrawNow() {
+    const trimmed = withdrawWallet.trim()
+    if (!withdrawWalletValid) {
+      toast('error', 'Destination wallet does not look like a Solana address')
       return
     }
     setWithdrawing(true)
     try {
-      const result = await nodeRunner.withdrawNow()
+      const result = await nodeRunner.withdrawNow({
+        // Only send override when it differs from the saved wallet so
+        // the request stays compact in the no-change happy path.
+        walletAddress: trimmed !== wallet ? trimmed : undefined,
+        saveWallet: trimmed !== wallet && saveWallet,
+      })
       const successCount = result.settlements.filter((s) => s.success).length
       const totalCount = result.settlements.length
       if (successCount === totalCount) {
-        toast('success', `Withdrew $${result.totalPaid.toFixed(2)} in ${successCount} settlement${successCount === 1 ? '' : 's'}`)
+        toast('success', `Withdrew $${result.totalPaid.toFixed(2)} to ${result.destinationWallet.slice(0, 6)}...${result.destinationWallet.slice(-4)}`)
       } else {
         toast('error', `Partial withdrawal: ${successCount}/${totalCount} settlements succeeded`)
       }
-      // Refresh state so balance + mode reflect the new reality.
+      setWithdrawOpen(false)
+      // Refresh state so balance + mode + saved wallet reflect the new reality.
       await loadAll()
     } catch (err) {
-      toast('error', err instanceof Error ? err.message : 'Withdrawal failed')
+      // 403 lock errors come back with the lockedUntil field — surface it nicely.
+      const msg = err instanceof Error ? err.message : 'Withdrawal failed'
+      toast('error', msg)
     } finally {
       setWithdrawing(false)
     }
@@ -242,17 +267,93 @@ export default function PayoutSettingsPage() {
               </div>
             </div>
 
-            <div className="flex justify-end mt-4">
-              <Button
-                type="button"
-                onClick={handleWithdrawNow}
-                loading={withdrawing}
-                disabled={available <= 0}
+            {!withdrawOpen ? (
+              <div className="flex justify-end mt-4">
+                <Button
+                  type="button"
+                  onClick={openWithdrawDialog}
+                  disabled={available <= 0}
+                >
+                  <ArrowDownToLine size={16} className="mr-2" />
+                  Withdraw ${available.toFixed(2)}
+                </Button>
+              </div>
+            ) : (
+              // Inline withdraw dialog. Editable destination wallet so
+              // operators who don't have a wallet saved on profile (or
+              // who want to send to a different one this time) can do
+              // it without changing their permanent settings first.
+              <div
+                className="mt-4 rounded-md p-4 space-y-3"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
               >
-                <ArrowDownToLine size={16} className="mr-2" />
-                Withdraw ${available.toFixed(2)}
-              </Button>
-            </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                    Send ${available.toFixed(2)} to this wallet
+                  </label>
+                  <input
+                    type="text"
+                    value={withdrawWallet}
+                    onChange={(e) => setWithdrawWallet(e.target.value)}
+                    placeholder="Solana wallet address"
+                    spellCheck={false}
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    className="w-full rounded-md px-3 py-2 text-sm font-mono"
+                    style={{
+                      background: 'var(--bg-card)',
+                      border:
+                        withdrawWallet.trim() === '' || withdrawWalletValid
+                          ? '1px solid var(--border-color)'
+                          : '1px solid rgba(239, 68, 68, 0.5)',
+                      color: 'var(--text-primary)',
+                    }}
+                  />
+                  {withdrawWallet.trim() !== '' && !withdrawWalletValid && (
+                    <p className="text-xs mt-1" style={{ color: '#ef4444' }}>
+                      That doesn&rsquo;t look like a Solana address (32-44 base58 characters).
+                    </p>
+                  )}
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    {withdrawWallet.trim() === wallet
+                      ? 'Using your saved payout wallet.'
+                      : 'One-time destination, different from your saved wallet.'}
+                  </p>
+                </div>
+
+                {withdrawWallet.trim() !== '' && withdrawWallet.trim() !== wallet && (
+                  <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+                    <input
+                      type="checkbox"
+                      checked={saveWallet}
+                      onChange={(e) => setSaveWallet(e.target.checked)}
+                      className="rounded"
+                    />
+                    Save this wallet to my profile (replaces the saved one)
+                  </label>
+                )}
+
+                <div className="flex gap-2 justify-end pt-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setWithdrawOpen(false)}
+                    disabled={withdrawing}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleWithdrawNow}
+                    loading={withdrawing}
+                    disabled={!withdrawWalletValid}
+                  >
+                    <ArrowDownToLine size={16} className="mr-2" />
+                    Confirm withdrawal
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div
               className="mt-4 text-xs rounded-md p-3 leading-relaxed"
