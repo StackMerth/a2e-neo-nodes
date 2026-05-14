@@ -269,11 +269,23 @@ function InstallStep({ onBack, onContinue }: { onBack: () => void; onContinue: (
         </div>
 
         <div
-          className="p-3 rounded-md text-xs"
-          style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.15)', color: 'var(--text-muted)' }}
+          className="p-4 rounded-md flex items-start gap-3"
+          style={{
+            background: 'rgba(245,158,11,0.12)',
+            border: '1px solid rgba(245,158,11,0.45)',
+          }}
         >
-          The install token is single-use and expires in 7 days. Each token
-          claims one machine; mint a new one for each additional node.
+          <AlertCircle
+            size={20}
+            style={{ color: 'var(--warning, #f59e0b)', flexShrink: 0, marginTop: 1 }}
+          />
+          <p
+            className="text-sm font-semibold leading-relaxed"
+            style={{ color: 'var(--warning, #f59e0b)' }}
+          >
+            The install token is single-use and expires in 7 days. Each token
+            claims exactly one machine; mint a new one for each additional node.
+          </p>
         </div>
       </FormSection>
     </FormCard>
