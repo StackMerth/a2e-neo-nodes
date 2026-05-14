@@ -1260,11 +1260,12 @@ textarea:focus {
 /* Stat Blocks (KPI Row) */
 .stat-blocks {
   display: grid;
-  /* 220px lets labels like "Active Nodes" and "Earnings Today" sit on a
-     single line. Previously 160px forced two-line wraps at tablet width
-     because the 40px icon + gap left less than 100px for text. auto-fit
+  /* 260px gives the bigger financial values ("$91,676.20", "100.0%")
+     room without clipping at the card's right edge. 220px previously
+     left only ~116px for the value after subtracting padding + icon,
+     which is shorter than a 9-digit USD figure at 1.35rem. auto-fit
      still collapses to fewer columns on smaller screens. */
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--space-md);
 }
 
@@ -1314,10 +1315,16 @@ textarea:focus {
 }
 
 .stat-blocks .stat-value {
-  font-size: 1.35rem;
+  /* clamp() scales the value down on narrow cards so 7+ digit USD
+     amounts stay on one line; never below 1.05rem so the block still
+     reads as a headline number. */
+  font-size: clamp(1.05rem, 1.2vw + 0.6rem, 1.35rem);
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .stat-blocks .stat-label {
