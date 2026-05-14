@@ -338,7 +338,12 @@ async function processRequest(
         // the WireGuard mesh.
         sshHost: headInvestment?.sshHost ?? null,
         sshPort: headInvestment?.sshPort ?? 22,
-        sshUsername: 'a2e-buyer',
+        // Launch-blocker #2: per-rental Linux user the agent creates on
+        // the operator's machine (was hardcoded 'a2e-buyer'). Format keeps
+        // it under the 32-char useradd limit and human-greppable in
+        // journalctl. sshSessionStatus stays at its default 'PENDING' so
+        // the agent picks this up in its next heartbeat-response.
+        sshUsername: `rental-${cr.id.slice(0, 12).toLowerCase()}`,
         clusterId,
       },
     })
