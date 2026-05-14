@@ -1080,8 +1080,11 @@ textarea:focus {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
+  /* Plain dim, no backdrop blur. The blur was painting the TopHeader
+     (logo + view switcher) out of focus when the sidebar opened on
+     narrow viewports. Dim alone is enough to push focus to the
+     sidebar without making the rest of the page unreadable. */
+  background: rgba(0, 0, 0, 0.5);
   z-index: 90;
 }
 
