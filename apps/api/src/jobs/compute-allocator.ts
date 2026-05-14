@@ -33,6 +33,7 @@ import type { Server as SocketServer } from 'socket.io'
 import { evaluateEligibility } from '../services/allocation/eligibility.js'
 import { mintSshSession } from '../services/allocation/ssh-session.js'
 import { createNotification } from '../services/notification/service.js'
+import { planClusterMesh } from '../services/provisioning/wireguard-mesh.js'
 
 type ComputeRequestWithUser = ComputeRequest & { user: User }
 
@@ -238,13 +239,35 @@ async function processRequest(
   const ratePerMinute = (cr.ratePerDay * cr.gpuCount) / (24 * 60)
 
   // SSH connection details live on the Investment that provisioned each
-  // node (Node model doesn't carry sshHost/sshPort itself). Look up the
-  // first allocated node's Investment to use as the rental's entrypoint;
-  // multi-node clusters get a head-node entrypoint in M4.
-  const headInvestment = await prisma.investment.findFirst({
-    where: { nodeId: headNodeId },
-    select: { sshHost: true, sshPort: true, sshUsername: true },
+  // node (Node model doesn't carry sshHost/sshPort itself). For a
+  // single-node rental we just need the head node's host; for a cluster
+  // we also need every other node's host so the WireGuard mesh planner
+  // can build per-node endpoint entries.
+  const investments = await prisma.investment.findMany({
+    where: { nodeId: { in: nodeIds } },
+    select: { nodeId: true, sshHost: true, sshPort: true, sshUsername: true },
   })
+  const investmentByNode = new Map(investments.map(i => [i.nodeId, i]))
+  const headInvestment = investmentByNode.get(headNodeId)
+
+  // M4.7: when gpuCount > 1 we build a real cluster: a Cluster row, a
+  // WireGuard mesh plan, and per-node rank + IP assignments inside
+  // the atomic transaction below. Single-GPU rentals skip this entirely.
+  const isCluster = cr.gpuCount > 1
+  const clusterMesh = isCluster
+    ? planClusterMesh(
+        // The mesh plan uses the ComputeRequest id as a stable seed.
+        // The Cluster row gets its own cuid below.
+        cr.id,
+        nodeIds.map(id => {
+          const inv = investmentByNode.get(id)
+          return {
+            nodeId: id,
+            publicHost: inv?.sshHost ?? `node-${id.slice(0, 8)}.unknown`,
+          }
+        }),
+      )
+    : null
 
   // M2 self-serve: the allocator transitions PENDING straight to ACTIVE
   // (skipping ALLOCATED) because everything the buyer needs is in place
@@ -263,8 +286,25 @@ async function processRequest(
 
   // Use a transaction so node assignment and request transition land
   // together. If the request status guard fails (someone else won the
-  // race), the node update is rolled back too.
+  // race), the node update is rolled back too. M4.7: when gpuCount > 1
+  // we also create a Cluster row and stamp each Node with its rank +
+  // WireGuard IP in the same transaction so the whole allocation is
+  // truly atomic - any failure rolls back the cluster, all node
+  // assignments, and the request transition.
   const allocated = await prisma.$transaction(async tx => {
+    // Cluster creation goes first so we can reference its id below.
+    let clusterId: string | null = null
+    if (isCluster && clusterMesh) {
+      const cluster = await tx.cluster.create({
+        data: {
+          status: 'PROVISIONING',
+          wireguardSubnet: clusterMesh.subnet,
+          masterNodeId: headNodeId,
+        },
+      })
+      clusterId = cluster.id
+    }
+
     const updated = await tx.computeRequest.updateMany({
       where: { id: cr.id, status: 'PENDING' },
       data: {
@@ -279,24 +319,48 @@ async function processRequest(
         ratePerMinute,
         sshSessionToken: session.token,
         sshSessionTokenExpiresAt: session.expiresAt,
-        // SSH entrypoint comes from the first allocated node's Investment.
-        // sshUsername defaults to 'a2e-buyer' (the short-term unix account
-        // the agent creates per session); sshHost/sshPort fall back to
-        // the Investment's record if known.
+        // SSH entrypoint: for a single-node rental this is the node's
+        // public host. For a cluster, this is the master/head node's
+        // host; workers are reached via ssh -J master worker-N over
+        // the WireGuard mesh.
         sshHost: headInvestment?.sshHost ?? null,
         sshPort: headInvestment?.sshPort ?? 22,
         sshUsername: 'a2e-buyer',
+        clusterId,
       },
     })
     if (updated.count === 0) {
-      // Lost the race; abort the transaction so nodes stay free
+      // Lost the race; abort the transaction so nodes (and any cluster
+      // we just created) stay free.
       throw new Error('AllocationRaceLost')
     }
 
-    await tx.node.updateMany({
-      where: { id: { in: nodeIds }, assignedComputeRequestId: null },
-      data: { assignedComputeRequestId: cr.id },
-    })
+    if (isCluster && clusterMesh && clusterId) {
+      // M4.7: per-node cluster stamps. We do this one node at a time
+      // because each row gets a distinct rank + ip; updateMany can't
+      // express that in one call.
+      for (const cfg of clusterMesh.nodes) {
+        const taken = await tx.node.updateMany({
+          where: { id: cfg.nodeId, assignedComputeRequestId: null },
+          data: {
+            assignedComputeRequestId: cr.id,
+            clusterId,
+            clusterRank: cfg.rank,
+            clusterWireguardIp: cfg.ip,
+          },
+        })
+        if (taken.count === 0) {
+          // Someone else won this specific node in a race. Abort the
+          // whole transaction so the partial cluster doesn't leak.
+          throw new Error('AllocationRaceLost')
+        }
+      }
+    } else {
+      await tx.node.updateMany({
+        where: { id: { in: nodeIds }, assignedComputeRequestId: null },
+        data: { assignedComputeRequestId: cr.id },
+      })
+    }
     return true
   }).catch((err: Error) => {
     if (err.message === 'AllocationRaceLost') return false

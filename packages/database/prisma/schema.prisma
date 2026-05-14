@@ -408,6 +408,16 @@ model Node {
   // Compute buyer allocation
   assignedComputeRequestId String?  // Which compute request this node is serving
 
+  // M4.7: cluster membership. Set while the node is participating in a
+  // multi-node cluster rental; cleared when the rental terminates and
+  // the node returns to the idle pool. clusterRank is the node's
+  // 0-indexed position in the cluster (rank 0 = master / head node).
+  // clusterWireguardIp is a /30-sized peer address inside the cluster
+  // mesh, e.g. 10.42.0.1.
+  clusterId            String?
+  clusterRank          Int?
+  clusterWireguardIp   String?
+
   // Agent information
   agentVersion  String?
   currentJobId  String?
@@ -1069,6 +1079,13 @@ model ComputeRequest {
   // billing aggregate; never a paid offset claim.
   co2Grams        Float?
 
+  // M4.7: multi-node cluster (gpuCount > 1). Cluster row owns the
+  // WireGuard subnet and master-node pointer; the rental is one
+  // logical entity even though the allocator picks N independent
+  // nodes underneath. Null on single-GPU rentals.
+  clusterId        String?              @unique
+  cluster          Cluster?             @relation(fields: [clusterId], references: [id])
+
   // Timestamps
   requestedAt     DateTime             @default(now())
   approvedAt      DateTime?
@@ -1083,6 +1100,38 @@ model ComputeRequest {
   @@index([expiresAt])
   @@index([templateId])
   @@index([tier])
+}
+
+// M4.7: Cluster represents a multi-node compute rental. One Cluster
+// row per ComputeRequest where gpuCount > 1. The cluster owns its
+// WireGuard subnet (a unique /24 carved from the 10.42.0.0/16 pool),
+// tracks which node was elected master, and holds the lifecycle
+// status so the allocator's atomic transaction can roll back if any
+// of the N node assignments fail mid-flight.
+model Cluster {
+  id               String        @id @default(cuid())
+  // Unique back-pointer so the relation works both directions.
+  computeRequest   ComputeRequest?
+  masterNodeId     String?
+  status           ClusterStatus @default(PROVISIONING)
+  // A /24 subnet inside 10.42.0.0/16. Each node gets a /30 carved
+  // from this subnet so peers route on the WireGuard mesh.
+  wireguardSubnet  String
+  // Optional: explanation of why the cluster ended up FAILED or was
+  // TERMINATED. Surfaced in admin's Compute detail view.
+  statusReason     String?
+
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([status])
+}
+
+enum ClusterStatus {
+  PROVISIONING  // Allocator is wiring nodes + WireGuard configs
+  READY         // All nodes have come online with WireGuard peers
+  FAILED        // One or more nodes failed to come up; rolled back
+  TERMINATED    // Rental ended normally; nodes returned to idle pool
 }
 
 enum ComputeRequestStatus {

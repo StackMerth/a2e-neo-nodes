@@ -518,6 +518,33 @@ export default function ActiveComputePage() {
                                 </span>
                                 <CopyButton text={`ssh ${sshUsername}@${sshHost} -p ${sshPort}`} />
                               </div>
+                              {/* M4.7: clusters get one SSH credential to
+                                  the master + a hint that workers are
+                                  reachable via the jump-host pattern over
+                                  the WireGuard mesh. */}
+                              {alloc.gpuCount > 1 && (
+                                <div className="mt-3">
+                                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] mb-1" style={{ color: 'var(--text-muted)' }}>
+                                    Cluster workers
+                                  </p>
+                                  <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                                    Single SSH credential reaches the master (rank 0). Workers run on the cluster&apos;s private WireGuard mesh - jump through master to reach them:
+                                  </p>
+                                  <code
+                                    className="block mt-2 px-2 py-1.5 rounded-sm font-mono text-xs overflow-x-auto"
+                                    style={{
+                                      background: 'rgba(255,255,255,0.04)',
+                                      color: 'var(--text-primary)',
+                                      border: '1px solid var(--border-color)',
+                                    }}
+                                  >
+                                    ssh -J {sshUsername}@{sshHost} a2e-buyer@worker-N
+                                  </code>
+                                  <p className="text-[11px] mt-2" style={{ color: 'var(--text-muted)' }}>
+                                    Replace <span className="font-mono">N</span> with the rank (1..{alloc.gpuCount - 1}). Workers are exposed only inside the mesh; this is the only public ingress.
+                                  </p>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
