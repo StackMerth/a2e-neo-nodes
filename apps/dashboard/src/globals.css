@@ -1080,8 +1080,11 @@ textarea:focus {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
+  /* Plain dim, no blur. Backdrop-blur on this fullscreen overlay
+     was painting the entire dashboard out of focus when the sidebar
+     opened on narrow viewports. The dim alone is enough to push
+     focus toward the sidebar without making the page unreadable. */
+  background: rgba(0, 0, 0, 0.5);
   z-index: 90;
 }
 
