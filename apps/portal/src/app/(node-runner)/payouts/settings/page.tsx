@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Save, User, Wallet, CalendarClock } from 'lucide-react'
+import { ArrowLeft, Save, User, Wallet, CalendarClock, PiggyBank, ArrowDownToLine, Zap } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -16,6 +16,8 @@ import {
 
 const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
+type PayoutMode = 'AUTO' | 'MANUAL' | 'SCHEDULED'
+
 interface Profile {
   name: string
   email: string | null
@@ -24,6 +26,34 @@ interface Profile {
   payoutFrequency: string
   payoutDayOfWeek: number | null
   payoutDayOfMonth: number | null
+}
+
+const MODE_OPTIONS: Array<{ id: PayoutMode; label: string; description: string }> = [
+  {
+    id: 'AUTO',
+    label: 'Auto',
+    description: 'Settlements fire automatically when your balance crosses the threshold on the chosen schedule. Default.',
+  },
+  {
+    id: 'MANUAL',
+    label: 'Manual',
+    description: 'Earnings accumulate on the platform indefinitely. You click "Withdraw now" when you want to cash out.',
+  },
+  {
+    id: 'SCHEDULED',
+    label: 'Scheduled',
+    description: 'Earnings accumulate until the date below. On that date we auto-send the full balance and switch you back to Auto.',
+  },
+]
+
+// Format an ISO datetime for the <input type="datetime-local"> control,
+// which expects "YYYY-MM-DDTHH:mm" in the user's local time. The portal
+// elsewhere assumes UTC; round-trip is fine because we send the iso
+// string back out on submit and the API parses it as UTC.
+function toLocalDatetimeInput(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 export default function PayoutSettingsPage() {
@@ -35,28 +65,48 @@ export default function PayoutSettingsPage() {
   const [frequency, setFrequency] = useState('WEEKLY')
   const [dayOfWeek, setDayOfWeek] = useState(1)
   const [dayOfMonth, setDayOfMonth] = useState(1)
+  const [mode, setMode] = useState<PayoutMode>('AUTO')
+  const [scheduledAt, setScheduledAt] = useState<string>('') // datetime-local string
+  const [platformBalance, setPlatformBalance] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [withdrawing, setWithdrawing] = useState(false)
+
+  async function loadAll() {
+    try {
+      const [profile, modeInfo] = await Promise.all([
+        nodeRunner.profile() as Promise<Profile>,
+        nodeRunner.payoutMode().catch(() => null),
+      ])
+      setName(profile.name)
+      setEmail(profile.email ?? '')
+      setWallet(profile.walletAddress)
+      setThreshold(profile.payoutThreshold ?? 10)
+      setFrequency(profile.payoutFrequency ?? 'WEEKLY')
+      setDayOfWeek(profile.payoutDayOfWeek ?? 1)
+      setDayOfMonth(profile.payoutDayOfMonth ?? 1)
+      if (modeInfo) {
+        setMode(modeInfo.mode)
+        setScheduledAt(modeInfo.scheduledAt ? toLocalDatetimeInput(modeInfo.scheduledAt) : '')
+        setPlatformBalance(modeInfo.platformBalance)
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    async function load() {
-      try {
-        const profile = await nodeRunner.profile() as Profile
-        setName(profile.name)
-        setEmail(profile.email ?? '')
-        setWallet(profile.walletAddress)
-        setThreshold(profile.payoutThreshold ?? 10)
-        setFrequency(profile.payoutFrequency ?? 'WEEKLY')
-        setDayOfWeek(profile.payoutDayOfWeek ?? 1)
-        setDayOfMonth(profile.payoutDayOfMonth ?? 1)
-      } catch { /* ignore */ }
-      finally { setLoading(false) }
-    }
-    load()
+    void loadAll()
   }, [])
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
+    if (mode === 'SCHEDULED' && !scheduledAt) {
+      toast('error', 'Pick a date for scheduled payouts')
+      return
+    }
     setSaving(true)
     try {
       await nodeRunner.settings({
@@ -67,10 +117,42 @@ export default function PayoutSettingsPage() {
         payoutFrequency: frequency,
         payoutDayOfWeek: frequency === 'WEEKLY' ? dayOfWeek : undefined,
         payoutDayOfMonth: frequency === 'MONTHLY' ? dayOfMonth : undefined,
+        payoutMode: mode,
+        payoutScheduledAt: mode === 'SCHEDULED' && scheduledAt ? new Date(scheduledAt).toISOString() : null,
       })
       toast('success', 'Settings saved')
-    } catch (err) { toast('error', err instanceof Error ? err.message : 'Failed to save') }
-    finally { setSaving(false) }
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleWithdrawNow() {
+    if (platformBalance <= 0) {
+      toast('error', 'No unpaid balance to withdraw')
+      return
+    }
+    if (!confirm(`Withdraw $${platformBalance.toFixed(2)} from the platform to your wallet?`)) {
+      return
+    }
+    setWithdrawing(true)
+    try {
+      const result = await nodeRunner.withdrawNow()
+      const successCount = result.settlements.filter((s) => s.success).length
+      const totalCount = result.settlements.length
+      if (successCount === totalCount) {
+        toast('success', `Withdrew $${result.totalPaid.toFixed(2)} in ${successCount} settlement${successCount === 1 ? '' : 's'}`)
+      } else {
+        toast('error', `Partial withdrawal: ${successCount}/${totalCount} settlements succeeded`)
+      }
+      // Refresh state so balance + mode reflect the new reality.
+      await loadAll()
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Withdrawal failed')
+    } finally {
+      setWithdrawing(false)
+    }
   }
 
   if (loading) {
@@ -91,7 +173,118 @@ export default function PayoutSettingsPage() {
           <ArrowLeft size={12} /> Back to Payouts
         </Link>
 
+        {/* Platform balance + Withdraw now. Sits outside the main form so
+            withdrawing doesn't get blocked by unsaved form changes. */}
+        <FormCard
+          title="Platform Balance"
+          description="Earnings sitting on the platform, not yet paid out to your wallet"
+          icon={PiggyBank}
+        >
+          <FormSection>
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <p className="font-display text-4xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                  ${platformBalance.toFixed(2)}
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  {platformBalance > 0
+                    ? 'Available to withdraw right now.'
+                    : 'No unpaid earnings. New earnings will appear here as nodes accumulate uptime.'}
+                </p>
+              </div>
+              <Button
+                type="button"
+                onClick={handleWithdrawNow}
+                loading={withdrawing}
+                disabled={platformBalance <= 0}
+              >
+                <ArrowDownToLine size={16} className="mr-2" />
+                Withdraw now
+              </Button>
+            </div>
+            <div
+              className="mt-4 text-xs rounded-md p-3"
+              style={{
+                background: 'rgba(245,158,11,0.08)',
+                border: '1px solid rgba(245,158,11,0.2)',
+                color: 'var(--text-muted)',
+              }}
+            >
+              Two safety nets fire even if you&rsquo;re on hold: the platform forces a payout when your balance exceeds $10,000, or after 180 days of account inactivity. Withdraws are queued for the next allocator tick and arrive within a few seconds of confirmation.
+            </div>
+          </FormSection>
+        </FormCard>
+
         <form onSubmit={handleSave} className="space-y-6">
+          {/* Payout mode picker. Drives whether settlements auto-fire,
+              hold on the platform until you click Withdraw now, or hold
+              until a specific date. */}
+          <FormCard
+            title="Payout Mode"
+            description="Where do your earnings go when they're settled"
+            icon={Zap}
+          >
+            <FormSection>
+              <div className="grid gap-3">
+                {MODE_OPTIONS.map((opt) => {
+                  const active = mode === opt.id
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setMode(opt.id)}
+                      className="text-left rounded-md p-4 transition-all"
+                      style={
+                        active
+                          ? { background: 'rgba(34,197,94,0.08)', border: '1px solid var(--primary)', boxShadow: '0 0 0 1px var(--primary)' }
+                          : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
+                      }
+                    >
+                      <div className="flex items-center gap-3">
+                        <span
+                          className="w-4 h-4 rounded-full flex-shrink-0"
+                          style={
+                            active
+                              ? { background: 'var(--primary)', boxShadow: '0 0 0 4px rgba(34,197,94,0.2)' }
+                              : { background: 'transparent', border: '2px solid var(--border-light, var(--border-color))' }
+                          }
+                        />
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                            {opt.label}
+                          </p>
+                          <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                            {opt.description}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {mode === 'SCHEDULED' && (
+                <div className="mt-4">
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                    Scheduled payout date &amp; time
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={scheduledAt}
+                    onChange={(e) => setScheduledAt(e.target.value)}
+                    min={toLocalDatetimeInput(new Date().toISOString())}
+                    className="w-full rounded-md px-4 py-2.5 text-sm"
+                    style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                    required
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    On this date the platform will auto-send your full balance and switch you back to Auto mode.
+                  </p>
+                </div>
+              )}
+            </FormSection>
+          </FormCard>
+
           <FormCard
             title="Profile"
             description="Display identity attached to this operator account"
@@ -119,8 +312,8 @@ export default function PayoutSettingsPage() {
           </FormCard>
 
           <FormCard
-            title="Payout Preferences"
-            description="How often and at what threshold should settlements run"
+            title="Auto-Payout Preferences"
+            description="Threshold + schedule used when Payout Mode = Auto"
             icon={CalendarClock}
           >
             <FormSection title="Threshold">
