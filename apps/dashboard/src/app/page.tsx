@@ -17,7 +17,6 @@ import {
 import { api } from '@/lib/api'
 import { SystemHealth } from '@/components/dashboard/SystemHealth'
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
-import { A2ELoader } from '@/components/ui/A2ELoader'
 
 /* -----------------------------------------------
    Types
@@ -209,10 +208,14 @@ export default function OverviewPage() {
     ]
   }, [stats])
 
-  /* -- Loading state -- */
+  /* -- Loading state --
+     Renders the shimmer skeleton instead of the brand orb. The
+     skeleton matches the eventual page layout (header + 4-card grid
+     + two-chart row + tables) so there's no layout shift when the
+     real data arrives. */
 
   if (loading) {
-    return <A2ELoader fullScreen={false} message="Loading engine overview" />
+    return <LoadingSkeleton />
   }
 
   /* -- Error state -- */
