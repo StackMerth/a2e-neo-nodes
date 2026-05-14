@@ -177,14 +177,29 @@ export async function getOperatorPlatformBalance(
   prisma: PrismaClient,
   nodeRunnerId: string
 ): Promise<number> {
+  const calcs = await calculateOperatorSettlements(prisma, nodeRunnerId, new Date(), 0)
+  return calcs.reduce((sum, c) => sum + c.amount, 0)
+}
+
+/**
+ * Build per-node settlement calculations for ONE operator regardless
+ * of their payoutMode. This is the engine behind the "Withdraw now"
+ * button: even if the operator is on MANUAL or SCHEDULED hold, they
+ * can still force an immediate payout. minimumPayout defaults to 0
+ * (override $10 system default) so even small balances are claimable.
+ */
+export async function calculateOperatorSettlements(
+  prisma: PrismaClient,
+  nodeRunnerId: string,
+  periodEnd: Date,
+  minimumPayout: number = 0
+): Promise<SettlementCalculation[]> {
   const nodes = await prisma.node.findMany({
     where: { nodeRunnerId },
-    select: { id: true },
+    select: { id: true, walletAddress: true },
   })
-  if (nodes.length === 0) return 0
 
-  const now = new Date()
-  let total = 0
+  const out: SettlementCalculation[] = []
   for (const node of nodes) {
     const lastSettlement = await prisma.settlement.findFirst({
       where: { nodeId: node.id, status: 'COMPLETED' },
@@ -192,11 +207,22 @@ export async function getOperatorPlatformBalance(
     })
     const periodStart =
       lastSettlement?.periodEnd ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    if (now.getTime() - periodStart.getTime() < 3600000) continue
-    const uptime = await calculateUptimeEarnings(prisma, node.id, periodStart, now)
-    if (uptime?.earnings) total += uptime.earnings
+    if (periodEnd.getTime() - periodStart.getTime() < 3600000) continue
+
+    const uptime = await calculateUptimeEarnings(prisma, node.id, periodStart, periodEnd)
+    if (!uptime || uptime.earnings < minimumPayout) continue
+
+    out.push({
+      nodeId: node.id,
+      walletAddress: node.walletAddress,
+      amount: uptime.earnings,
+      uptimeHours: uptime.uptimeHours,
+      periodStart,
+      periodEnd,
+      nodeRunnerId,
+    })
   }
-  return total
+  return out
 }
 
 export async function createSettlement(
