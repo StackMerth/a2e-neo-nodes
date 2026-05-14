@@ -7,6 +7,7 @@ import { useSidebar } from './SidebarContext'
 import { Sidebar } from './Sidebar'
 import { TopHeader } from './TopHeader'
 import { WebSocketNotifier } from '@/components/WebSocketNotifier'
+import { AdminLoadingScreen } from '@/components/AdminLoadingScreen'
 
 const mainEase: [number, number, number, number] = [0.4, 0, 0.2, 1]
 
@@ -20,14 +21,7 @@ export function AuthenticatedLayout({ children }: { children: React.ReactNode })
   }
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin w-8 h-8 border-2 border-t-transparent rounded-full" style={{ borderColor: 'var(--primary)', borderTopColor: 'transparent' }} />
-          <p style={{ color: 'var(--text-muted)' }}>Loading...</p>
-        </div>
-      </div>
-    )
+    return <AdminLoadingScreen />
   }
 
   if (!isAuthenticated) {
