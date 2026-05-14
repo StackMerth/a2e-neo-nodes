@@ -877,69 +877,27 @@ export default function FinancialPage() {
               <div className="p-4 bg-warning/10 border border-warning/30 rounded-xl flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm text-warning font-medium">Security Warning</p>
+                  <p className="text-sm text-warning font-medium">Configured via environment variables</p>
                   <p className="text-xs text-text-muted mt-1">
-                    Private keys are stored encrypted in the database. For production, consider using environment variables or a secrets manager.
+                    Since blocker M1-#7, Solana config is read from <code>SOLANA_PAYER_KEY</code>, <code>SOLANA_RPC_URL</code>, and <code>SOLANA_USDC_MINT</code> on the API service. Edit these in Render's Environment tab; the boot log&apos;s <code>[solana]</code> lines confirm which source each field came from.
                   </p>
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-text-primary mb-2">
-                    Solana RPC URL
-                  </label>
-                  <input
-                    type="text"
-                    value={solanaForm.rpcUrl}
-                    onChange={(e) => setSolanaForm({ ...solanaForm, rpcUrl: e.target.value })}
-                    placeholder="https://api.mainnet-beta.solana.com"
-                    className="w-full px-4 py-3 bg-background border border-border rounded-xl text-text-primary font-mono text-sm focus:outline-none focus:border-accent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-primary mb-2">
-                    Payer Private Key (JSON array format)
-                  </label>
-                  <input
-                    type="password"
-                    value={solanaForm.privateKey}
-                    onChange={(e) => setSolanaForm({ ...solanaForm, privateKey: e.target.value })}
-                    placeholder="[1,2,3,...] or leave empty to keep existing"
-                    className="w-full px-4 py-3 bg-background border border-border rounded-xl text-text-primary font-mono text-sm focus:outline-none focus:border-accent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-primary mb-2">
-                    USDC Mint Address (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={solanaForm.usdcMint}
-                    onChange={(e) => setSolanaForm({ ...solanaForm, usdcMint: e.target.value })}
-                    placeholder="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v (mainnet default)"
-                    className="w-full px-4 py-3 bg-background border border-border rounded-xl text-text-primary font-mono text-sm focus:outline-none focus:border-accent"
-                  />
-                </div>
-              </div>
+              {/* The editable RPC URL / Payer Private Key / USDC Mint
+                  inputs were removed when the read path moved to
+                  env-first (M1-#7 + #4). Leaving them in the admin UI
+                  was the original launch-blocker — admins could see and
+                  rotate the plaintext key through the browser. The DB
+                  columns still exist as a fallback for transition but
+                  are no longer editable from here; the only way to
+                  change the values now is via Render env. */}
               <div className="flex gap-3">
                 <Button
-                  onClick={handleSaveSolanaConfig}
-                  variant="gradient"
-                  size="sm"
-                  disabled={savingSolana}
-                >
-                  {savingSolana ? 'Saving...' : 'Save Solana Config'}
-                </Button>
-                <Button
-                  onClick={() => {
-                    setEditingSolanaConfig(false)
-                    setSolanaForm({ rpcUrl: '', privateKey: '', usdcMint: '' })
-                  }}
+                  onClick={() => setEditingSolanaConfig(false)}
                   variant="secondary"
                   size="sm"
-                  disabled={savingSolana}
                 >
-                  Cancel
+                  Close
                 </Button>
               </div>
             </div>
