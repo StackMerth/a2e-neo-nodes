@@ -761,7 +761,9 @@ textarea:focus {
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  z-index: 50;
+  /* z-index sits above .mobile-overlay (90) so the sidebar itself
+     stays sharp when the mobile backdrop blur is active behind it. */
+  z-index: 100;
   overflow: hidden;
 }
 
