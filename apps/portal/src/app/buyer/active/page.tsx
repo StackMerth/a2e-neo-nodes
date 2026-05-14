@@ -10,6 +10,7 @@ import {
   XCircle,
   DollarSign,
   Save,
+  Loader2,
 } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -43,6 +44,19 @@ interface ActiveAllocation {
   sshPassword?: string | null
   sshSessionToken?: string | null
   sshSessionTokenExpiresAt?: string | null
+  // Launch-blocker #2: agent-side SSH lifecycle. PENDING -> waiting
+  // for the agent to pick up the rental. PROVISIONING -> agent is
+  // creating the rental user. ACTIVE -> ready to connect.
+  // TERMINATING/TERMINATED -> rental ended, user being cleaned up.
+  // FAILED -> agent reported an error (sshErrorMessage has detail).
+  sshSessionStatus?:
+    | 'PENDING'
+    | 'PROVISIONING'
+    | 'ACTIVE'
+    | 'TERMINATING'
+    | 'TERMINATED'
+    | 'FAILED'
+  sshErrorMessage?: string | null
   activatedAt: string
   expiresAt: string
   totalCost?: number
@@ -449,18 +463,87 @@ export default function ActiveComputePage() {
                       const isTestMode =
                         !sshHost ||
                         (alloc.allocatedNodeIds ?? []).some(id => id.startsWith('seed-node-'))
+                      const sshStatus = alloc.sshSessionStatus ?? 'PENDING'
+                      const isReady = sshStatus === 'ACTIVE'
+                      const isWaiting = sshStatus === 'PENDING' || sshStatus === 'PROVISIONING'
+                      const isFailed = sshStatus === 'FAILED'
+                      const isEnded = sshStatus === 'TERMINATING' || sshStatus === 'TERMINATED'
 
                       return (
                         <div
                           className="rounded-lg p-4"
                           style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
                         >
-                          <div className="flex items-center gap-2 mb-3">
-                            <Terminal size={14} style={{ color: tierColor }} />
-                            <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
-                              SSH Access
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <Terminal size={14} style={{ color: tierColor }} />
+                              <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                                SSH Access
+                              </span>
+                            </div>
+                            {/* Launch-blocker #2: agent-side lifecycle pill. */}
+                            <span
+                              className="text-[10px] font-mono uppercase tracking-[0.16em] px-2 py-0.5 rounded-full"
+                              style={
+                                isReady
+                                  ? { background: 'rgba(34,197,94,0.15)', color: '#22c55e' }
+                                  : isWaiting
+                                    ? { background: 'rgba(59,130,246,0.15)', color: '#3b82f6' }
+                                    : isFailed
+                                      ? { background: 'rgba(239,68,68,0.15)', color: '#ef4444' }
+                                      : { background: 'rgba(156,163,175,0.15)', color: 'var(--text-muted)' }
+                              }
+                            >
+                              {sshStatus.toLowerCase()}
                             </span>
                           </div>
+
+                          {/* Lifecycle banners. PROVISIONING shows a friendly
+                              "we're setting it up" while the agent's user-add
+                              + key-install land. FAILED surfaces the agent's
+                              error so the buyer knows what to ask support.
+                              TERMINATING/TERMINATED greys out the creds. */}
+                          {isWaiting && (
+                            <div
+                              className="rounded-md p-3 mb-3 text-xs flex items-center gap-2"
+                              style={{
+                                background: 'rgba(59, 130, 246, 0.08)',
+                                border: '1px solid rgba(59, 130, 246, 0.25)',
+                                color: '#3b82f6',
+                              }}
+                            >
+                              <Loader2 size={14} className="animate-spin" />
+                              <span>
+                                Setting up your rental on the operator&rsquo;s machine. SSH should be ready in ~30 seconds.
+                              </span>
+                            </div>
+                          )}
+                          {isFailed && (
+                            <div
+                              className="rounded-md p-3 mb-3 text-xs"
+                              style={{
+                                background: 'rgba(239, 68, 68, 0.08)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                color: '#ef4444',
+                              }}
+                            >
+                              <strong>SSH provisioning failed.</strong>{' '}
+                              {alloc.sshErrorMessage ?? 'The agent on the operator’s machine could not complete setup.'}{' '}
+                              Contact support if this persists; you can terminate this rental for a refund of the unused minutes.
+                            </div>
+                          )}
+                          {isEnded && (
+                            <div
+                              className="rounded-md p-3 mb-3 text-xs"
+                              style={{
+                                background: 'rgba(156, 163, 175, 0.08)',
+                                border: '1px solid rgba(156, 163, 175, 0.2)',
+                                color: 'var(--text-muted)',
+                              }}
+                            >
+                              This rental has ended. The credentials below no longer accept connections.
+                            </div>
+                          )}
 
                           {/* Test-mode banner — shown when the rental was assigned
                               to a seed-node or has no real host. The session token
