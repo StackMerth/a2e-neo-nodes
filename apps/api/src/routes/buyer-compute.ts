@@ -46,6 +46,20 @@ const requestSchema = z.object({
   // the allocator sorts that operator's nodes first but falls back to
   // the general pool when they have no idle capacity.
   preferredOperatorSlug: z.string().max(120).optional().nullable(),
+
+  // M6 / launch-blocker #2 dependency: buyer's SSH public key. The
+  // agent installs this into the rental user's authorized_keys at
+  // provision time; without it the rental lands in FAILED. Accepts
+  // ssh-rsa / ssh-ed25519 / ecdsa-sha2-nistp* / ssh-dss canonical
+  // formats, with an optional trailing comment.
+  sshPubKey: z
+    .string()
+    .max(8192)
+    .regex(
+      /^(ssh-(rsa|ed25519|dss)|ecdsa-sha2-nistp(256|384|521))\s+[A-Za-z0-9+/=]+(\s+.+)?$/,
+      'sshPubKey must be a canonical openssh public key'
+    )
+    .optional(),
 }).refine(
   data => data.tier !== 'RESERVED' || data.commitmentDays !== undefined,
   { message: 'commitmentDays required for RESERVED tier', path: ['commitmentDays'] },
@@ -144,7 +158,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
     }
 
-    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion, preferredOperatorSlug } = parsed.data
+    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion, preferredOperatorSlug, sshPubKey } = parsed.data
 
     // M5.10c: resolve preferred operator slug to NodeRunner.id. Silently
     // ignore unknown slugs (don't fail the request - the allocator just
@@ -244,6 +258,10 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         // M5.10c: soft operator preference. May still be null if the
         // slug didn't resolve; allocator treats null as no preference.
         preferredOperatorId,
+        // M6: buyer's SSH public key. The allocator preserves this on
+        // the row; the heartbeat-response surfaces it to the agent at
+        // provision time. Required for real (non-test-mode) rentals.
+        sshPubKey: sshPubKey?.trim() || null,
       },
     })
 
