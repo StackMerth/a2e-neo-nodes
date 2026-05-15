@@ -128,73 +128,107 @@ download() {
     fi
 }
 
-# Get latest version
-get_latest_version() {
-    local version_url="${DOWNLOAD_BASE_URL}/latest/version"
-    local version
+# Public GitHub URL for the repo we clone the agent source from. Override
+# with A2E_REPO_URL if the repo is mirrored or forked. The default points
+# at the upstream public repo so the curl|bash flow works out of the box.
+REPO_URL="${A2E_REPO_URL:-https://github.com/StackMerth/a2e-neo-nodes.git}"
+REPO_BRANCH="${A2E_REPO_BRANCH:-main}"
+MIN_NODE_MAJOR=20
 
-    if command -v curl &> /dev/null; then
-        version=$(curl -fsSL "$version_url" 2>/dev/null || echo "")
-    else
-        version=$(wget -qO- "$version_url" 2>/dev/null || echo "")
+# Ensure Node 20+ is available. Installs via NodeSource on apt-based
+# distros if missing; otherwise points the operator at nodejs.org. We
+# need node at runtime to execute the built agent (no precompiled
+# binary release yet — install-from-source).
+ensure_node() {
+    if command -v node &> /dev/null; then
+        local node_major
+        node_major=$(node -v | sed 's/v//' | cut -d. -f1)
+        if [[ "$node_major" -ge "$MIN_NODE_MAJOR" ]]; then
+            log "Node $(node -v) detected"
+            return
+        fi
+        warn "Node $(node -v) is too old; need Node ${MIN_NODE_MAJOR}+"
     fi
 
-    if [[ -z "$version" ]]; then
-        error "Failed to fetch latest version. Check your network connection."
+    log "Installing Node ${MIN_NODE_MAJOR} LTS via NodeSource..."
+    if ! command -v apt-get &> /dev/null; then
+        error "Automatic Node install only supports apt-based distros (Ubuntu/Debian). Install Node ${MIN_NODE_MAJOR}+ manually from https://nodejs.org/ and re-run."
     fi
-
-    echo "$version"
+    curl -fsSL "https://deb.nodesource.com/setup_${MIN_NODE_MAJOR}.x" | bash -
+    apt-get install -y nodejs
+    log "Node $(node -v) installed"
 }
 
-# Download and install binary
-install_binary() {
-    local platform version binary_url checksum_url
+# pnpm is what the monorepo uses; install globally via npm if missing.
+# Pinning to v8 matches the version in package.json + render.yaml.
+ensure_pnpm() {
+    if command -v pnpm &> /dev/null; then
+        log "pnpm $(pnpm -v) detected"
+        return
+    fi
+    log "Installing pnpm@8 globally..."
+    npm install -g pnpm@8
+}
+
+# Ensure git is available (needed for the source clone).
+ensure_git() {
+    if command -v git &> /dev/null; then return; fi
+    log "Installing git..."
+    if command -v apt-get &> /dev/null; then
+        apt-get install -y git
+    elif command -v yum &> /dev/null; then
+        yum install -y git
+    else
+        error "git not found and no supported package manager. Install git manually and re-run."
+    fi
+}
+
+# Clone the agent source + build it. Replaces the legacy precompiled
+# binary download because we don't ship binary releases yet. The repo
+# is cloned shallow (depth=1) for speed; updates are cheap with a
+# subsequent `git pull` + rebuild.
+install_from_source() {
+    local platform
     platform=$(detect_platform)
 
-    if [[ "$VERSION" == "latest" ]]; then
-        version=$(get_latest_version)
-        log "Latest version: $version"
+    ensure_git
+    ensure_node
+    ensure_pnpm
+
+    local repo_dir="$INSTALL_DIR/repo"
+    if [[ -d "$repo_dir/.git" ]]; then
+        log "Repo already cloned; pulling latest from ${REPO_BRANCH}..."
+        (cd "$repo_dir" && git fetch --depth=1 origin "$REPO_BRANCH" && git reset --hard "origin/${REPO_BRANCH}")
     else
-        version="$VERSION"
+        log "Cloning ${REPO_URL} (branch ${REPO_BRANCH})..."
+        mkdir -p "$INSTALL_DIR"
+        git clone --depth=1 --branch "$REPO_BRANCH" "$REPO_URL" "$repo_dir"
     fi
 
-    binary_url="${DOWNLOAD_BASE_URL}/${version}/a2e-agent-${platform}"
-    checksum_url="${DOWNLOAD_BASE_URL}/${version}/checksums.txt"
+    log "Installing workspace deps + building agent (this takes ~60-90s)..."
+    (
+        cd "$repo_dir"
+        # --prod=false because we need devDependencies (typescript, prisma
+        # CLI) to build. The agent's runtime deps will still be present.
+        pnpm install --frozen-lockfile --prod=false
+        # The ... filter pulls in shared workspace packages the agent needs.
+        pnpm --filter "@a2e/node-agent..." build
+    )
 
-    log "Downloading A²E Agent ${version} for ${platform}..."
-
-    # Create temp directory
-    local temp_dir
-    temp_dir=$(mktemp -d)
-    trap "rm -rf $temp_dir" EXIT
-
-    # Download binary
-    download "$binary_url" "$temp_dir/a2e-agent"
-
-    # Download and verify checksum
-    log "Verifying checksum..."
-    download "$checksum_url" "$temp_dir/checksums.txt"
-
-    local expected_checksum actual_checksum
-    expected_checksum=$(grep "a2e-agent-${platform}" "$temp_dir/checksums.txt" | awk '{print $1}')
-    actual_checksum=$(sha256sum "$temp_dir/a2e-agent" | awk '{print $1}')
-
-    if [[ "$expected_checksum" != "$actual_checksum" ]]; then
-        error "Checksum verification failed! Expected: $expected_checksum, Got: $actual_checksum"
-    fi
-
-    log "Checksum verified"
-
-    # Create installation directory
+    # Wrapper script so the systemd unit ExecStart stays stable even if
+    # we move the entry point later. The wrapper just execs node against
+    # the built dist.
     mkdir -p "$INSTALL_DIR/bin"
+    cat > "$INSTALL_DIR/bin/a2e-agent" << 'EOF'
+#!/usr/bin/env bash
+exec node /opt/a2e-agent/repo/apps/node-agent/dist/index.js "$@"
+EOF
+    chmod +x "$INSTALL_DIR/bin/a2e-agent"
 
-    # Install binary
-    install -m 755 "$temp_dir/a2e-agent" "$INSTALL_DIR/bin/a2e-agent"
-
-    # Create symlink
+    # Convenience symlink so operators can run `a2e-agent` from any cwd.
     ln -sf "$INSTALL_DIR/bin/a2e-agent" /usr/local/bin/a2e-agent
 
-    log "Binary installed to $INSTALL_DIR/bin/a2e-agent"
+    log "Agent installed from source. Platform: ${platform}"
 }
 
 # Create required directories
@@ -656,7 +690,7 @@ main() {
     fi
 
     check_prerequisites
-    install_binary
+    install_from_source
     create_directories
     install_service
     run_configure
