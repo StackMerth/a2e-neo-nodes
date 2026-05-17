@@ -29,9 +29,10 @@ export async function createNotification(
   type: NotificationType,
   title: string,
   message: string,
+  link?: string,
 ) {
   const notification = await prisma.notification.create({
-    data: { userId, type, title, message },
+    data: { userId, type, title, message, link: link ?? null },
   })
 
   // Push real-time notification via WebSocket
@@ -41,6 +42,7 @@ export async function createNotification(
     type,
     title,
     message,
+    link: link ?? null,
   })
 
   // Send email for high-priority notification types (non-blocking)

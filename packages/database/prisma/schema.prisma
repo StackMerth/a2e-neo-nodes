@@ -210,6 +210,11 @@ model Notification {
   type      NotificationType
   title     String
   message   String
+  // Optional deep-link path the portal bell uses to navigate when the
+  // user clicks the notification. e.g. '/payouts' for a payout
+  // confirmation, '/buyer/requests/abc123' for a compute lifecycle
+  // event. Relative paths only; never an external URL.
+  link      String?
   read      Boolean          @default(false)
   createdAt DateTime         @default(now())
 
