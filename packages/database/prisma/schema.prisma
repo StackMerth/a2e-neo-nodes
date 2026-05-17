@@ -105,6 +105,10 @@ enum NotificationType {
   WITHDRAWAL_PROCESSING
   WITHDRAWAL_COMPLETED
   WITHDRAWAL_REJECTED
+  // Category C wave 1 additions
+  FIRST_HEARTBEAT_RECEIVED // C5: fires once per operator when first heartbeat lands
+  FIRST_EARNING            // C5: fires once per operator on first non-zero Earning row
+  NODE_DEGRADED            // C4: fires when benchmark score drops >20% from prior score
 }
 
 model User {
@@ -273,6 +277,29 @@ model NodeRunner {
   payoutLockUntil   DateTime?
   payoutLockReason  String?
 
+  // C5 (onboarding wave 1): one-shot timestamps that gate first-X
+  // celebration notifications. Set inside the heartbeat / earnings-
+  // rollup hot paths using updateMany({where:{id, firstXAt:null}})
+  // so concurrent writes are idempotent (Postgres row-lock wins one).
+  // Once set, the FIRST_HEARTBEAT_RECEIVED / FIRST_EARNING notifications
+  // never re-fire for this operator.
+  firstHeartbeatAt  DateTime?
+  firstEarningAt    DateTime?
+
+  // C7 (tax wave 1): optional W-9 / tax-form data. Filled in by the
+  // operator on /payouts/settings → "Tax info" card. The tax-year
+  // CSV pre-fills these into the operator-header row so it's ready
+  // to hand to a CPA for 1099-MISC prep. US-only fields for the first
+  // iteration; W-8BEN flow is in the runbook as a future addition.
+  // taxId stores raw TIN — should be encrypted at rest in a follow-up
+  // (see plan's risks section). Last-4 only is displayed in the UI.
+  legalName         String?
+  taxId             String?
+  taxIdType         TaxIdType?
+  taxAddress        String?
+  taxJurisdiction   String?     @default("US")
+  w9SubmittedAt     DateTime?
+
   // M3: reputation. reputationScore is 0-100, recomputed daily by the
   // reputation-scorer worker from uptime + ratings + completed jobs.
   // Tier is derived from score (BRONZE/SILVER/GOLD/PLATINUM thresholds).
@@ -355,6 +382,15 @@ enum PayoutMode {
 enum PaymentSource {
   USDC
   INTERNAL_BALANCE
+}
+
+// C7 (tax wave 1): IRS taxpayer-identification-number type. Drives
+// which CSV header the tax-year export uses (1099-MISC vs entity-form
+// flavors). Only US individuals + entities for now; W-8BEN flow for
+// non-US operators is a follow-up.
+enum TaxIdType {
+  SSN  // individual taxpayer
+  EIN  // sole-prop or entity
 }
 
 // Internal-spend ledger. One row per ComputeRequest where the buyer
@@ -513,6 +549,19 @@ model Node {
   // Health tracking
   lastHeartbeat DateTime   @default(now())
   missedBeats   Int        @default(0)
+
+  // C4 (benchmarking wave 1): one-click benchmark result fields. Set
+  // by POST /v1/agent/benchmark/result after the agent runs the
+  // benchmark Docker image. benchmarkScore is the composite 0-100,
+  // derived as a weighted blend of matmul throughput + VRAM bandwidth
+  // against tier-specific baselines (see runbook for the score table).
+  // NODE_DEGRADED notification fires when a new score is >20% below
+  // the previous benchmarkScore. lastBenchmarkAt drives the "last run
+  // X days ago" copy on the operator's node detail page.
+  benchmarkScore             Float?
+  benchmarkMatmulTflops      Float?
+  benchmarkVramBandwidthGbs  Float?
+  lastBenchmarkAt            DateTime?
 
   // Timestamps
   createdAt     DateTime   @default(now())

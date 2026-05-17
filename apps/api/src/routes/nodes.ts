@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { GpuTier, NodeType, NodeStatus } from '@a2e/database'
+import { notifyFirstHeartbeat } from '../services/notification/service.js'
 
 // Schema for agent registration (from node-agent)
 const agentSpecsSchema = z.object({
@@ -467,6 +468,34 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         gpuMemoryTotal,
         timestamp: heartbeat.timestamp.toISOString(),
       })
+
+      // C5: detect this operator's FIRST EVER heartbeat across all their
+      // nodes and fire FIRST_HEARTBEAT_RECEIVED once. Uses updateMany +
+      // predicate-on-null so concurrent heartbeats can't double-fire
+      // (Postgres row lock wins exactly one update; the other no-ops).
+      // Fire-and-forget: this must not block the heartbeat response.
+      if (updatedNode.nodeRunnerId) {
+        void (async () => {
+          try {
+            const result = await fastify.prisma.nodeRunner.updateMany({
+              where: { id: updatedNode.nodeRunnerId!, firstHeartbeatAt: null },
+              data: { firstHeartbeatAt: new Date() },
+            })
+            if (result.count === 1) {
+              const nr = await fastify.prisma.nodeRunner.findUnique({
+                where: { id: updatedNode.nodeRunnerId! },
+                select: { userId: true, name: true },
+              })
+              if (nr?.userId) {
+                const nodeLabel = node.walletAddress.slice(0, 16)
+                void notifyFirstHeartbeat(nr.userId, nodeLabel)
+              }
+            }
+          } catch (err) {
+            request.log.warn({ err, nodeId: id }, 'first-heartbeat detection failed (non-fatal)')
+          }
+        })()
+      }
 
       // Check if node is marked for deletion
       const commands: Array<{ id: string; type: string; payload?: Record<string, unknown> }> = []

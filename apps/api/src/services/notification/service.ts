@@ -18,6 +18,13 @@ const EMAIL_NOTIFICATION_TYPES: NotificationType[] = [
   'DEPLOYMENT_COMPLETED',
   'COMPUTE_ACTIVE',
   'WITHDRAWAL_COMPLETED',
+  // C5: first-event activation emails — make first heartbeat + first
+  // earning feel like a moment. Both are one-shot per operator.
+  'FIRST_HEARTBEAT_RECEIVED',
+  'FIRST_EARNING',
+  // C4: benchmark anomaly — operator should hear about a sudden score
+  // drop even if they're not watching the dashboard.
+  'NODE_DEGRADED',
 ]
 
 /**
@@ -218,5 +225,60 @@ export async function notifyInvestmentProvisioned(investmentId: string) {
     'Node Provisioned',
     `Your ${investment.gpuTier} node is now live and earning. Tap to view.`,
     '/nodes',
+  )
+}
+
+/**
+ * C5: Notify operator their first-ever heartbeat just landed. Fired
+ * once per NodeRunner from the heartbeat handler when firstHeartbeatAt
+ * is null. Activation email + bell entry. Caller must resolve the
+ * nodeRunner's userId; we don't re-query here to keep the heartbeat
+ * hot path tight.
+ */
+export async function notifyFirstHeartbeat(userId: string, nodeLabel: string) {
+  return createNotification(
+    userId,
+    'FIRST_HEARTBEAT_RECEIVED',
+    'Your first node is live',
+    `Heartbeat received from ${nodeLabel}. You're set up. Earnings start accruing as soon as a buyer rents your GPU.`,
+    '/dashboard',
+  )
+}
+
+/**
+ * C5: Notify operator their first-ever non-zero earning just landed.
+ * Fired once per NodeRunner from the earnings-rollup worker when
+ * firstEarningAt is null. Activation email + bell entry.
+ */
+export async function notifyFirstEarning(userId: string, amount: number) {
+  return createNotification(
+    userId,
+    'FIRST_EARNING',
+    'You earned your first reward',
+    `Your first earning of $${amount.toFixed(2)} just landed. Track real-time totals on your dashboard.`,
+    '/earnings',
+  )
+}
+
+/**
+ * C4: Notify operator that a node's benchmark score dropped sharply
+ * (>20% relative to the previous score). Fired from the benchmark
+ * result callback on the API side. Links to the node detail page so
+ * the operator can re-run or investigate.
+ */
+export async function notifyNodeDegraded(
+  userId: string,
+  nodeLabel: string,
+  nodeId: string,
+  oldScore: number,
+  newScore: number,
+) {
+  const dropPct = oldScore > 0 ? Math.round(((oldScore - newScore) / oldScore) * 100) : 0
+  return createNotification(
+    userId,
+    'NODE_DEGRADED',
+    'Node performance dropped',
+    `${nodeLabel} benchmark fell ${dropPct}% (${oldScore.toFixed(0)} → ${newScore.toFixed(0)}). Check thermal / driver / power throttling.`,
+    `/nodes/${nodeId}`,
   )
 }
