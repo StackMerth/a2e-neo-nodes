@@ -64,6 +64,21 @@ async function main() {
     console.log(`Using existing Node ${node.id} (walletAddress=${node.walletAddress})`)
   }
 
+  // Wipe any prior test data on this node so each run starts clean.
+  // Without this, a previous successful withdrawal leaves a COMPLETED
+  // Settlement whose periodEnd becomes the new periodStart, and all
+  // newly-seeded heartbeats land inside the 12h cool-down window —
+  // making Available stay at $0 forever from the testing POV.
+  const deletedSettlements = await prisma.settlement.deleteMany({
+    where: { nodeId: node.id },
+  })
+  const deletedHeartbeats = await prisma.heartbeat.deleteMany({
+    where: { nodeId: node.id },
+  })
+  console.log(
+    `Cleared prior test data: ${deletedSettlements.count} settlement(s), ${deletedHeartbeats.count} heartbeat(s).`
+  )
+
   // Insert 24h of heartbeats spaced 60 seconds apart (= 1440 rows).
   // The uptime calculator considers a node "offline" when gaps between
   // heartbeats exceed 90s, so anything wider than that would only count
