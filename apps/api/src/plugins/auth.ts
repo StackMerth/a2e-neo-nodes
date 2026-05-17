@@ -118,6 +118,14 @@ const authPlugin: FastifyPluginCallback = async (fastify: FastifyInstance) => {
   /**
    * Role-based access control middleware factory.
    * Admin API key always passes (backward compat for dashboard).
+   *
+   * Dual-identity: the schema's isBuyer / isNodeRunner / isAdmin flags
+   * (User model) can grant access even when the legacy `role` claim
+   * doesn't match. The fast path checks role from the JWT alone; the
+   * slow path falls back to a DB lookup of the flags. This is exactly
+   * what the schema comment says day-to-day capability checks should
+   * do, and unblocks users who signed up as one role and later opted
+   * into a second one (e.g. operator opts in to buy compute).
    */
   function requireRole(...roles: UserRole[]) {
     return async function (request: FastifyRequest, reply: FastifyReply) {
@@ -135,13 +143,38 @@ const authPlugin: FastifyPluginCallback = async (fastify: FastifyInstance) => {
         return
       }
 
-      if (!roles.includes(request.user.role)) {
-        reply.code(403).send({
-          error: 'Forbidden',
-          message: `Required role: ${roles.join(' or ')}`,
-        })
+      // Fast path: legacy role claim matches — no DB hit.
+      if (roles.includes(request.user.role)) {
         return
       }
+
+      // Slow path: check dual-identity flags. Map each required role
+      // to its corresponding boolean column. CUSTOMER is treated as
+      // an alias of COMPUTE_BUYER (legacy seed data).
+      const flagFor: Partial<Record<UserRole, 'isBuyer' | 'isNodeRunner' | 'isAdmin'>> = {
+        COMPUTE_BUYER: 'isBuyer',
+        CUSTOMER: 'isBuyer',
+        NODE_RUNNER: 'isNodeRunner',
+        ADMIN: 'isAdmin',
+      }
+      const flagsNeeded = roles
+        .map((r) => flagFor[r])
+        .filter((f): f is 'isBuyer' | 'isNodeRunner' | 'isAdmin' => Boolean(f))
+
+      if (flagsNeeded.length > 0) {
+        const user = await fastify.prisma.user.findUnique({
+          where: { id: request.user.userId },
+          select: { isBuyer: true, isNodeRunner: true, isAdmin: true },
+        })
+        if (user && flagsNeeded.some((f) => user[f])) {
+          return
+        }
+      }
+
+      reply.code(403).send({
+        error: 'Forbidden',
+        message: `Required role: ${roles.join(' or ')}`,
+      })
     }
   }
 
