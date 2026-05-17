@@ -281,6 +281,7 @@ async function terminateGracedRentals(
       'COMPUTE_COMPLETED',
       'SPOT Rental Preempted',
       buyerMessage,
+      `/buyer/requests/${cr.id}`,
     )
 
     io.emit('compute:terminated', {
@@ -402,6 +403,7 @@ async function scheduleNewPreemptions(
         `Your ${victim.gpuCount}x ${victim.gpuTier} SPOT rental will be preempted in ` +
           `${Math.round(PREEMPTION_GRACE_MS / 1000)}s to free capacity for On-Demand demand. ` +
           `Save your work now. Unused minutes will be refunded.`,
+        `/buyer/requests/${victim.id}`,
       )
 
       io.emit('compute:preemption-notice', {

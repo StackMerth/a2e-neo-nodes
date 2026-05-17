@@ -96,6 +96,7 @@ export function createProvisionWorker(options: {
                 'DEPLOYMENT_COMPLETED',
                 'Node Deployed!',
                 `Your ${investment.gpuTier} node is now live and earning.`,
+                '/nodes',
               )
             }
 

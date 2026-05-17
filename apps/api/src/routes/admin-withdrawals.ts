@@ -103,6 +103,7 @@ export async function adminWithdrawalRoutes(fastify: FastifyInstance) {
         'WITHDRAWAL_APPROVED',
         'Withdrawal Approved',
         `Your withdrawal request for $${withdrawal.amount.toFixed(2)} has been approved.`,
+        '/withdrawals',
       )
     }
 
@@ -139,6 +140,7 @@ export async function adminWithdrawalRoutes(fastify: FastifyInstance) {
         'WITHDRAWAL_PROCESSING',
         'Withdrawal Processing',
         `Your withdrawal of $${withdrawal.amount.toFixed(2)} is being processed.`,
+        '/withdrawals',
       )
     }
 
@@ -188,6 +190,7 @@ export async function adminWithdrawalRoutes(fastify: FastifyInstance) {
         'WITHDRAWAL_COMPLETED',
         'Withdrawal Completed',
         `Your withdrawal of $${withdrawal.amount.toFixed(2)} has been completed. TX: ${parsed.data.txHash.slice(0, 16)}...`,
+        '/withdrawals',
       )
     }
 
@@ -237,6 +240,7 @@ export async function adminWithdrawalRoutes(fastify: FastifyInstance) {
         'WITHDRAWAL_REJECTED',
         'Withdrawal Rejected',
         `Your withdrawal request for $${withdrawal.amount.toFixed(2)} was rejected: ${parsed.data.reason}`,
+        '/withdrawals',
       )
     }
 

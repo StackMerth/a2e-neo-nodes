@@ -147,6 +147,7 @@ export async function adminDeploymentRoutes(fastify: FastifyInstance) {
         'DEPLOYMENT_STARTED',
         'Deployment Started',
         `Your ${deployment.gpuTier} node is being set up. This usually takes 5-10 minutes.`,
+        `/deployments/${id}`,
       )
     }
 
@@ -241,6 +242,7 @@ export async function adminDeploymentRoutes(fastify: FastifyInstance) {
         'INVESTMENT_CONFIRMED', // Reusing for cancellation notification
         'Deployment Cancelled',
         reason ? `Your deployment request was cancelled: ${reason}` : 'Your deployment request was cancelled by the admin.',
+        `/deployments/${id}`,
       )
     }
 
@@ -338,6 +340,7 @@ export async function adminDeploymentRoutes(fastify: FastifyInstance) {
         'DEPLOYMENT_COMPLETED',
         'Node Deployed!',
         `Your ${deployment.gpuTier} node is now live and earning. Check your dashboard for real-time status.`,
+        '/nodes',
       )
     }
 

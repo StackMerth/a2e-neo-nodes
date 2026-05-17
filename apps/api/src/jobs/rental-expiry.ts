@@ -157,6 +157,7 @@ async function completeRental(
     'COMPUTE_COMPLETED',
     'Rental Ended',
     `Your ${cr.gpuCount}x ${cr.gpuTier} rental has reached its end of term. Thank you for using A²E.`,
+    `/buyer/requests/${cr.id}`,
   )
 
   io.emit('compute:terminated', {

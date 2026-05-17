@@ -139,6 +139,7 @@ async function processRequest(
         'COMPUTE_REQUEST_HELD',
         'Request Under Review',
         `Your ${cr.gpuCount}x ${cr.gpuTier} request is being reviewed by the team. You'll get an update shortly.`,
+        `/buyer/requests/${cr.id}`,
       )
       io.emit('compute:waitlisted', {
         requestId: cr.id,
@@ -394,6 +395,7 @@ async function processRequest(
     'COMPUTE_ACTIVE',
     'Compute is Live',
     `Your ${cr.gpuCount}x ${cr.gpuTier} compute is ready. SSH details are in your dashboard.`,
+    `/buyer/requests/${cr.id}`,
   )
 
   // Emit both events so existing dashboard subscribers (e.g. the toast for

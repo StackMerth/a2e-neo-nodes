@@ -384,7 +384,8 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     const admins = await fastify.prisma.user.findMany({ where: { role: 'ADMIN' }, select: { id: true } })
     for (const admin of admins) {
       void createNotification(admin.id, 'COMPUTE_REQUEST_NEW', 'New Compute Request',
-        `${gpuCount}x ${gpuTier} for ${durationDays} days ($${totalCost.toFixed(2)})`)
+        `${gpuCount}x ${gpuTier} for ${durationDays} days ($${totalCost.toFixed(2)})`,
+        '/compute')
     }
 
     // Real-time event so the admin dashboard can show a toast and bump
@@ -648,6 +649,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
             : refundStatus === 'SKIPPED_RESERVED'
               ? `Your RESERVED rental ended early. Per your ${cr.commitmentDays}-day commitment, no refund applies.`
               : `Your rental ended. ${refundStatus === 'SKIPPED_ZERO' ? 'No refund due.' : 'Refund failed — admin notified.'}`,
+      `/buyer/requests/${id}`,
     )
 
     // Notify all admins so the bell + the dashboard's notification feed
@@ -667,6 +669,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         'Rental Terminated',
         `${buyerLabel} terminated their ${cr.gpuCount}x ${cr.gpuTier} rental early. ` +
           `Accrued $${finalAccrued.toFixed(2)}, refund $${refundAmount.toFixed(2)} (${refundStatus}).`,
+        '/compute',
       )
     }
 
@@ -826,6 +829,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         'COMPUTE_COMPLETED',
         'New Rating Pending Review',
         `${parsed.data.score}-star rating submitted for an operator. Review in Ratings queue.`,
+        '/ratings',
       )
     }
 
