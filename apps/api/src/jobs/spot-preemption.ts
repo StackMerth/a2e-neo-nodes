@@ -45,6 +45,7 @@ import type { ConnectionOptions } from 'bullmq'
 import type { PrismaClient, GpuTier } from '@a2e/database'
 import type { Server as SocketServer } from 'socket.io'
 import { createNotification } from '../services/notification/service.js'
+import { getSolanaConfig, processPayment } from '../services/payment/solana.js'
 
 const QUEUE_NAME = 'spot-preemption'
 const TICK_INTERVAL_MS = parseInt(process.env.SPOT_PREEMPTION_TICK_MS ?? '30000', 10)
@@ -134,6 +135,9 @@ async function terminateGracedRentals(
       durationDays: true,
       adminNote: true,
       allocatedNodeIds: true,
+      // Drives refund routing: INTERNAL_BALANCE rebates the
+      // InternalSpend ledger row; USDC routes through Solana.
+      paymentSource: true,
     },
   })
 
@@ -156,6 +160,76 @@ async function terminateGracedRentals(
     )
     const refundAmount = Math.max(0, Number((cr.totalCost - finalAccrued).toFixed(4)))
 
+    // Issue the refund BEFORE flipping status to COMPLETED. Two reasons:
+    //   1. INTERNAL_BALANCE rebate just updates a row, so it composes
+    //      naturally with the transaction below.
+    //   2. USDC refund is an external Solana hop. If it fails we still
+    //      want the rental released (so the node returns to the idle
+    //      pool and ON_DEMAND demand gets served), but the failure
+    //      reason needs to land in adminNote so admin can manually
+    //      reconcile.
+    let refundStatus:
+      | 'SENT'
+      | 'INTERNAL_REBATED'
+      | 'SKIPPED_NO_WALLET'
+      | 'SKIPPED_ZERO'
+      | 'FAILED' = 'SKIPPED_ZERO'
+    let refundTxHash: string | null = null
+    let refundError: string | null = null
+
+    if (refundAmount <= 0) {
+      refundStatus = 'SKIPPED_ZERO'
+    } else if (cr.paymentSource === 'INTERNAL_BALANCE') {
+      try {
+        await prisma.internalSpend.update({
+          where: { computeRequestId: cr.id },
+          data: { amount: finalAccrued },
+        })
+        refundStatus = 'INTERNAL_REBATED'
+      } catch (err) {
+        refundStatus = 'FAILED'
+        refundError = err instanceof Error ? err.message : 'InternalSpend rebate failed'
+        // eslint-disable-next-line no-console
+        console.error(`[spot-preemption] InternalSpend rebate failed for ${cr.id}:`, err)
+      }
+    } else {
+      // USDC path — refund to the buyer's saved wallet if one exists.
+      const user = await prisma.user.findUnique({
+        where: { id: cr.userId },
+        select: { walletAddress: true },
+      })
+      if (!user?.walletAddress) {
+        refundStatus = 'SKIPPED_NO_WALLET'
+      } else {
+        try {
+          const solanaConfig = await getSolanaConfig(prisma)
+          const result = await processPayment(solanaConfig, user.walletAddress, refundAmount, 'USDC')
+          if (result.success && result.txHash) {
+            refundTxHash = result.txHash
+            refundStatus = 'SENT'
+          } else {
+            refundStatus = 'FAILED'
+            refundError = result.error ?? 'Unknown payment failure'
+          }
+        } catch (err) {
+          refundStatus = 'FAILED'
+          refundError = err instanceof Error ? err.message : 'Refund processing error'
+          // eslint-disable-next-line no-console
+          console.error(`[spot-preemption] USDC refund failed for ${cr.id}:`, err)
+        }
+      }
+    }
+
+    // Build a single-line adminNote that captures everything the next
+    // admin (or post-mortem reader) needs to know about this preemption.
+    const noteParts = [
+      `Preempted: capacity needed for ON_DEMAND traffic.`,
+      `Refund $${refundAmount.toFixed(2)} for ${maxMinutes - finalMinutes} unused minutes.`,
+      `Status: ${refundStatus}.`,
+    ]
+    if (refundTxHash) noteParts.push(`TX: ${refundTxHash}.`)
+    if (refundError) noteParts.push(`Error: ${refundError}.`)
+
     const result = await prisma.$transaction(async tx => {
       const updated = await tx.computeRequest.updateMany({
         where: { id: cr.id, status: 'ACTIVE' },
@@ -166,8 +240,7 @@ async function terminateGracedRentals(
           accruedCost: finalAccrued,
           sshSessionToken: null,
           sshSessionTokenExpiresAt: null,
-          adminNote: `Preempted: capacity needed for ON_DEMAND traffic. ` +
-            `Refund $${refundAmount.toFixed(2)} for ${maxMinutes - finalMinutes} unused minutes.`,
+          adminNote: noteParts.join(' '),
         },
       })
       if (updated.count === 0) return false
@@ -183,15 +256,31 @@ async function terminateGracedRentals(
 
     if (!result) continue
 
+    // Phrase the buyer notification per actual refund outcome so we
+    // don't promise something that didn't happen (the old code said
+    // "processed" regardless).
+    const buyerMessage = (() => {
+      const prefix = `Your ${cr.gpuCount}x ${cr.gpuTier} SPOT rental was preempted to free capacity for On-Demand demand.`
+      if (refundStatus === 'SENT') {
+        return `${prefix} Refund of $${refundAmount.toFixed(2)} sent to your wallet.`
+      }
+      if (refundStatus === 'INTERNAL_REBATED') {
+        return `${prefix} $${refundAmount.toFixed(2)} credited back to your operator balance for unused minutes.`
+      }
+      if (refundStatus === 'SKIPPED_NO_WALLET') {
+        return `${prefix} Add a wallet address in settings to receive future refunds.`
+      }
+      if (refundStatus === 'FAILED') {
+        return `${prefix} Refund of $${refundAmount.toFixed(2)} failed — admin notified.`
+      }
+      return `${prefix} No unused minutes to refund.`
+    })()
+
     void createNotification(
       cr.userId,
       'COMPUTE_COMPLETED',
       'SPOT Rental Preempted',
-      `Your ${cr.gpuCount}x ${cr.gpuTier} SPOT rental was preempted to free capacity for ` +
-        `On-Demand demand. ` +
-        (refundAmount > 0
-          ? `Refund of $${refundAmount.toFixed(2)} for unused minutes processed.`
-          : `No unused minutes to refund.`),
+      buyerMessage,
     )
 
     io.emit('compute:terminated', {
@@ -202,15 +291,17 @@ async function terminateGracedRentals(
       finalMinutes,
       finalAccrued,
       refundAmount,
-      refundStatus: 'PREEMPTED',
-      refundTxHash: null,
+      refundStatus: refundStatus === 'SENT' || refundStatus === 'INTERNAL_REBATED'
+        ? 'PREEMPTED'
+        : `PREEMPTED_${refundStatus}`,
+      refundTxHash,
       timestamp: now.toISOString(),
     })
 
     // eslint-disable-next-line no-console
     console.log(
       `[spot-preemption] terminated ${cr.id} (${cr.gpuCount}x ${cr.gpuTier}) ` +
-        `after grace; refund $${refundAmount}`,
+        `after grace; refund $${refundAmount} status=${refundStatus}`,
     )
   }
 }
