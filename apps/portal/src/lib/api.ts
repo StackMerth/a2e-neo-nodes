@@ -229,6 +229,52 @@ export const nodeRunner = {
   deployments: () => apiFetch('/v1/portal/node-runner/deployments'),
   deployment: (id: string) => apiFetch(`/v1/portal/node-runner/deployments/${id}`),
   referral: () => apiFetch('/v1/portal/referral'),
+  // C7: tax / 1099 export. taxInfo() reads the operator's saved W-9
+  // data (with TIN masked to last-4). updateTaxInfo() persists the
+  // full TIN on the server. downloadTaxYear(year) fetches the CSV with
+  // auth headers and opens a Blob URL for native browser save (same
+  // pattern as the invoice download in commit 44e818e — bearer-token
+  // routes can't be linked via plain <a href>).
+  taxInfo: () =>
+    apiFetch<{
+      legalName: string
+      taxIdType: 'SSN' | 'EIN' | null
+      taxIdLast4: string
+      taxIdSubmitted: boolean
+      taxAddress: string
+      taxJurisdiction: string
+      w9SubmittedAt: string | null
+    }>('/v1/portal/node-runner/tax-info'),
+  updateTaxInfo: (data: {
+    legalName: string
+    taxIdType: 'SSN' | 'EIN'
+    taxId: string
+    taxAddress: string
+    taxJurisdiction?: string
+  }) =>
+    apiFetch<{ ok: boolean; w9SubmittedAt: string | null }>(
+      '/v1/portal/node-runner/tax-info',
+      { method: 'PATCH', body: data },
+    ),
+  downloadTaxYear: async (year: number) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('a2e_access_token') : null
+    const res = await fetch(`${API_URL}/v1/portal/node-runner/tax/year/${year}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ message: `HTTP ${res.status}` }))
+      throw new Error(body.message ?? `Tax CSV download failed: ${res.status}`)
+    }
+    const blob = await res.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.download = `tax-${year}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+  },
 }
 
 // BYOG install-token API (launch-blocker #1). Mints a one-shot token

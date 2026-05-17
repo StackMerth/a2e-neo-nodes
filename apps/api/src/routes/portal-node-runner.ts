@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import type { TaxIdType } from '@a2e/database'
 import {
   calculateUptimeEarnings,
   getDailyUptimeBreakdown,
 } from '../services/earnings/uptime-calculator.js'
 import { createNotification } from '../services/notification/service.js'
+import { generateTaxYearCsv } from '../services/reports/tax-csv.js'
 
 /**
  * Helper: get the NodeRunner profile for the authenticated user, or 404
@@ -1233,4 +1235,122 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
 
     reply.send({ deployment, provisionStatus, node })
   })
+
+  // ===================================================================
+  // C7 wave 1: TAX / 1099 EXPORT
+  // ===================================================================
+
+  /**
+   * GET /v1/portal/node-runner/tax-info
+   * Returns the operator's tax-form data (or empty strings if W-9 has
+   * never been submitted). taxId is returned MASKED for read paths;
+   * the full value lives in the DB column.
+   */
+  fastify.get('/v1/portal/node-runner/tax-info', async (request, reply) => {
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+    const last4 = nr.taxId ? nr.taxId.replace(/\D/g, '').slice(-4) : ''
+    reply.send({
+      legalName: nr.legalName ?? '',
+      taxIdType: nr.taxIdType ?? null,
+      taxIdLast4: last4,                            // for read-back display only
+      taxIdSubmitted: Boolean(nr.taxId),
+      taxAddress: nr.taxAddress ?? '',
+      taxJurisdiction: nr.taxJurisdiction ?? 'US',
+      w9SubmittedAt: nr.w9SubmittedAt?.toISOString() ?? null,
+    })
+  })
+
+  const taxInfoSchema = z.object({
+    legalName: z.string().min(1).max(120),
+    taxIdType: z.enum(['SSN', 'EIN']),
+    // Loose validation: 9 digits with optional dashes. Accepts the
+    // common SSN format (XXX-XX-XXXX) and EIN format (XX-XXXXXXX) plus
+    // raw 9-digit input.
+    taxId: z.string().regex(/^\d{3}-?\d{2}-?\d{4}$|^\d{2}-?\d{7}$|^\d{9}$/, 'TIN must be 9 digits, with or without dashes'),
+    taxAddress: z.string().min(1).max(500),
+    taxJurisdiction: z.string().length(2).default('US'),
+  })
+
+  /**
+   * PATCH /v1/portal/node-runner/tax-info
+   * Save (or update) the operator's W-9 / tax-form data. On success
+   * sets w9SubmittedAt = now() so the tax-year CSV header reflects
+   * that the operator self-attested.
+   */
+  fastify.patch('/v1/portal/node-runner/tax-info', async (request, reply) => {
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+    const parsed = taxInfoSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'Validation Error',
+        message: parsed.error.errors.map((e) => e.message).join(', '),
+      })
+    }
+    const data = parsed.data
+
+    const updated = await fastify.prisma.nodeRunner.update({
+      where: { id: nr.id },
+      data: {
+        legalName: data.legalName,
+        taxId: data.taxId,
+        taxIdType: data.taxIdType as TaxIdType,
+        taxAddress: data.taxAddress,
+        taxJurisdiction: data.taxJurisdiction,
+        w9SubmittedAt: new Date(),
+      },
+    })
+
+    reply.send({
+      ok: true,
+      w9SubmittedAt: updated.w9SubmittedAt?.toISOString() ?? null,
+    })
+  })
+
+  /**
+   * GET /v1/portal/node-runner/tax/year/:year
+   * Download a CSV with the operator's per-month earnings for the
+   * given tax year, pre-filled with W-9 fields if submitted. Suitable
+   * for handing to a CPA for 1099-MISC prep. 400 if year is in the
+   * future; 404 if the operator has no completed settlements in that
+   * year (avoids downloading a blank CSV).
+   */
+  fastify.get<{ Params: { year: string } }>(
+    '/v1/portal/node-runner/tax/year/:year',
+    async (request, reply) => {
+      const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+      if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+      const year = parseInt(request.params.year, 10)
+      const thisYear = new Date().getUTCFullYear()
+      if (!Number.isFinite(year) || year < 2020 || year > thisYear) {
+        return reply.code(400).send({
+          error: 'Invalid year',
+          message: `Year must be between 2020 and ${thisYear}`,
+        })
+      }
+
+      const { csv, operatorName, total } = await generateTaxYearCsv(
+        fastify.prisma,
+        nr.id,
+        { year },
+      )
+
+      if (total === 0) {
+        return reply.code(404).send({
+          error: 'No earnings',
+          message: `No completed settlements found for tax year ${year}`,
+        })
+      }
+
+      const safeOperator = operatorName.toLowerCase().replace(/[^a-z0-9]/g, '-')
+      reply
+        .header('Content-Type', 'text/csv; charset=utf-8')
+        .header('Content-Disposition', `attachment; filename="${safeOperator}-tax-${year}.csv"`)
+        .send(csv)
+    },
+  )
 }

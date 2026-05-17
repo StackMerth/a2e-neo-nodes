@@ -200,6 +200,63 @@ REQUESTED forever. UI shows the row but never advances to READY.
 
 **Cleanup:** S3 objects are not auto-deleted. Run an S3 lifecycle policy on the bucket (e.g. expire objects older than 90 days) to bound storage cost.
 
+### Tax / 1099 reporting (C7 wave 1)
+
+US-only first iteration. Operators self-attest W-9 data via
+[`/payouts/settings`](apps/portal/src/app/(node-runner)/payouts/settings/page.tsx)
+→ **Tax info** card, then download per-year CSVs suitable for handing
+to a CPA for 1099-MISC prep.
+
+**Data stored on `NodeRunner`** (all nullable):
+- `legalName` — name on tax filings
+- `taxId` — raw TIN (SSN 9 digits or EIN 9 digits, with or without dashes)
+- `taxIdType` — `SSN` | `EIN`
+- `taxAddress` — single-line US-style address
+- `taxJurisdiction` — defaults `US`; non-US disabled in UI (W-8BEN path is a future addition)
+- `w9SubmittedAt` — set on the first successful PATCH
+
+**Read paths mask the TIN to last-4** so a leaked browser session
+doesn't expose the full id. Full value lives in the DB column for the
+CSV export.
+
+**CSV shape** (see [tax-csv.ts](apps/api/src/services/reports/tax-csv.ts)):
+- Operator-header row (1 line, pre-filled from NodeRunner tax fields)
+- Blank separator
+- Per-month breakdown for the tax year (12 rows + TOTAL)
+- Each month: gross USD, settlement count, semicolon-separated payout TX hashes
+
+Settlements counted via `Settlement.status='COMPLETED' AND periodEnd
+∈ [yearStart, yearEnd)`. Year start/end are UTC midnight on Jan 1.
+
+**Endpoints:**
+- `GET /v1/portal/node-runner/tax-info` — masked read
+- `PATCH /v1/portal/node-runner/tax-info` — save W-9 (sets `w9SubmittedAt`)
+- `GET /v1/portal/node-runner/tax/year/:year` — CSV download; 400 if year > current, 404 if no settlements
+
+**Year-end ops checklist:**
+- Run a Postgres query in late January to find operators with annual
+  earnings > $600 (the 1099-MISC threshold) AND `w9SubmittedAt = NULL`:
+  ```sql
+  SELECT nr.id, nr.email, SUM(s.amount) AS gross
+  FROM "NodeRunner" nr
+  JOIN "Node" n ON n."nodeRunnerId" = nr.id
+  JOIN "Settlement" s ON s."nodeId" = n.id
+  WHERE s.status='COMPLETED' AND s."periodEnd" >= '<YEAR>-01-01' AND s."periodEnd" < '<YEAR+1>-01-01'
+    AND nr."w9SubmittedAt" IS NULL
+  GROUP BY nr.id, nr.email
+  HAVING SUM(s.amount) >= 600;
+  ```
+- Email those operators a reminder to fill in their W-9 so their CSV is complete.
+
+**Known gaps + follow-ups:**
+- **Encryption at rest** — `taxId` is plain text in the DB. Recommend
+  `pgcrypto` extension + AES-GCM column encryption (~half day to add).
+  Track via the existing risks register in the plan.
+- **W-8BEN for non-US operators** — same schema shape, different
+  header columns. ~2 days when first international operator signs up.
+- **Auto-file 1099s** — out of scope. Platform doesn't file with the
+  IRS; operators are responsible for using the CSV with their CPA.
+
 ### Internal-spend (dual-role buyers paying from operator balance)
 
 Users who are both `isBuyer=true` AND `isNodeRunner=true` can pay for
