@@ -97,7 +97,8 @@ async function findUserIdForNode(nodeId: string): Promise<string | null> {
 }
 
 /**
- * Notify that a node went offline
+ * Notify that a node went offline. Deep-links to the operator's
+ * node detail page so they can jump straight to the diagnostic view.
  */
 export async function notifyNodeOffline(nodeId: string, nodeName?: string) {
   const userId = await findUserIdForNode(nodeId)
@@ -108,12 +109,14 @@ export async function notifyNodeOffline(nodeId: string, nodeName?: string) {
     userId,
     'NODE_OFFLINE',
     'Node Offline',
-    `Your node ${label} has gone offline. Check the agent status and network connectivity.`,
+    `Your node ${label} has gone offline. Tap to view node status.`,
+    `/nodes/${nodeId}`,
   )
 }
 
 /**
- * Notify that a payout has been sent
+ * Notify that a payout has been sent. Deep-links to the operator's
+ * settlement history.
  */
 export async function notifyPayoutSent(
   nodeRunnerId: string,
@@ -129,11 +132,13 @@ export async function notifyPayoutSent(
     'PAYOUT_SENT',
     'Payout Sent',
     `A payout of $${amount.toFixed(2)} has been sent to your wallet.${txInfo}`,
+    '/payouts',
   )
 }
 
 /**
- * Notify that a job completed on the user's node
+ * Notify that a job completed on the user's node. Deep-links to the
+ * job detail page so the operator can see the run output.
  */
 export async function notifyJobCompleted(
   nodeId: string,
@@ -148,12 +153,14 @@ export async function notifyJobCompleted(
     userId,
     'JOB_COMPLETED',
     'Job Completed',
-    `Job ${jobId.slice(0, 8)} completed successfully${earningsStr}.`,
+    `Job ${jobId.slice(0, 8)} completed successfully${earningsStr}. Tap to view.`,
+    `/jobs/${jobId}`,
   )
 }
 
 /**
- * Notify that a job failed on the user's node
+ * Notify that a job failed on the user's node. Deep-links to the
+ * job detail page where the failure logs live.
  */
 export async function notifyJobFailed(
   nodeId: string,
@@ -168,12 +175,15 @@ export async function notifyJobFailed(
     userId,
     'JOB_FAILED',
     'Job Failed',
-    `Job ${jobId.slice(0, 8)} failed${errorStr}.`,
+    `Job ${jobId.slice(0, 8)} failed${errorStr}. Tap to view logs.`,
+    `/jobs/${jobId}`,
   )
 }
 
 /**
- * Notify that an investment was confirmed (payment received)
+ * Notify that an investment was confirmed (payment received). Deep-
+ * links to the investments page so the operator can track the
+ * provisioning status.
  */
 export async function notifyInvestmentConfirmed(investmentId: string) {
   const investment = await prisma.investment.findUnique({
@@ -187,11 +197,13 @@ export async function notifyInvestmentConfirmed(investmentId: string) {
     'INVESTMENT_CONFIRMED',
     'Payment Confirmed',
     `Your investment of $${investment.amount} for ${investment.gpuTier} has been confirmed. Node provisioning will begin shortly.`,
+    '/investments',
   )
 }
 
 /**
- * Notify that an investment has been provisioned (node is live)
+ * Notify that an investment has been provisioned (node is live).
+ * Deep-links to the nodes list where the new node will show up.
  */
 export async function notifyInvestmentProvisioned(investmentId: string) {
   const investment = await prisma.investment.findUnique({
@@ -204,6 +216,7 @@ export async function notifyInvestmentProvisioned(investmentId: string) {
     investment.nodeRunner.userId,
     'INVESTMENT_PROVISIONED',
     'Node Provisioned',
-    `Your ${investment.gpuTier} node is now live and earning. Check your dashboard for real-time status.`,
+    `Your ${investment.gpuTier} node is now live and earning. Tap to view.`,
+    '/nodes',
   )
 }
