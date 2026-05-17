@@ -150,51 +150,65 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
 // ---------------------------------------------------------------------
 
 function OperatorStatTile({
-  label, value, sub, icon: Icon, tone,
+  label, value, sub, icon: Icon, tone, href,
 }: {
   label: string
   value: string
   sub?: string
   icon: typeof DollarSign
   tone: string
+  /** Optional internal path. Renders the tile as a Link with hover lift when set. */
+  href?: string
 }) {
-  return (
-    <div
-      className="rounded-md p-3 flex items-start gap-3"
-      style={{
-        background: 'var(--glass-bg)',
-        border: '1px solid var(--glass-border)',
-        backdropFilter: 'blur(var(--glass-blur, 16px))',
-      }}
-    >
+  const Body = (
+    <>
       <div
         className="w-9 h-9 shrink-0 rounded-md flex items-center justify-center"
         style={{ background: `${tone}1a`, border: `1px solid ${tone}55` }}
       >
-        <Icon size={16} style={{ color: tone }} />
+        <Icon className="w-4 h-4" style={{ color: tone }} />
       </div>
       <div className="min-w-0 flex-1">
-        <p
-          className="font-mono text-[10px] tracking-[0.14em] uppercase truncate"
-          style={{ color: 'var(--text-muted)' }}
-        >
+        <p className="font-mono text-[10px] tracking-[0.14em] uppercase truncate" style={{ color: 'var(--text-muted)' }}>
           {label}
         </p>
-        <p
-          className="font-display text-lg leading-tight truncate"
-          style={{ color: 'var(--text-primary)' }}
-        >
+        <p className="font-display text-xl mt-0.5 truncate" style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
           {value}
         </p>
         {sub && (
-          <p className="font-mono text-[11px] truncate" style={{ color: 'var(--text-secondary)' }}>
+          <p className="font-mono text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
             {sub}
           </p>
         )}
       </div>
+    </>
+  )
+
+  const baseClass = 'rounded-md p-3 flex items-start gap-3'
+  const baseStyle = {
+    background: 'var(--glass-bg)',
+    border: '1px solid var(--glass-border)',
+    backdropFilter: 'blur(var(--glass-blur, 16px))',
+  } as const
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className={`${baseClass} transition-all hover:-translate-y-0.5 hover:border-foreground/30`}
+        style={baseStyle}
+      >
+        {Body}
+      </Link>
+    )
+  }
+  return (
+    <div className={baseClass} style={baseStyle}>
+      {Body}
     </div>
   )
 }
+
 
 // ---------------------------------------------------------------------
 // Forward-looking payout schedule. Replaces the trailing 30-day heatmap
@@ -711,6 +725,10 @@ export default function DashboardPage() {
               detail: `Today ${formatCurrency(data?.earnings.today ?? 0)}`,
               icon: DollarSign,
               tone: 'green',
+              // Clicking the Earnings card lands the operator on the
+              // Payouts list (settlement history) — the closest match
+              // to "see where this money goes / has gone".
+              href: '/payouts',
             },
             {
               label: 'Nodes Online',
@@ -735,9 +753,10 @@ export default function DashboardPage() {
             <OperatorStatTile
               label="Pending Payout"
               value={formatCurrencyShort(ops.pendingPayout)}
-              sub="Withdraw-ready"
+              sub="Tap to withdraw"
               icon={PiggyBank}
               tone="#22c55e"
+              href="/payouts/settings"
             />
             <OperatorStatTile
               label="Capital Deployed"

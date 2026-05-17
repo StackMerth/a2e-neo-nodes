@@ -168,6 +168,9 @@ export interface MetricCardData {
   detail?: string
   icon: LucideIcon
   tone?: keyof typeof TONE_MAP
+  // Optional internal path. When set, the card renders as a Link and
+  // shows a hover lift + cursor pointer to telegraph it's clickable.
+  href?: string
 }
 
 export function MetricTriad({ metrics }: { metrics: MetricCardData[] }) {
@@ -180,13 +183,10 @@ export function MetricTriad({ metrics }: { metrics: MetricCardData[] }) {
   )
 }
 
-export function MetricCard({ label, value, detail, icon: Icon, tone = 'green' }: MetricCardData) {
+export function MetricCard({ label, value, detail, icon: Icon, tone = 'green', href }: MetricCardData) {
   const colors = TONE_MAP[tone] ?? TONE_MAP.green
-  return (
-    <div
-      className="rounded-md border border-border p-4 sm:p-5"
-      style={{ background: 'var(--bg-elevated)' }}
-    >
+  const body = (
+    <>
       <div className="flex items-start justify-between mb-3">
         <span className="font-mono text-[11px] tracking-[0.14em] uppercase" style={{ color: 'var(--text-muted)' }}>
           {label}
@@ -206,6 +206,26 @@ export function MetricCard({ label, value, detail, icon: Icon, tone = 'green' }:
           {detail}
         </p>
       )}
+    </>
+  )
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="rounded-md border border-border p-4 sm:p-5 block transition-all hover:-translate-y-0.5 hover:border-foreground/30"
+        style={{ background: 'var(--bg-elevated)' }}
+      >
+        {body}
+      </Link>
+    )
+  }
+  return (
+    <div
+      className="rounded-md border border-border p-4 sm:p-5"
+      style={{ background: 'var(--bg-elevated)' }}
+    >
+      {body}
     </div>
   )
 }
