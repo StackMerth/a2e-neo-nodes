@@ -1621,6 +1621,34 @@ export const api = {
       }),
   },
 
+  // BYOG install tokens. The portal mints these per-operator; the admin
+  // page surfaces every issued token plus a revoke button for typos and
+  // leaked URLs (e.g. wrong operator email). Revoke is a soft kill —
+  // the token row stays for audit, expiresAt is moved to the past.
+  installTokens: {
+    list: () =>
+      apiFetch<{
+        tokens: Array<{
+          id: string
+          token: string
+          region: string | null
+          createdAt: string
+          expiresAt: string
+          consumedAt: string | null
+          consumedByNodeId: string | null
+          status: 'ACTIVE' | 'CONSUMED' | 'EXPIRED'
+          nodeRunner: { id: string; name: string; email: string | null } | null
+        }>
+        counts: { active: number; consumed: number; expired: number; total: number }
+      }>('/v1/admin/install-tokens'),
+
+    revoke: (id: string) =>
+      apiFetch<{ id: string; revoked: boolean; expiresAt: string }>(
+        `/v1/admin/install-tokens/${id}`,
+        { method: 'DELETE' }
+      ),
+  },
+
   reconciliation: {
     status: () =>
       apiFetch<{

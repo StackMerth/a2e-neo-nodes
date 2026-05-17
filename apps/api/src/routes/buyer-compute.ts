@@ -4,6 +4,7 @@ import { createNotification } from '../services/notification/service.js'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import { checkIdempotencyKey, storeIdempotencyResponse } from '../services/idempotency/keys.js'
 import { getSolanaConfig, processPayment } from '../services/payment/solana.js'
+import { getOperatorBalanceBreakdown } from '../services/settlement/engine.js'
 
 const GPU_DAILY_RATES: Record<string, number> = {
   H100: 140.15, H200: 179.85, B200: 321.10, B300: 431.75, GB300: 499.35,
@@ -23,7 +24,13 @@ const requestSchema = z.object({
   // to operate over while keeping the form simple.
   durationDays: z.number().int().min(1).max(365).default(7),
   purpose: z.string().max(500).optional(),
-  txHash: z.string().min(1, 'Transaction hash is required'),
+  // Payment source. USDC = real Solana transfer (txHash required and
+  // is the on-chain signature). INTERNAL_BALANCE = paid from the
+  // user's accumulated operator balance (txHash optional, server
+  // generates INTERNAL:<computeRequestId>; user must also be a
+  // NodeRunner with enough available balance).
+  paymentSource: z.enum(['USDC', 'INTERNAL_BALANCE']).default('USDC'),
+  txHash: z.string().min(1).optional(),
   // M3: pricing tier (default ON_DEMAND keeps existing flows working).
   //   ON_DEMAND — full price, never preempted, no commitment
   //   SPOT      — discounted (default 40% off via SPOT_DISCOUNT_PCT),
@@ -66,6 +73,11 @@ const requestSchema = z.object({
 ).refine(
   data => data.tier === 'RESERVED' || data.commitmentDays === undefined,
   { message: 'commitmentDays only allowed on RESERVED tier', path: ['commitmentDays'] },
+).refine(
+  // USDC payments must carry a txHash; INTERNAL_BALANCE doesn't (server
+  // generates a synthetic INTERNAL:<id> hash post-insert).
+  data => data.paymentSource !== 'USDC' || (data.txHash && data.txHash.length > 0),
+  { message: 'txHash is required for USDC payments', path: ['txHash'] },
 )
 
 // M3 pricing modifiers. ON_DEMAND = full price baseline. SPOT and
@@ -89,6 +101,38 @@ const listSchema = z.object({
 export async function buyerComputeRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate)
   fastify.addHook('preHandler', fastify.requireRole('COMPUTE_BUYER', 'ADMIN'))
+
+  /**
+   * GET /v1/buyer/compute/internal-balance
+   *
+   * Tells the buyer UI whether the "Pay from operator balance" option
+   * should appear on the request form and what the live available
+   * balance is. eligible=false when the user has no NodeRunner profile
+   * (pure buyer) — the option stays hidden in that case. Buyers with
+   * a dual identity see their available balance so they can decide.
+   *
+   * The actual debit happens server-side at request submit time via
+   * the same getOperatorBalanceBreakdown call — this endpoint exists
+   * purely so the UI can pre-validate before bothering the user with
+   * a 402.
+   */
+  fastify.get('/v1/buyer/compute/internal-balance', async (request, reply) => {
+    const userId = request.user!.userId
+    const nr = await fastify.prisma.nodeRunner.findUnique({
+      where: { userId },
+      select: { id: true },
+    })
+    if (!nr) {
+      return reply.send({ eligible: false, available: 0, spent: 0 })
+    }
+    const breakdown = await getOperatorBalanceBreakdown(fastify.prisma, nr.id)
+    reply.send({
+      eligible: true,
+      available: breakdown.available,
+      spent: breakdown.spent,
+      pending: breakdown.pending,
+    })
+  })
 
   /**
    * GET /v1/buyer/dashboard
@@ -158,7 +202,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
     }
 
-    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion, preferredOperatorSlug, sshPubKey } = parsed.data
+    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion, preferredOperatorSlug, sshPubKey, paymentSource } = parsed.data
 
     // M5.10c: resolve preferred operator slug to NodeRunner.id. Silently
     // ignore unknown slugs (don't fail the request - the allocator just
@@ -185,8 +229,44 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       ? commitmentDays
       : durationDays
     const totalCost = ratePerDay * gpuCount * effectiveDurationDays
-    const isTestTx = txHash.startsWith('test_')
     const userId = request.user!.userId
+
+    // Internal-spend: resolve the buyer's NodeRunner profile and
+    // confirm available balance covers the rental. Done BEFORE the
+    // idempotency check so an insufficient-balance rejection never
+    // gets cached as a successful outcome. Skip when paying with
+    // USDC — the txHash dedup and idempotency layers handle that
+    // path.
+    let internalSpendNodeRunnerId: string | null = null
+    if (paymentSource === 'INTERNAL_BALANCE') {
+      const nr = await fastify.prisma.nodeRunner.findUnique({
+        where: { userId },
+        select: { id: true },
+      })
+      if (!nr) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Paying from internal balance requires an operator profile. Sign up as a node runner first.',
+        })
+      }
+      const breakdown = await getOperatorBalanceBreakdown(fastify.prisma, nr.id)
+      if (breakdown.available < totalCost) {
+        return reply.code(402).send({
+          error: 'Payment Required',
+          message: `Insufficient balance: need $${totalCost.toFixed(2)}, have $${breakdown.available.toFixed(2)} available.`,
+          required: totalCost,
+          available: breakdown.available,
+        })
+      }
+      internalSpendNodeRunnerId = nr.id
+    }
+
+    // txHash is required for USDC (zod refine guarantees it); for
+    // INTERNAL_BALANCE the server synthesizes one post-insert from
+    // the created computeRequest.id. The isTestTx check only makes
+    // sense for USDC.
+    const usdcTxHash = paymentSource === 'USDC' ? txHash! : ''
+    const isTestTx = paymentSource === 'USDC' && usdcTxHash.startsWith('test_')
 
     // Layer 1: Idempotency-Key header replay.
     const idempotencyKey = request.headers['idempotency-key'] as string | undefined
@@ -216,54 +296,89 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     // request with this txHash, return the existing one rather than
     // creating a duplicate. Solana tx hashes are one-shot financial
     // events; reusing one across two compute requests would always be a
-    // bug regardless of idempotency-key handling.
-    const storedTxHash = isTestTx ? `TEST:${txHash}` : txHash
-    const existing = await fastify.prisma.computeRequest.findFirst({
-      where: { userId, txHash: storedTxHash },
-    })
-    if (existing) {
-      return reply.code(200).header('X-Idempotency-Replay', 'tx-hash').send({
-        id: existing.id,
-        gpuTier: existing.gpuTier,
-        gpuCount: existing.gpuCount,
-        durationDays: existing.durationDays,
-        ratePerDay: existing.ratePerDay,
-        totalCost: existing.totalCost,
-        status: existing.status,
+    // bug regardless of idempotency-key handling. Skipped for
+    // INTERNAL_BALANCE since we mint a per-request synthetic hash.
+    if (paymentSource === 'USDC') {
+      const storedTxHash = isTestTx ? `TEST:${usdcTxHash}` : usdcTxHash
+      const existing = await fastify.prisma.computeRequest.findFirst({
+        where: { userId, txHash: storedTxHash },
       })
+      if (existing) {
+        return reply.code(200).header('X-Idempotency-Replay', 'tx-hash').send({
+          id: existing.id,
+          gpuTier: existing.gpuTier,
+          gpuCount: existing.gpuCount,
+          durationDays: existing.durationDays,
+          ratePerDay: existing.ratePerDay,
+          totalCost: existing.totalCost,
+          status: existing.status,
+        })
+      }
     }
 
-    const computeRequest = await fastify.prisma.computeRequest.create({
-      data: {
-        userId,
-        gpuTier: gpuTier as import('@a2e/database').GpuTier,
-        gpuCount,
-        durationDays: effectiveDurationDays,
-        purpose,
-        ratePerDay,
-        totalCost,
-        txHash: storedTxHash,
-        txConfirmed: true,
-        status: 'PENDING',
-        // M3: persist tier so the routing engine + preemption worker
-        // can read it. commitmentDays only stored for RESERVED rentals
-        // (refund logic checks this when buyer terminates early).
-        tier,
-        commitmentDays: tier === 'RESERVED' ? commitmentDays ?? null : null,
-        // M4.4: optional region constraint passed straight through to
-        // the allocator. Empty string is normalized to null so the
-        // allocator's `requiredRegion ? { region } : {}` branch picks
-        // "Any" rather than filtering for the empty string.
-        requiredRegion: requiredRegion?.trim() || null,
-        // M5.10c: soft operator preference. May still be null if the
-        // slug didn't resolve; allocator treats null as no preference.
-        preferredOperatorId,
-        // M6: buyer's SSH public key. The allocator preserves this on
-        // the row; the heartbeat-response surfaces it to the agent at
-        // provision time. Required for real (non-test-mode) rentals.
-        sshPubKey: sshPubKey?.trim() || null,
-      },
-    })
+    // Common create payload. Built once; the only difference between
+    // USDC and INTERNAL_BALANCE is the initial txHash placeholder.
+    const baseData = {
+      userId,
+      gpuTier: gpuTier as import('@a2e/database').GpuTier,
+      gpuCount,
+      durationDays: effectiveDurationDays,
+      purpose,
+      ratePerDay,
+      totalCost,
+      txConfirmed: true,
+      status: 'PENDING' as const,
+      paymentSource,
+      // M3: persist tier so the routing engine + preemption worker
+      // can read it. commitmentDays only stored for RESERVED rentals
+      // (refund logic checks this when buyer terminates early).
+      tier,
+      commitmentDays: tier === 'RESERVED' ? commitmentDays ?? null : null,
+      // M4.4: optional region constraint passed straight through to
+      // the allocator. Empty string is normalized to null so the
+      // allocator's `requiredRegion ? { region } : {}` branch picks
+      // "Any" rather than filtering for the empty string.
+      requiredRegion: requiredRegion?.trim() || null,
+      // M5.10c: soft operator preference. May still be null if the
+      // slug didn't resolve; allocator treats null as no preference.
+      preferredOperatorId,
+      // M6: buyer's SSH public key. The allocator preserves this on
+      // the row; the heartbeat-response surfaces it to the agent at
+      // provision time. Required for real (non-test-mode) rentals.
+      sshPubKey: sshPubKey?.trim() || null,
+    }
+
+    let computeRequest
+    if (paymentSource === 'INTERNAL_BALANCE' && internalSpendNodeRunnerId) {
+      // Atomic: write the ComputeRequest + InternalSpend row + flip
+      // the placeholder txHash to INTERNAL:<id> in one shot. If any
+      // step fails, the spend is rolled back so the balance never
+      // shrinks without a matching rental.
+      computeRequest = await fastify.prisma.$transaction(async (tx) => {
+        const created = await tx.computeRequest.create({
+          data: { ...baseData, txHash: 'INTERNAL:PENDING' },
+        })
+        await tx.internalSpend.create({
+          data: {
+            nodeRunnerId: internalSpendNodeRunnerId,
+            computeRequestId: created.id,
+            amount: totalCost,
+          },
+        })
+        return tx.computeRequest.update({
+          where: { id: created.id },
+          data: { txHash: `INTERNAL:${created.id}` },
+        })
+      })
+    } else {
+      // USDC path stays a single create — same shape as before
+      // paymentSource shipped, so existing idempotency / dedup tests
+      // and call patterns are unchanged.
+      const storedTxHash = isTestTx ? `TEST:${usdcTxHash}` : usdcTxHash
+      computeRequest = await fastify.prisma.computeRequest.create({
+        data: { ...baseData, txHash: storedTxHash },
+      })
+    }
 
     // Notify admins (DB row + global notification:new WS event per admin)
     const admins = await fastify.prisma.user.findMany({ where: { role: 'ADMIN' }, select: { id: true } })
@@ -438,7 +553,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     })
 
     let refundTxHash: string | null = null
-    let refundStatus: 'SENT' | 'SKIPPED_NO_WALLET' | 'SKIPPED_ZERO' | 'SKIPPED_RESERVED' | 'FAILED' = 'SKIPPED_ZERO'
+    let refundStatus: 'SENT' | 'SKIPPED_NO_WALLET' | 'SKIPPED_ZERO' | 'SKIPPED_RESERVED' | 'INTERNAL_REBATED' | 'FAILED' = 'SKIPPED_ZERO'
     let refundError: string | null = null
 
     if (cr.tier === 'RESERVED') {
@@ -448,6 +563,26 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       refundStatus = 'SKIPPED_RESERVED'
     } else if (refundAmount <= 0) {
       refundStatus = 'SKIPPED_ZERO'
+    } else if (cr.paymentSource === 'INTERNAL_BALANCE') {
+      // Money never left the platform — rebate the spend ledger row
+      // down to the actual accrued cost. Operator's available balance
+      // reflects the new spend on the next balance-breakdown call.
+      // No Solana hop, no refund tx hash, no chance of refund failure.
+      try {
+        await fastify.prisma.internalSpend.update({
+          where: { computeRequestId: id },
+          data: { amount: finalAccrued },
+        })
+        refundStatus = 'INTERNAL_REBATED'
+      } catch (err) {
+        // If somehow the spend row is missing (data race, manual DB
+        // edit), don't block termination — log and continue. The
+        // operator can still see the rental ended; admin can
+        // reconcile via the audit log.
+        refundStatus = 'FAILED'
+        refundError = err instanceof Error ? err.message : 'Internal spend rebate failed'
+        fastify.log.error({ err, requestId: id }, 'InternalSpend rebate failed during terminate')
+      }
     } else if (!user?.walletAddress) {
       refundStatus = 'SKIPPED_NO_WALLET'
     } else {
@@ -506,11 +641,13 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       'Rental Ended',
       refundStatus === 'SENT'
         ? `Your rental ended. Refund of $${refundAmount.toFixed(2)} sent to your wallet.`
-        : refundStatus === 'SKIPPED_NO_WALLET'
-          ? `Your rental ended. Add a wallet address in settings to receive future refunds.`
-          : refundStatus === 'SKIPPED_RESERVED'
-            ? `Your RESERVED rental ended early. Per your ${cr.commitmentDays}-day commitment, no refund applies.`
-            : `Your rental ended. ${refundStatus === 'SKIPPED_ZERO' ? 'No refund due.' : 'Refund failed — admin notified.'}`,
+        : refundStatus === 'INTERNAL_REBATED'
+          ? `Your rental ended. $${refundAmount.toFixed(2)} credited back to your operator balance.`
+          : refundStatus === 'SKIPPED_NO_WALLET'
+            ? `Your rental ended. Add a wallet address in settings to receive future refunds.`
+            : refundStatus === 'SKIPPED_RESERVED'
+              ? `Your RESERVED rental ended early. Per your ${cr.commitmentDays}-day commitment, no refund applies.`
+              : `Your rental ended. ${refundStatus === 'SKIPPED_ZERO' ? 'No refund due.' : 'Refund failed — admin notified.'}`,
     )
 
     // Notify all admins so the bell + the dashboard's notification feed

@@ -309,4 +309,100 @@ export async function byogRoutes(fastify: FastifyInstance) {
       region: node.region,
     })
   })
+
+  // -------------------------------------------------------------------
+  // Admin install-token management. Lists every token the operator
+  // pool has minted plus its lifecycle state, and offers a revoke
+  // button for the typo case (wrong operator, leaked URL, expired
+  // ad-hoc support session). Revoke is a soft kill — we set
+  // expiresAt to the past rather than deleting the row, so the FK to
+  // the resulting Node (consumedByNodeId) stays intact and the audit
+  // trail is preserved.
+  // -------------------------------------------------------------------
+  fastify.get(
+    '/v1/admin/install-tokens',
+    {
+      preHandler: [fastify.authenticate, fastify.requireRole('ADMIN')],
+    },
+    async (request, reply) => {
+      const tokens = await fastify.prisma.installToken.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+        include: {
+          nodeRunner: { select: { id: true, name: true, email: true } },
+        },
+      })
+
+      const now = Date.now()
+      const rows = tokens.map((t) => {
+        const expired = t.expiresAt.getTime() < now
+        const consumed = !!t.consumedAt
+        // Surface a single status string so the UI can stamp a badge
+        // without re-deriving it. ACTIVE = mintable URL still works.
+        const status: 'ACTIVE' | 'CONSUMED' | 'EXPIRED' = consumed
+          ? 'CONSUMED'
+          : expired
+            ? 'EXPIRED'
+            : 'ACTIVE'
+        return {
+          id: t.id,
+          token: t.token,
+          region: t.region,
+          createdAt: t.createdAt.toISOString(),
+          expiresAt: t.expiresAt.toISOString(),
+          consumedAt: t.consumedAt?.toISOString() ?? null,
+          consumedByNodeId: t.consumedByNodeId,
+          status,
+          nodeRunner: t.nodeRunner,
+        }
+      })
+
+      reply.send({
+        tokens: rows,
+        counts: {
+          active: rows.filter((r) => r.status === 'ACTIVE').length,
+          consumed: rows.filter((r) => r.status === 'CONSUMED').length,
+          expired: rows.filter((r) => r.status === 'EXPIRED').length,
+          total: rows.length,
+        },
+      })
+    }
+  )
+
+  fastify.delete<{ Params: { id: string } }>(
+    '/v1/admin/install-tokens/:id',
+    {
+      preHandler: [fastify.authenticate, fastify.requireRole('ADMIN')],
+    },
+    async (request, reply) => {
+      const { id } = request.params
+      const row = await fastify.prisma.installToken.findUnique({ where: { id } })
+      if (!row) {
+        return reply.code(404).send({ error: 'Not Found', message: 'Install token not found' })
+      }
+      if (row.consumedAt) {
+        // No revoke after claim — the node is already alive. Admin
+        // should pause/delete the resulting node instead.
+        return reply.code(409).send({
+          error: 'Conflict',
+          message: 'Token already consumed. Revoke the node instead.',
+          consumedByNodeId: row.consumedByNodeId,
+        })
+      }
+
+      // Soft revoke: expire the token immediately. The install route
+      // already rejects expired tokens with a "mint a fresh one"
+      // message, so this is the cheapest possible kill switch.
+      const updated = await fastify.prisma.installToken.update({
+        where: { id },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      })
+
+      reply.send({
+        id: updated.id,
+        revoked: true,
+        expiresAt: updated.expiresAt.toISOString(),
+      })
+    }
+  )
 }

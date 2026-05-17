@@ -776,9 +776,70 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       pending: breakdown.pending,
       nextUnlockAt: breakdown.nextUnlockAt,
       cooldownHours: breakdown.cooldownHours,
+      // Lifetime internal-spend total — already subtracted from
+      // `available`. Surfaced separately so the UI can show "spent
+      // on rentals" alongside the withdrawable balance.
+      spent: breakdown.spent,
       // platformBalance keeps the existing key name so older client
       // versions don't break. New UI reads `available`.
       platformBalance: breakdown.available,
+    })
+  })
+
+  /**
+   * GET /v1/portal/node-runner/internal-spends
+   *
+   * Recent InternalSpend rows for this operator (rentals paid from
+   * platform balance). Powers the "Internal spend" panel on the
+   * payouts page so operators see where their balance went without
+   * having to dig into compute requests.
+   */
+  fastify.get('/v1/portal/node-runner/internal-spends', async (request, reply) => {
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+    const spends = await fastify.prisma.internalSpend.findMany({
+      where: { nodeRunnerId: nr.id },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: {
+        // Cherry-pick the rental fields the panel renders so we never
+        // ship sshPassword / sshSessionToken / sshPubKey to the wire.
+        // Prisma's `include` doesn't accept `select` directly here,
+        // so we ride the relation and the UI ignores fields it doesn't
+        // know about. Done via a follow-up findMany for clarity.
+      },
+    })
+
+    // Fetch the rentals in one round-trip; map by id.
+    const requestIds = spends.map((s) => s.computeRequestId)
+    const requests = requestIds.length
+      ? await fastify.prisma.computeRequest.findMany({
+          where: { id: { in: requestIds } },
+          select: {
+            id: true,
+            gpuTier: true,
+            gpuCount: true,
+            durationDays: true,
+            status: true,
+            totalCost: true,
+            requestedAt: true,
+            completedAt: true,
+          },
+        })
+      : []
+    const byId = new Map(requests.map((r) => [r.id, r]))
+
+    reply.send({
+      spends: spends.map((s) => ({
+        id: s.id,
+        computeRequestId: s.computeRequestId,
+        amount: s.amount,
+        createdAt: s.createdAt.toISOString(),
+        updatedAt: s.updatedAt.toISOString(),
+        rental: byId.get(s.computeRequestId) ?? null,
+      })),
+      total: spends.length,
     })
   })
 
@@ -827,15 +888,42 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
 
     const destinationWallet = parsed.data.walletAddress ?? nr.walletAddress
 
-    const { calculateOperatorSettlements, createSettlement, markSettlementProcessing, markSettlementCompleted, markSettlementFailed, clearScheduledPayout } =
+    const { calculateOperatorSettlements, createSettlement, markSettlementProcessing, markSettlementCompleted, markSettlementFailed, clearScheduledPayout, getOperatorBalanceBreakdown } =
       await import('../services/settlement/engine.js')
     const { getSolanaConfig, processPayment } = await import('../services/payment/solana.js')
 
-    const calcs = await calculateOperatorSettlements(fastify.prisma, nr.id, new Date())
-    if (calcs.length === 0) {
+    const rawCalcs = await calculateOperatorSettlements(fastify.prisma, nr.id, new Date())
+    if (rawCalcs.length === 0) {
       return reply.code(409).send({
         error: 'No balance',
         message: 'No unpaid earnings available to withdraw',
+      })
+    }
+
+    // Cap total payout at the spend-adjusted available balance.
+    // calculateOperatorSettlements works per-node off raw uptime; it
+    // does not know about InternalSpend. Without this clamp an
+    // operator who's spent $X internally would still get the full
+    // pre-spend amount wired to their wallet on Withdraw Now. We
+    // re-scale every calc proportionally so each node gets a
+    // truthful share of the actual withdrawable amount.
+    const breakdown = await getOperatorBalanceBreakdown(fastify.prisma, nr.id)
+    const rawTotal = rawCalcs.reduce((sum, c) => sum + c.amount, 0)
+    const calcs = rawTotal > breakdown.available && rawTotal > 0
+      ? rawCalcs.map((c) => ({
+          ...c,
+          amount: Math.max(0, (c.amount / rawTotal) * breakdown.available),
+        }))
+      : rawCalcs
+
+    // After scaling, anything below the per-settlement floor (0.01)
+    // would round to zero on the wire — drop those rows so we don't
+    // create empty settlements.
+    const payableCalcs = calcs.filter((c) => c.amount >= 0.01)
+    if (payableCalcs.length === 0) {
+      return reply.code(409).send({
+        error: 'No balance',
+        message: 'Available balance is zero after internal spend',
       })
     }
 
@@ -844,7 +932,7 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     const results: Array<{ settlementId: string; success: boolean; txHash?: string; error?: string; amount: number }> = []
     let totalPaid = 0
 
-    for (const calc of calcs) {
+    for (const calc of payableCalcs) {
       try {
         // Override per-settlement wallet with the buyer-supplied
         // destination so all earnings route to the same address even

@@ -28,6 +28,7 @@ import {
   PanelLeftClose,
   Globe,
   Star,
+  KeyRound,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -90,6 +91,7 @@ const navGroups: NavGroup[] = [
     title: 'SYSTEM',
     items: [
       { path: '/audit', icon: ClipboardCheck, label: 'Audit' },
+      { path: '/install-tokens', icon: KeyRound, label: 'Install Tokens' },
       { path: '/settings', icon: Settings, label: 'Settings' },
     ],
   },
