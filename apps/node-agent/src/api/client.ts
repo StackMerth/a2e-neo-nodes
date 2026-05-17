@@ -16,6 +16,7 @@ import type {
   ApiError,
   SshSessionStatusUpdate,
   CheckpointStatusUpdate,
+  BenchmarkResultUpdate,
 } from './types.js';
 
 const log = apiLogger();
@@ -438,6 +439,30 @@ export class ApiClient {
       'POST',
       '/v1/agent/checkpoints/restore-applied',
       { computeRequestId, ...(error ? { error } : {}) },
+    );
+  }
+
+  // ============ Workspace Benchmarks (C4 wave 1) ============
+
+  /**
+   * Report benchmark result to the API. Success path includes the
+   * three metric fields (matmulTflops + vramBandwidthGbs + score) and
+   * optionally gpuName; failure path includes only `error` and the
+   * Node's lastBenchmarkAt is set to now() so the UI knows the run
+   * completed (just badly).
+   */
+  async reportBenchmarkResult(payload: BenchmarkResultUpdate): Promise<void> {
+    if (!this.nodeId) {
+      throw new ApiClientError('Node not registered', undefined, 'NOT_REGISTERED', false);
+    }
+    log.info(
+      { nodeId: this.nodeId, score: payload.score, error: payload.error },
+      'Reporting benchmark result'
+    );
+    await this.request<{ ok: boolean }>(
+      'POST',
+      `/v1/nodes/${this.nodeId}/benchmark/result`,
+      payload,
     );
   }
 

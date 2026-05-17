@@ -229,6 +229,16 @@ export const nodeRunner = {
   deployments: () => apiFetch('/v1/portal/node-runner/deployments'),
   deployment: (id: string) => apiFetch(`/v1/portal/node-runner/deployments/${id}`),
   referral: () => apiFetch('/v1/portal/referral'),
+  // C4 wave 1: trigger a benchmark run on a specific node. Writes a
+  // one-shot Config flag on the API side; the agent picks it up on
+  // the next heartbeat (≤30s), runs the benchmark Docker image, and
+  // reports back to /v1/nodes/:id/benchmark/result which clears the
+  // flag and updates the Node row. 429 if a benchmark ran <5 min ago.
+  runBenchmark: (nodeId: string) =>
+    apiFetch<{ nodeId: string; message: string }>(
+      `/v1/portal/node-runner/nodes/${nodeId}/benchmark`,
+      { method: 'POST', body: {} },
+    ),
   // C7: tax / 1099 export. taxInfo() reads the operator's saved W-9
   // data (with TIN masked to last-4). updateTaxInfo() persists the
   // full TIN on the server. downloadTaxYear(year) fetches the CSV with

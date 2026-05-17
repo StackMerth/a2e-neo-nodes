@@ -200,6 +200,72 @@ REQUESTED forever. UI shows the row but never advances to READY.
 
 **Cleanup:** S3 objects are not auto-deleted. Run an S3 lifecycle policy on the bucket (e.g. expire objects older than 90 days) to bound storage cost.
 
+### Benchmarking (C4 wave 1)
+
+One-click GPU benchmark from the operator's `/nodes/<id>` page. The
+node-agent pulls a public Docker image, runs CUDA matmul + VRAM
+bandwidth tests, scores against tier baselines, reports back. A score
+drop >20% versus the prior run fires a `NODE_DEGRADED` notification
+to alert the operator about thermal / driver / power throttling.
+
+**Benchmark image:** `ghcr.io/stackmerth/a2e-benchmark:latest` (public,
+~6 GB pulled). Source lives in [apps/node-agent/benchmarks/](apps/node-agent/benchmarks/).
+Override per-environment with `BENCHMARK_IMAGE` env on the agent.
+
+**Round-trip flow:**
+1. Operator clicks **Run benchmark** on `/nodes/<id>` (portal)
+2. `POST /v1/portal/node-runner/nodes/:id/benchmark` writes a Config
+   row with key `benchmark:request:<nodeId>` (one-shot flag)
+3. Agent's next heartbeat receives `benchmark: { action: 'run' }`
+4. Agent calls `docker pull` (no-op if cached) then `docker run
+   --rm --gpus all ghcr.io/stackmerth/a2e-benchmark:latest`
+5. Agent parses last JSON line of stdout, posts to
+   `/v1/nodes/:id/benchmark/result`
+6. API updates Node row (score + 2 metric cols + lastBenchmarkAt),
+   deletes the Config flag, emits `node:benchmark` WS event for live
+   UI refresh
+7. If `priorScore` was non-null AND new score is >20% lower → fires
+   `NODE_DEGRADED` notification (email + bell)
+
+**Mock mode for QA without a GPU:** set `BENCHMARK_MOCK_RESULT` on
+the agent to a JSON string like
+`'{"matmulTflops":300,"vramBandwidthGbs":2000,"score":92,"gpuName":"MOCK H100"}'`.
+The manager skips Docker entirely and reports the mock value. Lets
+the API + UI + notification path be tested end-to-end without
+spinning up RunPod.
+
+**Cooldown:** 5 min between runs (set via `BENCHMARK_COOLDOWN_MS`).
+Server enforces; UI also disables the button client-side for snappy
+feedback. Prevents accidental hammering — a benchmark holds the GPU
+exclusively for ~3 min so back-to-back runs would block real
+buyer workloads.
+
+**Expected score ranges per tier:**
+| GPU | Expected score |
+|---|---|
+| H100 80GB HBM3 | 85-100 |
+| H200 | 90-100 |
+| B200 / B300 / GB300 | 90-100 |
+| RTX 4090 24GB | 80-100 |
+| RTX 3090 24GB | 75-100 |
+| A100 80GB | 80-95 |
+
+**Manual recovery:** if the Config flag gets stuck (agent died
+mid-run, never cleared the flag), delete it from psql:
+```sql
+DELETE FROM "Config" WHERE key LIKE 'benchmark:request:%';
+```
+
+**Anomaly threshold tuning:** `BENCHMARK_ANOMALY_THRESHOLD_PCT` env
+on the API service (default 20). Tighten to 15 if false negatives
+dominate; loosen to 30 if you're getting noise from normal run-to-run
+variance.
+
+**Future:** publish benchmark score on the public operator profile
+([apps/marketplace/src/app/operator/[slug]/page.tsx](apps/marketplace/src/app/operator/[slug]/page.tsx))
+as "Verified performance: 87/100" alongside the reputation badge.
+Not yet wired — small follow-up.
+
 ### Tax / 1099 reporting (C7 wave 1)
 
 US-only first iteration. Operators self-attest W-9 data via

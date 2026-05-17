@@ -20,6 +20,8 @@ import {
   Briefcase,
   HardDrive,
   Gauge,
+  Zap,
+  Sparkles,
 } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
@@ -70,6 +72,12 @@ interface NodeDetail {
   createdAt: string
   heartbeats: NodeHeartbeat[]
   jobs: NodeJob[]
+  // C4 wave 1: benchmark fields. All nullable until the first run
+  // completes; UI handles "never benchmarked" cleanly.
+  benchmarkScore: number | null
+  benchmarkMatmulTflops: number | null
+  benchmarkVramBandwidthGbs: number | null
+  lastBenchmarkAt: string | null
 }
 
 type JobRow = NodeJob & Record<string, unknown>
@@ -289,6 +297,12 @@ export default function NodeDetailPage() {
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No metrics available</p>
           )}
         </SectionCard>
+
+        {/* C4 wave 1: benchmark card. Shows last score + matmul/bandwidth
+            metrics if benchmarked; "Run Benchmark" button otherwise (and
+            re-run button after cool-down). Polls every 10s while waiting
+            for an agent callback after triggering. */}
+        <BenchmarkCard nodeId={node.id} node={node} onRefresh={() => loadData(true)} />
       </DashboardRightRail>
 
       {/* Delete Modal */}
@@ -347,5 +361,173 @@ function JobBadge({ status }: { status: string }) {
       {c.icon}
       {status}
     </span>
+  )
+}
+
+/**
+ * C4 wave 1: Benchmark card on the node detail page.
+ *
+ * Three display states:
+ *   1. Never benchmarked — empty state with prominent "Run Benchmark" CTA
+ *   2. Benchmarked — score + matmul TFLOPS + bandwidth GB/s + "ran X days ago"
+ *      with "Re-run benchmark" button
+ *   3. Queued (just clicked) — spinner + status text; polls parent's
+ *      loadData every 10s until lastBenchmarkAt changes
+ *
+ * 5-minute cool-down between runs is enforced server-side; we
+ * disable the button client-side too for snappier UX.
+ */
+function BenchmarkCard({
+  nodeId,
+  node,
+  onRefresh,
+}: {
+  nodeId: string
+  node: NodeDetail
+  onRefresh: () => void
+}) {
+  const { toast } = useToast()
+  const [triggering, setTriggering] = useState(false)
+  // Track the lastBenchmarkAt we saw when triggering, so we can detect
+  // when the agent has reported back (lastBenchmarkAt has advanced).
+  const [awaitingResult, setAwaitingResult] = useState(false)
+  const [waitStartedAt, setWaitStartedAt] = useState<string | null>(null)
+
+  // Poll parent every 10s while waiting for an agent callback. Stops
+  // as soon as lastBenchmarkAt advances past what we recorded at
+  // trigger time, OR after 5 min hard timeout.
+  useEffect(() => {
+    if (!awaitingResult) return
+    const interval = setInterval(() => {
+      onRefresh()
+      if (
+        node.lastBenchmarkAt &&
+        waitStartedAt &&
+        new Date(node.lastBenchmarkAt) > new Date(waitStartedAt)
+      ) {
+        setAwaitingResult(false)
+        toast('success', 'Benchmark complete')
+      }
+    }, 10_000)
+    const timeout = setTimeout(() => {
+      setAwaitingResult(false)
+      toast('error', 'Benchmark timed out (>5 min). Check the agent is online.')
+    }, 5 * 60 * 1000)
+    return () => {
+      clearInterval(interval)
+      clearTimeout(timeout)
+    }
+  }, [awaitingResult, node.lastBenchmarkAt, waitStartedAt, onRefresh, toast])
+
+  // Client-side cool-down check; server enforces too but mirroring here
+  // disables the button immediately on result so users don't bash it.
+  const cooldownMs = 5 * 60 * 1000
+  const cooldownRemaining =
+    node.lastBenchmarkAt && Date.now() - new Date(node.lastBenchmarkAt).getTime() < cooldownMs
+      ? Math.ceil((cooldownMs - (Date.now() - new Date(node.lastBenchmarkAt).getTime())) / 1000)
+      : 0
+
+  async function handleRun() {
+    setTriggering(true)
+    try {
+      const r = await nodeRunner.runBenchmark(nodeId)
+      toast('success', r.message)
+      // Snapshot the current lastBenchmarkAt so the poll loop can
+      // detect "agent reported back" vs "no change yet".
+      setWaitStartedAt(node.lastBenchmarkAt ?? new Date(0).toISOString())
+      setAwaitingResult(true)
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Failed to queue benchmark')
+    } finally {
+      setTriggering(false)
+    }
+  }
+
+  const hasScore = node.benchmarkScore != null
+  const lastRunAgoDays = node.lastBenchmarkAt
+    ? Math.floor((Date.now() - new Date(node.lastBenchmarkAt).getTime()) / 86_400_000)
+    : null
+
+  return (
+    <SectionCard title="Benchmark" icon={Gauge}>
+      {hasScore ? (
+        <div className="space-y-3">
+          <div className="flex items-baseline justify-between">
+            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Score</span>
+            <div className="text-right">
+              <span className="font-display text-3xl font-bold tabular-nums" style={{ color: 'var(--primary)' }}>
+                {node.benchmarkScore!.toFixed(0)}
+              </span>
+              <span className="text-sm ml-1" style={{ color: 'var(--text-muted)' }}>/ 100</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div
+              className="rounded-md p-2"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
+            >
+              <p className="font-mono uppercase tracking-[0.16em] mb-1" style={{ color: 'var(--text-muted)' }}>
+                Matmul
+              </p>
+              <p className="font-display text-sm" style={{ color: 'var(--text-primary)' }}>
+                {node.benchmarkMatmulTflops != null ? `${node.benchmarkMatmulTflops.toFixed(0)} TFLOPS` : '—'}
+              </p>
+            </div>
+            <div
+              className="rounded-md p-2"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
+            >
+              <p className="font-mono uppercase tracking-[0.16em] mb-1" style={{ color: 'var(--text-muted)' }}>
+                Bandwidth
+              </p>
+              <p className="font-display text-sm" style={{ color: 'var(--text-primary)' }}>
+                {node.benchmarkVramBandwidthGbs != null ? `${node.benchmarkVramBandwidthGbs.toFixed(0)} GB/s` : '—'}
+              </p>
+            </div>
+          </div>
+
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Last run {lastRunAgoDays === 0 ? 'today' : lastRunAgoDays === 1 ? 'yesterday' : `${lastRunAgoDays}d ago`}
+          </p>
+
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={handleRun}
+            disabled={triggering || awaitingResult || cooldownRemaining > 0}
+            loading={triggering || awaitingResult}
+            className="w-full"
+          >
+            <Zap size={14} className="mr-2" />
+            {awaitingResult
+              ? 'Running…'
+              : cooldownRemaining > 0
+                ? `Re-run available in ${Math.ceil(cooldownRemaining / 60)}m`
+                : 'Re-run benchmark'}
+          </Button>
+        </div>
+      ) : (
+        <div className="text-center py-2">
+          <Sparkles size={24} style={{ color: 'var(--text-muted)', margin: '0 auto 8px' }} />
+          <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
+            Run a one-click benchmark to verify your node&rsquo;s real performance.
+          </p>
+          <Button
+            size="sm"
+            onClick={handleRun}
+            disabled={triggering || awaitingResult}
+            loading={triggering || awaitingResult}
+            className="w-full"
+          >
+            <Zap size={14} className="mr-2" />
+            {awaitingResult ? 'Running…' : 'Run benchmark'}
+          </Button>
+          <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+            Takes 2-5 min (first run pulls a Docker image).
+          </p>
+        </div>
+      )}
+    </SectionCard>
   )
 }
