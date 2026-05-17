@@ -106,6 +106,7 @@ export async function adminRatingsRoutes(fastify: FastifyInstance) {
         'PAYOUT_SENT', // closest existing type for "good news from the platform"
         'New Rating Approved',
         `You received a ${rating.score}-star rating. View it on your operator profile.`,
+        '/dashboard',
       )
     }
 

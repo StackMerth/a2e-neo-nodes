@@ -91,6 +91,7 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
       'COMPUTE_REQUEST_APPROVED',
       'Request Reviewed',
       'Your compute request has been reviewed and is now being allocated.',
+      `/buyer/requests/${id}`,
     )
 
     reply.send({ id, status: 'PENDING' })
@@ -162,7 +163,8 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
     })
 
     void createNotification(cr.userId, 'COMPUTE_REQUEST_APPROVED', 'Request Approved',
-      `Your ${cr.gpuCount}x ${cr.gpuTier} compute request has been approved.`)
+      `Your ${cr.gpuCount}x ${cr.gpuTier} compute request has been approved.`,
+      `/buyer/requests/${id}`)
 
     reply.send({ id, status: 'APPROVED' })
   })
@@ -229,7 +231,8 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
     })
 
     void createNotification(cr.userId, 'COMPUTE_REQUEST_APPROVED', 'Request Approved',
-      `Your ${cr.gpuCount}x ${cr.gpuTier} compute request has been approved. Nodes are being prepared.`)
+      `Your ${cr.gpuCount}x ${cr.gpuTier} compute request has been approved. Nodes are being prepared.`,
+      `/buyer/requests/${id}`)
 
     reply.send({
       id, status: 'APPROVED',
@@ -276,7 +279,8 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
     })
 
     void createNotification(cr.userId, 'COMPUTE_ALLOCATED', 'Compute Allocated',
-      `Your ${cr.gpuCount}x ${cr.gpuTier} compute has been allocated and is being prepared.`)
+      `Your ${cr.gpuCount}x ${cr.gpuTier} compute has been allocated and is being prepared.`,
+      `/buyer/requests/${id}`)
 
     reply.send({ id, status: 'ALLOCATED' })
   })
@@ -320,7 +324,8 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
     })
 
     void createNotification(cr.userId, 'COMPUTE_ACTIVE', 'Compute is Live!',
-      `Your ${cr.gpuCount}x ${cr.gpuTier} compute is now active. SSH access details are available in your dashboard.`)
+      `Your ${cr.gpuCount}x ${cr.gpuTier} compute is now active. SSH access details are available in your dashboard.`,
+      `/buyer/requests/${id}`)
 
     // Emit WebSocket event
     fastify.io?.emit('compute:activated', { requestId: id, userId: cr.userId, timestamp: now.toISOString() })
@@ -347,7 +352,8 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
     })
 
     void createNotification(cr.userId, 'COMPUTE_REJECTED', 'Request Rejected',
-      reason ? `Your compute request was rejected: ${reason}` : 'Your compute request was rejected.')
+      reason ? `Your compute request was rejected: ${reason}` : 'Your compute request was rejected.',
+      `/buyer/requests/${id}`)
 
     reply.send({ id, status: 'REJECTED' })
   })
@@ -374,7 +380,8 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
     })
 
     void createNotification(cr.userId, 'COMPUTE_COMPLETED', 'Compute Lease Ended',
-      `Your ${cr.gpuCount}x ${cr.gpuTier} compute lease has ended.`)
+      `Your ${cr.gpuCount}x ${cr.gpuTier} compute lease has ended.`,
+      `/buyer/requests/${id}`)
 
     reply.send({ id, status: 'COMPLETED' })
   })
