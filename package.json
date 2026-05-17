@@ -33,7 +33,11 @@
       "@scure/bip39": "1.1.0",
       "@noble/hashes": "^1.8.0",
       "@noble/curves": "^1.8.0",
-      "@noble/ciphers": "^1.2.0"
+      "@noble/ciphers": "^1.2.0",
+      "protobufjs": "^7.5.5",
+      "bigint-buffer": "^1.1.5",
+      "fast-uri": "^3.0.6",
+      "picomatch": "^4.0.3"
     }
   }
 }
