@@ -220,13 +220,17 @@ hit prod safely.
 
 ```bash
 cd /opt/render/project/src/apps/api
-pnpm null:payer-key            # one-off: blank stale SettlementConfig.payerPrivateKey
-pnpm seed:test <email>         # seed 24h heartbeats + earnings on a test operator
-pnpm seed:keep-alive-only      # legacy: long-running keep-alive (use env flag instead)
-pnpm reputation:recompute      # force a reputation pass outside the daily worker
-pnpm referrals:recompute       # force a referral commission tick
-pnpm backfill:co2              # backfill CO2 estimates on historical rentals
+pnpm null:payer-key                  # one-off: blank stale SettlementConfig.payerPrivateKey
+pnpm seed:earnings <email>           # targeted: 24h heartbeats + earning rollups on ONE operator
+                                     # (safe against prod; wipes prior test data first; for QA L4)
+pnpm seed:test                       # bulk fixture seeder — REFUSES prod; dev only
+pnpm seed:keep-alive-only            # legacy: long-running keep-alive (use env flag instead)
+pnpm reputation:recompute            # force a reputation pass outside the daily worker
+pnpm referrals:recompute             # force a referral commission tick
+pnpm backfill:co2                    # backfill CO2 estimates on historical rentals
 ```
+
+The `seed:earnings` script is the right tool for QA tests against prod (it only touches one named operator's heartbeats + earning rollups, and re-running wipes prior test data so each run starts clean). `seed:test` is the dev-mode bulk fixture seeder that creates fake users/nodes — it refuses to run against a prod DATABASE_URL unless `ALLOW_PROD_SEED=1` is set.
 
 Each script is idempotent — safe to run twice. Adding new scripts:
 drop a tsx file in `apps/api/scripts/` and a matching npm entry in

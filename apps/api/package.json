@@ -17,7 +17,8 @@
     "backfill:co2": "tsx scripts/backfill-co2.ts",
     "referrals:recompute": "tsx scripts/referrals-recompute.ts",
     "referrals:test-flow": "tsx scripts/test-referral-flow.ts",
-    "null:payer-key": "tsx scripts/null-payer-key.ts"
+    "null:payer-key": "tsx scripts/null-payer-key.ts",
+    "seed:earnings": "tsx scripts/seed-test-earnings.ts"
   },
   "dependencies": {
     "@a2e/core": "workspace:*",
