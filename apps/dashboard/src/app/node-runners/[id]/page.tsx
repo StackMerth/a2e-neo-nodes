@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect } from 'react'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Plus, DollarSign, TrendingUp, Wallet, Clock, BarChart3, Server, Users, Lock, Unlock, AlertTriangle } from 'lucide-react'
@@ -76,8 +77,13 @@ interface ROIData {
   daily: Array<{ date: string; uptimeHours: number; earnings: number }>
 }
 
-export default function NodeRunnerDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params)
+export default function NodeRunnerDetailPage() {
+  // useParams() is the Next.js 14 client-component pattern. The page-
+  // prop `params` only exists in server components / Next.js 15. The
+  // earlier `use(params)` call assumed Next 15 and crashed at runtime
+  // with React error #438 because params was a plain object here.
+  const params = useParams<{ id: string }>()
+  const resolvedParams = { id: params?.id ?? '' }
   const [runner, setRunner] = useState<NodeRunnerDetail | null>(null)
   const [roi, setRoi] = useState<ROIData | null>(null)
   const [loading, setLoading] = useState(true)
