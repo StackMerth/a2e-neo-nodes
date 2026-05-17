@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import {
@@ -15,6 +15,8 @@ import {
   XCircle,
   Download,
   Star,
+  Shield,
+  Zap,
 } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
@@ -46,6 +48,66 @@ interface ComputeRequestDetail {
   sshPort?: number
   sshUsername?: string
   sshPassword?: string
+  // M3-T7: pricing tier — drives the preemption-exempt vs preemptible
+  // badge near the title. ON_DEMAND is default and gets a green badge,
+  // SPOT yellow (preemptible), RESERVED blue (committed + exempt).
+  tier?: 'ON_DEMAND' | 'SPOT' | 'RESERVED'
+  commitmentDays?: number | null
+  // M3-T5: adminNote carries the PREEMPT_AT:<iso> marker that the
+  // spot-preemption worker writes when scheduling eviction. Used as a
+  // fallback when the WS event was missed (e.g. page reload after the
+  // notice fired). Parsed client-side in the page render to seed the
+  // countdown banner.
+  adminNote?: string | null
+}
+
+// M3-T5: SPOT preemption notice payload. Mirrors the WS event shape
+// from the spot-preemption worker. graceMs is the original 90s window
+// at the time the notice was emitted; the live countdown computes
+// remaining time from (preemptAt - now) instead so it stays accurate
+// across refreshes and timezone weirdness.
+interface PreemptionPayload {
+  requestId: string
+  preemptAt: string
+  graceMs: number
+  reason: string
+}
+
+// M3-T5: live countdown banner — full-width red strip across the top
+// of the detail page during a SPOT preemption grace window. Ticks
+// every second. Auto-disappears when status flips to COMPLETED
+// (handled by the parent's data refresh on compute:terminated).
+function PreemptionBanner({ preemption }: { preemption: PreemptionPayload }) {
+  const [secondsLeft, setSecondsLeft] = useState(0)
+  useEffect(() => {
+    const update = () => {
+      const ms = new Date(preemption.preemptAt).getTime() - Date.now()
+      setSecondsLeft(Math.max(0, Math.ceil(ms / 1000)))
+    }
+    update()
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [preemption.preemptAt])
+
+  return (
+    <div
+      className="rounded-lg p-4 flex items-center gap-3"
+      style={{
+        background: 'rgba(239, 68, 68, 0.12)',
+        border: '1px solid rgba(239, 68, 68, 0.4)',
+      }}
+    >
+      <XCircle size={20} style={{ color: '#ef4444', flexShrink: 0 }} />
+      <div className="flex-1">
+        <p className="text-base font-semibold" style={{ color: '#ef4444' }}>
+          SPOT preemption in {secondsLeft}s
+        </p>
+        <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+          Capacity needed for On-Demand demand. Save your work now. Unused minutes will be refunded.
+        </p>
+      </div>
+    </div>
+  )
 }
 
 const STEPS = ['PENDING', 'APPROVED', 'ALLOCATED', 'ACTIVE', 'COMPLETED'] as const
@@ -197,6 +259,10 @@ export default function RequestDetailPage() {
   const [loading, setLoading] = useState(true)
   const [cancelling, setCancelling] = useState(false)
   const [terminating, setTerminating] = useState(false)
+  // M3-T5: preemption notice for THIS rental. Lives outside `data`
+  // because it's pushed via WS and may arrive before the next data
+  // refresh. Cleared automatically when status flips to COMPLETED.
+  const [preemption, setPreemption] = useState<PreemptionPayload | null>(null)
 
   const loadData = useCallback(async () => {
     try {
@@ -217,11 +283,48 @@ export default function RequestDetailPage() {
     return () => clearInterval(interval)
   }, [loadData, data?.status])
 
-  // Real-time updates via WebSocket
-  const handleComputeEvent = useCallback(() => { loadData() }, [loadData])
-  useWebSocket({
-    events: { 'compute:activated': handleComputeEvent, 'compute:statusChange': handleComputeEvent },
-  })
+  // Real-time updates via WebSocket. compute:preemption-notice surfaces
+  // the SPOT eviction grace window so the countdown banner can render
+  // without waiting for the next 10s poll. compute:terminated clears
+  // the banner and refreshes data (status is now COMPLETED).
+  const wsEvents = useMemo(() => ({
+    'compute:activated': () => loadData(),
+    'compute:statusChange': () => loadData(),
+    'compute:preemption-notice': (payload: unknown) => {
+      const p = payload as PreemptionPayload
+      if (p?.requestId !== id) return
+      setPreemption(p)
+    },
+    'compute:terminated': (payload: unknown) => {
+      const p = payload as { requestId: string }
+      if (p?.requestId !== id) return
+      setPreemption(null)
+      loadData()
+    },
+  }), [id, loadData])
+  useWebSocket({ events: wsEvents })
+
+  // M3-T5 fallback: if the buyer reloaded the page mid-grace-window,
+  // the WS event already fired but we never received it. Parse the
+  // adminNote marker the worker writes (PREEMPT_AT:<iso>|reason=...)
+  // and synthesize a banner state. Only acts on ACTIVE rentals whose
+  // preemption hasn't already elapsed.
+  const fallbackPreemption: PreemptionPayload | null = useMemo(() => {
+    if (preemption) return null
+    if (!data || data.status !== 'ACTIVE') return null
+    const note = data.adminNote ?? ''
+    if (!note.startsWith('PREEMPT_AT:')) return null
+    const isoEnd = note.slice('PREEMPT_AT:'.length).split('|')[0]
+    const preemptAt = isoEnd ? new Date(isoEnd) : null
+    if (!preemptAt || Number.isNaN(preemptAt.getTime()) || preemptAt <= new Date()) return null
+    return {
+      requestId: data.id,
+      preemptAt: preemptAt.toISOString(),
+      graceMs: preemptAt.getTime() - Date.now(),
+      reason: note.split('|reason=')[1] ?? 'unknown',
+    }
+  }, [preemption, data])
+  const activePreemption = preemption ?? fallbackPreemption
 
   const handleCancel = async () => {
     setCancelling(true)
@@ -320,7 +423,15 @@ export default function RequestDetailPage() {
           Back to Requests
         </button>
 
-        {/* Status Banner */}
+        {/* M3-T5: SPOT preemption countdown — pinned above everything so
+            the buyer cannot miss it during the 90s grace window. */}
+        {activePreemption && (
+          <SectionCard>
+            <PreemptionBanner preemption={activePreemption} />
+          </SectionCard>
+        )}
+
+        {/* Status Banner + tier proof badge */}
         <SectionCard>
           <div
             className="rounded-lg p-4"
@@ -329,8 +440,44 @@ export default function RequestDetailPage() {
               border: `1px solid ${statusInfo.color}30`,
             }}
           >
-            <h2 className="text-lg font-bold" style={{ color: statusInfo.color }}>{statusInfo.title}</h2>
-            <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{statusInfo.desc}</p>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-bold" style={{ color: statusInfo.color }}>{statusInfo.title}</h2>
+                <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{statusInfo.desc}</p>
+              </div>
+              {/* M3-T7: tier proof badge. RESERVED gets a shield with
+                  "exempt" copy so the buyer sees the commitment is being
+                  honored at a glance. SPOT gets a lightning bolt with
+                  "preemptible" copy. ON_DEMAND is the unmarked baseline. */}
+              {data.tier === 'RESERVED' && (
+                <span
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold flex-shrink-0"
+                  style={{
+                    background: 'rgba(59, 130, 246, 0.12)',
+                    border: '1px solid rgba(59, 130, 246, 0.4)',
+                    color: '#3b82f6',
+                  }}
+                  title={`Reserved capacity — locked for ${data.commitmentDays ?? '?'} days, exempt from preemption regardless of demand pressure.`}
+                >
+                  <Shield size={12} />
+                  Preemption-exempt {data.commitmentDays ? `· ${data.commitmentDays}d commitment` : ''}
+                </span>
+              )}
+              {data.tier === 'SPOT' && (
+                <span
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold flex-shrink-0"
+                  style={{
+                    background: 'rgba(245, 158, 11, 0.12)',
+                    border: '1px solid rgba(245, 158, 11, 0.4)',
+                    color: '#f59e0b',
+                  }}
+                  title="Spot tier — 40% off, preemptible with 90 seconds notice when On-Demand demand spikes."
+                >
+                  <Zap size={12} />
+                  Spot · preemptible
+                </span>
+              )}
+            </div>
           </div>
         </SectionCard>
 
