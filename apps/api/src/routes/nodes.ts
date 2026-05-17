@@ -1,7 +1,13 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { GpuTier, NodeType, NodeStatus } from '@a2e/database'
-import { notifyFirstHeartbeat } from '../services/notification/service.js'
+import { notifyFirstHeartbeat, notifyNodeDegraded } from '../services/notification/service.js'
+
+// C4 wave 1: anomaly threshold for benchmark score regression.
+// When a new score drops >20% below the prior recorded score, fire
+// NODE_DEGRADED notification. Tunable via env so admin can re-calibrate
+// post-launch without a deploy.
+const BENCHMARK_ANOMALY_THRESHOLD_PCT = Number(process.env.BENCHMARK_ANOMALY_THRESHOLD_PCT ?? 20)
 
 // Schema for agent registration (from node-agent)
 const agentSpecsSchema = z.object({
@@ -596,6 +602,23 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         }
       }
 
+      // C4 wave 1: surface a pending benchmark action to the agent
+      // when the operator clicked "Run Benchmark". One-shot via a
+      // Config row with key `benchmark:request:<nodeId>`; cleared by
+      // /v1/nodes/:id/benchmark/result on agent callback. Single
+      // index lookup, no schema change required for the flag itself.
+      let benchmark: { action: 'run'; image?: string } | undefined
+      const benchmarkFlag = await fastify.prisma.config.findUnique({
+        where: { key: `benchmark:request:${id}` },
+        select: { value: true },
+      })
+      if (benchmarkFlag) {
+        // value can carry an image override; empty string means "use default"
+        benchmark = benchmarkFlag.value
+          ? { action: 'run', image: benchmarkFlag.value }
+          : { action: 'run' }
+      }
+
       reply.send({
         acknowledged: true,
         status: updatedNode.status,
@@ -604,6 +627,7 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         commands: commands.length > 0 ? commands : undefined,
         sshSession,
         workspaceCheckpoint,
+        benchmark,
       })
     }
   )
@@ -685,4 +709,119 @@ export async function nodeRoutes(fastify: FastifyInstance) {
       reply.send({ acknowledged: true, status: parsed.data.status, requestId })
     }
   )
+
+  // ===================================================================
+  // C4 wave 1: BENCHMARK RESULT CALLBACK (agent → API)
+  // ===================================================================
+
+  const benchmarkResultSchema = z.object({
+    matmulTflops: z.number().min(0).max(10000).optional(),
+    vramBandwidthGbs: z.number().min(0).max(20000).optional(),
+    score: z.number().min(0).max(150).optional(),
+    gpuName: z.string().max(200).optional(),
+    error: z.string().max(2000).optional(),
+  })
+
+  /**
+   * POST /v1/nodes/:id/benchmark/result
+   *
+   * Agent reports the result of a benchmark run (either success with
+   * 3 metric fields, or failure with `error`). Either path:
+   *   1. Clears the Config flag (benchmark:request:<nodeId>) so the
+   *      next heartbeat-response stops surfacing the action.
+   *   2. Updates the Node row's benchmark columns + lastBenchmarkAt.
+   *      Failure paths leave the score/metric columns at their prior
+   *      values but advance lastBenchmarkAt so the UI shows "ran X
+   *      minutes ago" with the error message in adminNote.
+   *   3. On success: compares new score to the prior benchmarkScore.
+   *      If the drop exceeds BENCHMARK_ANOMALY_THRESHOLD_PCT (default
+   *      20%), fires NODE_DEGRADED to alert the operator.
+   */
+  fastify.post('/v1/nodes/:id/benchmark/result', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const parsed = benchmarkResultSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'Validation Error',
+        message: parsed.error.errors[0]?.message ?? 'Invalid input',
+      })
+    }
+    const result = parsed.data
+
+    const node = await fastify.prisma.node.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        walletAddress: true,
+        nodeRunnerId: true,
+        benchmarkScore: true,
+        nodeRunner: { select: { userId: true } },
+      },
+    })
+    if (!node) return reply.code(404).send({ error: 'Node not found' })
+
+    // Capture the prior score before we overwrite it — needed for the
+    // anomaly comparison below.
+    const priorScore = node.benchmarkScore ?? null
+
+    const now = new Date()
+    if (result.error) {
+      // Failure path: don't blow away the prior numbers, but stamp
+      // lastBenchmarkAt so the UI knows we tried.
+      await fastify.prisma.node.update({
+        where: { id },
+        data: { lastBenchmarkAt: now },
+      })
+    } else {
+      await fastify.prisma.node.update({
+        where: { id },
+        data: {
+          benchmarkScore: result.score ?? null,
+          benchmarkMatmulTflops: result.matmulTflops ?? null,
+          benchmarkVramBandwidthGbs: result.vramBandwidthGbs ?? null,
+          lastBenchmarkAt: now,
+        },
+      })
+    }
+
+    // One-shot Config flag cleanup. deleteMany is forgiving of missing
+    // rows (might already have been cleaned up by a stale agent retry).
+    await fastify.prisma.config.deleteMany({
+      where: { key: `benchmark:request:${id}` },
+    })
+
+    // Real-time UI update via WS so the operator's /nodes/<id> page
+    // refreshes the benchmark card without waiting for the next poll.
+    fastify.io?.emit('node:benchmark', {
+      nodeId: id,
+      score: result.score ?? null,
+      matmulTflops: result.matmulTflops ?? null,
+      vramBandwidthGbs: result.vramBandwidthGbs ?? null,
+      error: result.error ?? null,
+      timestamp: now.toISOString(),
+    })
+
+    // Anomaly detection — only on success path with a prior score to
+    // compare against. Threshold is env-tunable.
+    if (
+      !result.error &&
+      typeof result.score === 'number' &&
+      typeof priorScore === 'number' &&
+      priorScore > 0
+    ) {
+      const dropPct = ((priorScore - result.score) / priorScore) * 100
+      if (dropPct >= BENCHMARK_ANOMALY_THRESHOLD_PCT && node.nodeRunner?.userId) {
+        const nodeLabel = node.walletAddress.slice(0, 16)
+        void notifyNodeDegraded(
+          node.nodeRunner.userId,
+          nodeLabel,
+          id,
+          priorScore,
+          result.score,
+        )
+      }
+    }
+
+    reply.send({ ok: true })
+  })
 }

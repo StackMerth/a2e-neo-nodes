@@ -113,6 +113,10 @@ export interface HeartbeatResponse {
   // (action=restore). Reported back via /v1/agent/checkpoints (for
   // upload) or /v1/agent/checkpoints/restore-applied (for restore).
   workspaceCheckpoint?: WorkspaceCheckpointAction;
+  // C4 wave 1: workspace benchmark action. When present, the agent
+  // pulls the benchmark image, runs it with --gpus all, parses the
+  // JSON output, and reports back via /v1/agent/benchmark/result.
+  benchmark?: BenchmarkAction;
 }
 
 /**
@@ -171,6 +175,36 @@ export interface CheckpointStatusUpdate {
   status: 'UPLOADING' | 'READY' | 'FAILED';
   bucketUrl?: string;
   checkpointId?: string;
+  error?: string;
+}
+
+/**
+ * C4 wave 1: workspace benchmark action surfaced on the heartbeat
+ * response when the operator has triggered "Run Benchmark" on the
+ * portal. The agent pulls the configured benchmark image, runs it
+ * with --gpus all, parses the JSON line of output, and reports back
+ * via POST /v1/agent/benchmark/result. Fire-and-forget from the
+ * heartbeat's perspective; per-node dedupe lives in the benchmark
+ * manager so repeated heartbeat dispatches while in-flight no-op.
+ */
+export interface BenchmarkAction {
+  action: 'run';
+  // Image override (e.g. for staging environments). Falls back to the
+  // agent's default if missing.
+  image?: string;
+}
+
+/**
+ * Agent → API callback payload for POST /v1/agent/benchmark/result.
+ * Success path includes the 3 metric fields; failure path includes
+ * only `error` and the row's lastBenchmarkAt is set to now() so the
+ * UI knows the run completed (just badly).
+ */
+export interface BenchmarkResultUpdate {
+  matmulTflops?: number;
+  vramBandwidthGbs?: number;
+  score?: number;
+  gpuName?: string;
   error?: string;
 }
 

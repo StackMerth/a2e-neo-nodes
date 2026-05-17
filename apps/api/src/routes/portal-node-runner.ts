@@ -1318,6 +1318,60 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
    * future; 404 if the operator has no completed settlements in that
    * year (avoids downloading a blank CSV).
    */
+  // ===================================================================
+  // C4 wave 1: BENCHMARK TRIGGER (operator → API → agent)
+  // ===================================================================
+
+  /**
+   * POST /v1/portal/node-runner/nodes/:id/benchmark
+   *
+   * Operator clicks "Run Benchmark" on /nodes/<id>. We verify the
+   * node belongs to them, write a Config row with key
+   * `benchmark:request:<nodeId>` (one-shot flag), and return 202.
+   * The agent picks up the action on its next heartbeat (≤30s), runs
+   * the benchmark, and reports back via /v1/nodes/:id/benchmark/result
+   * which clears the flag.
+   *
+   * Rate-limited via the lastBenchmarkAt column: if a benchmark
+   * completed less than 5 minutes ago, return 429 to discourage
+   * accidental double-clicks. Set BENCHMARK_COOLDOWN_MS env to tune.
+   */
+  fastify.post<{ Params: { id: string } }>(
+    '/v1/portal/node-runner/nodes/:id/benchmark',
+    async (request, reply) => {
+      const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+      if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+      const { id } = request.params
+      const node = await verifyNodeOwnership(fastify, id, nr.id)
+      if (!node) return reply.code(404).send({ error: 'Node not found or not owned by you' })
+
+      // Cooldown — accidental double-click protection. 5 min default.
+      const cooldownMs = Number(process.env.BENCHMARK_COOLDOWN_MS ?? 5 * 60 * 1000)
+      if (node.lastBenchmarkAt && Date.now() - node.lastBenchmarkAt.getTime() < cooldownMs) {
+        const waitSec = Math.ceil((cooldownMs - (Date.now() - node.lastBenchmarkAt.getTime())) / 1000)
+        return reply.code(429).send({
+          error: 'Cooldown',
+          message: `Last benchmark ran less than ${Math.round(cooldownMs / 60000)} min ago. Try again in ${waitSec}s.`,
+        })
+      }
+
+      // Write the one-shot Config flag. Upsert with empty string value
+      // = use the agent's default image. Future: store an image tag
+      // override here for canary deployments.
+      await fastify.prisma.config.upsert({
+        where: { key: `benchmark:request:${id}` },
+        create: { key: `benchmark:request:${id}`, value: '' },
+        update: { value: '' },
+      })
+
+      return reply.code(202).send({
+        nodeId: id,
+        message: 'Benchmark queued. Agent will run on next heartbeat (~30s); result lands within ~2-5 min depending on first-time image pull.',
+      })
+    },
+  )
+
   fastify.get<{ Params: { year: string } }>(
     '/v1/portal/node-runner/tax/year/:year',
     async (request, reply) => {

@@ -5,6 +5,7 @@ import { UpdateManager } from '../utils/updater.js';
 import { heartbeatLogger } from '../utils/logger.js';
 import { SshSessionManager } from '../ssh/session-manager.js';
 import { handleWorkspaceCheckpoint } from '../checkpoints/workspace-manager.js';
+import { handleBenchmark } from '../benchmarks/manager.js';
 
 const log = heartbeatLogger();
 
@@ -181,6 +182,18 @@ export class HeartbeatService {
           'Received workspace checkpoint action from server'
         );
         void handleWorkspaceCheckpoint(getApiClient(), response.workspaceCheckpoint);
+      }
+
+      // C4 wave 1: dispatch workspace benchmark actions. Module-scoped
+      // dedupe inside the manager — at most one benchmark in flight
+      // per process — so repeated heartbeat dispatches while in-flight
+      // no-op. Reports back via /v1/nodes/:id/benchmark/result.
+      if (response.benchmark) {
+        log.info(
+          { action: response.benchmark.action, image: response.benchmark.image },
+          'Received benchmark action from server'
+        );
+        void handleBenchmark(getApiClient(), response.benchmark);
       }
 
       log.debug('Heartbeat sent successfully');
