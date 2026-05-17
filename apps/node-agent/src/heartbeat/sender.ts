@@ -4,6 +4,7 @@ import type { HeartbeatRequest, NodeStatus, NodeCommand } from '../api/types.js'
 import { UpdateManager } from '../utils/updater.js';
 import { heartbeatLogger } from '../utils/logger.js';
 import { SshSessionManager } from '../ssh/session-manager.js';
+import { handleWorkspaceCheckpoint } from '../checkpoints/workspace-manager.js';
 
 const log = heartbeatLogger();
 
@@ -165,6 +166,21 @@ export class HeartbeatService {
           'Received SSH session action from server'
         );
         this.getSshSessionManager().dispatch(response.sshSession);
+      }
+
+      // M3-T6: dispatch workspace checkpoint actions. Fire-and-forget;
+      // the manager dedupes per requestId and reports back via its own
+      // callbacks. Errors are logged inside the manager and surfaced
+      // to the buyer UI as FAILED checkpoint or restore error.
+      if (response.workspaceCheckpoint) {
+        log.info(
+          {
+            action: response.workspaceCheckpoint.action,
+            requestId: response.workspaceCheckpoint.requestId,
+          },
+          'Received workspace checkpoint action from server'
+        );
+        void handleWorkspaceCheckpoint(getApiClient(), response.workspaceCheckpoint);
       }
 
       log.debug('Heartbeat sent successfully');

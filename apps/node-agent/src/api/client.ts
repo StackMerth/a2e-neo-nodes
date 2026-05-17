@@ -15,6 +15,7 @@ import type {
   JobFailRequest,
   ApiError,
   SshSessionStatusUpdate,
+  CheckpointStatusUpdate,
 } from './types.js';
 
 const log = apiLogger();
@@ -374,6 +375,70 @@ export class ApiClient {
   async reportFailure(jobId: string, data: JobFailRequest): Promise<void> {
     log.warn({ jobId, error: data.error, failureReason: data.failureReason }, 'Reporting job failure');
     await this.request<void>('POST', `/v1/jobs/${jobId}/fail`, data);
+  }
+
+  // ============ Workspace Checkpoints (M3-T6) ============
+
+  /**
+   * Request a presigned PUT URL to upload a new checkpoint. The agent
+   * tars the buyer's workspace, PUTs to the returned URL, then calls
+   * reportCheckpointStatus with status=READY. checkpointId is optional;
+   * if omitted the server allocates one and returns it.
+   */
+  async requestCheckpointUploadUrl(
+    computeRequestId: string,
+    checkpointId?: string,
+  ): Promise<{
+    checkpointId: string
+    uploadUrl: string
+    bucketUrl: string
+    objectKey: string
+    expiresAt: string
+  }> {
+    return this.request('POST', '/v1/agent/checkpoints/upload-url', {
+      computeRequestId,
+      ...(checkpointId ? { checkpointId } : {}),
+    });
+  }
+
+  /**
+   * Request a presigned GET URL to download a prior checkpoint during
+   * rental restore. Throws if the checkpoint doesn't exist or isn't
+   * READY in S3.
+   */
+  async requestCheckpointDownloadUrl(
+    checkpointId: string,
+  ): Promise<{ checkpointId: string; downloadUrl: string; expiresAt: string }> {
+    return this.request(
+      'POST',
+      `/v1/agent/checkpoints/${encodeURIComponent(checkpointId)}/download-url`,
+    );
+  }
+
+  /**
+   * Report checkpoint status to the API. Called after the agent
+   * begins packaging (UPLOADING), after the S3 PUT succeeds (READY,
+   * with bucketUrl + checkpointId), or on failure (FAILED, with error).
+   */
+  async reportCheckpointStatus(payload: CheckpointStatusUpdate): Promise<void> {
+    await this.request<{ ok: boolean }>(
+      'POST',
+      '/v1/agent/checkpoints',
+      payload,
+    );
+  }
+
+  /**
+   * Report that a restore-on-launch checkpoint has been applied to the
+   * buyer's workspace. After this the heartbeat-response stops
+   * surfacing the restore action for the rental.
+   */
+  async reportRestoreApplied(computeRequestId: string, error?: string): Promise<void> {
+    await this.request<{ ok: boolean }>(
+      'POST',
+      '/v1/agent/checkpoints/restore-applied',
+      { computeRequestId, ...(error ? { error } : {}) },
+    );
   }
 
   // ============ Configuration ============

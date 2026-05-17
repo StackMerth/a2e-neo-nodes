@@ -1225,6 +1225,11 @@ model ComputeRequest {
   // Optional: passed at request creation to restore from a prior
   // rental's checkpoint. Allocator forwards this to the agent.
   restoreCheckpointId   String?
+  // Set by the agent once the restore has been downloaded + unpacked
+  // into the buyer's workspace. The heartbeat-response stops surfacing
+  // the restore action once this is non-null so the agent never
+  // re-applies the same checkpoint twice.
+  restoreAppliedAt      DateTime?
 
   // M3: ratings (one per rental, post-completion).
   rating          Rating?

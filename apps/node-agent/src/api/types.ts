@@ -107,6 +107,12 @@ export interface HeartbeatResponse {
   // agent should run the corresponding action and report back via
   // POST /v1/nodes/:id/ssh-sessions/:requestId/status.
   sshSession?: SshSessionAction;
+  // M3-T6: workspace checkpoint action. When present, the agent should
+  // either tar+upload the buyer's workspace (action=checkpoint) or
+  // download+untar a prior snapshot before the buyer connects
+  // (action=restore). Reported back via /v1/agent/checkpoints (for
+  // upload) or /v1/agent/checkpoints/restore-applied (for restore).
+  workspaceCheckpoint?: WorkspaceCheckpointAction;
 }
 
 /**
@@ -133,6 +139,39 @@ export type SshSessionAction =
 export interface SshSessionStatusUpdate {
   status: 'PROVISIONING' | 'ACTIVE' | 'TERMINATED' | 'FAILED';
   errorMessage?: string;
+}
+
+/**
+ * M3-T6: workspace checkpoint action surfaced by the heartbeat
+ * response. The agent runs the action against the buyer's per-rental
+ * workspace (canonically /home/{username}) and reports back via the
+ * appropriate callback endpoint.
+ */
+export type WorkspaceCheckpointAction =
+  | {
+      action: 'checkpoint';
+      requestId: string;
+      username: string;
+      checkpointId: string; // 'pending' until the agent allocates one
+    }
+  | {
+      action: 'restore';
+      requestId: string;
+      username: string;
+      checkpointId: string; // points at a prior rental's snapshot
+    };
+
+/**
+ * Agent → API callback payload for POST /v1/agent/checkpoints when
+ * the upload completes (or fails). On READY the agent must include
+ * bucketUrl + checkpointId so the row is updated atomically.
+ */
+export interface CheckpointStatusUpdate {
+  computeRequestId: string;
+  status: 'UPLOADING' | 'READY' | 'FAILED';
+  bucketUrl?: string;
+  checkpointId?: string;
+  error?: string;
 }
 
 /**

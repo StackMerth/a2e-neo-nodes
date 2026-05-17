@@ -58,8 +58,11 @@ export class ImagePrewarmService {
   private currentlyPulling = false;
   private stopped = false;
 
-  constructor(dockerClient: DockerClient, config: Config, isIdle: IsIdleFn) {
-    this.imageManager = new ImageManager(dockerClient);
+  constructor(_dockerClient: DockerClient, config: Config, isIdle: IsIdleFn) {
+    // ImageManager pulls the singleton docker client itself via
+    // getDockerClient(); the parameter is kept on this constructor
+    // for backward compat with callers that pre-resolved the client.
+    this.imageManager = new ImageManager();
     this.apiUrl = config.server.apiUrl.replace(/\/$/, '');
     this.isIdle = isIdle;
   }

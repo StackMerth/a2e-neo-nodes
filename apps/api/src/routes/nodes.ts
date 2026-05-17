@@ -499,6 +499,16 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         username: string
         pubKey?: string
       } | undefined
+      // M3-T6: surface a pending workspace-checkpoint action to the
+      // agent. checkpoint -> buyer asked for a snapshot, agent should
+      // tar+upload. restore -> rental started with a restoreCheckpointId,
+      // agent should download+untar before the buyer connects.
+      let workspaceCheckpoint: {
+        action: 'checkpoint' | 'restore'
+        requestId: string
+        username: string
+        checkpointId: string
+      } | undefined
       if (updatedNode.assignedComputeRequestId) {
         const cr = await fastify.prisma.computeRequest.findUnique({
           where: { id: updatedNode.assignedComputeRequestId },
@@ -507,6 +517,10 @@ export async function nodeRoutes(fastify: FastifyInstance) {
             sshSessionStatus: true,
             sshUsername: true,
             sshPubKey: true,
+            checkpointStatus: true,
+            lastCheckpointId: true,
+            restoreCheckpointId: true,
+            restoreAppliedAt: true,
           },
         })
         if (cr?.sshUsername) {
@@ -524,6 +538,32 @@ export async function nodeRoutes(fastify: FastifyInstance) {
               username: cr.sshUsername,
             }
           }
+
+          // Checkpoint priority order: restore takes precedence on a
+          // fresh rental (one-shot before the buyer connects). After
+          // restore is applied OR if no restore is pending, surface
+          // any REQUESTED snapshot. Both paths fire fire-and-forget
+          // from the agent's perspective.
+          if (cr.restoreCheckpointId && !cr.restoreAppliedAt) {
+            workspaceCheckpoint = {
+              action: 'restore',
+              requestId: cr.id,
+              username: cr.sshUsername,
+              checkpointId: cr.restoreCheckpointId,
+            }
+          } else if (cr.checkpointStatus === 'REQUESTED') {
+            // For a fresh REQUESTED snapshot, the agent generates its
+            // own checkpointId via the upload-url endpoint; we pass a
+            // placeholder marker here so the agent knows there's work
+            // to do. Once the agent uploads + reports READY, the row's
+            // lastCheckpointId picks up the real id.
+            workspaceCheckpoint = {
+              action: 'checkpoint',
+              requestId: cr.id,
+              username: cr.sshUsername,
+              checkpointId: cr.lastCheckpointId ?? 'pending',
+            }
+          }
         }
       }
 
@@ -534,6 +574,7 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         recorded: true,
         commands: commands.length > 0 ? commands : undefined,
         sshSession,
+        workspaceCheckpoint,
       })
     }
   )
