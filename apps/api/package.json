@@ -16,7 +16,8 @@
     "reputation:recompute": "tsx scripts/reputation-recompute.ts",
     "backfill:co2": "tsx scripts/backfill-co2.ts",
     "referrals:recompute": "tsx scripts/referrals-recompute.ts",
-    "referrals:test-flow": "tsx scripts/test-referral-flow.ts"
+    "referrals:test-flow": "tsx scripts/test-referral-flow.ts",
+    "null:payer-key": "tsx scripts/null-payer-key.ts"
   },
   "dependencies": {
     "@a2e/core": "workspace:*",

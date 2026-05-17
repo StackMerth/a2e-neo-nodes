@@ -104,6 +104,10 @@ curl -H "Authorization: Bearer <token>" https://tokenosdeai-api.onrender.com/v1/
   `SPOT_PREEMPTION_GRACE_MS`.
 - To pause the worker entirely during incident response: set
   `SPOT_PREEMPTION_DISABLED=1` and redeploy.
+- Refund behavior: SPOT rentals paid via USDC get a prorated Solana
+  refund; rentals paid via internal balance are rebated by mutating
+  the `InternalSpend.amount` row (no Solana hop). RESERVED tier is
+  preemption-exempt.
 
 ### Seed keep-alive (test-only)
 
@@ -111,6 +115,81 @@ curl -H "Authorization: Bearer <token>" https://tokenosdeai-api.onrender.com/v1/
 - **Must be disabled** before public launch so fake seed inventory
   stops competing with real node agents. Unset the env var and
   redeploy.
+
+### Custodial payouts (M3 / launch-blocker family)
+
+The platform holds operator earnings until the operator withdraws on
+demand. Driven by `apps/api/src/services/settlement/engine.ts`.
+
+- **Cool-down window:** earnings sit in `pending` state for
+  `PAYOUT_COOLDOWN_HOURS` (default 12) after they accrue, then move to
+  `available`. Only `available` is withdrawable.
+- **Payout modes** (per-operator on `NodeRunner.payoutMode`):
+  - `AUTO` — settlement worker fires on schedule when balance crosses
+    `payoutThreshold`
+  - `MANUAL` — accumulate indefinitely; operator clicks Withdraw Now
+    in the portal
+  - `SCHEDULED` — accumulate until `payoutScheduledAt`, then fire and
+    reset to AUTO (one-shot)
+- **Safety nets** (force a payout regardless of mode):
+  - Platform balance cap: `PAYOUT_BALANCE_CAP_USD` (default 50000)
+  - Inactivity sweep: `PAYOUT_INACTIVITY_DAYS` (default 180)
+- **Admin payout lock** (used during buyer disputes / fraud
+  investigation): on the admin operator detail page, click "Lock
+  payouts", pick an unlock date + reason. While set and in the future,
+  both the settlement worker and the Withdraw Now endpoint refuse for
+  this operator. Reason is surfaced to the operator on their
+  `/payouts/settings` page so they understand why.
+- **Withdraw Now wallet override:** the dialog lets the operator send
+  to a different wallet than the saved profile wallet, with an
+  optional "save this wallet to my profile" checkbox.
+
+### BYOG install tokens (launch-blocker #1)
+
+One-shot tokens that authorize a single `curl | bash` install on the
+operator's GPU machine. Stored on `InstallToken` model.
+
+- **Mint:** operator clicks "+ Add Node" in `/nodes` on the portal,
+  optionally picks a region. Token TTL is 7 days. Returns a
+  `curl -fsSL https://<api>/v1/byog/install?token=... | bash` one-liner.
+- **Claim:** the install.sh script calls `POST /v1/byog/claim` with
+  the token + GPU specs. On success a permanent `a2e-node-*` API key
+  is issued and the token is marked consumed.
+- **Admin revoke:** `/install-tokens` page on the admin dashboard
+  lists every minted token with status (ACTIVE/CONSUMED/EXPIRED).
+  Click Revoke on an ACTIVE row to soft-kill the curl URL (sets
+  `expiresAt` to the past). Consumed tokens cannot be revoked — pause
+  or delete the resulting node from `/nodes` instead.
+- **API:** `DELETE /v1/admin/install-tokens/:id` — 409 if already
+  consumed.
+
+### Internal-spend (dual-role buyers paying from operator balance)
+
+Users who are both `isBuyer=true` AND `isNodeRunner=true` can pay for
+rentals from their accumulated platform balance instead of USDC. Stored
+on `InternalSpend` model (1:1 with `ComputeRequest` via
+`computeRequestId`).
+
+- **Buyer UX:** the `/buyer/request` form renders a "Payment method"
+  card when `GET /v1/buyer/compute/internal-balance` returns
+  `eligible: true`. Picking "Operator balance" hides the tx hash input
+  and shows a live debit preview.
+- **Atomic write:** `POST /v1/buyer/compute/request` with
+  `paymentSource=INTERNAL_BALANCE` checks available balance (returns
+  402 if short), then creates the `ComputeRequest` + `InternalSpend`
+  row + sets `txHash=INTERNAL:<computeRequestId>` in one transaction.
+- **Balance math:** `getOperatorBalanceBreakdown` subtracts the
+  lifetime sum of `InternalSpend.amount` from raw earnings to give
+  `available`. The Withdraw Now route pro-rates per-node settlements
+  down to `available` so the wallet never gets more than what's
+  actually owed.
+- **Refund on terminate:** for INTERNAL_BALANCE rentals, early
+  termination mutates `InternalSpend.amount` to the final accrued cost
+  instead of attempting a Solana refund. RESERVED tier still
+  forbids refund.
+- **Operator visibility:** `/payouts` shows an "Internal Spend" panel
+  listing recent spend rows; `/payouts/settings` adds a "Spent on
+  rentals" tile alongside Available + Pending.
 
 ## 7. Payments / settlements
 
@@ -124,9 +203,34 @@ curl -H "Authorization: Bearer <token>" https://tokenosdeai-api.onrender.com/v1/
 
 ### Payer key
 
-- Currently stored in plain text in `SettlementConfig.payerPrivateKey`.
-  **Must be migrated** to env-sourced or encrypted-at-rest before
-  flipping `PAYMENT_MODE=live`. See M1-#7 in the launch-blocker list.
+- Source of truth: `SOLANA_PAYER_KEY` env var (Render API service).
+  The engine reads from env exclusively (see
+  `apps/api/src/services/payment/solana.ts`).
+- The legacy `SettlementConfig.payerPrivateKey` DB column is no longer
+  read. If a historical value still sits there, null it as
+  defense-in-depth — see "Ad-hoc maintenance scripts" below.
+- To rotate the live key: bump `SOLANA_PAYER_KEY` in Render env,
+  redeploy. The new keypair becomes active on next process start.
+
+## 7a. Ad-hoc maintenance scripts
+
+Run from the **Render API service web shell** (`a2e-api` service →
+Shell tab). All scripts use the API service's `DATABASE_URL` so they
+hit prod safely.
+
+```bash
+cd /opt/render/project/src/apps/api
+pnpm null:payer-key            # one-off: blank stale SettlementConfig.payerPrivateKey
+pnpm seed:test <email>         # seed 24h heartbeats + earnings on a test operator
+pnpm seed:keep-alive-only      # legacy: long-running keep-alive (use env flag instead)
+pnpm reputation:recompute      # force a reputation pass outside the daily worker
+pnpm referrals:recompute       # force a referral commission tick
+pnpm backfill:co2              # backfill CO2 estimates on historical rentals
+```
+
+Each script is idempotent — safe to run twice. Adding new scripts:
+drop a tsx file in `apps/api/scripts/` and a matching npm entry in
+`apps/api/package.json`.
 
 ## 8. Scaling levers
 
@@ -165,6 +269,55 @@ curl -H "Authorization: Bearer <token>" https://tokenosdeai-api.onrender.com/v1/
 
 - GitHub transient 500. Click "Redeploy" in Vercel; pushing an empty
   commit is wasteful.
+
+### "Operator's Withdraw Now button is greyed out / 409"
+
+1. Check the breakdown: `GET /v1/portal/node-runner/payouts/mode` as
+   the operator. If `available === 0`, there's nothing past the
+   cool-down yet. Pending amount + `nextUnlockAt` show when the next
+   chunk frees up.
+2. Check for an admin payout lock: on the operator detail page in
+   admin, is there a red "Payouts locked" banner? Reason is shown in
+   the banner. Click Clear lock if appropriate.
+3. Internal-spend may have eaten the available pool. Check the Spent
+   tile on `/payouts/settings` — operator may have to wait for fresh
+   accrual to clear the cool-down.
+
+### "Operator wants to revoke an install token they accidentally shared"
+
+1. Admin dashboard → `/install-tokens` → find the row (filter by
+   operator name / status ACTIVE)
+2. Click Revoke → confirm in the dialog
+3. Token's `expiresAt` is set to the past; next curl|bash hit returns
+   `# Install token expired; mint a fresh one from the portal.`
+4. Operator can mint a fresh one from `/nodes` in the portal whenever
+   they're ready.
+5. If the token has already been consumed (CONSUMED badge), revoke is
+   refused with 409 — pause or delete the resulting Node from
+   `/nodes` instead.
+
+### "Dual-role user gets 403 on /v1/buyer/* despite having isBuyer=true"
+
+- Pre-`a1c2812` builds only checked the legacy `User.role` JWT claim.
+  Confirm the API is running `a1c2812` or later — if so, the dual-
+  identity slow path takes one DB hit per request and recognizes the
+  `isBuyer` / `isNodeRunner` / `isAdmin` flags.
+- If still 403 after deploy, check `User.isBuyer` is actually `true`
+  in the DB (not just `role`).
+
+### "Internal-spend rental terminated but operator's balance didn't go back up"
+
+- Check the `InternalSpend` row: should be updated, not deleted.
+  ```sql
+  SELECT s.id, s.amount, c.id AS rental, c.status, c."completedAt"
+  FROM "InternalSpend" s
+  JOIN "ComputeRequest" c ON c.id = s."computeRequestId"
+  WHERE c.id = '<rental-id>';
+  ```
+- For COMPLETED rentals, `InternalSpend.amount` should equal
+  `finalAccrued` (a fraction of original totalCost).
+- RESERVED tier intentionally does NOT refund — commitment is honored
+  regardless of payment source.
 
 ## 10. Where to file new issues
 
