@@ -64,27 +64,48 @@ async function main() {
     console.log(`Using existing Node ${node.id} (walletAddress=${node.walletAddress})`)
   }
 
-  // Insert 24h of heartbeats, one every 5 min = 289 rows total.
-  // gpuUtilization=50.0 is the marker that lets us identify + delete
-  // these later if we want to clean up.
+  // Insert 24h of heartbeats spaced 60 seconds apart (= 1440 rows).
+  // The uptime calculator considers a node "offline" when gaps between
+  // heartbeats exceed 90s, so anything wider than that would only count
+  // each heartbeat as a single 30s tick — wildly under-reporting uptime.
+  // 60s gaps stay safely inside the window and yield the full 24h of
+  // uptime in the earnings calculation.
   const now = Date.now()
-  const FIVE_MIN_MS = 5 * 60 * 1000
-  const COUNT = 24 * 12 + 1 // 289 heartbeats over 24h
+  const ONE_MIN_MS = 60 * 1000
+  const COUNT = 24 * 60 + 1 // 1441 heartbeats covering 24h
 
   const rows = Array.from({ length: COUNT }, (_, i) => ({
     nodeId: node!.id,
-    timestamp: new Date(now - i * FIVE_MIN_MS),
+    timestamp: new Date(now - i * ONE_MIN_MS),
     gpuUtilization: 50.0,
   }))
 
   const result = await prisma.heartbeat.createMany({ data: rows })
   console.log(`Inserted ${result.count} heartbeats across the last 24h on node ${node.id}.`)
 
-  console.log('\nNext steps:')
-  console.log('  1. Log in to user.tokenos.ai as this operator')
-  console.log('  2. Go to /payouts/settings')
-  console.log('  3. Available tile should show ~$140 (H100 rate for 24h, minus 12h cool-down)')
-  console.log('  4. Click "Withdraw $X.XX" to test the dev-mode payout flow')
+  // Immediately query the breakdown so the operator sees the expected
+  // number without having to log in. If this shows $0, the seeding
+  // didn't take or the engine has a stricter filter than expected.
+  const { getOperatorBalanceBreakdown } = await import(
+    '../src/services/settlement/engine.js'
+  )
+  const breakdown = await getOperatorBalanceBreakdown(prisma, runner.id)
+  console.log('\nLive balance breakdown for this operator:')
+  console.log(`  Available: $${breakdown.available.toFixed(2)}`)
+  console.log(`  Pending:   $${breakdown.pending.toFixed(2)}`)
+  console.log(`  Next unlock: ${breakdown.nextUnlockAt ?? 'n/a'}`)
+  console.log(`  Cool-down:   ${breakdown.cooldownHours}h`)
+
+  if (breakdown.available + breakdown.pending === 0) {
+    console.log('\nWARNING: balance is still $0 after seeding. Something is off — paste this output back to debug.')
+  } else {
+    console.log('\nNext steps:')
+    console.log('  1. Log in to user.tokenos.ai as this operator')
+    console.log('  2. Go to /payouts/settings')
+    console.log(`  3. Available tile should show $${breakdown.available.toFixed(2)}`)
+    console.log('  4. Click "Withdraw $X.XX" to test the dev-mode payout flow')
+  }
+
   console.log('\nCleanup later if needed:')
   console.log(`  DELETE FROM "Heartbeat" WHERE "nodeId" = '${node.id}' AND "gpuUtilization" = 50.0;`)
   console.log(`  DELETE FROM "Node" WHERE id = '${node.id}';`)
