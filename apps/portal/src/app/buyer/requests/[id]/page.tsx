@@ -668,18 +668,27 @@ export default function RequestDetailPage() {
             </div>
           </div>
 
-          {/* Invoice Download */}
+          {/* Invoice Download — auth-fetched, opens HTML in a new tab
+              so the user can View / Print / Save as PDF natively.
+              Can't be a plain <a href> because the route is Bearer-
+              authed and browsers don't attach the token on new-tab
+              opens. */}
           {['ACTIVE', 'COMPLETED', 'APPROVED', 'ALLOCATED'].includes(data.status) && (
-            <a
-              href={buyer.invoiceUrl(id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-4 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all"
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await buyer.downloadInvoice(id)
+                } catch (e) {
+                  toast('error', e instanceof Error ? e.message : 'Failed to fetch invoice')
+                }
+              }}
+              className="mt-4 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all hover:opacity-90"
               style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--primary)' }}
             >
               <Download size={14} />
               Download Invoice
-            </a>
+            </button>
           )}
         </SectionCard>
 

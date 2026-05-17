@@ -196,15 +196,17 @@ export default function BillingPage() {
                           </td>
                           <td className="px-5 py-3 text-right">
                             {['ACTIVE', 'COMPLETED', 'APPROVED', 'ALLOCATED'].includes(req.status) ? (
-                              <a
-                                href={buyer.invoiceUrl(req.id)}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try { await buyer.downloadInvoice(req.id) }
+                                  catch (e) { window.alert(e instanceof Error ? e.message : 'Invoice fetch failed') }
+                                }}
                                 className="inline-flex items-center gap-1 text-xs hover:underline"
                                 style={{ color: 'var(--primary)' }}
                               >
                                 <Download size={12} /> Invoice
-                              </a>
+                              </button>
                             ) : (
                               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>-</span>
                             )}

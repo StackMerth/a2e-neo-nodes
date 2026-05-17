@@ -305,7 +305,26 @@ export const buyer = {
     ),
   settings: (data: unknown) => apiFetch('/v1/buyer/settings', { method: 'PATCH', body: data }),
   billing: () => apiFetch('/v1/buyer/billing'),
-  invoiceUrl: (requestId: string) => `${API_URL}/v1/buyer/billing/invoice/${requestId}`,
+  // Invoice route returns HTML. Bearer-token auth means we can't use a
+  // plain <a href> — browsers don't attach the token to new-tab opens.
+  // Fetch the HTML with auth, open in a new window via Blob URL so the
+  // user can View / Print / Save as PDF natively.
+  downloadInvoice: async (requestId: string) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('a2e_access_token') : null
+    const res = await fetch(`${API_URL}/v1/buyer/billing/invoice/${requestId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      throw new Error(`Invoice fetch failed: ${res.status}`)
+    }
+    const html = await res.text()
+    const blob = new Blob([html], { type: 'text/html' })
+    const blobUrl = URL.createObjectURL(blob)
+    // open in a new tab; revoke the URL after a delay so the browser
+    // has time to load it (revoke immediately = blank page).
+    window.open(blobUrl, '_blank')
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+  },
 }
 
 // Notifications API
