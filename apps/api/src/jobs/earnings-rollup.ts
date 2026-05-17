@@ -1,6 +1,7 @@
 import { Queue, Worker, type ConnectionOptions } from 'bullmq'
 import type { PrismaClient } from '@a2e/database'
 import { calculateUptimeEarnings } from '../services/earnings/uptime-calculator'
+import { notifyFirstEarning } from '../services/notification/service.js'
 
 const QUEUE_NAME = 'earnings-rollup'
 
@@ -73,6 +74,32 @@ export function createEarningsRollupWorker(options: {
               },
             })
             updated++
+
+            // C5: detect the operator's FIRST EVER non-zero earning and
+            // fire FIRST_EARNING once. updateMany + null predicate makes
+            // this idempotent across concurrent rollup ticks. We use the
+            // current tick's per-node earnings value (a fragment of the
+            // operator's total today) since "first earning" semantics
+            // are per-event, not per-aggregate.
+            if (node.nodeRunnerId) {
+              try {
+                const result = await prisma.nodeRunner.updateMany({
+                  where: { id: node.nodeRunnerId, firstEarningAt: null },
+                  data: { firstEarningAt: new Date() },
+                })
+                if (result.count === 1) {
+                  const nr = await prisma.nodeRunner.findUnique({
+                    where: { id: node.nodeRunnerId },
+                    select: { userId: true },
+                  })
+                  if (nr?.userId) {
+                    void notifyFirstEarning(nr.userId, uptimeData.earnings)
+                  }
+                }
+              } catch (err) {
+                console.error(`[earnings-rollup] first-earning detection failed for ${node.id}:`, err)
+              }
+            }
           }
         } catch (error) {
           console.error(`[earnings-rollup] Failed for node ${node.id}:`, error)

@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Check, Copy, Loader2, AlertCircle, ChevronRight, Terminal, ListChecks, Cpu } from 'lucide-react'
-import { nodeRunner, byog } from '@/lib/api'
+import { Check, Copy, Loader2, AlertCircle, ChevronRight, Terminal, ListChecks, Cpu, Wallet, Sparkles, Share2 } from 'lucide-react'
+import { nodeRunner, byog, auth as authApi } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import {
   DashboardShell,
@@ -57,6 +57,13 @@ export default function OnboardingPage() {
             </div>
           ))}
         </div>
+
+        {/* C5: wallet-connect nudge shown above all steps when the user
+            signed up with email/password and has no on-chain wallet yet.
+            Soft prompt; doesn't block them from continuing. Routes to
+            the connect-wallet page with a next= hint so they come back
+            here. */}
+        {currentStep === 0 && <WalletNudge />}
 
         {/* Step Content */}
         {currentStep === 0 && (
@@ -370,21 +377,7 @@ function VerifyStep({ onBack }: { onBack: () => void }) {
             </Button>
           </div>
         ) : found ? (
-          <div className="text-center">
-            <div
-              className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
-              style={{ background: 'rgba(34,197,94,0.1)' }}
-            >
-              <Check size={32} style={{ color: 'var(--primary)' }} />
-            </div>
-            <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Node Detected!</h2>
-            <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
-              Your node is online and registered with the TokenOS DeAI network. You&apos;re now earning.
-            </p>
-            <Link href="/dashboard">
-              <Button>Go to Dashboard</Button>
-            </Link>
-          </div>
+          <CelebrationCard />
         ) : (
           <div className="text-center">
             <div
@@ -426,5 +419,178 @@ function VerifyStep({ onBack }: { onBack: () => void }) {
         )}
       </FormSection>
     </FormCard>
+  )
+}
+
+// C5 wave 1: shown on step 1 (Requirements) when the operator signed
+// up via email/password and hasn't connected an on-chain wallet yet.
+// The wallet is needed for the payout-routing flow, so prompting now
+// avoids a "where do my earnings go?" question 30 minutes from now.
+// Soft prompt: it's an info card with a CTA, doesn't block progression.
+function WalletNudge() {
+  const [show, setShow] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    authApi
+      .me()
+      .then((me) => {
+        if (cancelled) return
+        if (!me.walletAddress) setShow(true)
+      })
+      .catch(() => { /* quiet */ })
+    return () => { cancelled = true }
+  }, [])
+  if (!show) return null
+  return (
+    <div
+      className="rounded-lg p-4 flex items-start gap-3"
+      style={{
+        background: 'rgba(59,130,246,0.06)',
+        border: '1px solid rgba(59,130,246,0.25)',
+      }}
+    >
+      <Wallet size={18} style={{ color: 'var(--info, #3b82f6)', flexShrink: 0, marginTop: 2 }} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+          Tip: connect your Solana wallet first
+        </p>
+        <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+          Earnings route to whatever wallet is on your account. You can
+          add it now and skip the swap later.
+        </p>
+      </div>
+      <Link href="/connect-wallet?next=/onboarding">
+        <Button variant="secondary" size="sm">
+          Connect wallet
+        </Button>
+      </Link>
+    </div>
+  )
+}
+
+// C5 wave 1: post-verify celebration card. Replaces the silent "Node
+// Detected!" copy with an activation moment: animated checkmark + sparkles,
+// "you're earning" copy, and three next-step CTAs. Wallet CTA only renders
+// when the operator signed up by email and hasn't connected a payout wallet
+// yet — gives them the obvious next step without forcing it.
+function CelebrationCard() {
+  const [walletPrompt, setWalletPrompt] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    authApi
+      .me()
+      .then((me) => {
+        if (cancelled) return
+        // Show wallet nudge only if the user has no on-chain wallet on
+        // their User row. NodeRunner has its own walletAddress (used
+        // by payout routing) but the User row reflects the actual
+        // signed-in identity wallet, which is what we want here.
+        if (!me.walletAddress) setWalletPrompt(true)
+      })
+      .catch(() => { /* quiet */ })
+    return () => { cancelled = true }
+  }, [])
+
+  return (
+    <div className="text-center relative overflow-hidden">
+      {/* Animated radial sparkle burst. Pure CSS so we don't pull in a
+          confetti library for a single-shot celebration. */}
+      <div
+        aria-hidden
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background:
+            'radial-gradient(circle at 50% 30%, rgba(34,197,94,0.18) 0%, rgba(34,197,94,0) 60%)',
+          animation: 'a2e-pulse 2.4s ease-out',
+        }}
+      />
+      <style jsx>{`
+        @keyframes a2e-pulse {
+          0% { opacity: 0; transform: scale(0.6); }
+          40% { opacity: 1; transform: scale(1); }
+          100% { opacity: 0; transform: scale(1.4); }
+        }
+        @keyframes a2e-pop {
+          0% { transform: scale(0); opacity: 0; }
+          60% { transform: scale(1.15); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+      `}</style>
+
+      <div className="relative">
+        <div
+          className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-5"
+          style={{
+            background: 'rgba(34,197,94,0.12)',
+            border: '1px solid rgba(34,197,94,0.4)',
+            animation: 'a2e-pop 0.55s cubic-bezier(.22,1,.36,1)',
+          }}
+        >
+          <Check size={36} style={{ color: 'var(--primary)' }} />
+        </div>
+
+        <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full" style={{
+          background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)'
+        }}>
+          <Sparkles size={12} style={{ color: 'var(--primary)' }} />
+          <span className="text-xs font-medium" style={{ color: 'var(--primary)' }}>
+            First heartbeat received
+          </span>
+        </div>
+
+        <h2 className="text-2xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+          You&apos;re earning.
+        </h2>
+        <p className="text-sm mb-6 max-w-md mx-auto" style={{ color: 'var(--text-muted)' }}>
+          Your node is online and registered with the TokenOS DeAI network.
+          Earnings start accruing the moment a buyer rents your GPU.
+        </p>
+
+        <div className="flex flex-col sm:flex-row gap-3 justify-center mb-6">
+          <Link href="/dashboard">
+            <Button>
+              <Cpu size={14} className="mr-1.5" />
+              Go to Dashboard
+            </Button>
+          </Link>
+          {walletPrompt && (
+            <Link href="/connect-wallet?next=/dashboard">
+              <Button variant="secondary">
+                <Wallet size={14} className="mr-1.5" />
+                Connect Wallet for Payouts
+              </Button>
+            </Link>
+          )}
+        </div>
+
+        {/* Compact next-steps list — three highest-value follow-ups
+            without being pushy. Each is one line + a small icon. */}
+        <div
+          className="rounded-lg p-4 max-w-md mx-auto text-left"
+          style={{
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-color)',
+          }}
+        >
+          <p className="text-xs font-mono uppercase tracking-[0.16em] mb-2" style={{ color: 'var(--text-muted)' }}>
+            Next steps
+          </p>
+          <ul className="space-y-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+            <li className="flex items-start gap-2">
+              <ChevronRight size={14} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--primary)' }} />
+              <span>Install the agent on more machines for more capacity.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <Share2 size={14} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--primary)' }} />
+              <span>Share your <Link href="/referral" className="underline">referral code</Link> — earn 10% of referee earnings for 365 days.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <Wallet size={14} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--primary)' }} />
+              <span>Configure <Link href="/payouts/settings" className="underline">payout settings</Link> when you&rsquo;re ready to withdraw.</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
   )
 }
