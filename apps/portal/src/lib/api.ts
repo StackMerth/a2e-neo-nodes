@@ -168,9 +168,34 @@ export const nodeRunner = {
       pending: number
       nextUnlockAt: string | null
       cooldownHours: number
+      spent: number
       /** @deprecated alias of `available`, kept for compatibility */
       platformBalance: number
     }>('/v1/portal/node-runner/payouts/mode'),
+  // Internal-spend ledger for the operator: rentals the operator
+  // paid for with their own platform balance (only populated when
+  // the user has the dual buyer + operator role).
+  internalSpends: () =>
+    apiFetch<{
+      spends: Array<{
+        id: string
+        computeRequestId: string
+        amount: number
+        createdAt: string
+        updatedAt: string
+        rental: {
+          id: string
+          gpuTier: string
+          gpuCount: number
+          durationDays: number
+          status: string
+          totalCost: number
+          requestedAt: string
+          completedAt: string | null
+        } | null
+      }>
+      total: number
+    }>('/v1/portal/node-runner/internal-spends'),
   withdrawNow: (body?: { walletAddress?: string; saveWallet?: boolean }) =>
     apiFetch<{
       totalPaid: number
@@ -220,12 +245,28 @@ export const byog = {
 // Buyer API
 export const buyer = {
   dashboard: () => apiFetch('/v1/buyer/dashboard'),
+  // Internal-spend eligibility + balance check. Returns eligible=false
+  // when the user has no NodeRunner profile (pure buyer); returns the
+  // live available balance when they do. UI uses this to decide
+  // whether to render the "Pay from operator balance" radio.
+  internalBalance: () =>
+    apiFetch<{
+      eligible: boolean
+      available: number
+      spent?: number
+      pending?: number
+    }>('/v1/buyer/compute/internal-balance'),
   requestCompute: (data: {
     gpuTier: string
     gpuCount: number
     durationDays: number
     purpose?: string
-    txHash: string
+    // USDC payments require a txHash. INTERNAL_BALANCE rentals omit it
+    // (server generates INTERNAL:<id>).
+    txHash?: string
+    // Payment source. USDC default, INTERNAL_BALANCE for dual-role
+    // users paying from their accumulated operator balance.
+    paymentSource?: 'USDC' | 'INTERNAL_BALANCE'
     // M3: pricing tier + optional commitment (RESERVED only)
     tier?: 'ON_DEMAND' | 'SPOT' | 'RESERVED'
     commitmentDays?: number

@@ -313,6 +313,14 @@ model NodeRunner {
   // single curl|bash install on one machine.
   installTokens      InstallToken[]
 
+  // Internal-spend ledger. When this operator is ALSO a buyer (dual
+  // identity flag) and chooses to pay for a rental from their
+  // accumulated platform balance instead of with USDC, one row per
+  // rental lands here. amount tracks the actual final spend so it
+  // can be rebated down on early terminate without losing the audit
+  // trail. Subtracted from `available` in getOperatorBalanceBreakdown.
+  internalSpends     InternalSpend[]
+
   @@index([walletAddress])
   @@index([userId])
   @@index([reputationScore])
@@ -337,6 +345,38 @@ enum PayoutMode {
   AUTO
   MANUAL
   SCHEDULED
+}
+
+// Payment source for a ComputeRequest. USDC is the default Solana
+// flow (txHash points at a real on-chain transfer). INTERNAL_BALANCE
+// is for dual-identity users who are also operators — they pay for a
+// rental from their accumulated platform balance instead, and an
+// InternalSpend row records the debit.
+enum PaymentSource {
+  USDC
+  INTERNAL_BALANCE
+}
+
+// Internal-spend ledger. One row per ComputeRequest where the buyer
+// (who must also be a NodeRunner) chose to pay from their platform
+// balance. amount mutates on early terminate to reflect the final
+// accrued cost so refunds stay inside the bookkeeping ledger rather
+// than flowing back through Solana. Subtracted from `available` in
+// getOperatorBalanceBreakdown so the next rental sees the right
+// remaining balance.
+model InternalSpend {
+  id                String         @id @default(cuid())
+  nodeRunnerId      String
+  nodeRunner        NodeRunner     @relation(fields: [nodeRunnerId], references: [id], onDelete: Cascade)
+  // 1:1 with the rental that drew the funds. Indexed for the
+  // operator's payouts page; queried by nodeRunnerId in hot path.
+  computeRequestId  String         @unique
+  amount            Float
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([nodeRunnerId])
+  @@index([nodeRunnerId, createdAt])
 }
 
 // M5.7 / D2: operator referral program.
@@ -1086,9 +1126,14 @@ model ComputeRequest {
   totalCost       Float                // gpuCount × ratePerDay × durationDays
 
   // Payment
-  txHash          String?              // Solana transaction hash
+  txHash          String?              // Solana transaction hash (or INTERNAL:<id> for balance spend)
   txConfirmed     Boolean              @default(false)
   currency        String               @default("USD")
+  // Payment source. USDC = real Solana transfer (txHash is the real
+  // on-chain signature). INTERNAL_BALANCE = paid from operator
+  // platform balance — txHash is INTERNAL:<computeRequestId> and a
+  // matching InternalSpend row records the debit.
+  paymentSource   PaymentSource        @default(USDC)
 
   // Status
   status          ComputeRequestStatus @default(PENDING)

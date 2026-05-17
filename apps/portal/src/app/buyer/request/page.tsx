@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Server, CircleCheck, Hash, Layers, Calendar, FileText, Wallet, Receipt, Globe, KeyRound } from 'lucide-react'
+import { Server, CircleCheck, Hash, Layers, Calendar, FileText, Wallet, Receipt, Globe, KeyRound, PiggyBank, CreditCard } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -153,6 +153,30 @@ export default function RequestComputePage() {
   const [sshPubKey, setSshPubKey] = useState('')
   const [txHash, setTxHash] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  // Internal-spend: only shown to dual-role users (operator + buyer).
+  // `eligible` is set from the API on mount; `available` ticks down
+  // as the user adjusts gpuCount / duration / tier so they can see at
+  // a glance whether the balance covers the rental.
+  const [paymentSource, setPaymentSource] = useState<'USDC' | 'INTERNAL_BALANCE'>('USDC')
+  const [internalEligible, setInternalEligible] = useState(false)
+  const [internalAvailable, setInternalAvailable] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    buyer
+      .internalBalance()
+      .then((r) => {
+        if (cancelled) return
+        setInternalEligible(r.eligible)
+        setInternalAvailable(r.available)
+      })
+      .catch(() => {
+        // Quiet failure - default stays "not eligible", picker stays hidden.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
   // M3: pricing tier + commitment slider for RESERVED
   const [rentalTier, setRentalTier] = useState<RentalTier>('ON_DEMAND')
   const [commitmentDays, setCommitmentDays] = useState<number>(30)
@@ -170,8 +194,16 @@ export default function RequestComputePage() {
   const totalCost = dailyRate * gpuCount * effectiveDuration
 
   async function handleSubmit() {
-    if (!selectedTier || !txHash.trim()) {
-      toast('error', 'Please select a GPU tier and enter a transaction hash')
+    if (!selectedTier) {
+      toast('error', 'Please select a GPU tier')
+      return
+    }
+    if (paymentSource === 'USDC' && !txHash.trim()) {
+      toast('error', 'Enter your Solana transaction hash, or switch to "Pay from operator balance"')
+      return
+    }
+    if (paymentSource === 'INTERNAL_BALANCE' && internalAvailable < totalCost) {
+      toast('error', `Insufficient operator balance: need $${totalCost.toFixed(2)}, have $${internalAvailable.toFixed(2)}`)
       return
     }
     const trimmedPubKey = sshPubKey.trim()
@@ -191,7 +223,11 @@ export default function RequestComputePage() {
         gpuCount,
         durationDays: effectiveDuration,
         purpose: purpose.trim() || undefined,
-        txHash: txHash.trim(),
+        paymentSource,
+        // Only attach txHash when paying with USDC. INTERNAL_BALANCE
+        // omits it so the server-side schema's conditional validation
+        // does not 400.
+        txHash: paymentSource === 'USDC' ? txHash.trim() : undefined,
         tier: rentalTier,
         commitmentDays: rentalTier === 'RESERVED' ? commitmentDays : undefined,
         requiredRegion: requiredRegion || null,
@@ -206,6 +242,10 @@ export default function RequestComputePage() {
       setSubmitting(false)
     }
   }
+
+  // Insufficient-balance flag drives the Submit button + a subtle
+  // warning under the picker. Recomputed on every render — cheap.
+  const internalShort = paymentSource === 'INTERNAL_BALANCE' && internalAvailable < totalCost
 
   return (
     <DashboardShell
@@ -684,17 +724,92 @@ export default function RequestComputePage() {
           </FormCard>
         )}
 
-        {/* Payment */}
+        {/* Payment method picker — only rendered when the user is also
+            an operator (dual identity). Pure buyers never see this
+            section. INTERNAL_BALANCE hides the tx-hash input below;
+            USDC keeps the legacy flow exactly as it was. */}
+        {internalEligible && (
+          <FormCard
+            title="Payment method"
+            description="Pay with USDC on Solana, or draw from your accumulated operator balance."
+            icon={CreditCard}
+          >
+            <FormSection>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPaymentSource('USDC')}
+                  className="text-left rounded-xl p-4 transition-all duration-200"
+                  style={paymentSource === 'USDC'
+                    ? { background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.45)', boxShadow: '0 0 12px rgba(34,197,94,0.18)' }
+                    : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
+                  }
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>USDC on Solana</span>
+                    <Wallet size={16} style={{ color: 'var(--primary)' }} />
+                  </div>
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Pay with a Solana USDC transfer.</p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Requires a transaction hash.</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentSource('INTERNAL_BALANCE')}
+                  className="text-left rounded-xl p-4 transition-all duration-200"
+                  style={paymentSource === 'INTERNAL_BALANCE'
+                    ? { background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.45)', boxShadow: '0 0 12px rgba(59,130,246,0.18)' }
+                    : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
+                  }
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Operator balance</span>
+                    <PiggyBank size={16} style={{ color: 'var(--info, #3b82f6)' }} />
+                  </div>
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    Available: <span className="font-mono">${internalAvailable.toFixed(2)}</span>
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    No on-chain tx, no cool-down. Settles instantly.
+                  </p>
+                </button>
+              </div>
+
+              {internalShort && (
+                <p
+                  className="text-xs mt-3 px-3 py-2 rounded-md"
+                  style={{
+                    background: 'rgba(239,68,68,0.08)',
+                    border: '1px solid rgba(239,68,68,0.25)',
+                    color: '#ef4444',
+                  }}
+                >
+                  Need <span className="font-mono">${totalCost.toFixed(2)}</span> but only <span className="font-mono">${internalAvailable.toFixed(2)}</span> is available. Reduce GPU count / duration or switch to USDC.
+                </p>
+              )}
+            </FormSection>
+          </FormCard>
+        )}
+
+        {/* Payment confirmation. For USDC the buyer pastes the Solana
+            tx hash. For INTERNAL_BALANCE the section degrades to a
+            confirm panel showing the debit math — no hash needed. */}
         <FormCard
           title="Payment"
-          description="Paste your Solana transaction hash after sending the payment."
+          description={paymentSource === 'USDC'
+            ? 'Paste your Solana transaction hash after sending the payment.'
+            : 'Confirm the debit from your operator balance.'}
           icon={Wallet}
           footer={
             <Button
               size="lg"
               onClick={handleSubmit}
               loading={submitting}
-              disabled={!selectedTier || !txHash.trim()}
+              disabled={
+                !selectedTier ||
+                (paymentSource === 'USDC' && !txHash.trim()) ||
+                internalShort
+              }
               className="px-8"
             >
               <Hash size={16} className="mr-2" />
@@ -703,12 +818,37 @@ export default function RequestComputePage() {
           }
         >
           <FormSection>
-            <Input
-              label="Transaction Hash (Solana)"
-              placeholder="Enter your Solana transaction hash..."
-              value={txHash}
-              onChange={e => setTxHash(e.target.value)}
-            />
+            {paymentSource === 'USDC' ? (
+              <Input
+                label="Transaction Hash (Solana)"
+                placeholder="Enter your Solana transaction hash..."
+                value={txHash}
+                onChange={e => setTxHash(e.target.value)}
+              />
+            ) : (
+              <div
+                className="rounded-md p-4 space-y-2 text-sm"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
+              >
+                <div className="flex justify-between">
+                  <span style={{ color: 'var(--text-muted)' }}>Balance before</span>
+                  <span className="font-mono" style={{ color: 'var(--text-primary)' }}>${internalAvailable.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span style={{ color: 'var(--text-muted)' }}>This rental</span>
+                  <span className="font-mono" style={{ color: '#ef4444' }}>-${totalCost.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between pt-2" style={{ borderTop: '1px solid var(--border-color)' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Balance after</span>
+                  <span
+                    className="font-mono font-semibold"
+                    style={{ color: internalShort ? '#ef4444' : 'var(--primary)' }}
+                  >
+                    ${Math.max(0, internalAvailable - totalCost).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            )}
           </FormSection>
         </FormCard>
       </div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Save, User, Wallet, CalendarClock, PiggyBank, ArrowDownToLine, Zap } from 'lucide-react'
+import { ArrowLeft, Save, User, Wallet, CalendarClock, PiggyBank, ArrowDownToLine, Zap, TrendingDown } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -83,6 +83,7 @@ export default function PayoutSettingsPage() {
   const [scheduledAt, setScheduledAt] = useState<string>('') // datetime-local string
   const [available, setAvailable] = useState(0)
   const [pending, setPending] = useState(0)
+  const [spent, setSpent] = useState(0)
   const [nextUnlockAt, setNextUnlockAt] = useState<string | null>(null)
   const [cooldownHours, setCooldownHours] = useState(48)
   const [loading, setLoading] = useState(true)
@@ -113,6 +114,7 @@ export default function PayoutSettingsPage() {
         setScheduledAt(modeInfo.scheduledAt ? toLocalDatetimeInput(modeInfo.scheduledAt) : '')
         setAvailable(modeInfo.available)
         setPending(modeInfo.pending)
+        setSpent(modeInfo.spent ?? 0)
         setNextUnlockAt(modeInfo.nextUnlockAt)
         setCooldownHours(modeInfo.cooldownHours)
       }
@@ -228,7 +230,7 @@ export default function PayoutSettingsPage() {
           icon={PiggyBank}
         >
           <FormSection>
-            <div className="grid sm:grid-cols-2 gap-4">
+            <div className={`grid gap-4 ${spent > 0 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
               <div
                 className="rounded-md p-4"
                 style={{
@@ -265,6 +267,29 @@ export default function PayoutSettingsPage() {
                     : 'No earnings in cool-down.'}
                 </p>
               </div>
+              {/* Internal-spend tile. Only rendered when the operator
+                  has spent any balance on rentals (dual-role user).
+                  Already subtracted from Available — shown here so
+                  the math is transparent. */}
+              {spent > 0 && (
+                <div
+                  className="rounded-md p-4"
+                  style={{
+                    background: 'rgba(59,130,246,0.06)',
+                    border: '1px solid rgba(59,130,246,0.25)',
+                  }}
+                >
+                  <p className="text-xs font-mono uppercase tracking-[0.16em] mb-2 flex items-center gap-1" style={{ color: 'var(--info, #3b82f6)' }}>
+                    <TrendingDown size={12} /> Spent on rentals
+                  </p>
+                  <p className="font-display text-3xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                    ${spent.toFixed(2)}
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Already subtracted from Available.
+                  </p>
+                </div>
+              )}
             </div>
 
             {!withdrawOpen ? (

@@ -193,7 +193,7 @@ export async function clearScheduledPayout(
 }
 
 export interface OperatorBalanceBreakdown {
-  /** Sum of earnings already past the cooling-off window. Withdrawable. */
+  /** Sum of earnings already past the cooling-off window, minus internal spend. Withdrawable. */
   available: number
   /** Sum of earnings still within the cooling-off window. Visible but locked. */
   pending: number
@@ -201,6 +201,8 @@ export interface OperatorBalanceBreakdown {
   nextUnlockAt: string | null
   /** Configured cool-down so the UI can show the window length. */
   cooldownHours: number
+  /** Lifetime sum of InternalSpend rows for this operator. Already subtracted from `available`. */
+  spent: number
 }
 
 /**
@@ -214,12 +216,21 @@ export async function getOperatorBalanceBreakdown(
   const now = new Date()
   const boundary = cooldownBoundary(now)
 
-  const nodes = await prisma.node.findMany({
-    where: { nodeRunnerId },
-    select: { id: true },
-  })
+  const [nodes, spendAgg] = await Promise.all([
+    prisma.node.findMany({
+      where: { nodeRunnerId },
+      select: { id: true },
+    }),
+    prisma.internalSpend.aggregate({
+      where: { nodeRunnerId },
+      _sum: { amount: true },
+    }),
+  ])
+  const spent = spendAgg._sum.amount ?? 0
   if (nodes.length === 0) {
-    return { available: 0, pending: 0, nextUnlockAt: null, cooldownHours: COOLDOWN_HOURS }
+    // Even with no nodes, an operator can carry a positive spend
+    // ledger from a prior life. Surface it so the UI is consistent.
+    return { available: 0, pending: 0, nextUnlockAt: null, cooldownHours: COOLDOWN_HOURS, spent }
   }
 
   let available = 0
@@ -262,11 +273,20 @@ export async function getOperatorBalanceBreakdown(
     }
   }
 
+  // Subtract lifetime internal-spend from the available pool. This
+  // is the only line in the engine that distinguishes "earnings"
+  // from "withdrawable balance" — everything else (settlements,
+  // cooldown, payout-mode) treats the two as the same number. We
+  // clamp at zero so a stale settlement that hasn't been clawed
+  // back can't show a negative balance to the user.
+  const withdrawable = Math.max(0, available - spent)
+
   return {
-    available,
+    available: withdrawable,
     pending,
     nextUnlockAt: earliestUnlock?.toISOString() ?? null,
     cooldownHours: COOLDOWN_HOURS,
+    spent,
   }
 }
 
