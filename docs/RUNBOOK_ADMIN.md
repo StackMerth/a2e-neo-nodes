@@ -122,7 +122,7 @@ The platform holds operator earnings until the operator withdraws on
 demand. Driven by `apps/api/src/services/settlement/engine.ts`.
 
 - **Cool-down window:** earnings sit in `pending` state for
-  `PAYOUT_COOLDOWN_HOURS` (default 12) after they accrue, then move to
+  `PAYOUT_COOLDOWN_HOURS` (default 2) after they accrue, then move to
   `available`. Only `available` is withdrawable.
 - **Payout modes** (per-operator on `NodeRunner.payoutMode`):
   - `AUTO` — settlement worker fires on schedule when balance crosses
@@ -223,6 +223,9 @@ cd /opt/render/project/src/apps/api
 pnpm null:payer-key                  # one-off: blank stale SettlementConfig.payerPrivateKey
 pnpm seed:earnings <email>           # targeted: 24h heartbeats + earning rollups on ONE operator
                                      # (safe against prod; wipes prior test data first; for QA L4)
+pnpm preempt:test <email> [--internal] # QA: synthesizes ACTIVE SPOT rental, marks for immediate
+                                     # preemption, triggers worker tick directly, reports refund
+                                     # outcome. --internal uses INTERNAL_BALANCE paymentSource.
 pnpm seed:test                       # bulk fixture seeder — REFUSES prod; dev only
 pnpm seed:keep-alive-only            # legacy: long-running keep-alive (use env flag instead)
 pnpm reputation:recompute            # force a reputation pass outside the daily worker

@@ -29,9 +29,13 @@ const INACTIVITY_SWEEP_DAYS = Number(process.env.PAYOUT_INACTIVITY_DAYS ?? 180)
 
 // Cooling-off period — earnings sit in "pending" state for this many
 // hours after they accrue, then become withdrawable. Gives the
-// platform a buyer-dispute window without making us legally
-// custodial for long stretches.
-const COOLDOWN_HOURS = Number(process.env.PAYOUT_COOLDOWN_HOURS ?? 12)
+// platform a short buyer-dispute window without making us legally
+// custodial for long stretches. Default 2h balances "fast enough to
+// feel snappy for operators" against "long enough to catch obvious
+// dispute / fraud cases before funds leave the platform". Set
+// PAYOUT_COOLDOWN_HOURS env to override (e.g. 12 for stricter holds,
+// 0.01 for QA shortcuts).
+const COOLDOWN_HOURS = Number(process.env.PAYOUT_COOLDOWN_HOURS ?? 2)
 
 /** Returns the boundary timestamp: heartbeats older than this are "available". */
 function cooldownBoundary(now: Date = new Date()): Date {
