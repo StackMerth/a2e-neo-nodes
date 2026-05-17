@@ -423,10 +423,10 @@ function VerifyStep({ onBack }: { onBack: () => void }) {
 }
 
 // C5 wave 1: shown on step 1 (Requirements) when the operator signed
-// up via email/password and hasn't connected an on-chain wallet yet.
-// The wallet is needed for the payout-routing flow, so prompting now
-// avoids a "where do my earnings go?" question 30 minutes from now.
-// Soft prompt: it's an info card with a CTA, doesn't block progression.
+// up via email/password and hasn't set a payout wallet yet. Points
+// at /payouts/settings (the real "set my payout wallet" page) rather
+// than /connect-wallet — the latter is wallet-auth-only and bounces
+// authenticated users to /dashboard, which would be a broken trip.
 function WalletNudge() {
   const [show, setShow] = useState(false)
   useEffect(() => {
@@ -452,16 +452,16 @@ function WalletNudge() {
       <Wallet size={18} style={{ color: 'var(--info, #3b82f6)', flexShrink: 0, marginTop: 2 }} />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-          Tip: connect your Solana wallet first
+          Tip: set your payout wallet first
         </p>
         <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-          Earnings route to whatever wallet is on your account. You can
-          add it now and skip the swap later.
+          Earnings route to the Solana wallet on your operator profile.
+          Set it now and skip the swap later.
         </p>
       </div>
-      <Link href="/connect-wallet?next=/onboarding">
+      <Link href="/payouts/settings">
         <Button variant="secondary" size="sm">
-          Connect wallet
+          Set wallet
         </Button>
       </Link>
     </div>
@@ -554,10 +554,10 @@ function CelebrationCard() {
             </Button>
           </Link>
           {walletPrompt && (
-            <Link href="/connect-wallet?next=/dashboard">
+            <Link href="/payouts/settings">
               <Button variant="secondary">
                 <Wallet size={14} className="mr-1.5" />
-                Connect Wallet for Payouts
+                Set Payout Wallet
               </Button>
             </Link>
           )}
