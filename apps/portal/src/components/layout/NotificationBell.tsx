@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Bell } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { notifications as notifApi } from '@/lib/api'
@@ -12,6 +13,10 @@ interface Notification {
   type: string
   title: string
   message: string
+  // Optional deep-link the API stamps on certain notification types
+  // (e.g. PAYOUT_SENT links to /payouts). When present, clicking the
+  // notification navigates here AND marks read in one action.
+  link: string | null
   read: boolean
   createdAt: string
 }
@@ -23,6 +28,7 @@ const labelVariants = {
 
 export function NotificationBell({ collapsed = false }: { collapsed?: boolean }) {
   const { user } = useAuth()
+  const router = useRouter()
   const [count, setCount] = useState(0)
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<Notification[]>([])
@@ -90,6 +96,18 @@ export function NotificationBell({ collapsed = false }: { collapsed?: boolean })
     setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
   }
 
+  // Single click handler: marks the row as read (if unread) AND
+  // navigates to the deep-link (if present). The dropdown closes on
+  // navigation so the user lands on the target page without an extra
+  // dismiss step.
+  const handleItemClick = (item: Notification) => {
+    if (!item.read) void handleMarkRead(item.id)
+    if (item.link) {
+      setOpen(false)
+      router.push(item.link)
+    }
+  }
+
   const timeAgo = (dateStr: string) => {
     const diff = Date.now() - new Date(dateStr).getTime()
     const mins = Math.floor(diff / 60000)
@@ -153,11 +171,12 @@ export function NotificationBell({ collapsed = false }: { collapsed?: boolean })
               items.map(item => (
                 <button
                   key={item.id}
-                  onClick={() => !item.read && handleMarkRead(item.id)}
-                  className="w-full text-left px-4 py-3 transition-colors"
+                  onClick={() => handleItemClick(item)}
+                  className="w-full text-left px-4 py-3 transition-colors hover:opacity-90"
                   style={{
                     borderBottom: '1px solid var(--border-color)',
                     background: !item.read ? 'rgba(34, 197, 94, 0.05)' : 'transparent',
+                    cursor: item.link ? 'pointer' : 'default',
                   }}
                 >
                   <div className="flex items-start gap-2">
@@ -167,11 +186,20 @@ export function NotificationBell({ collapsed = false }: { collapsed?: boolean })
                         style={{ background: 'var(--primary)' }}
                       />
                     )}
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{item.title}</p>
                       <p className="text-xs mt-0.5 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{item.message}</p>
                       <p className="text-xs mt-1" style={{ color: 'var(--text-muted)', fontSize: '0.625rem' }}>{timeAgo(item.createdAt)}</p>
                     </div>
+                    {item.link && (
+                      <span
+                        className="shrink-0 text-xs font-mono"
+                        style={{ color: 'var(--primary)' }}
+                        aria-hidden
+                      >
+                        &rarr;
+                      </span>
+                    )}
                   </div>
                 </button>
               ))

@@ -878,6 +878,27 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     }
 
     const anySuccess = results.some((r) => r.success)
+
+    // Fire a notification so the operator sees a persistent record in
+    // their bell dropdown, not just the auto-dismiss toast. Clicking
+    // the notification deep-links to /payouts (the settlement history
+    // page where they can find the tx hash). Skipped on full failure
+    // so the bell doesn't lie about money having moved.
+    if (anySuccess) {
+      const successCount = results.filter((r) => r.success).length
+      const totalCount = results.length
+      const walletShort = `${destinationWallet.slice(0, 6)}...${destinationWallet.slice(-4)}`
+      void createNotification(
+        request.user!.userId,
+        'PAYOUT_SENT',
+        `Withdrew $${totalPaid.toFixed(2)}`,
+        successCount === totalCount
+          ? `Sent to ${walletShort}. Tap to view settlement history.`
+          : `${successCount} of ${totalCount} settlements succeeded. Sent to ${walletShort}.`,
+        '/payouts',
+      )
+    }
+
     reply.code(anySuccess ? 200 : 502).send({
       totalPaid,
       settlements: results,
