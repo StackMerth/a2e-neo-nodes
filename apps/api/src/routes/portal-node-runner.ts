@@ -315,11 +315,20 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
           }),
     ])
 
-    // Pending payout: earnings not yet withdrawn or in-flight
+    // Pending payout (= "available right now to withdraw"). Source from
+    // the same live heartbeat-based engine the Payouts Settings page
+    // uses, so this card always matches the Available tile shown there.
+    // Previously we computed this from Earning rollups, which lag the
+    // heartbeat-based truth and confused operators when both numbers
+    // disagreed.
     const totalEarnings = earningsAgg._sum.earnings ?? 0
     const totalWithdrawn = withdrawnAgg._sum.amount ?? 0
     const pendingWithdrawal = pendingWithdrawalsAgg._sum.amount ?? 0
-    const pendingPayout = Math.max(0, totalEarnings - totalWithdrawn - pendingWithdrawal)
+    const { getOperatorBalanceBreakdown } = await import(
+      '../services/settlement/engine.js'
+    )
+    const balance = await getOperatorBalanceBreakdown(fastify.prisma, nr.id)
+    const pendingPayout = balance.available
 
     const capitalDeployed = investmentsAgg._sum.amount ?? 0
 

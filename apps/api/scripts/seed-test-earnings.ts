@@ -83,6 +83,37 @@ async function main() {
   const result = await prisma.heartbeat.createMany({ data: rows })
   console.log(`Inserted ${result.count} heartbeats across the last 24h on node ${node.id}.`)
 
+  // Also insert two Earning rollup rows (yesterday + today) so the
+  // Dashboard "Earnings (30d)" + "Today" cards show non-zero. The
+  // rollup worker normally does this once per day; we shortcut for
+  // the test fixture. H100 rate ~$5.84/hr × 12h per row = ~$70.
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const yesterdayStart = new Date(todayStart.getTime() - 86_400_000)
+  await prisma.earning.upsert({
+    where: { nodeId_date_market: { nodeId: node.id, date: yesterdayStart, market: 'INTERNAL' } },
+    update: { earnings: 70.08, gpuSeconds: 12 * 3600 },
+    create: {
+      nodeId: node.id,
+      date: yesterdayStart,
+      market: 'INTERNAL',
+      earnings: 70.08,
+      gpuSeconds: 12 * 3600,
+    },
+  })
+  await prisma.earning.upsert({
+    where: { nodeId_date_market: { nodeId: node.id, date: todayStart, market: 'INTERNAL' } },
+    update: { earnings: 70.08, gpuSeconds: 12 * 3600 },
+    create: {
+      nodeId: node.id,
+      date: todayStart,
+      market: 'INTERNAL',
+      earnings: 70.08,
+      gpuSeconds: 12 * 3600,
+    },
+  })
+  console.log('Upserted 2 Earning rollup rows (today + yesterday, $70.08 each).')
+
   // Immediately query the breakdown so the operator sees the expected
   // number without having to log in. If this shows $0, the seeding
   // didn't take or the engine has a stricter filter than expected.
