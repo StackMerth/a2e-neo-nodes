@@ -163,6 +163,43 @@ operator's GPU machine. Stored on `InstallToken` model.
 - **API:** `DELETE /v1/admin/install-tokens/:id` — 409 if already
   consumed.
 
+### Workspace checkpoints (M3-T6)
+
+Buyers can snapshot the per-rental workspace (`/home/<sshUsername>` on
+the operator's box) to S3 and restore it on a future rental. Drives
+the **Checkpoint Workspace** button on the buyer's active rental card
+and the optional `restoreCheckpointId` field on `POST /v1/buyer/compute/request`.
+
+**Env config** (required to enable the feature, set in Render `a2e-api`):
+- `CHECKPOINT_S3_BUCKET` — S3 bucket name
+- `CHECKPOINT_S3_REGION` — default `us-east-1`
+- `CHECKPOINT_AWS_ACCESS_KEY_ID` — IAM access key with PutObject/GetObject/HeadObject on the bucket
+- `CHECKPOINT_AWS_SECRET_ACCESS_KEY` — secret
+- `CHECKPOINT_S3_ENDPOINT` — optional, for S3-compatible services like R2 or Minio
+- `CHECKPOINT_PRESIGN_TTL_SECONDS` — default 3600 (1h); how long the presigned URLs stay valid
+
+When the env is unset, the buyer's Checkpoint button still works (the
+ComputeRequest row flips to `checkpointStatus=REQUESTED`) but the
+agent's upload-URL request returns 503 and the snapshot stays in
+REQUESTED forever. UI shows the row but never advances to READY.
+
+**Round-trip flow:**
+1. Buyer clicks Checkpoint on `/buyer/active` → `POST /v1/buyer/compute/requests/:id/checkpoint` → row flips to `REQUESTED`
+2. Agent's next heartbeat receives `workspaceCheckpoint: { action: 'checkpoint', ... }`
+3. Agent reports UPLOADING, tars `/home/<username>`, requests `POST /v1/agent/checkpoints/upload-url`
+4. Agent PUTs the tar.gz to the presigned URL
+5. Agent reports READY with the bucketUrl + checkpointId → row stores both
+6. Buyer creates a new rental with `restoreCheckpointId=<id>` → row stores it
+7. Agent's heartbeat on the new node receives `workspaceCheckpoint: { action: 'restore', ... }`
+8. Agent requests `POST /v1/agent/checkpoints/:checkpointId/download-url`, GETs the tar.gz, untars to the buyer's home directory
+9. Agent reports restore-applied → heartbeat stops surfacing the action
+
+**S3 object key convention:** `checkpoints/<nodeRunnerId>/<computeRequestId>/<checkpointId>.tar.gz` — admin can filter / audit per-operator from the S3 console.
+
+**Workspace exclusions:** the agent's tar skips `.cache`, `node_modules`, and `__pycache__` to keep snapshots small. If a buyer's workflow depends on these, document it as a known gap.
+
+**Cleanup:** S3 objects are not auto-deleted. Run an S3 lifecycle policy on the bucket (e.g. expire objects older than 90 days) to bound storage cost.
+
 ### Internal-spend (dual-role buyers paying from operator balance)
 
 Users who are both `isBuyer=true` AND `isNodeRunner=true` can pay for

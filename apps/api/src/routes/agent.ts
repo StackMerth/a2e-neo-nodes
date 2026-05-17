@@ -1,8 +1,14 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { JobStatus, NodeStatus } from '@a2e/database'
+import crypto from 'node:crypto'
 import { recordJobEarnings } from '../services/earnings/calculator'
 import { notifyJobCompleted, notifyJobFailed } from '../services/notification/service.js'
+import {
+  isCheckpointS3Configured,
+  presignCheckpointUpload,
+  presignCheckpointDownload,
+} from '../services/checkpoints/s3.js'
 
 /**
  * Agent Communication Endpoints
@@ -834,5 +840,183 @@ export async function agentRoutes(fastify: FastifyInstance) {
     })
 
     return reply.send({ ok: true, status })
+  })
+
+  // -------------------------------------------------------------------------
+  // M3-T6: Agent requests a presigned PUT URL to upload a fresh
+  // checkpoint snapshot. The agent generates the checkpointId
+  // client-side (uuid) so the same id can be reported back to
+  // /v1/agent/checkpoints once the upload completes.
+  // -------------------------------------------------------------------------
+
+  const uploadUrlSchema = z.object({
+    computeRequestId: z.string().min(1),
+    checkpointId: z.string().min(8).max(64).optional(), // server generates if omitted
+  })
+
+  fastify.post('/v1/agent/checkpoints/upload-url', async (request, reply) => {
+    if (!isCheckpointS3Configured()) {
+      return reply.code(503).send({
+        error: 'Service Unavailable',
+        message: 'Workspace checkpoint S3 not configured. See RUNBOOK_ADMIN.md → Workspace checkpoints.',
+      })
+    }
+    const parsed = uploadUrlSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'Validation Error',
+        message: parsed.error.errors[0]?.message ?? 'Invalid input',
+      })
+    }
+    const { computeRequestId } = parsed.data
+    const checkpointId = parsed.data.checkpointId ?? `chk_${crypto.randomBytes(12).toString('hex')}`
+
+    // Resolve the operator via the rental's allocated node. We accept
+    // the request without strict auth here because the agent's API key
+    // is already validated in the heartbeat pipe; in dev mode this
+    // path is exercised manually.
+    const cr = await fastify.prisma.computeRequest.findUnique({
+      where: { id: computeRequestId },
+      select: { id: true, status: true, allocatedNodeIds: true },
+    })
+    if (!cr) return reply.code(404).send({ error: 'ComputeRequest not found' })
+    if (cr.status !== 'ACTIVE') {
+      return reply.code(409).send({ error: `Rental must be ACTIVE (got ${cr.status})` })
+    }
+    const headNodeId = cr.allocatedNodeIds[0]
+    if (!headNodeId) {
+      return reply.code(409).send({ error: 'Rental has no allocated node' })
+    }
+    const node = await fastify.prisma.node.findUnique({
+      where: { id: headNodeId },
+      select: { nodeRunnerId: true },
+    })
+    if (!node?.nodeRunnerId) {
+      return reply.code(409).send({ error: 'Allocated node has no operator' })
+    }
+
+    try {
+      const presign = await presignCheckpointUpload(node.nodeRunnerId, computeRequestId, checkpointId)
+      return reply.send({
+        checkpointId,
+        uploadUrl: presign.uploadUrl,
+        bucketUrl: presign.bucketUrl,
+        objectKey: presign.objectKey,
+        expiresAt: presign.expiresAt,
+      })
+    } catch (err) {
+      request.log.error({ err, computeRequestId }, 'Failed to presign checkpoint upload')
+      return reply.code(500).send({
+        error: 'Internal Server Error',
+        message: err instanceof Error ? err.message : 'Presign failed',
+      })
+    }
+  })
+
+  // -------------------------------------------------------------------------
+  // M3-T6: Agent requests a presigned GET URL to download an existing
+  // checkpoint during rental restore. Looks up the bucketUrl on the
+  // source rental (referenced by checkpointId) and returns a one-shot
+  // signed URL.
+  // -------------------------------------------------------------------------
+
+  fastify.post<{ Params: { checkpointId: string } }>(
+    '/v1/agent/checkpoints/:checkpointId/download-url',
+    async (request, reply) => {
+      if (!isCheckpointS3Configured()) {
+        return reply.code(503).send({
+          error: 'Service Unavailable',
+          message: 'Workspace checkpoint S3 not configured.',
+        })
+      }
+      const { checkpointId } = request.params
+
+      // Find the source rental that owns this checkpointId. Single
+      // index lookup on the unique lastCheckpointId field.
+      const source = await fastify.prisma.computeRequest.findFirst({
+        where: { lastCheckpointId: checkpointId },
+        select: { id: true, checkpointBucketUrl: true, checkpointStatus: true },
+      })
+      if (!source) {
+        return reply.code(404).send({ error: 'Checkpoint not found' })
+      }
+      if (source.checkpointStatus !== 'READY' || !source.checkpointBucketUrl) {
+        return reply.code(409).send({
+          error: 'Checkpoint not ready',
+          status: source.checkpointStatus,
+        })
+      }
+
+      try {
+        const presign = await presignCheckpointDownload(source.checkpointBucketUrl)
+        return reply.send({
+          checkpointId,
+          downloadUrl: presign.downloadUrl,
+          expiresAt: presign.expiresAt,
+        })
+      } catch (err) {
+        request.log.error({ err, checkpointId }, 'Failed to presign checkpoint download')
+        // S3 HEAD failure usually means the object is missing — treat
+        // as 404 so the agent reports a clean restore failure to the
+        // buyer.
+        const msg = err instanceof Error ? err.message : 'Presign failed'
+        if (msg.toLowerCase().includes('notfound') || msg.toLowerCase().includes('404')) {
+          return reply.code(404).send({ error: 'Checkpoint object missing in S3' })
+        }
+        return reply.code(500).send({ error: msg })
+      }
+    },
+  )
+
+  // -------------------------------------------------------------------------
+  // M3-T6: Agent reports that a restore-on-launch has been applied
+  // to the buyer's workspace. After this, the heartbeat-response
+  // stops surfacing the restore action for this rental (avoids
+  // re-applying the same checkpoint twice).
+  // -------------------------------------------------------------------------
+
+  const restoreAppliedSchema = z.object({
+    computeRequestId: z.string().min(1),
+    error: z.string().max(2000).optional(), // populated if restore failed
+  })
+
+  fastify.post('/v1/agent/checkpoints/restore-applied', async (request, reply) => {
+    const parsed = restoreAppliedSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'Validation Error',
+        message: parsed.error.errors[0]?.message ?? 'Invalid input',
+      })
+    }
+    const { computeRequestId, error } = parsed.data
+
+    const cr = await fastify.prisma.computeRequest.findUnique({
+      where: { id: computeRequestId },
+      select: { id: true, userId: true, restoreCheckpointId: true },
+    })
+    if (!cr) return reply.code(404).send({ error: 'ComputeRequest not found' })
+    if (!cr.restoreCheckpointId) {
+      return reply.code(409).send({ error: 'Rental has no restoreCheckpointId set' })
+    }
+
+    await fastify.prisma.computeRequest.update({
+      where: { id: computeRequestId },
+      data: {
+        restoreAppliedAt: new Date(),
+        // Propagate any restore failure into the checkpoint error field
+        // so it surfaces in the buyer UI alongside upload errors.
+        ...(error ? { checkpointError: `Restore failed: ${error}` } : {}),
+      },
+    })
+
+    fastify.io?.emit('checkpoint:restore-applied', {
+      requestId: computeRequestId,
+      userId: cr.userId,
+      checkpointId: cr.restoreCheckpointId,
+      error: error ?? null,
+      timestamp: new Date().toISOString(),
+    })
+
+    return reply.send({ ok: true })
   })
 }

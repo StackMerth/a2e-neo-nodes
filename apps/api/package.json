@@ -26,6 +26,8 @@
     "@a2e/database": "workspace:*",
     "@a2e/shared": "workspace:*",
     "@anthropic-ai/sdk": "^0.71.0",
+    "@aws-sdk/client-s3": "^3.1048.0",
+    "@aws-sdk/s3-request-presigner": "^3.1048.0",
     "@fastify/cors": "^9.0.0",
     "@fastify/swagger": "^8.14.0",
     "@fastify/swagger-ui": "^3.0.0",
