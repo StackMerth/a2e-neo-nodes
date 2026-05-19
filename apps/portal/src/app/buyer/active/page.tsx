@@ -94,6 +94,11 @@ const TIER_COLORS: Record<string, string> = {
   B200: '#8b5cf6',
   B300: '#f59e0b',
   GB300: '#ef4444',
+  // C2 wave 2: consumer / prosumer tiers share a teal accent so they
+  // read as one "edge" cluster across the buyer UI.
+  RTX_4090: '#14b8a6',
+  RTX_3090: '#14b8a6',
+  CONSUMER: '#14b8a6',
 }
 
 function CopyButton({ text }: { text: string }) {

@@ -54,7 +54,7 @@ const issueTokenSchema = z.object({
 const claimSchema = z.object({
   installToken: z.string().min(16).max(64),
   specs: z.object({
-    gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER']),
+    gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
     gpuModel: z.string().optional(),
     gpuCount: z.number().optional(),
     gpuVram: z.number().optional(),

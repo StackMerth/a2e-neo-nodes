@@ -8,10 +8,14 @@ import { getOperatorBalanceBreakdown } from '../services/settlement/engine.js'
 
 const GPU_DAILY_RATES: Record<string, number> = {
   H100: 140.15, H200: 179.85, B200: 321.10, B300: 431.75, GB300: 499.35,
+  // C2 wave 2: consumer / prosumer tier pricing (market-standard,
+  // tunable via YieldFloor per-tier in admin /rates). Allocator
+  // gates these to workloadType=INFERENCE only — see compute-allocator.ts.
+  RTX_4090: 14, RTX_3090: 9, CONSUMER: 7,
 }
 
 const requestSchema = z.object({
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300']),
+  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
   // gpuCount cap: 64 covers single-rack NVL72 / NVL36 cluster requests
   // with headroom. >64 requires an admin-side enterprise quote — keeps
   // a single self-serve buyer from accidentally requesting half the
@@ -38,6 +42,12 @@ const requestSchema = z.object({
   //   RESERVED  — 10% off, exempt from preemption, requires
   //               commitmentDays in {7, 30, 90}
   tier: z.enum(['ON_DEMAND', 'SPOT', 'RESERVED']).default('ON_DEMAND'),
+  // C2 wave 2: workload-type declaration. Drives the allocator's
+  // consumer-tier eligibility filter. INFERENCE matches all tiers
+  // (including CONSUMER / RTX_4090 / RTX_3090); TRAINING and MIXED
+  // hard-filter consumer tiers out. Default MIXED preserves the
+  // pre-wave-2 routing semantics for buyers who don't pick.
+  workloadType: z.enum(['INFERENCE', 'TRAINING', 'MIXED']).default('MIXED'),
   commitmentDays: z.number().int().refine(d => [7, 30, 90].includes(d), {
     message: 'commitmentDays must be 7, 30, or 90',
   }).optional(),
@@ -78,6 +88,18 @@ const requestSchema = z.object({
   // generates a synthetic INTERNAL:<id> hash post-insert).
   data => data.paymentSource !== 'USDC' || (data.txHash && data.txHash.length > 0),
   { message: 'txHash is required for USDC payments', path: ['txHash'] },
+).refine(
+  // C2 wave 2: consumer GPU tiers are inference-only. Reject obvious
+  // mistakes at the request boundary so the allocator never has to
+  // deal with an impossible combination later.
+  data => {
+    const consumerTiers = ['CONSUMER', 'RTX_4090', 'RTX_3090']
+    if (consumerTiers.includes(data.gpuTier) && data.workloadType !== 'INFERENCE') {
+      return false
+    }
+    return true
+  },
+  { message: 'Consumer GPU tiers only support workloadType=INFERENCE', path: ['workloadType'] },
 )
 
 // M3 pricing modifiers. ON_DEMAND = full price baseline. SPOT and
@@ -202,7 +224,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
     }
 
-    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion, preferredOperatorSlug, sshPubKey, paymentSource } = parsed.data
+    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion, preferredOperatorSlug, sshPubKey, paymentSource, workloadType } = parsed.data
 
     // M5.10c: resolve preferred operator slug to NodeRunner.id. Silently
     // ignore unknown slugs (don't fail the request - the allocator just
@@ -329,6 +351,10 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       txConfirmed: true,
       status: 'PENDING' as const,
       paymentSource,
+      // C2 wave 2: workload-type tag the allocator filters on. Default
+      // MIXED keeps pre-wave-2 behavior (consumer tiers excluded);
+      // INFERENCE unlocks consumer GPUs as candidates.
+      workloadType: workloadType as import('@a2e/database').WorkloadType,
       // M3: persist tier so the routing engine + preemption worker
       // can read it. commitmentDays only stored for RESERVED rentals
       // (refund logic checks this when buyer terminates early).

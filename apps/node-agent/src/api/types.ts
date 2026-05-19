@@ -3,7 +3,21 @@
  */
 
 // GPU Tiers
-export type GpuTier = 'H100' | 'H200' | 'B200' | 'B300' | 'GB300' | 'OTHER';
+export type GpuTier =
+  | 'H100'
+  | 'H200'
+  | 'B200'
+  | 'B300'
+  | 'GB300'
+  | 'OTHER'
+  | 'CONSUMER'
+  | 'RTX_4090'
+  | 'RTX_3090';
+
+// C2 wave 2: buyer-declared workload type. Drives the allocator's
+// tier-eligibility filter. CONSUMER/RTX_4090/RTX_3090 only match
+// INFERENCE requests; TRAINING and MIXED filter them out.
+export type WorkloadType = 'INFERENCE' | 'TRAINING' | 'MIXED';
 
 // Node Status
 export type NodeStatus = 'ONLINE' | 'OFFLINE' | 'DEGRADED' | 'MAINTENANCE';

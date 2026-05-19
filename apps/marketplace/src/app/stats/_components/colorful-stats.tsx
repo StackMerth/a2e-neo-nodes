@@ -104,6 +104,11 @@ const TIER_COLORS: Record<string, string> = {
   B300:  COLORS.amber,
   GB300: COLORS.red,
   OTHER: COLORS.slate,
+  // C2 wave 2: consumer / prosumer tiers share the cyan accent so they
+  // read as one "edge inventory" cluster on charts.
+  RTX_4090: COLORS.cyan,
+  RTX_3090: COLORS.cyan,
+  CONSUMER: COLORS.cyan,
 }
 
 type Tab = 'overview' | 'projections' | 'charts'

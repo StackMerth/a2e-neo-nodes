@@ -469,6 +469,11 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
 
   const updateNodeSchema = z.object({
     status: z.enum(['PAUSED', 'MAINTENANCE', 'ONLINE']).optional(),
+    // C2 wave 2: operator-declared residential-IP marker. Surfaced as
+    // a "Home GPU" badge on the marketplace so buyers know this host
+    // is on a home/residential connection (no static IP, behind NAT,
+    // possibly lower SLA). Self-declared; no geolocation check.
+    isResidential: z.boolean().optional(),
   })
 
   /**
@@ -1100,7 +1105,7 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
   }
 
   const deploySchema = z.object({
-    gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300']),
+    gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
     nodeCount: z.number().int().min(1).max(5).default(1),
     txHash: z.string().min(1, 'Transaction hash is required'),
     cryptoAmount: z.number().positive().optional(),

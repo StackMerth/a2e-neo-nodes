@@ -29,7 +29,17 @@ const GPU_META: Record<string, { architecture: string; vram: string; accent: str
   B200:  { architecture: 'Blackwell', vram: '192GB HBM3e', accent: '#8b5cf6' },
   B300:  { architecture: 'Blackwell Ultra', vram: '288GB HBM3e', accent: '#f59e0b' },
   GB300: { architecture: 'Grace Blackwell', vram: 'NVL72',  accent: '#ef4444' },
+  // C2 wave 2: consumer / prosumer entries. Not rendered as primary
+  // RentGrid tiles (those stay datacenter-only) but the RentModal
+  // looks them up by key when a buyer rents from a consumer-tier
+  // listing on /marketplace - without these entries the non-null
+  // assert on GPU_META[tier] would crash the modal.
+  RTX_4090: { architecture: 'Ada Lovelace', vram: '24GB GDDR6X', accent: '#14b8a6' },
+  RTX_3090: { architecture: 'Ampere',       vram: '24GB GDDR6X', accent: '#14b8a6' },
+  CONSUMER: { architecture: 'Consumer NVIDIA', vram: 'varies',   accent: '#14b8a6' },
 }
+
+const CONSUMER_TIERS = new Set<string>(['CONSUMER', 'RTX_4090', 'RTX_3090'])
 
 interface StatsResponse {
   totalNodesOnline: number
@@ -294,8 +304,12 @@ export function RentModal({
       // stores tokens in its own localStorage, then redirects to dest.
       // M5.10c: pass operator slug too when the modal was opened from
       // an operator-specific surface (profile / catalog / leaderboard).
+      // C2 wave 2: consumer-tier rentals carry workloadType=INFERENCE so
+      // the request page lands with the correct workload selected (the
+      // tier card would render as locked otherwise).
       const destParts: string[] = [`gpuTier=${encodeURIComponent(tier)}`]
       if (operatorSlug) destParts.push(`operator=${encodeURIComponent(operatorSlug)}`)
+      if (CONSUMER_TIERS.has(tier)) destParts.push('workloadType=INFERENCE')
       const dest = `/buyer/request?${destParts.join('&')}`
       const hash = new URLSearchParams({
         access: json.accessToken,

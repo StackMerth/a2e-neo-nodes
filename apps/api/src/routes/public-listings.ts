@@ -42,7 +42,7 @@ const REPUTATION_RANK: Record<ReputationTier, number> = {
   PLATINUM: 3,
 }
 
-const VALID_GPU_TIERS = new Set<GpuTier>(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER'])
+const VALID_GPU_TIERS = new Set<GpuTier>(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER', 'CONSUMER', 'RTX_4090', 'RTX_3090'])
 const VALID_PRICING_TIERS = new Set(['ON_DEMAND', 'SPOT', 'RESERVED'])
 const VALID_REP_TIERS = new Set<ReputationTier>(['BRONZE', 'SILVER', 'GOLD', 'PLATINUM'])
 
@@ -58,6 +58,10 @@ interface Listing {
   ratePerHour: number
   ratePerMinute: number
   lastHeartbeat: string
+  // C2 wave 2: operator-declared "home" connection. Buyers see a
+  // "Home GPU" badge so they know the reliability profile (no static
+  // IP, possibly lower SLA). Self-declared; no geo verification.
+  isResidential: boolean
 }
 
 const LISTINGS_SCHEMA = {
@@ -67,7 +71,7 @@ const LISTINGS_SCHEMA = {
   querystring: {
     type: 'object',
     properties: {
-      gpuTier: { type: 'string', enum: ['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER'] },
+      gpuTier: { type: 'string', enum: ['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER', 'CONSUMER', 'RTX_4090', 'RTX_3090'] },
       region: { type: 'string', description: 'Operator region string match' },
       maxRatePerHour: { type: 'number', minimum: 0 },
       tier: { type: 'string', enum: ['ON_DEMAND', 'SPOT', 'RESERVED'], default: 'ON_DEMAND' },
@@ -100,6 +104,7 @@ const LISTINGS_SCHEMA = {
               ratePerHour: { type: 'number' },
               ratePerMinute: { type: 'number' },
               lastHeartbeat: { type: 'string', format: 'date-time' },
+              isResidential: { type: 'boolean' },
             },
           },
         },
@@ -170,6 +175,7 @@ export async function publicListingsRoutes(fastify: FastifyInstance) {
         region: true,
         lastHeartbeat: true,
         customRatePerHour: true,
+        isResidential: true,
         nodeRunner: {
           select: {
             slug: true,
@@ -215,7 +221,11 @@ export async function publicListingsRoutes(fastify: FastifyInstance) {
       if (maxRateParam !== undefined && ratePerHour > maxRateParam) continue
       if (ratePerHour <= 0) continue
 
-      const key = `${n.nodeRunner.slug}::${n.gpuTier}::${n.region ?? ''}`
+      // C2 wave 2: isResidential is part of the group key so a single
+      // operator with mixed datacenter + home nodes of the same tier+
+      // region surfaces as two distinct cards. Buyers can then pick the
+      // SLA profile they want without surprise.
+      const key = `${n.nodeRunner.slug}::${n.gpuTier}::${n.region ?? ''}::${n.isResidential ? '1' : '0'}`
       const existing = groups.get(key)
       if (existing) {
         existing.availableCount += 1
@@ -237,6 +247,7 @@ export async function publicListingsRoutes(fastify: FastifyInstance) {
         ratePerHour,
         ratePerMinute: Number((ratePerHour / 60).toFixed(5)),
         lastHeartbeat: n.lastHeartbeat.toISOString(),
+        isResidential: n.isResidential,
       })
     }
 

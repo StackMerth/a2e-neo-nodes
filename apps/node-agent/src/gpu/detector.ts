@@ -44,6 +44,14 @@ const GPU_TIER_MAP: Record<string, GpuTier> = {
   // GB300 variants
   'GB300 NVL': 'GB300',
   'NVIDIA GB300': 'GB300',
+
+  // C2 wave 2: consumer / prosumer GPUs
+  'RTX 4090': 'RTX_4090',
+  'GeForce RTX 4090': 'RTX_4090',
+  'NVIDIA GeForce RTX 4090': 'RTX_4090',
+  'RTX 3090': 'RTX_3090',
+  'GeForce RTX 3090': 'RTX_3090',
+  'NVIDIA GeForce RTX 3090': 'RTX_3090',
 };
 
 /**
@@ -80,7 +88,17 @@ export class GpuDetector {
       }
     }
 
-    // Default to H100 if unknown but NVIDIA GPU
+    // C2 wave 2: unknown consumer RTX cards (RTX 4080/4070/3080/etc.)
+    // land in CONSUMER so they show up in the marketplace with the
+    // correct rate floor instead of being mis-priced as H100s.
+    if (model.includes('GeForce') || model.includes('RTX')) {
+      log.warn({ model }, 'Unknown consumer GPU model, defaulting to CONSUMER tier');
+      return 'CONSUMER';
+    }
+
+    // Datacenter NVIDIA cards we don't recognize still default to H100
+    // as before — wrong tier is a smaller blast radius than refusing
+    // to register at all.
     if (model.includes('NVIDIA')) {
       log.warn({ model }, 'Unknown GPU model, defaulting to H100');
       return 'H100';

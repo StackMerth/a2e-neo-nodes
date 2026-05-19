@@ -138,7 +138,7 @@ export async function statsRoutes(fastify: FastifyInstance) {
         _count: true,
       })
 
-      const tiers: GpuTier[] = ['H100', 'H200', 'B200', 'B300', 'GB300']
+      const tiers: GpuTier[] = ['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']
       const statuses: NodeStatus[] = ['ONLINE', 'DEGRADED', 'OFFLINE']
 
       const result: Record<string, Record<string, number>> = {}

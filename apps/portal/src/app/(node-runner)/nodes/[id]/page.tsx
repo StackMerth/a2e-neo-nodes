@@ -78,6 +78,9 @@ interface NodeDetail {
   benchmarkMatmulTflops: number | null
   benchmarkVramBandwidthGbs: number | null
   lastBenchmarkAt: string | null
+  // C2 wave 2: operator-declared residential-IP marker. Drives the
+  // "Home GPU" badge on the marketplace listing for this node.
+  isResidential: boolean
 }
 
 type JobRow = NodeJob & Record<string, unknown>
@@ -111,6 +114,19 @@ export default function NodeDetailPage() {
     try {
       await nodeRunner.updateNode(id, { status })
       toast('success', `Node ${status.toLowerCase()}`)
+      await loadData()
+    } catch (e) { toast('error', e instanceof Error ? e.message : 'Failed') }
+    finally { setActionLoading(false) }
+  }
+
+  // C2 wave 2: flip the residential flag for this node. Optimistic
+  // toast on success keeps the toggle responsive; reload pulls the
+  // authoritative value back so the UI never drifts from server state.
+  async function handleResidentialChange(isResidential: boolean) {
+    setActionLoading(true)
+    try {
+      await nodeRunner.updateNode(id, { isResidential })
+      toast('success', isResidential ? 'Marked as home GPU' : 'Cleared home GPU flag')
       await loadData()
     } catch (e) { toast('error', e instanceof Error ? e.message : 'Failed') }
     finally { setActionLoading(false) }
@@ -283,6 +299,44 @@ export default function NodeDetailPage() {
             <SpecRow icon={<MapPin size={14} />} label="Region" value={node.region ?? 'Unknown'} />
             <SpecRow icon={<Tag size={14} />} label="Agent" value={node.agentVersion ?? 'Unknown'} />
             <SpecRow icon={<Clock size={14} />} label="Registered" value={new Date(node.createdAt).toLocaleDateString()} />
+          </div>
+        </SectionCard>
+
+        {/* C2 wave 2: residential / home-GPU self-declaration. Honest
+            signal to buyers that this host may be on a home internet
+            connection (no static IP, behind NAT, possibly lower SLA).
+            Toggle persists immediately so the marketplace badge flips
+            on the next public-listings revalidation tick. */}
+        <SectionCard title="Connection" icon={HardDrive}>
+          <div className="flex items-start gap-3">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={node.isResidential}
+              disabled={actionLoading}
+              onClick={() => handleResidentialChange(!node.isResidential)}
+              className="relative inline-flex h-5 w-9 shrink-0 mt-0.5 rounded-full transition-colors disabled:opacity-50"
+              style={{
+                background: node.isResidential ? 'var(--primary)' : 'var(--bg-elevated)',
+                border: '1px solid var(--border-color)',
+              }}
+            >
+              <span
+                className="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform"
+                style={{
+                  transform: node.isResidential ? 'translateX(16px)' : 'translateX(2px)',
+                  marginTop: '1px',
+                }}
+              />
+            </button>
+            <div className="flex-1">
+              <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                Home / residential connection
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                Surfaces a &ldquo;Home GPU&rdquo; badge on the marketplace so buyers know this is on a home connection (no static IP, possibly lower SLA).
+              </p>
+            </div>
           </div>
         </SectionCard>
 

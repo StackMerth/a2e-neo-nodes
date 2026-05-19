@@ -114,7 +114,7 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
    * GET /v1/admin/compute/availability — Check internal node availability
    */
   fastify.get('/v1/admin/compute/availability', async (request, reply) => {
-    const gpuTiers = ['H100', 'H200', 'B200', 'B300', 'GB300'] as const
+    const gpuTiers = ['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090'] as const
 
     const availability: Record<string, { total: number; idle: number; busy: number }> = {}
 

@@ -12,7 +12,7 @@ const BENCHMARK_ANOMALY_THRESHOLD_PCT = Number(process.env.BENCHMARK_ANOMALY_THR
 // Schema for agent registration (from node-agent)
 const agentSpecsSchema = z.object({
   gpuModel: z.string().optional(),
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER']),
+  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
   gpuCount: z.number().optional(),
   gpuVram: z.number().optional(),
   gpuDriver: z.string().optional(),
@@ -29,7 +29,7 @@ const agentSpecsSchema = z.object({
 const registerNodeSchema = z.object({
   // Support both formats: direct walletAddress or specs.hostname as fallback
   walletAddress: z.string().min(1).max(128).optional(),
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER']).optional(),
+  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER', 'CONSUMER', 'RTX_4090', 'RTX_3090']).optional(),
   nodeType: z.enum(['PROVISIONED', 'BYOG']).default('PROVISIONED'),
   region: z.string().max(64).optional(),
   name: z.string().max(128).optional(),
@@ -52,7 +52,7 @@ const registerNodeSchema = z.object({
 
 const listNodesQuerySchema = z.object({
   status: z.enum(['ONLINE', 'DEGRADED', 'OFFLINE']).optional(),
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300']).optional(),
+  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']).optional(),
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(100).default(20),
 })

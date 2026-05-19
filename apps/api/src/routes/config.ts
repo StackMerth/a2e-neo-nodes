@@ -4,7 +4,7 @@ import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import type { GpuTier, Market } from '@a2e/database'
 
 const updateYieldFloorSchema = z.object({
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300']),
+  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
   ratePerDay: z.number().positive(),
 })
 
@@ -25,7 +25,7 @@ export async function configRoutes(fastify: FastifyInstance) {
       const storedFloors = await fastify.prisma.yieldFloor.findMany()
       const floorMap = new Map(storedFloors.map((f) => [f.gpuTier, f]))
 
-      const tiers: GpuTier[] = ['H100', 'H200', 'B200', 'B300', 'GB300']
+      const tiers: GpuTier[] = ['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']
 
       const floors = tiers.map((tier) => {
         const stored = floorMap.get(tier)
@@ -100,7 +100,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const { gpuTier } = request.params as { gpuTier: string }
 
-      if (!['H100', 'H200', 'B200', 'B300', 'GB300'].includes(gpuTier)) {
+      if (!['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090'].includes(gpuTier)) {
         return reply.code(400).send({
           error: 'Validation Error',
           message: 'Invalid GPU tier',
