@@ -111,12 +111,29 @@ export class GpuDetector {
    * Detect GPUs using nvidia-smi
    */
   async detect(): Promise<GpuInfo | null> {
-    // Mock GPU mode for testing without real hardware
+    // Mock GPU mode for testing without real hardware. Runs the model
+    // string through the same classifyGpuTier path the live nvidia-smi
+    // output would hit, so a mock RTX 4090 reports tier=RTX_4090 instead
+    // of silently falling back to H100. An explicit `tier` in config
+    // still overrides (previous behavior preserved).
     if (this.config.mockGpu) {
       log.warn('Mock GPU mode enabled - using simulated GPU');
-      const mockTier = this.config.tier ?? 'H100';
+      const mockModel = this.config.mockModel ?? 'NVIDIA H100 80GB HBM3 (Mock)';
+      let mockTier: GpuTier;
+      if (this.config.tier) {
+        mockTier = this.config.tier;
+      } else {
+        try {
+          mockTier = this.classifyGpuTier(mockModel);
+        } catch {
+          // Unsupported model string with no fallback tier - keep the
+          // old H100 default so existing tests that pass weird mock
+          // model strings don't suddenly break.
+          mockTier = 'H100';
+        }
+      }
       this.gpuInfo = {
-        model: this.config.mockModel ?? 'NVIDIA H100 80GB HBM3 (Mock)',
+        model: mockModel,
         tier: mockTier,
         count: 1,
         vram: this.config.mockVram ?? 81920,
