@@ -148,6 +148,11 @@ import {
   createReferralCommissionWorker,
   scheduleReferralCommission,
 } from './jobs/referral-commission'
+import {
+  createWeeklyDigestQueue,
+  createWeeklyDigestWorker,
+  scheduleWeeklyDigest,
+} from './jobs/weekly-digest'
 
 const server = Fastify({
   logger: {
@@ -349,6 +354,14 @@ async function start() {
     createReferralCommissionWorker({ redis: redisConnection, prisma: server.prisma })
     await scheduleReferralCommission(referralCommissionQueue)
     server.log.info('Referral commission worker initialized (24h tick, 10% rate)')
+
+    // C3 wave 2: weekly digest. Forecast + uptime warnings per operator.
+    // Skipped silently when SMTP is unconfigured. Operators can opt out
+    // via NodeRunner.digestOptedOut on the payout settings page.
+    const weeklyDigestQueue = createWeeklyDigestQueue(redisConnection)
+    createWeeklyDigestWorker({ redis: redisConnection, prisma: server.prisma })
+    await scheduleWeeklyDigest(weeklyDigestQueue)
+    server.log.info('Weekly digest worker initialized (7d tick)')
 
     await scheduleRateFetcher(rateFetcherQueue)
     await scheduleReconciliation(reconciliationQueue, 5)

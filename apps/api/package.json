@@ -19,7 +19,8 @@
     "referrals:test-flow": "tsx scripts/test-referral-flow.ts",
     "null:payer-key": "tsx scripts/null-payer-key.ts",
     "seed:earnings": "tsx scripts/seed-test-earnings.ts",
-    "preempt:test": "tsx scripts/preempt-test.ts"
+    "preempt:test": "tsx scripts/preempt-test.ts",
+    "digest:run-once": "tsx scripts/digest-run-once.ts"
   },
   "dependencies": {
     "@a2e/core": "workspace:*",

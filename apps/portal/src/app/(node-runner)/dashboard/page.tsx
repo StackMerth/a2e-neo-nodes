@@ -23,6 +23,7 @@ import {
   ExternalLink,
   ChevronLeft,
   ChevronRight,
+  TrendingUp,
 } from 'lucide-react'
 import Link from 'next/link'
 import { nodeRunner } from '@/lib/api'
@@ -624,21 +625,37 @@ function RecentPayoutsTable({ payouts }: { payouts: RecentPayout[] }) {
   )
 }
 
+// C3 wave 2: shape of /v1/portal/node-runner/earnings/forecast response.
+interface ForecastData {
+  projected: number
+  rangeLow: number
+  rangeHigh: number
+  avgDailyEarnings: number
+  daysAnalyzed: number
+  basedOn: string
+  horizonDays: number
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [ops, setOps] = useState<OperatorStatsData | null>(null)
+  const [forecast, setForecast] = useState<ForecastData | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
     try {
-      const [d, o] = await Promise.all([
+      const [d, o, f] = await Promise.all([
         nodeRunner.dashboard() as Promise<DashboardData>,
         nodeRunner.operatorStats() as Promise<OperatorStatsData>,
+        // Forecast failure is non-fatal (cold-start / no earnings yet).
+        // Swallow per-promise so a 404 here doesn't blank the dashboard.
+        nodeRunner.earningsForecast(30).catch(() => null) as Promise<ForecastData | null>,
       ])
       setData(d)
       setOps(o)
+      setForecast(f)
     } catch { /* silent */ }
     finally {
       setLoading(false)
@@ -780,6 +797,47 @@ export default function DashboardPage() {
               tone="#f97316"
             />
           </div>
+        )}
+
+        {/* C3 wave 2: forecast card. Forward-looking 30-day projection
+            from the last 7 active earning days. Hidden until the
+            operator has 5+ days of data so cold-start doesn't show a
+            misleading "$0 projected". */}
+        {forecast && (
+          <SectionCard title="Earnings forecast (next 30 days)" icon={TrendingUp}>
+            {forecast.daysAnalyzed < 5 ? (
+              <div className="py-4">
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  Not enough recent earnings data yet to forecast.
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  Forecast unlocks after 5 active earning days. Today: {forecast.daysAnalyzed} {forecast.daysAnalyzed === 1 ? 'day' : 'days'}.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <p className="text-3xl font-bold font-mono" style={{ color: 'var(--primary)' }}>
+                    ${forecast.projected.toFixed(2)}
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Range <span className="font-mono">${forecast.rangeLow.toFixed(2)}</span> – <span className="font-mono">${forecast.rangeHigh.toFixed(2)}</span>
+                  </p>
+                </div>
+                <details className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  <summary className="cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
+                    How is this calculated?
+                  </summary>
+                  <p className="mt-2 leading-relaxed">
+                    Based on the {forecast.basedOn} ({forecast.daysAnalyzed} active days,
+                    avg <span className="font-mono">${forecast.avgDailyEarnings.toFixed(2)}/day</span>).
+                    Projected forward {forecast.horizonDays} days with a conservative ±15% band.
+                    Real earnings will vary with rental demand, uptime, and price changes.
+                  </p>
+                </details>
+              </div>
+            )}
+          </SectionCard>
         )}
 
         {/* Daily earnings bar chart */}
