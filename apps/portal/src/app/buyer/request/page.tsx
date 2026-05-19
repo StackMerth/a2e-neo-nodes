@@ -477,7 +477,12 @@ export default function RequestComputePage() {
                         }
                     }
                   >
-                    {isSelected && !isLocked && (
+                    {/* Datacenter tiers get the classic checkmark on
+                        selection. Consumer tiers carry the INFERENCE
+                        badge in that same corner — the teal selection
+                        ring alone is enough signal there, so we drop
+                        the checkmark to avoid the icons overlapping. */}
+                    {isSelected && !isLocked && !t.inferenceOnly && (
                       <div className="absolute top-3 right-3">
                         <CircleCheck size={18} style={{ color: ts.text }} />
                       </div>
