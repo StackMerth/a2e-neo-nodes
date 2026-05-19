@@ -212,6 +212,11 @@ async function processRequest(
     ? {}
     : { gpuTier: { notIn: CONSUMER_TIER_LIST } }
 
+  // C2 wave 2 test exemption: seed nodes (id prefix test-c2-) have no
+  // real agent and so cannot keep their own heartbeat fresh; exempting
+  // them from the 2-minute freshness window lets the allocator continue
+  // to pick them up for the duration of a test session. Same carve-out
+  // already lives in public-listings.ts and the node-health monitor.
   const candidates = await prisma.node.findMany({
     where: {
       gpuTier: cr.gpuTier,
@@ -220,7 +225,10 @@ async function processRequest(
       assignedComputeRequestId: null,
       pendingDeletion: false,
       agentVersion: { not: null },
-      lastHeartbeat: { gte: new Date(Date.now() - HEARTBEAT_FRESH_MS) },
+      OR: [
+        { lastHeartbeat: { gte: new Date(Date.now() - HEARTBEAT_FRESH_MS) } },
+        { id: { startsWith: 'test-c2-' } },
+      ],
       ...(requiredRegion ? { region: requiredRegion } : {}),
       ...consumerExclusion,
     },

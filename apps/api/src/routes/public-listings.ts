@@ -159,13 +159,22 @@ export async function publicListingsRoutes(fastify: FastifyInstance) {
     // without making the listings any more honest. Real agents will set
     // agentVersion on first heartbeat, so production listings will
     // converge with what the allocator picks anyway.
+    // C2 wave 2 test exemption: seed nodes (id prefix test-c2-) have
+    // no real agent process and so can't refresh their own heartbeat.
+    // Without this carve-out, they fall out of the catalog 2 minutes
+    // after the last c2:refresh-node call — which breaks any drawn-out
+    // marketplace verification. The clause becomes effectively "either
+    // the heartbeat is fresh, OR this is a known test seed node".
     const nodes = await fastify.prisma.node.findMany({
       where: {
         status: 'ONLINE' as NodeStatus,
         currentJobId: null,
         assignedComputeRequestId: null,
         pendingDeletion: false,
-        lastHeartbeat: { gte: heartbeatFloor },
+        OR: [
+          { lastHeartbeat: { gte: heartbeatFloor } },
+          { id: { startsWith: 'test-c2-' } },
+        ],
         ...(gpuTierParam ? { gpuTier: gpuTierParam as GpuTier } : {}),
         ...(regionParam ? { region: regionParam } : {}),
         nodeRunner: { isNot: null },
