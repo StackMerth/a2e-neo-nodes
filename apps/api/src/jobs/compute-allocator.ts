@@ -104,6 +104,28 @@ export async function runAllocatorTick(prisma: PrismaClient, io: SocketServer): 
     include: { user: true },
   })
 
+  // Tick visibility. Without this, the only allocator log line ever
+  // emitted is the initial "(10s tick)" startup banner — so a stuck
+  // PENDING request looks identical to a healthy allocator with zero
+  // work. We log a single line per tick describing what was picked up,
+  // plus (when zero) a one-line diagnostic counting unconfirmed PENDING
+  // rows so operators know immediately whether the issue is "nobody
+  // paid yet" vs "allocator is broken".
+  if (candidates.length > 0) {
+    // eslint-disable-next-line no-console
+    console.log(`[compute-allocator] tick: ${candidates.length} pending request(s)`)
+  } else {
+    const unconfirmed = await prisma.computeRequest.count({
+      where: { status: 'PENDING', txConfirmed: false },
+    })
+    if (unconfirmed > 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[compute-allocator] tick: 0 actionable, ${unconfirmed} PENDING request(s) waiting on txConfirmed=true`,
+      )
+    }
+  }
+
   for (const cr of candidates) {
     try {
       await processRequest(prisma, io, cr)
