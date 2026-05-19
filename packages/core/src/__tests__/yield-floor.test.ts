@@ -22,6 +22,10 @@ describe('DefaultYieldFloorConfig', () => {
         B300: 250,
         GB300: 300,
         OTHER: 0, // Custom tier - floor from node config
+        // C2 wave 2: consumer tier cost floors from GPU_TIER_CONFIG.
+        RTX_4090: 8,
+        RTX_3090: 5,
+        CONSUMER: 4,
       }
 
       for (const [tier, expectedFloor] of Object.entries(expectedFloors)) {
