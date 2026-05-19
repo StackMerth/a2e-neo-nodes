@@ -50,7 +50,6 @@ async function main() {
       preferredOperatorId: true,
       allocatedNodeIds: true,
       requestedAt: true,
-      createdAt: true,
       activatedAt: true,
       user: { select: { id: true, email: true } },
     },
@@ -61,7 +60,8 @@ async function main() {
     process.exit(1)
   }
 
-  const ageSeconds = Math.floor((Date.now() - request.createdAt.getTime()) / 1000)
+  // ComputeRequest has requestedAt (set at create), no createdAt.
+  const ageSeconds = Math.floor((Date.now() - request.requestedAt.getTime()) / 1000)
   const ageMinutes = Math.floor(ageSeconds / 60)
 
   console.log('=== ComputeRequest state ===')
