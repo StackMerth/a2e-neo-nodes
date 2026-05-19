@@ -14,7 +14,7 @@
 
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Cpu, X, Loader2 } from 'lucide-react'
+import { Cpu, X, Loader2, Eye, EyeOff } from 'lucide-react'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
 const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'https://user.tokenos.ai'
@@ -261,6 +261,7 @@ export function RentModal({
   const [tab, setTab] = useState<Tab>('signup')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -426,21 +427,32 @@ export function RentModal({
             <label className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground block mb-1">
               Password
             </label>
-            <input
-              type="password"
-              required
-              minLength={8}
-              autoComplete={tab === 'signin' ? 'current-password' : 'new-password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={tab === 'signup' ? 'At least 8 characters' : 'Your password'}
-              className="w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:border-primary transition-colors"
-              style={{
-                background: 'var(--input)',
-                border: '1px solid var(--border)',
-                color: 'var(--foreground)',
-              }}
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                minLength={8}
+                autoComplete={tab === 'signin' ? 'current-password' : 'new-password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={tab === 'signup' ? 'At least 8 characters' : 'Your password'}
+                className="w-full px-3 py-2 pr-10 rounded-md text-sm focus:outline-none focus:border-primary transition-colors"
+                style={{
+                  background: 'var(--input)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--foreground)',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                tabIndex={-1}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
+              >
+                {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
           </div>
 
           {error && (

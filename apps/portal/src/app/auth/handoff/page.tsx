@@ -18,7 +18,6 @@
  */
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 
 function parseHashParams(hash: string): URLSearchParams {
   // hash starts with '#'; strip it before parsing.
@@ -26,8 +25,6 @@ function parseHashParams(hash: string): URLSearchParams {
 }
 
 export default function AuthHandoffPage() {
-  const router = useRouter()
-
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = parseHashParams(window.location.hash)
@@ -36,7 +33,7 @@ export default function AuthHandoffPage() {
     const dest = params.get('dest') || '/dashboard'
 
     if (!access || !refresh) {
-      router.replace('/login')
+      window.location.replace('/login')
       return
     }
 
@@ -44,12 +41,17 @@ export default function AuthHandoffPage() {
     localStorage.setItem('a2e_access_token', access)
     localStorage.setItem('a2e_refresh_token', refresh)
 
-    // Clear the fragment from the URL so a back-button click doesn't
-    // re-trigger this page, then move on. Use replace() so /auth/
-    // handoff doesn't end up in history.
-    window.history.replaceState(null, '', '/auth/handoff')
-    router.replace(dest)
-  }, [router])
+    // Use a full-page navigation, NOT router.replace, so AuthProvider
+    // remounts and re-runs its initial loadUser() pass. router.replace
+    // keeps the same React tree alive, which means the AuthProvider's
+    // already-completed loadUser() (which ran with no token in localStorage
+    // because the handoff useEffect hadn't fired yet) leaves user=null
+    // forever. BuyerLayout then sees !user and bounces to /login, so the
+    // buyer signs in via the marketplace modal but lands back on /login
+    // anyway. window.location.replace forces a fresh mount that picks up
+    // the tokens we just wrote.
+    window.location.replace(dest)
+  }, [])
 
   return (
     <div className="min-h-screen flex items-center justify-center px-6" style={{ background: 'var(--bg-dark)' }}>
