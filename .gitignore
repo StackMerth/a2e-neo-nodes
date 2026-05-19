@@ -8,6 +8,15 @@ dist/
 .turbo/
 *.tsbuildinfo
 
+# C6 wave 2: next-pwa generates the service worker + workbox runtime
+# at build time. Source of truth lives in the manifest + scripts; the
+# emitted JS is per-build and shouldn't be committed.
+apps/portal/public/sw.js
+apps/portal/public/sw.js.map
+apps/portal/public/workbox-*.js
+apps/portal/public/workbox-*.js.map
+apps/portal/public/fallback-*.js
+
 # Test
 coverage/
 
