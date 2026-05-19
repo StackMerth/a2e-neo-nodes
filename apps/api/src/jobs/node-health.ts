@@ -36,6 +36,14 @@ export function createNodeHealthWorker(deps: NodeHealthDeps): Worker {
       const nodesToCheck = await prisma.node.findMany({
         where: {
           status: { in: ['ONLINE', 'DEGRADED'] },
+          // C2 wave 2 test exemption: seed nodes (id prefix test-c2-)
+          // have no real agent process behind them, so their heartbeat
+          // can't refresh on its own. Without this exemption the monitor
+          // would flip them to OFFLINE within 90s, which breaks
+          // marketplace + allocator tests that need them to stay
+          // reachable for longer than that. The c2c3:cleanup script
+          // drops these nodes when the test session ends.
+          id: { not: { startsWith: 'test-c2-' } },
         },
         select: {
           id: true,
