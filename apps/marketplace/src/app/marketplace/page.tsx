@@ -13,9 +13,9 @@
 
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { ChevronRight } from 'lucide-react'
 import { Navigation } from '@/components/landing/navigation'
 import { FooterSection } from '@/components/landing/footer-section'
-import { cn } from '@/lib/utils'
 import { ListingRentButton } from '@/components/rent/listing-rent-button'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
@@ -272,7 +272,7 @@ function ListingRow({ listing }: { listing: Listing }) {
     <li>
       <Link
         href={`/operator/${listing.operatorSlug}`}
-        className="block py-6 px-2 hover-lift hover:bg-foreground/[0.015] transition-colors"
+        className="group block py-6 px-2 hover-lift hover:bg-foreground/[0.015] transition-colors"
       >
         <div className="grid grid-cols-12 gap-4 items-baseline">
           {/* Operator + reputation */}
@@ -324,15 +324,17 @@ function ListingRow({ listing }: { listing: Listing }) {
           {/* CTA - per-row Rent button (M5.10c). Click stops propagation
               so the surrounding row link to /operator/[slug] doesn't
               fire. Buyers who want the profile still click anywhere
-              else in the row. */}
-          <div className="col-span-12 md:col-span-2 md:text-right flex md:justify-end items-center gap-3">
+              else in the row. The subtle chevron beside Rent is the
+              implicit affordance — the whole row is the link, the
+              chevron just hints at the row click target. */}
+          <div className="col-span-12 md:col-span-2 flex md:justify-end items-center gap-3">
             <ListingRentButton operatorSlug={listing.operatorSlug} gpuTier={listing.gpuTier} />
-            <span className={cn(
-              'font-mono text-xs uppercase tracking-[0.18em] hidden md:inline',
-              'text-foreground/60 hover:text-foreground transition-colors',
-            )}>
-              View →
-            </span>
+            <ChevronRight
+              size={16}
+              strokeWidth={1.75}
+              aria-hidden
+              className="hidden md:block shrink-0 text-foreground/30 group-hover:text-foreground/70 transition-colors"
+            />
           </div>
         </div>
       </Link>

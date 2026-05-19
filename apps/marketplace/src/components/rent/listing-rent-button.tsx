@@ -11,6 +11,7 @@
  */
 
 import { useState } from 'react'
+import { ArrowRight } from 'lucide-react'
 import { RentModal } from './rent-grid'
 
 export function ListingRentButton({
@@ -22,7 +23,7 @@ export function ListingRentButton({
   operatorSlug: string
   gpuTier: string
   className?: string
-  /** Defaults to "Rent →"; pages override for variant copy. */
+  /** Defaults to "Rent"; pages override for variant copy. */
   label?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -37,7 +38,11 @@ export function ListingRentButton({
         }}
         className={
           className ??
-          'inline-flex items-center px-3 h-8 rounded-md font-mono text-[11px] uppercase tracking-[0.16em] transition-colors'
+          // Editorial proportions: taller, sharper, more horizontal
+          // breathing room. The arrow uses Lucide so its weight matches
+          // the rest of the marketplace iconography (vs. the previous
+          // ASCII '→' which rendered noticeably lighter than the text).
+          'group inline-flex items-center gap-2 px-5 h-10 rounded-sm font-mono text-[11px] uppercase tracking-[0.18em] transition-all hover:brightness-105 hover:gap-2.5'
         }
         style={
           className
@@ -45,7 +50,12 @@ export function ListingRentButton({
             : { background: 'var(--brand)', color: '#0a0a0a' }
         }
       >
-        {label ?? 'Rent →'}
+        <span>{label ?? 'Rent'}</span>
+        <ArrowRight
+          size={14}
+          strokeWidth={2.25}
+          className="transition-transform group-hover:translate-x-0.5"
+        />
       </button>
       {open && (
         <RentModal tier={gpuTier} operatorSlug={operatorSlug} onClose={() => setOpen(false)} />
