@@ -337,6 +337,10 @@ export const buyer = {
     // agent installs this into the rental user's authorized_keys at
     // provision time. Required for real (non-test-mode) rentals.
     sshPubKey?: string
+    // C2 wave 2: buyer-declared workload type. Drives consumer-tier
+    // eligibility in the allocator. Defaults to MIXED on the server,
+    // so omitting it preserves pre-migration semantics.
+    workloadType?: 'INFERENCE' | 'TRAINING' | 'MIXED'
   }) =>
     apiFetch('/v1/buyer/compute/request', { method: 'POST', body: data }),
   requests: (params?: Record<string, string>) => {

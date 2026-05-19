@@ -32,7 +32,11 @@ interface RateHistory {
   fetchedAt: string
 }
 
-const GPU_TIER_ORDER = ['H100', 'H200', 'B200', 'B300', 'GB300']
+// C2 wave 2: consumer / prosumer tiers are inference-only and have no
+// external market rates (Akash/IO.net/Vast.ai don't expose those SKUs).
+// Their per-tier card renders with N/A externals, which is the correct
+// signal for admins reviewing the rate table.
+const GPU_TIER_ORDER = ['H100', 'H200', 'B200', 'B300', 'GB300', 'RTX_4090', 'RTX_3090', 'CONSUMER']
 const MARKETS = ['AKASH', 'IONET', 'VASTAI']
 
 const MARKET_LABEL: Record<string, string> = { AKASH: 'Akash', IONET: 'IO.net', VASTAI: 'Vast.ai' }

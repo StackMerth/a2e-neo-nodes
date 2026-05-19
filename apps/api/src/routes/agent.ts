@@ -20,7 +20,7 @@ import {
 // Request schemas
 const pollJobsSchema = z.object({
   capabilities: z.object({
-    gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300']),
+    gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
     gpuCount: z.number().int().min(1).default(1),
     vramGb: z.number().min(0).optional(),
     cudaVersion: z.string().optional(),

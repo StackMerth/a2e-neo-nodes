@@ -11,7 +11,7 @@ const provisionRequestSchema = z.object({
   password: z.string().max(256).optional(),
   privateKey: z.string().max(16384).optional(),
   passphrase: z.string().max(256).optional(),
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER']),
+  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
   nodeName: z.string().max(128).optional(),
   region: z.string().max(64).optional(),
   // Custom GPU fields for OTHER tier

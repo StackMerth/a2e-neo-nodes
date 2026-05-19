@@ -29,6 +29,10 @@ const GPU_TIERS = [
   { value: 'B200', label: 'NVIDIA B200', vram: '192 GB', price: '$321/day' },
   { value: 'B300', label: 'NVIDIA B300', vram: '288 GB', price: '$432/day' },
   { value: 'GB300', label: 'NVIDIA GB300', vram: '384 GB', price: '$499/day' },
+  // C2 wave 2: consumer / prosumer tiers (inference-only).
+  { value: 'RTX_4090', label: 'NVIDIA RTX 4090', vram: '24 GB', price: '$14/day' },
+  { value: 'RTX_3090', label: 'NVIDIA RTX 3090', vram: '24 GB', price: '$9/day' },
+  { value: 'CONSUMER', label: 'Consumer GPU (catchall)', vram: 'Varies', price: '$7/day' },
   { value: 'OTHER', label: 'Other GPU', vram: 'Custom', price: 'Custom' },
 ]
 
@@ -36,7 +40,7 @@ const SYSTEM_REQUIREMENTS = [
   { label: 'Operating System', value: 'Ubuntu 20.04+ or Debian 11+' },
   { label: 'Docker', value: '24.0+ with NVIDIA Container Toolkit' },
   { label: 'NVIDIA Driver', value: '535+ (CUDA 12.2+)' },
-  { label: 'GPU', value: 'NVIDIA H100, H200, B200, B300, or GB300' },
+  { label: 'GPU', value: 'NVIDIA H100/H200/B200/B300/GB300, RTX 4090/3090, or other consumer NVIDIA' },
   { label: 'Network', value: 'Stable internet connection' },
   { label: 'Storage', value: '50 GB+ free disk space' },
 ]

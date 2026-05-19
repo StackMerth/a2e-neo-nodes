@@ -71,6 +71,12 @@ export async function calculateJobCost(
     B300: 10.0,
     GB300: 15.0,
     OTHER: 5.0, // Custom tier uses fallback or node-specific rate
+    // C2 wave 2: consumer / prosumer fallbacks — match GPU_TIER_CONFIG
+    // retailRate / 24 in @a2e/shared so internal cost math lines up
+    // with what buyers see on the request form.
+    RTX_4090: 0.58,
+    RTX_3090: 0.37,
+    CONSUMER: 0.29,
   }
 
   const defaultRate = defaultRates[gpuTier] ?? 5.0

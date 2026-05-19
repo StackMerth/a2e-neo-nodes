@@ -249,6 +249,10 @@ export async function earningsRoutes(fastify: FastifyInstance) {
         B300: { earnings: 0, gpuHours: 0, jobCount: 0 },
         GB300: { earnings: 0, gpuHours: 0, jobCount: 0 },
         OTHER: { earnings: 0, gpuHours: 0, jobCount: 0 },
+        // C2 wave 2: consumer / prosumer tiers.
+        RTX_4090: { earnings: 0, gpuHours: 0, jobCount: 0 },
+        RTX_3090: { earnings: 0, gpuHours: 0, jobCount: 0 },
+        CONSUMER: { earnings: 0, gpuHours: 0, jobCount: 0 },
       }
 
       for (const e of earnings) {

@@ -37,6 +37,9 @@ interface Listing {
   ratePerHour: number
   ratePerMinute: number
   lastHeartbeat: string
+  // C2 wave 2: operator-declared home/residential connection. Optional
+  // because older listings won't have it yet.
+  isResidential?: boolean
 }
 
 interface ListingsResponse {
@@ -53,7 +56,25 @@ interface ListingsResponse {
   listings: Listing[]
 }
 
-const GPU_TIERS = ['H100', 'H200', 'B200', 'B300', 'GB300'] as const
+// C2 wave 2: consumer / prosumer tiers slot in after the datacenter
+// tiers so the dropdown reads top-down by capability. They're inference-
+// only when actually rented, which the request page enforces via the
+// workloadType picker.
+const GPU_TIERS = ['H100', 'H200', 'B200', 'B300', 'GB300', 'RTX_4090', 'RTX_3090', 'CONSUMER'] as const
+
+// C2 wave 2: tier IDs that the buyer-compute zod refine treats as
+// inference-only. Marketplace surfaces this as a small "Inference"
+// hint on the row + ensures the rent CTA carries workloadType=
+// INFERENCE through to the buyer flow so the user doesn't bounce off
+// the locked tier card.
+const CONSUMER_TIERS = new Set<string>(['CONSUMER', 'RTX_4090', 'RTX_3090'])
+
+function formatTierLabel(t: string): string {
+  if (t === 'RTX_4090') return 'RTX 4090'
+  if (t === 'RTX_3090') return 'RTX 3090'
+  if (t === 'CONSUMER') return 'Consumer'
+  return t
+}
 const PRICING_TIERS: PricingTier[] = ['ON_DEMAND', 'SPOT', 'RESERVED']
 const REP_TIERS: ReputationTier[] = ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM']
 const REGIONS = ['US-WEST', 'US-EAST', 'EU', 'APAC', 'SA', 'OC']
@@ -139,7 +160,7 @@ export default async function MarketplacePage({
                 <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-4">
                   Filters
                 </p>
-                <FilterField label="GPU tier" name="gpuTier" value={activeFilters.gpuTier} options={[{ value: '', label: 'Any' }, ...GPU_TIERS.map(t => ({ value: t, label: t }))]} />
+                <FilterField label="GPU tier" name="gpuTier" value={activeFilters.gpuTier} options={[{ value: '', label: 'Any' }, ...GPU_TIERS.map(t => ({ value: t, label: formatTierLabel(t) }))]} />
                 <FilterField label="Region" name="region" value={activeFilters.region} options={[{ value: '', label: 'Any' }, ...REGIONS.map(r => ({ value: r, label: r }))]} />
                 <FilterField label="Pricing tier" name="tier" value={activeFilters.tier} options={PRICING_TIERS.map(t => ({ value: t, label: humanTier(t) }))} />
                 <FilterField label="Min reputation" name="minReputation" value={activeFilters.minReputation} options={[{ value: '', label: 'Any' }, ...REP_TIERS.map(t => ({ value: t, label: humanRep(t) }))]} />
@@ -267,11 +288,26 @@ function ListingRow({ listing }: { listing: Listing }) {
             <p className="font-mono text-base text-foreground">
               {listing.availableCount}
               <span className="text-muted-foreground"> × </span>
-              {listing.gpuTier}
+              {formatTierLabel(listing.gpuTier)}
             </p>
-            <p className="font-mono text-[11px] text-muted-foreground mt-1">
-              {listing.region ?? 'region unspecified'}
-            </p>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <p className="font-mono text-[11px] text-muted-foreground">
+                {listing.region ?? 'region unspecified'}
+              </p>
+              {CONSUMER_TIERS.has(listing.gpuTier) && (
+                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-foreground/60 border-l border-foreground/15 pl-2">
+                  Inference
+                </span>
+              )}
+              {listing.isResidential && (
+                <span
+                  className="font-mono text-[10px] uppercase tracking-[0.16em] text-foreground/60 border-l border-foreground/15 pl-2"
+                  title="Operator-declared home/residential connection. May have lower reliability than datacenter inventory."
+                >
+                  Home GPU
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Price */}

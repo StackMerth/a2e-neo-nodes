@@ -79,11 +79,11 @@ export default function OnboardingPage() {
           >
             <FormSection>
               {[
-                { label: 'GPU', detail: 'NVIDIA H100, H200, B200, B300, or GB300', required: true },
+                { label: 'GPU', detail: 'NVIDIA datacenter (H100/H200/B200/B300/GB300) or consumer (RTX 4090/3090, other RTX)', required: true },
                 { label: 'NVIDIA Driver', detail: 'Version 535+ with CUDA 12.0+', required: true },
                 { label: 'Docker', detail: 'Docker Engine 24+ with NVIDIA Container Toolkit', required: true },
                 { label: 'OS', detail: 'Ubuntu 22.04 LTS or later (Linux x64/arm64)', required: true },
-                { label: 'Network', detail: 'Stable internet connection with static IP recommended', required: true },
+                { label: 'Network', detail: 'Stable internet connection. Static IP recommended; home/residential is OK for inference-only workloads.', required: true },
                 { label: 'Intel TDX', detail: 'Sapphire Rapids or later CPU (for confidential computing)', required: false },
               ].map(req => (
                 <div

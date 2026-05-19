@@ -63,7 +63,11 @@ interface EarningRecord {
 
 type Tab = 'overview' | 'records' | 'by-tier'
 
-const GPU_TIERS = ['H100', 'H200', 'B200', 'B300', 'GB300']
+// C2 wave 2: consumer / prosumer tiers slot in after datacenter so the
+// admin earnings tables read top-down by capability. Earnings rows are
+// recorded with whatever tier produced them, so omitting these would
+// silently hide consumer-tier earnings from the admin view.
+const GPU_TIERS = ['H100', 'H200', 'B200', 'B300', 'GB300', 'RTX_4090', 'RTX_3090', 'CONSUMER']
 
 export default function EarningsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('overview')

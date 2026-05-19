@@ -1,7 +1,23 @@
 // A²E Shared Types and Utilities
 
-// GPU Tiers supported by TokenOS
-export type GpuTier = 'H100' | 'H200' | 'B200' | 'B300' | 'GB300' | 'OTHER'
+// GPU Tiers supported by TokenOS. Wave 2 added CONSUMER + RTX_4090 +
+// RTX_3090 — these are inference-only at the allocator level (see
+// WorkloadType + compute-allocator.ts).
+export type GpuTier = 'H100' | 'H200' | 'B200' | 'B300' | 'GB300' | 'OTHER' | 'CONSUMER' | 'RTX_4090' | 'RTX_3090'
+
+// Buyer-declared workload type — drives the allocator's consumer-tier
+// eligibility filter. INFERENCE matches all tiers; TRAINING/MIXED
+// hard-filter out consumer tiers (they aren't designed for sustained
+// multi-day loads).
+export type WorkloadType = 'INFERENCE' | 'TRAINING' | 'MIXED'
+
+// Subset of GpuTier that's only allowed for INFERENCE workloads. Used
+// by the allocator + buyer request form to validate / grey-out cards.
+export const CONSUMER_TIERS: GpuTier[] = ['CONSUMER', 'RTX_4090', 'RTX_3090']
+
+export function isConsumerTier(tier: GpuTier): boolean {
+  return CONSUMER_TIERS.includes(tier)
+}
 
 // Node types
 export type NodeType = 'PROVISIONED' | 'BYOG'
@@ -31,6 +47,12 @@ export const GPU_TIER_CONFIG: Record<
   B300: { retailRate: 431.75, costFloor: 250, vram: 288, tier: 4 },
   GB300: { retailRate: 499.35, costFloor: 300, vram: 288, tier: 5 },
   OTHER: { retailRate: 0, costFloor: 0, vram: 0, tier: 6 }, // Custom rates from node config
+  // C2 wave 2: consumer / prosumer tiers. Pricing is market-standard
+  // based on Vast.ai + RunPod consumer spot rates. Admin can override
+  // via the YieldFloor table from the /rates page.
+  RTX_4090: { retailRate: 14, costFloor: 8, vram: 24, tier: 7 },
+  RTX_3090: { retailRate: 9, costFloor: 5, vram: 24, tier: 8 },
+  CONSUMER: { retailRate: 7, costFloor: 4, vram: 12, tier: 9 }, // catchall floor
 }
 
 // Convert daily rate to hourly

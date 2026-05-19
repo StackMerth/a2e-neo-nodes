@@ -8,7 +8,7 @@ import '../types' // Type augmentations
 
 const submitJobSchema = z.object({
   deploymentId: z.string().min(1).max(128),
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300']),
+  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
   nodeId: z.string().optional(),
   hasInternalDemand: z.boolean().optional().default(false),
   autoRoute: z.boolean().optional().default(true),

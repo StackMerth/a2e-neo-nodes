@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Server, CircleCheck, Hash, Layers, Calendar, FileText, Wallet, Receipt, Globe, KeyRound, PiggyBank, CreditCard } from 'lucide-react'
+import { Server, CircleCheck, Hash, Layers, Calendar, FileText, Wallet, Receipt, Globe, KeyRound, PiggyBank, CreditCard, Cpu, Workflow, Sparkles } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -17,14 +17,22 @@ interface GpuTier {
   id: string
   name: string
   dailyRate: number
+  // C2 wave 2: consumer-class GPUs are inference-only. When the buyer
+  // picks TRAINING or MIXED, these cards grey out with an explanatory
+  // tooltip and become non-selectable.
+  inferenceOnly?: boolean
 }
 
 const GPU_TIERS: GpuTier[] = [
-  { id: 'H100', name: 'H100', dailyRate: 5.84 * 24 > 140 ? 5.84 : 5.84 },
+  { id: 'H100', name: 'H100', dailyRate: 5.84 },
   { id: 'H200', name: 'H200', dailyRate: 7.49 },
   { id: 'B200', name: 'B200', dailyRate: 13.38 },
   { id: 'B300', name: 'B300', dailyRate: 17.99 },
   { id: 'GB300', name: 'GB300', dailyRate: 20.81 },
+  // C2 wave 2: consumer / prosumer tiers. Lower price, inference-only.
+  { id: 'RTX_4090', name: 'RTX 4090', dailyRate: 0.58, inferenceOnly: true },
+  { id: 'RTX_3090', name: 'RTX 3090', dailyRate: 0.37, inferenceOnly: true },
+  { id: 'CONSUMER', name: 'Consumer', dailyRate: 0.29, inferenceOnly: true },
 ]
 
 const HOURLY_RATES: Record<string, number> = {
@@ -33,7 +41,13 @@ const HOURLY_RATES: Record<string, number> = {
   B200: 13.38,
   B300: 17.99,
   GB300: 20.81,
+  // C2 wave 2: GPU_TIER_CONFIG retailRate / 24
+  RTX_4090: 14 / 24,
+  RTX_3090: 9 / 24,
+  CONSUMER: 7 / 24,
 }
+
+const CONSUMER_TIER_IDS = new Set(['CONSUMER', 'RTX_4090', 'RTX_3090'])
 
 // M6: lightweight client-side validation for the buyer's SSH public key.
 // Matches the canonical openssh public key formats: ssh-rsa, ssh-ed25519,
@@ -79,7 +93,69 @@ const TIER_STYLES: Record<string, { border: string; bg: string; text: string; gl
     glow: '0 0 20px rgba(239,68,68,0.1)',
     ring: 'rgba(239,68,68,0.5)',
   },
+  // C2 wave 2: consumer tiers share a single teal palette so they read
+  // as a distinct "edge" cluster instead of competing with datacenter
+  // hues. Slightly lower saturation than the datacenter accents.
+  RTX_4090: {
+    border: 'rgba(20,184,166,0.4)',
+    bg: 'rgba(20,184,166,0.05)',
+    text: '#14b8a6',
+    glow: '0 0 20px rgba(20,184,166,0.1)',
+    ring: 'rgba(20,184,166,0.5)',
+  },
+  RTX_3090: {
+    border: 'rgba(20,184,166,0.35)',
+    bg: 'rgba(20,184,166,0.04)',
+    text: '#14b8a6',
+    glow: '0 0 18px rgba(20,184,166,0.08)',
+    ring: 'rgba(20,184,166,0.4)',
+  },
+  CONSUMER: {
+    border: 'rgba(20,184,166,0.3)',
+    bg: 'rgba(20,184,166,0.03)',
+    text: '#14b8a6',
+    glow: '0 0 16px rgba(20,184,166,0.06)',
+    ring: 'rgba(20,184,166,0.35)',
+  },
 }
+
+// C2 wave 2: workload-type picker. Matches the WorkloadType prisma
+// enum and the buyer-compute zod refine. INFERENCE unlocks the
+// consumer tier cards; TRAINING / MIXED hard-filters them out.
+type WorkloadType = 'INFERENCE' | 'TRAINING' | 'MIXED'
+const WORKLOAD_OPTIONS: Array<{
+  id: WorkloadType
+  label: string
+  pitch: string
+  caveat: string
+  icon: typeof Cpu
+  accent: string
+}> = [
+  {
+    id: 'INFERENCE',
+    label: 'Inference',
+    pitch: 'Short-burst predictions. Consumer GPUs available at edge prices.',
+    caveat: 'Best for chat, embeddings, image generation, batch scoring.',
+    icon: Sparkles,
+    accent: '#14b8a6',
+  },
+  {
+    id: 'TRAINING',
+    label: 'Training',
+    pitch: 'Long-running model training. Data-center GPUs only.',
+    caveat: 'Multi-day runs, full datasets, fine-tunes. No consumer hardware.',
+    icon: Workflow,
+    accent: '#3b82f6',
+  },
+  {
+    id: 'MIXED',
+    label: 'Mixed',
+    pitch: 'Both — data-center GPUs to play it safe.',
+    caveat: 'Default. Skips consumer tiers; you stay on enterprise inventory.',
+    icon: Cpu,
+    accent: '#a78bfa',
+  },
+]
 
 // M2: short durations live alongside the longer enterprise commitments.
 // 1d / 3d cover quick experiments where per-minute billing matters most;
@@ -138,6 +214,21 @@ export default function RequestComputePage() {
     const tierFromQuery = searchParams?.get('gpuTier')
     if (tierFromQuery && GPU_TIERS.some(t => t.id === tierFromQuery)) {
       setSelectedTier(tierFromQuery)
+      // C2 wave 2: consumer-tier deep links land with workloadType=
+      // INFERENCE so the tier card renders as selected (not locked).
+      // Without this, a buyer arriving from a marketplace "Rent →"
+      // on RTX_4090 would see the card greyed out and have to flip
+      // the workload picker themselves.
+      if (CONSUMER_TIER_IDS.has(tierFromQuery)) {
+        setWorkloadType('INFERENCE')
+      }
+    }
+    // C2 wave 2: explicit workloadType param (sent by the marketplace
+    // rent-modal handoff). Overrides the consumer-tier auto-flip above
+    // for the rare case where someone passes both.
+    const wlFromQuery = searchParams?.get('workloadType')
+    if (wlFromQuery === 'INFERENCE' || wlFromQuery === 'TRAINING' || wlFromQuery === 'MIXED') {
+      setWorkloadType(wlFromQuery)
     }
     const opFromQuery = searchParams?.get('operator')
     if (opFromQuery && /^[a-z0-9-]{1,120}$/.test(opFromQuery)) {
@@ -153,6 +244,11 @@ export default function RequestComputePage() {
   const [sshPubKey, setSshPubKey] = useState('')
   const [txHash, setTxHash] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // C2 wave 2: workload type — MIXED is the API default and matches
+  // pre-migration semantics (data-center only). If the buyer picks a
+  // consumer tier without flipping to INFERENCE we'll auto-correct on
+  // selection so they don't have to scroll back up.
+  const [workloadType, setWorkloadType] = useState<WorkloadType>('MIXED')
 
   // Internal-spend: only shown to dual-role users (operator + buyer).
   // `eligible` is set from the API on mount; `available` ticks down
@@ -233,6 +329,7 @@ export default function RequestComputePage() {
         requiredRegion: requiredRegion || null,
         preferredOperatorSlug: preferredOperatorSlug || null,
         sshPubKey: trimmedPubKey,
+        workloadType,
       }) as { id: string }
       toast('success', 'Compute request submitted successfully')
       router.push(`/buyer/requests/${result.id}`)
@@ -290,25 +387,85 @@ export default function RequestComputePage() {
           </div>
         )}
 
+        {/* C2 wave 2: Workload Type picker. Comes before GPU Tier
+            because it gates which tiers are clickable below. */}
+        <FormCard
+          title="Workload Type"
+          description="What are you running? This decides which GPU classes are eligible."
+          icon={Workflow}
+        >
+          <FormSection>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {WORKLOAD_OPTIONS.map(w => {
+                const isSelected = workloadType === w.id
+                const Icon = w.icon
+                return (
+                  <button
+                    key={w.id}
+                    type="button"
+                    onClick={() => {
+                      setWorkloadType(w.id)
+                      // If switching away from INFERENCE while a consumer
+                      // tier is selected, clear the selection so the
+                      // buyer doesn't unknowingly submit an invalid combo.
+                      if (w.id !== 'INFERENCE' && selectedTier && CONSUMER_TIER_IDS.has(selectedTier)) {
+                        setSelectedTier(null)
+                      }
+                    }}
+                    className="text-left rounded-xl p-4 transition-all duration-200"
+                    style={isSelected
+                      ? { background: `${w.accent}15`, border: `1px solid ${w.accent}66`, boxShadow: `0 0 16px ${w.accent}22` }
+                      : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
+                    }
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{w.label}</span>
+                      <Icon size={16} style={{ color: w.accent }} />
+                    </div>
+                    <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>{w.pitch}</p>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{w.caveat}</p>
+                  </button>
+                )
+              })}
+            </div>
+          </FormSection>
+        </FormCard>
+
         {/* GPU Tier */}
         <FormCard
           title="GPU Tier"
-          description="Pick the GPU class you need. Pricing scales with tier."
+          description={workloadType === 'INFERENCE'
+            ? 'Pick the GPU class you need. Consumer tiers unlocked for inference.'
+            : 'Pick the GPU class you need. Switch workload to Inference to unlock consumer GPUs.'}
           icon={Server}
         >
           <FormSection>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               {GPU_TIERS.map(t => {
                 const isSelected = selectedTier === t.id
                 const ts = TIER_STYLES[t.id]!
                 const hr = HOURLY_RATES[t.id] ?? 0
                 const dr = hr * 24
+                // C2 wave 2: gate consumer tiers behind workload=INFERENCE.
+                const isLocked = !!t.inferenceOnly && workloadType !== 'INFERENCE'
                 return (
                   <button
                     key={t.id}
-                    onClick={() => setSelectedTier(t.id)}
+                    onClick={() => {
+                      if (isLocked) return
+                      setSelectedTier(t.id)
+                    }}
+                    disabled={isLocked}
+                    title={isLocked ? 'Inference workload only. Switch the workload type above to unlock.' : undefined}
                     className="relative text-left rounded-xl p-4 transition-all duration-200"
-                    style={isSelected
+                    style={isLocked
+                      ? {
+                          border: '1px dashed var(--border-color)',
+                          background: 'var(--bg-elevated)',
+                          opacity: 0.45,
+                          cursor: 'not-allowed',
+                        }
+                      : isSelected
                       ? {
                           border: `1px solid ${ts.border}`,
                           background: ts.bg,
@@ -320,14 +477,22 @@ export default function RequestComputePage() {
                         }
                     }
                   >
-                    {isSelected && (
+                    {isSelected && !isLocked && (
                       <div className="absolute top-3 right-3">
                         <CircleCheck size={18} style={{ color: ts.text }} />
                       </div>
                     )}
+                    {t.inferenceOnly && !isLocked && (
+                      <div
+                        className="absolute top-2 right-2 text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-sm"
+                        style={{ color: ts.text, background: 'rgba(20,184,166,0.12)' }}
+                      >
+                        Inference
+                      </div>
+                    )}
                     <div
                       className="text-lg font-bold mb-1"
-                      style={{ color: isSelected ? ts.text : 'var(--text-primary)' }}
+                      style={{ color: isLocked ? 'var(--text-muted)' : isSelected ? ts.text : 'var(--text-primary)' }}
                     >
                       {t.name}
                     </div>
@@ -341,6 +506,11 @@ export default function RequestComputePage() {
                         <span className="font-medium font-mono text-xs" style={{ color: 'var(--primary)' }}>${dr.toFixed(2)}/day</span>
                       </div>
                     </div>
+                    {isLocked && (
+                      <p className="text-[10px] mt-2 italic" style={{ color: 'var(--text-muted)' }}>
+                        Inference workload only
+                      </p>
+                    )}
                   </button>
                 )
               })}

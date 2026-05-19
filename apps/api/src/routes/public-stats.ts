@@ -109,7 +109,7 @@ export async function publicStatsRoutes(fastify: FastifyInstance) {
     // Cheapest retail ($/hr) per tier from GPU_TIER_CONFIG. The catalog
     // route uses this same source, so the numbers line up.
     const topPricesByTier: Array<{ gpuTier: GpuTier; ratePerHour: number; ratePerMinute: number }> = []
-    for (const tier of ['H100', 'H200', 'B200', 'B300', 'GB300'] as GpuTier[]) {
+    for (const tier of ['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090'] as GpuTier[]) {
       const ratePerHour = Number(dailyToHourly(GPU_TIER_CONFIG[tier].retailRate).toFixed(4))
       topPricesByTier.push({
         gpuTier: tier,
@@ -368,7 +368,7 @@ export async function publicStatsRoutes(fastify: FastifyInstance) {
       max30d: number
       deltaPct30d: number
     }> = []
-    for (const tier of ['H100', 'H200', 'B200', 'B300', 'GB300'] as GpuTier[]) {
+    for (const tier of ['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090'] as GpuTier[]) {
       const last30 = rateHistoryRows.filter(r => {
         return r.gpuTier === tier && new Date(r.fetchedAt) >= day30
       })

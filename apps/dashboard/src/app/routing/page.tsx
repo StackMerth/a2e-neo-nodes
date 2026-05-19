@@ -23,6 +23,10 @@ const GPU_TIERS = [
   { value: 'B200', label: 'NVIDIA B200 — $321.10/day retail' },
   { value: 'B300', label: 'NVIDIA B300 — $431.75/day retail' },
   { value: 'GB300', label: 'NVIDIA GB300 — $499.35/day retail' },
+  // C2 wave 2: consumer / prosumer tiers (inference-only).
+  { value: 'RTX_4090', label: 'NVIDIA RTX 4090 — $14/day retail (inference only)' },
+  { value: 'RTX_3090', label: 'NVIDIA RTX 3090 — $9/day retail (inference only)' },
+  { value: 'CONSUMER', label: 'Consumer GPU — $7/day retail (inference only)' },
 ]
 
 interface RoutingResult {

@@ -61,7 +61,9 @@ const MARKET_OPTIONS = [
   { value: 'IONET', label: 'IO.net' },
 ]
 
-const GPU_TIERS = ['H100', 'H200', 'B200', 'B300', 'GB300']
+// C2 wave 2: include consumer / prosumer tiers so admins can filter
+// jobs that ran on edge inventory (inference-only workloads).
+const GPU_TIERS = ['H100', 'H200', 'B200', 'B300', 'GB300', 'RTX_4090', 'RTX_3090', 'CONSUMER']
 
 export default function JobsPage() {
   const { addToast } = useToast()

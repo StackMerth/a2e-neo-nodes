@@ -21,6 +21,18 @@ enum GpuTier {
   B300
   GB300
   OTHER
+  // C2 wave 2: consumer / prosumer GPU tiers. CONSUMER is a catchall
+  // for any NVIDIA RTX card not explicitly named (3080, 4080, 5090...).
+  // RTX_4090 + RTX_3090 are first-class because they dominate the
+  // self-hosted inference market — operators on these specifically
+  // care about being identified as such.
+  // Routing rule: requests with workloadType=INFERENCE can match all
+  // tiers (including these three). Requests with workloadType=TRAINING
+  // or MIXED hard-filter these out — consumer GPUs aren't designed
+  // for sustained multi-day training loads.
+  CONSUMER
+  RTX_4090
+  RTX_3090
 }
 
 enum NodeType {
@@ -300,6 +312,13 @@ model NodeRunner {
   taxJurisdiction   String?     @default("US")
   w9SubmittedAt     DateTime?
 
+  // C3 wave 2: operator opt-out for the Monday weekly digest email.
+  // Defaulted false so new operators get the digest by default; they
+  // can flip on /payouts/settings if they find it noisy. Read by the
+  // weekly-digest worker as a hard skip — opted-out operators get no
+  // email regardless of forecast / uptime warnings.
+  digestOptedOut    Boolean     @default(false)
+
   // M3: reputation. reputationScore is 0-100, recomputed daily by the
   // reputation-scorer worker from uptime + ratings + completed jobs.
   // Tier is derived from score (BRONZE/SILVER/GOLD/PLATINUM thresholds).
@@ -391,6 +410,21 @@ enum PaymentSource {
 enum TaxIdType {
   SSN  // individual taxpayer
   EIN  // sole-prop or entity
+}
+
+// C2 wave 2: buyer-declared workload type on a ComputeRequest. Drives
+// the allocator's tier-eligibility filter — CONSUMER / RTX_4090 /
+// RTX_3090 nodes ONLY match requests with workloadType=INFERENCE.
+// TRAINING and MIXED requests filter consumer tiers out entirely
+// (consumer cards aren't designed for sustained multi-day loads).
+//
+// Existing requests pre-migration default to MIXED, preserving the
+// pre-wave-2 routing semantics (they never saw consumer tiers because
+// consumer tiers didn't exist).
+enum WorkloadType {
+  INFERENCE
+  TRAINING
+  MIXED
 }
 
 // Internal-spend ledger. One row per ComputeRequest where the buyer
@@ -562,6 +596,14 @@ model Node {
   benchmarkMatmulTflops      Float?
   benchmarkVramBandwidthGbs  Float?
   lastBenchmarkAt            DateTime?
+
+  // C2 wave 2: operator-declared residential-IP marker. Lets operators
+  // on home internet (no static IP, behind NAT) opt into the consumer
+  // GPU tiers without being mistaken for data-center inventory. The
+  // marketplace surfaces a "Home GPU" badge when this is true so
+  // buyers understand the expected reliability tradeoff. Defaulted
+  // false to preserve all pre-migration nodes as non-residential.
+  isResidential              Boolean   @default(false)
 
   // Timestamps
   createdAt     DateTime   @default(now())
@@ -1183,6 +1225,13 @@ model ComputeRequest {
   // platform balance — txHash is INTERNAL:<computeRequestId> and a
   // matching InternalSpend row records the debit.
   paymentSource   PaymentSource        @default(USDC)
+
+  // C2 wave 2: buyer's workload-type declaration. Defaults to MIXED
+  // for safety (preserves pre-wave-2 semantics for any pre-existing
+  // PENDING/APPROVED rows). When MIXED or TRAINING, the allocator
+  // hard-filters out CONSUMER / RTX_4090 / RTX_3090 nodes — those
+  // tiers are inference-only.
+  workloadType    WorkloadType         @default(MIXED)
 
   // Status
   status          ComputeRequestStatus @default(PENDING)

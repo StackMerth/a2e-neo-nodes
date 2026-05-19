@@ -28,7 +28,7 @@
 
 import { Queue, Worker } from 'bullmq'
 import type { ConnectionOptions } from 'bullmq'
-import type { PrismaClient, ComputeRequest, User } from '@a2e/database'
+import type { PrismaClient, ComputeRequest, User, GpuTier } from '@a2e/database'
 import type { Server as SocketServer } from 'socket.io'
 import { evaluateEligibility } from '../services/allocation/eligibility.js'
 import { mintSshSession } from '../services/allocation/ssh-session.js'
@@ -175,6 +175,21 @@ async function processRequest(
   // case-sensitively against Node.region (also a free-form String?
   // column).
   const requiredRegion = (cr as { requiredRegion?: string | null }).requiredRegion
+
+  // C2 wave 2: belt-and-suspenders inference-only filter. The buyer-
+  // compute zod refine already rejects consumer-tier + non-INFERENCE
+  // combinations at the request boundary, but we re-apply the rule
+  // here in case any future allocator extension substitutes tiers
+  // (e.g. "request H200 but H100 works too"). Without this, such a
+  // substitution could accidentally route a TRAINING request to a
+  // consumer node.
+  const workloadType = (cr as { workloadType?: 'INFERENCE' | 'TRAINING' | 'MIXED' }).workloadType ?? 'MIXED'
+  // Note: not readonly — Prisma's enum filter expects a mutable array.
+  const CONSUMER_TIER_LIST: GpuTier[] = ['CONSUMER', 'RTX_4090', 'RTX_3090']
+  const consumerExclusion: { gpuTier?: { notIn: GpuTier[] } } = workloadType === 'INFERENCE'
+    ? {}
+    : { gpuTier: { notIn: CONSUMER_TIER_LIST } }
+
   const candidates = await prisma.node.findMany({
     where: {
       gpuTier: cr.gpuTier,
@@ -185,6 +200,7 @@ async function processRequest(
       agentVersion: { not: null },
       lastHeartbeat: { gte: new Date(Date.now() - HEARTBEAT_FRESH_MS) },
       ...(requiredRegion ? { region: requiredRegion } : {}),
+      ...consumerExclusion,
     },
     orderBy: { lastHeartbeat: 'desc' },
     take: PICK_POOL,
