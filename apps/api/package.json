@@ -24,6 +24,7 @@
     "c2:seed-node": "tsx scripts/c2-seed-test-node.ts",
     "c2:confirm-tx": "tsx scripts/c2-confirm-tx.ts",
     "c2:diagnose-request": "tsx scripts/c2-diagnose-request.ts",
+    "c2:refresh-node": "tsx scripts/c2-refresh-test-node.ts",
     "c3:seed-forecast": "tsx scripts/c3-seed-forecast-earnings.ts",
     "c2c3:cleanup": "tsx scripts/c2c3-test-cleanup.ts"
   },
