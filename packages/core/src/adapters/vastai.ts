@@ -67,6 +67,14 @@ const GPU_TIER_TO_VASTAI: Record<GpuTier, string[]> = {
   B300: ['B300'],
   GB300: ['GB300'],
   OTHER: [], // Custom GPUs - no direct Vast.ai mapping, use estimated rates
+  // C2 wave 2: Vast.ai does list consumer cards, but the allocator
+  // filters consumer tiers off external markets anyway (their pricing
+  // is on internal A2E inventory). Empty arrays mean an accidental
+  // lookup returns no match rather than a partial one against a
+  // listing we never intend to deploy onto.
+  RTX_4090: [],
+  RTX_3090: [],
+  CONSUMER: [],
 }
 
 interface LiveDeploymentRecord {

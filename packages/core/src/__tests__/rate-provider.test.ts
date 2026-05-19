@@ -39,6 +39,10 @@ describe('DefaultRateProvider', () => {
         B300: 431.75,
         GB300: 499.35,
         OTHER: 0, // Custom tier - rate from node config
+        // C2 wave 2: consumer tier retail rates from GPU_TIER_CONFIG.
+        RTX_4090: 14,
+        RTX_3090: 9,
+        CONSUMER: 7,
       }
 
       for (const [tier, expectedRate] of Object.entries(expectedRates)) {

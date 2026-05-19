@@ -65,6 +65,13 @@ const GPU_TIER_TO_AKASH: Record<GpuTier, string[]> = {
   B300: ['b300', 'nvidia-b300', 'B300'],
   GB300: ['gb300', 'nvidia-gb300', 'GB300'],
   OTHER: [],
+  // C2 wave 2: Akash providers rarely advertise consumer SKUs and the
+  // allocator filters consumer tiers off external markets anyway. Empty
+  // arrays so any accidental lookup returns "no match" rather than a
+  // false positive against a datacenter provider.
+  RTX_4090: [],
+  RTX_3090: [],
+  CONSUMER: [],
 }
 
 const SIM_AKT_USD_PRICE = 3.5

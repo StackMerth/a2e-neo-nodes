@@ -42,6 +42,15 @@ const GPU_TIER_TO_AKASH_MODEL: Record<GpuTier, string> = {
   B300: 'b300',
   GB300: 'gb300',
   OTHER: 'rtx', // Generic fallback — picks up any RTX-class GPU on Akash
+  // C2 wave 2: consumer tiers aren't first-class on Akash's attribute
+  // matching (their providers advertise datacenter inventory). Map to
+  // generic 'rtx' so a stray INFERENCE deployment that overflows to
+  // Akash still produces a buildable SDL; in practice the allocator
+  // shouldn't route these externally — the consumer-tier filter
+  // keeps them on internal inventory.
+  RTX_4090: 'rtx-4090',
+  RTX_3090: 'rtx-3090',
+  CONSUMER: 'rtx',
 }
 
 /**
@@ -57,6 +66,11 @@ const DEFAULT_MAX_BID_UAKT: Record<GpuTier, number> = {
   B300: 18000,
   GB300: 22000,
   OTHER: 3000,
+  // C2 wave 2: consumer tiers are cheap; cap the bid low so a stray
+  // overflow deployment never spends more than ~$2/hr on Akash.
+  RTX_4090: 1500,
+  RTX_3090: 1000,
+  CONSUMER: 800,
 }
 
 const DEFAULT_IMAGE = 'pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime'

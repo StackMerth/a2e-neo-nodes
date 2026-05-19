@@ -55,7 +55,10 @@ export class DefaultYieldFloorConfig implements YieldFloorConfig {
    * Get all current floors (including overrides)
    */
   getAllFloors(): Record<GpuTier, YieldFloorRate> {
-    const tiers: GpuTier[] = ['H100', 'H200', 'B200', 'B300', 'GB300']
+    // C2 wave 2: consumer tiers join the iteration so admin /rates
+    // gets a floor for them too. OTHER stays out — it's a per-node
+    // custom-rate tier with no canonical floor.
+    const tiers: GpuTier[] = ['H100', 'H200', 'B200', 'B300', 'GB300', 'RTX_4090', 'RTX_3090', 'CONSUMER']
     const result: Record<string, YieldFloorRate> = {}
 
     for (const tier of tiers) {

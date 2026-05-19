@@ -34,6 +34,9 @@ import type { GpuTier } from '@a2e/shared'
 // GPU peak power draw in watts. OTHER tier defaults to a conservative
 // 700W since custom hardware can be anything; that keeps the estimate
 // from collapsing to zero on a node where we don't know the silicon.
+// C2 wave 2: consumer / prosumer values are board TGP from NVIDIA spec
+// sheets; CONSUMER catchall sits at the lower envelope of common
+// modern consumer cards (RTX 4060/3060 class).
 export const GPU_TDP_WATTS: Record<GpuTier, number> = {
   H100: 700,
   H200: 700,
@@ -41,6 +44,9 @@ export const GPU_TDP_WATTS: Record<GpuTier, number> = {
   B300: 1200,
   GB300: 1400,
   OTHER: 700,
+  RTX_4090: 450,
+  RTX_3090: 350,
+  CONSUMER: 250,
 }
 
 // Region grid carbon intensity (g CO2 / kWh).
