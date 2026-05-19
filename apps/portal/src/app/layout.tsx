@@ -29,12 +29,25 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: 'TokenOS DeAI Portal | TokenOS',
   description: 'Node Runner Portal for the TokenOS DeAI Arbitrage & Orchestration Engine',
+  // C6 wave 2: PWA bindings. manifest path matches Next's auto-route
+  // from src/app/manifest.ts. appleWebApp settings let iOS Safari
+  // launch the home-screen icon in standalone (no Safari chrome) with
+  // the matching status-bar color.
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'TokenOS',
+  },
 }
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
+  // C6 wave 2: theme color matches the manifest so the address bar /
+  // status bar matches the portal palette when installed.
+  themeColor: '#22c55e',
 }
 
 export default function RootLayout({
