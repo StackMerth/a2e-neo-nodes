@@ -152,6 +152,19 @@ export const nodeRunner = {
     const qs = params ? '?' + new URLSearchParams(params).toString() : ''
     return apiFetch(`/v1/portal/node-runner/earnings/history${qs}`)
   },
+  // C3 wave 2: 30-day earnings forecast based on the last 7 active
+  // days. Cold-start cases (daysAnalyzed < 5) come back honest so the
+  // UI can suppress the headline number until real data accrues.
+  earningsForecast: (days = 30) =>
+    apiFetch<{
+      projected: number
+      rangeLow: number
+      rangeHigh: number
+      avgDailyEarnings: number
+      daysAnalyzed: number
+      basedOn: string
+      horizonDays: number
+    }>(`/v1/portal/node-runner/earnings/forecast?days=${days}`),
   payouts: (params?: Record<string, string>) => {
     const qs = params ? '?' + new URLSearchParams(params).toString() : ''
     return apiFetch(`/v1/portal/node-runner/payouts${qs}`)

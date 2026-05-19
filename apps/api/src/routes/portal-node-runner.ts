@@ -5,6 +5,7 @@ import {
   calculateUptimeEarnings,
   getDailyUptimeBreakdown,
 } from '../services/earnings/uptime-calculator.js'
+import { calculateForecast } from '../services/earnings/forecast.js'
 import { createNotification } from '../services/notification/service.js'
 import { generateTaxYearCsv } from '../services/reports/tax-csv.js'
 
@@ -61,6 +62,9 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       nodeCount,
       investmentCount,
       createdAt: nr.createdAt,
+      // C3 wave 2: surfaced so the payout-settings page can render the
+      // weekly digest opt-out checkbox in its current state.
+      digestOptedOut: nr.digestOptedOut,
     })
   })
 
@@ -652,6 +656,31 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     reply.send({ earnings, total, page, limit, pages: Math.ceil(total / limit) })
   })
 
+  /**
+   * C3 wave 2: GET /v1/portal/node-runner/earnings/forecast?days=30
+   *
+   * Forward-looking projection from the last 7 days of earnings. Used
+   * by the operator dashboard forecast card and the weekly digest
+   * email so the two views never disagree. See
+   * services/earnings/forecast.ts for the math + cold-start handling.
+   */
+  const forecastQuerySchema = z.object({
+    days: z.coerce.number().min(1).max(365).default(30),
+  })
+
+  fastify.get('/v1/portal/node-runner/earnings/forecast', async (request, reply) => {
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+    const parsed = forecastQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
+    }
+
+    const forecast = await calculateForecast(fastify.prisma, nr.id, parsed.data.days)
+    reply.send(forecast)
+  })
+
   // ===================================================================
   // PAYOUTS
   // ===================================================================
@@ -710,6 +739,9 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     // settlement engine + scheduler enforce the actual lifecycle.
     payoutMode: z.enum(['AUTO', 'MANUAL', 'SCHEDULED']).optional(),
     payoutScheduledAt: z.string().datetime().nullable().optional(),
+    // C3 wave 2: opt out of the weekly digest email (forecast +
+    // uptime warnings). Defaults to false (digest on) for new operators.
+    digestOptedOut: z.boolean().optional(),
   }).refine(
     (data) =>
       data.payoutMode !== 'SCHEDULED' || data.payoutScheduledAt != null,

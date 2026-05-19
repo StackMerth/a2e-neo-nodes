@@ -26,6 +26,7 @@ interface Profile {
   payoutFrequency: string
   payoutDayOfWeek: number | null
   payoutDayOfMonth: number | null
+  digestOptedOut?: boolean
 }
 
 const MODE_OPTIONS: Array<{ id: PayoutMode; label: string; description: string }> = [
@@ -81,6 +82,9 @@ export default function PayoutSettingsPage() {
   const [dayOfMonth, setDayOfMonth] = useState(1)
   const [mode, setMode] = useState<PayoutMode>('AUTO')
   const [scheduledAt, setScheduledAt] = useState<string>('') // datetime-local string
+  // C3 wave 2: weekly digest opt-out. Defaults to false (digest on).
+  // Flipped via the checkbox below; persisted as part of the main save.
+  const [digestOptedOut, setDigestOptedOut] = useState(false)
   const [available, setAvailable] = useState(0)
   const [pending, setPending] = useState(0)
   const [spent, setSpent] = useState(0)
@@ -109,6 +113,7 @@ export default function PayoutSettingsPage() {
       setFrequency(profile.payoutFrequency ?? 'WEEKLY')
       setDayOfWeek(profile.payoutDayOfWeek ?? 1)
       setDayOfMonth(profile.payoutDayOfMonth ?? 1)
+      setDigestOptedOut(profile.digestOptedOut ?? false)
       if (modeInfo) {
         setMode(modeInfo.mode)
         setScheduledAt(modeInfo.scheduledAt ? toLocalDatetimeInput(modeInfo.scheduledAt) : '')
@@ -147,6 +152,7 @@ export default function PayoutSettingsPage() {
         payoutDayOfMonth: frequency === 'MONTHLY' ? dayOfMonth : undefined,
         payoutMode: mode,
         payoutScheduledAt: mode === 'SCHEDULED' && scheduledAt ? new Date(scheduledAt).toISOString() : null,
+        digestOptedOut,
       })
       toast('success', 'Settings saved')
     } catch (err) {
@@ -573,6 +579,34 @@ export default function PayoutSettingsPage() {
                   </select>
                 </div>
               )}
+            </FormSection>
+          </FormCard>
+
+          {/* C3 wave 2: weekly digest opt-out. Defaults on for new
+              operators; the checkbox flips digestOptedOut on save. */}
+          <FormCard
+            title="Email Preferences"
+            description="Weekly summary email with forecast + uptime warnings"
+            icon={FileText}
+          >
+            <FormSection>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!digestOptedOut}
+                  onChange={(e) => setDigestOptedOut(!e.target.checked)}
+                  className="mt-1 w-4 h-4"
+                  style={{ accentColor: 'var(--primary)' }}
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                    Send me the weekly summary email
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    Mondays at 09:00 UTC: 30-day earnings forecast plus a flag for any node under 90% uptime. Requires a verified email on this account.
+                  </p>
+                </div>
+              </label>
             </FormSection>
           </FormCard>
 
