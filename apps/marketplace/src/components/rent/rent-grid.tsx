@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Cpu, X, Loader2 } from 'lucide-react'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
@@ -325,7 +326,18 @@ export function RentModal({
 
   const meta = GPU_META[tier]!
 
-  return (
+  // C2 wave 2 bug fix: the marketplace ListingRow wraps its content
+  // in a <Link href="/operator/...">. If we render the modal inline,
+  // it lives inside the Link's DOM subtree, and clicks inside the
+  // modal (eg focusing the email input) can bubble up to the anchor
+  // and navigate the buyer to the operator profile mid-signup.
+  // Rendering through a portal attaches the modal to document.body
+  // so it's a sibling of the Link, not a descendant. SSR-safe via the
+  // `typeof document` check; during the brief Next.js server pass we
+  // render nothing — the modal was already client-gated by `open`.
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
@@ -452,6 +464,7 @@ export function RentModal({
           </p>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
