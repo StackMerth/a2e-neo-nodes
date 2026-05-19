@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { List, Server, ArrowRight } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import {
@@ -46,6 +47,7 @@ const formatCurrency = (n: number) =>
   }).format(n)
 
 export default function RequestsListPage() {
+  const router = useRouter()
   const [requests, setRequests] = useState<ComputeRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -164,6 +166,7 @@ export default function RequestsListPage() {
           columns={columns}
           rows={(requests ?? []) as RequestRow[]}
           loading={loading}
+          onRowClick={(r) => router.push(`/buyer/requests/${r.id}`)}
           empty={
             <EmptyState
               icon={Server}
