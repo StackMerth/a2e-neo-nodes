@@ -185,7 +185,7 @@ export async function runWeeklyDigestTick(
   return { sent, skipped: candidates.length - sent, reasonsSkipped }
 }
 
-function renderDigestHtml(payload: DigestPayload): string {
+export function renderDigestHtml(payload: DigestPayload): string {
   const { operatorName, forecast, warnings } = payload
 
   const insufficientData = forecast.daysAnalyzed < 5

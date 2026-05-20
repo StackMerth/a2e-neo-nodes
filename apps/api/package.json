@@ -29,6 +29,7 @@
     "c3:seed-forecast": "tsx scripts/c3-seed-forecast-earnings.ts",
     "c3:diagnose-digest": "tsx scripts/c3-diagnose-digest.ts",
     "c3:backfill-first-heartbeat": "tsx scripts/c3-backfill-first-heartbeat.ts",
+    "c3:test-send-digest": "tsx scripts/c3-test-send-digest.ts",
     "c2c3:cleanup": "tsx scripts/c2c3-test-cleanup.ts"
   },
   "dependencies": {
