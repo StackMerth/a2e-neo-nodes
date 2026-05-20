@@ -527,26 +527,30 @@ export default function NodesPage() {
                       border: '1px solid var(--glass-border)',
                     }}
                   >
-                    <div className="flex items-start justify-between gap-4">
+                    {/* Narrow viewports stack info on top, actions below
+                        so the badges and the action buttons stop fighting
+                        for the same horizontal row. sm: keeps the two-up
+                        layout for desktop. */}
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                       <Link href={`/nodes/${node.id}`} className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="w-3 h-3 rounded-full" style={getStatusDotStyle(node.status)} />
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          <span className="w-3 h-3 rounded-full shrink-0" style={getStatusDotStyle(node.status)} />
                           <span
-                            className="px-2.5 py-1 text-xs font-medium rounded-lg inline-flex items-center gap-1"
+                            className="px-2.5 py-1 text-xs font-medium rounded-lg inline-flex items-center gap-1 shrink-0"
                             style={getStatusBadgeStyle(node.status)}
                           >
                             {getStatusIcon(node.status)}
                             {node.status}
                           </span>
                           <span
-                            className="px-2.5 py-1 text-xs font-medium rounded-lg"
+                            className="px-2.5 py-1 text-xs font-medium rounded-lg shrink-0"
                             style={{ background: 'rgba(34,197,94,0.1)', color: 'var(--success)', border: '1px solid rgba(34,197,94,0.2)' }}
                           >
                             {node.gpuTier}
                           </span>
                           {node.region && (
                             <span
-                              className="px-2.5 py-1 text-xs rounded-lg"
+                              className="px-2.5 py-1 text-xs rounded-lg shrink-0"
                               style={{ background: 'var(--bg-card)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}
                             >
                               {node.region}
@@ -564,7 +568,7 @@ export default function NodesPage() {
                         </div>
                       </Link>
 
-                      <div className="flex items-center gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
+                      <div className="flex flex-wrap items-center gap-1 opacity-100 sm:opacity-50 sm:group-hover:opacity-100 transition-opacity">
                         <Button
                           variant="ghost"
                           size="sm"
