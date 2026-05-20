@@ -17,11 +17,20 @@ const nextConfig = {
 // their home screen and launch it in standalone mode (no browser
 // chrome). Service worker is disabled in development so the usual hot-
 // reload loop doesn't get hijacked by cached responses.
+//
+// fallbacks.document routes any uncached navigation request (e.g. a
+// fresh visit to /earnings while offline) to /offline.html. Without
+// this, next-pwa's default Workbox runtime cache only serves pages the
+// user has already visited; everything else returns the browser's
+// generic "This site can't be reached" error inside the installed PWA.
 const withPWA = require('@ducanh2912/next-pwa').default({
   dest: 'public',
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
+  fallbacks: {
+    document: '/offline',
+  },
 })
 
 module.exports = withPWA(nextConfig)
