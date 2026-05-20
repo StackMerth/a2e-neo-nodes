@@ -41,6 +41,27 @@ const health: EmailHealth = {
   warningLogged: false,
 }
 
+// Placeholder sentinel values that the seed / install scripts leave in
+// Config rows so deploys don't crash, but which must NOT be treated as
+// real SMTP credentials. Without this guard, isEmailConfigured()
+// returns true on a placeholder hostname and every digest tick fails
+// at DNS resolution (getaddrinfo ENOTFOUND ...), flooding the logs.
+const PLACEHOLDER_VALUES = new Set([
+  'NEEDS_OPERATOR_CONFIG',
+  'CHANGEME',
+  'PLACEHOLDER',
+  'TODO',
+  'CONFIGURE_ME',
+])
+
+function isRealValue(v: string | undefined | null): boolean {
+  if (!v) return false
+  const trimmed = v.trim()
+  if (!trimmed) return false
+  if (PLACEHOLDER_VALUES.has(trimmed.toUpperCase())) return false
+  return true
+}
+
 async function getSmtpConfig(): Promise<SmtpConfig | null> {
   const configs = await prisma.config.findMany({
     where: { key: { startsWith: 'smtp_' } },
@@ -48,15 +69,19 @@ async function getSmtpConfig(): Promise<SmtpConfig | null> {
   const map: Record<string, string> = {}
   for (const c of configs) map[c.key] = c.value
 
-  if (!map.smtp_host || !map.smtp_from) return null
+  // Treat sentinel placeholder strings the same as missing config so
+  // the worker no-ops cleanly instead of DNS-failing on every tick.
+  if (!isRealValue(map.smtp_host) || !isRealValue(map.smtp_from)) {
+    return null
+  }
 
   return {
-    host: map.smtp_host,
+    host: map.smtp_host!,
     port: parseInt(map.smtp_port || '587'),
     secure: map.smtp_secure === 'true',
-    user: map.smtp_user || '',
-    pass: map.smtp_pass || '',
-    from: map.smtp_from,
+    user: isRealValue(map.smtp_user) ? map.smtp_user! : '',
+    pass: isRealValue(map.smtp_pass) ? map.smtp_pass! : '',
+    from: map.smtp_from!,
   }
 }
 
