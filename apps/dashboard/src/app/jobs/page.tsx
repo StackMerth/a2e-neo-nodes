@@ -65,6 +65,11 @@ const MARKET_OPTIONS = [
 // jobs that ran on edge inventory (inference-only workloads).
 const GPU_TIERS = ['H100', 'H200', 'B200', 'B300', 'GB300', 'RTX_4090', 'RTX_3090', 'CONSUMER']
 
+const TIER_FILTER_OPTIONS = [
+  { value: '', label: 'All Tiers' },
+  ...GPU_TIERS.map((t) => ({ value: t, label: t })),
+]
+
 export default function JobsPage() {
   const { addToast } = useToast()
   const [jobs, setJobs] = useState<Job[]>([])
@@ -72,6 +77,7 @@ export default function JobsPage() {
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState('')
   const [marketFilter, setMarketFilter] = useState('')
+  const [tierFilter, setTierFilter] = useState('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pagination, setPagination] = useState<Pagination | null>(null)
@@ -91,9 +97,10 @@ export default function JobsPage() {
 
   const loadJobs = useCallback(async () => {
     try {
-      const params: { limit: number; page: number; status?: string; market?: string } = { limit: 20, page }
+      const params: { limit: number; page: number; status?: string; market?: string; gpuTier?: string } = { limit: 20, page }
       if (statusFilter) params.status = statusFilter
       if (marketFilter) params.market = marketFilter
+      if (tierFilter) params.gpuTier = tierFilter
       const data = await api.jobs.list(params)
       setJobs(data.jobs)
       setPagination(data.pagination)
@@ -103,7 +110,7 @@ export default function JobsPage() {
     } finally {
       setLoading(false)
     }
-  }, [statusFilter, marketFilter, page])
+  }, [statusFilter, marketFilter, tierFilter, page])
 
   useEffect(() => {
     loadJobs()
@@ -329,6 +336,16 @@ export default function JobsPage() {
             options={MARKET_OPTIONS}
           />
         </div>
+        <div className="w-40">
+          <Select
+            value={tierFilter}
+            onChange={(e) => {
+              setTierFilter(e.target.value)
+              setPage(1)
+            }}
+            options={TIER_FILTER_OPTIONS}
+          />
+        </div>
         <div className="flex-1 max-w-md">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
@@ -341,13 +358,14 @@ export default function JobsPage() {
             />
           </div>
         </div>
-        {(statusFilter || marketFilter || search) && (
+        {(statusFilter || marketFilter || tierFilter || search) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setStatusFilter('')
               setMarketFilter('')
+              setTierFilter('')
               setSearch('')
             }}
           >

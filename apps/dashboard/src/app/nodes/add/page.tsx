@@ -335,23 +335,35 @@ export default function AddNodePage() {
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              {GPU_TIERS.map((gpu) => (
-                <button
-                  key={gpu.value}
-                  onClick={() => setGpuTier(gpu.value)}
-                  className={`
-                    p-3 rounded-xl border text-center transition-all
-                    ${gpuTier === gpu.value
-                      ? 'bg-accent/10 border-accent/50 ring-1 ring-accent/30'
-                      : 'bg-surface/50 border-border/50 hover:border-accent/30'
-                    }
-                  `}
-                >
-                  <span className="font-semibold text-text-primary text-sm">{gpu.value === 'OTHER' ? 'Other' : gpu.value}</span>
-                  <p className="text-xs text-text-muted">{gpu.vram}</p>
-                  <p className="text-xs text-accent font-medium">{gpu.price}</p>
-                </button>
-              ))}
+              {GPU_TIERS.map((gpu) => {
+                const isSelected = gpuTier === gpu.value
+                return (
+                  <button
+                    key={gpu.value}
+                    type="button"
+                    onClick={() => setGpuTier(gpu.value)}
+                    aria-pressed={isSelected}
+                    className={`
+                      relative p-3 rounded-xl border text-center transition-all duration-150
+                      ${isSelected
+                        ? 'bg-accent/15 border-accent ring-2 ring-accent/40 shadow-[0_0_18px_rgba(34,197,94,0.18)] scale-[1.02]'
+                        : 'bg-surface/50 border-border/50 hover:border-accent/40 hover:bg-surface/70'
+                      }
+                    `}
+                  >
+                    {isSelected && (
+                      <span className="absolute top-1.5 right-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-accent text-white">
+                        <Check size={10} strokeWidth={3} />
+                      </span>
+                    )}
+                    <span className={`font-semibold text-sm ${isSelected ? 'text-accent' : 'text-text-primary'}`}>
+                      {gpu.value === 'OTHER' ? 'Other' : gpu.value}
+                    </span>
+                    <p className="text-xs text-text-muted">{gpu.vram}</p>
+                    <p className="text-xs text-accent font-medium">{gpu.price}</p>
+                  </button>
+                )
+              })}
             </div>
 
             {/* Custom GPU fields for OTHER tier */}
