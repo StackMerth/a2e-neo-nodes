@@ -27,6 +27,7 @@
     "c2:refresh-node": "tsx scripts/c2-refresh-test-node.ts",
     "c2:inspect-nodes": "tsx scripts/c2-inspect-nodes.ts",
     "c3:seed-forecast": "tsx scripts/c3-seed-forecast-earnings.ts",
+    "c3:diagnose-digest": "tsx scripts/c3-diagnose-digest.ts",
     "c2c3:cleanup": "tsx scripts/c2c3-test-cleanup.ts"
   },
   "dependencies": {
