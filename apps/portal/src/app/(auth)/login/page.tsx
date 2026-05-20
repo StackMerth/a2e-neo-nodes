@@ -3,11 +3,34 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { AlertCircle } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/components/ui/Toast'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
+
+/**
+ * Translate whatever the API/network layer threw into a clear,
+ * user-facing message. We intentionally collapse "user not found" and
+ * "wrong password" into a single "Email or password is incorrect"
+ * string — exposing which one is wrong leaks valid emails to anyone
+ * probing the form, which is the standard email-enumeration attack.
+ */
+function humanizeLoginError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err ?? '')
+  const lower = raw.toLowerCase()
+  if (lower.includes('invalid email') || lower.includes('unauthorized') || lower.includes('401')) {
+    return 'Email or password is incorrect.'
+  }
+  if (lower.includes('too many') || lower.includes('rate limit') || lower.includes('429')) {
+    return 'Too many sign-in attempts. Please wait a minute and try again.'
+  }
+  if (lower.includes('fetch') || lower.includes('network') || lower.includes('failed')) {
+    return "Couldn't reach the server. Check your internet connection and try again."
+  }
+  return raw || 'Sign in failed. Please try again.'
+}
 
 export default function LoginPage() {
   const { login } = useAuth()
@@ -15,21 +38,33 @@ export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setError(null)
     try {
-      const user = await login(email, password)
+      // Normalize before sending so a stray space or a mobile auto-
+      // capitalized first letter can't desync from how registerUser
+      // stored the email. The server normalizes too as a second line
+      // of defense.
+      const normalizedEmail = email.trim().toLowerCase()
+      const user = await login(normalizedEmail, password)
       toast('success', 'Logged in successfully')
       if (user.role === 'COMPUTE_BUYER') {
         router.push('/buyer/dashboard')
       } else {
         router.push('/dashboard')
       }
-    } catch (error) {
-      toast('error', error instanceof Error ? error.message : 'Login failed')
+    } catch (err) {
+      const message = humanizeLoginError(err)
+      // Inline error stays visible until the user re-types. Toast adds
+      // a screen-reader-friendly announcement and a second visual cue
+      // for users who don't notice the inline message.
+      setError(message)
+      toast('error', message)
     } finally {
       setLoading(false)
     }
@@ -40,13 +75,31 @@ export default function LoginPage() {
       <h1 className="text-2xl font-bold text-text-primary mb-2">Welcome Back</h1>
       <p className="text-text-secondary text-sm mb-6">Sign in to your TokenOS DeAI account</p>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-lg border border-error/40 bg-error/10 px-3 py-2.5"
+          >
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-error" />
+            <p className="text-sm text-error">{error}</p>
+          </div>
+        )}
         <Input
           label="Email"
           type="email"
+          inputMode="email"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          autoComplete="email"
           placeholder="you@example.com"
           value={email}
-          onChange={e => setEmail(e.target.value)}
+          onChange={e => {
+            setEmail(e.target.value)
+            if (error) setError(null)
+          }}
+          error={error ? ' ' : undefined}
           required
         />
         <div>
@@ -55,7 +108,11 @@ export default function LoginPage() {
             type="password"
             placeholder="Enter your password"
             value={password}
-            onChange={e => setPassword(e.target.value)}
+            onChange={e => {
+              setPassword(e.target.value)
+              if (error) setError(null)
+            }}
+            error={error ? ' ' : undefined}
             required
           />
           <div className="mt-1.5 text-right">

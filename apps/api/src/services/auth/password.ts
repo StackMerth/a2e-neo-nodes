@@ -27,8 +27,14 @@ export async function registerUser(
   role: UserRole = 'NODE_RUNNER',
   signupIp: string | null = null,
 ) {
+  // Canonicalize so mobile keyboards (which auto-capitalize the first
+  // letter of email fields by default) and autofill (which sometimes
+  // appends a trailing space) can never produce a row that login
+  // mode can't find. authenticateUser does the same normalization.
+  const normalizedEmail = email.trim().toLowerCase();
+
   // Check if email is already taken
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (existing) {
     throw new Error('Email already registered');
   }
@@ -45,7 +51,7 @@ export async function registerUser(
 
   return prisma.user.create({
     data: {
-      email,
+      email: normalizedEmail,
       passwordHash,
       role,
       isBuyer,
@@ -59,12 +65,20 @@ export async function registerUser(
 }
 
 /**
- * Authenticate a user with email/password
- * Returns the user if credentials are valid, null otherwise
+ * Authenticate a user with email/password.
+ *
+ * Normalizes the email (trim + toLowerCase) before the DB lookup so a
+ * user who registered as 'asad@m.com' can still sign in if their mobile
+ * keyboard auto-capitalizes to 'Asad@m.com' or autofill leaves a
+ * trailing space. Without this normalization, Prisma's findUnique is
+ * strictly case-sensitive and mobile sign-in silently fails for
+ * lower-cased accounts. registerUser applies the same normalization so
+ * new accounts always land in the DB with their canonical form.
  */
 export async function authenticateUser(email: string, password: string) {
+  const normalizedEmail = email.trim().toLowerCase();
   const user = await prisma.user.findUnique({
-    where: { email },
+    where: { email: normalizedEmail },
     include: { nodeRunner: true },
   });
 
