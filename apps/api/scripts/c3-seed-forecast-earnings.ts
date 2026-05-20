@@ -1,24 +1,35 @@
 /**
- * C3 wave 2 test helper — seed N days of Earning rows for an operator
- * so the dashboard forecast card has enough history (>=5 active days)
- * to render the mature "X projected" view instead of the cold-start
- * placeholder.
+ * C3 wave 2 test helper — seed N days of synthetic Heartbeat rows for
+ * an operator so the dashboard forecast card crosses the 5-day cold-
+ * start gate and renders the mature "$X projected" view.
+ *
+ * Why Heartbeats, not Earnings: the forecast helper
+ * (services/earnings/forecast.ts) computes daily earnings via
+ * getDailyUptimeBreakdown, which derives them from HEARTBEAT rows
+ * (rate per hour × seconds-online). The Earning table is a separate
+ * historical ledger that the forecast does not read. Seeding the
+ * Earning table directly leaves daysAnalyzed unchanged.
+ *
+ * Heartbeats are spaced 60s apart (under the 90s offline threshold in
+ * uptime-calculator.ts), so each day's 1440 rows count as continuous
+ * 24h uptime. The forecast picks up daysAnalyzed = N once it sees N
+ * full days of heartbeats.
  *
  * Usage (Render API service Shell):
  *
  *   cd /opt/render/project/src
- *   pnpm --filter @a2e/api c3:seed-forecast <operator-email> [days] [perDay]
+ *   pnpm --filter @a2e/api c3:seed-forecast <operator-email> [days]
  *
  * Examples:
  *   pnpm --filter @a2e/api c3:seed-forecast asad@m.com
- *   pnpm --filter @a2e/api c3:seed-forecast asad@m.com 7 50
+ *   pnpm --filter @a2e/api c3:seed-forecast asad@m.com 7
  *
- * Defaults: days=7, perDay=$50. Rows are backdated 1..days days ago.
+ * Defaults: days=7. Each day gets 1440 heartbeats backdated to that
+ * UTC day. Existing Heartbeat rows are NOT touched - we only insert
+ * additional ones, so re-runs are safe.
  *
- * If the operator has no node, the script creates a throwaway test node
- * (id prefix 'test-c3-fnode-') to attach the earnings to. Earnings have
- * an onDelete=Cascade relation on the parent Node, so c2c3:cleanup
- * dropping any test-c3-* node also drops all earnings attached to it.
+ * If the operator has no node, creates a throwaway test-c3-fnode-* node.
+ * c2c3:cleanup will drop that node + cascade its heartbeats.
  */
 
 import { PrismaClient } from '@a2e/database'
@@ -28,18 +39,13 @@ const prisma = new PrismaClient()
 async function main() {
   const email = process.argv[2]
   const days = parseInt(process.argv[3] ?? '7', 10)
-  const perDay = parseFloat(process.argv[4] ?? '50')
 
   if (!email) {
-    console.error('Usage: pnpm --filter @a2e/api c3:seed-forecast <operator-email> [days] [perDay]')
+    console.error('Usage: pnpm --filter @a2e/api c3:seed-forecast <operator-email> [days]')
     process.exit(1)
   }
   if (!Number.isFinite(days) || days < 1 || days > 30) {
     console.error('days must be an integer between 1 and 30')
-    process.exit(1)
-  }
-  if (!Number.isFinite(perDay) || perDay <= 0) {
-    console.error('perDay must be a positive number')
     process.exit(1)
   }
 
@@ -57,8 +63,6 @@ async function main() {
     process.exit(1)
   }
 
-  // Earning.nodeId is required. Reuse an existing node when one exists;
-  // otherwise create a throwaway test node so the FK is satisfied.
   let node = await prisma.node.findFirst({
     where: { nodeRunnerId: user.nodeRunner.id },
     select: { id: true, gpuTier: true },
@@ -81,51 +85,48 @@ async function main() {
       select: { id: true, gpuTier: true },
     })
     node = created
-    console.log(`Created throwaway test node ${node.id} to attach earnings to.`)
+    console.log(`Created throwaway test node ${node.id} to attach heartbeats to.`)
   } else {
     console.log(`Using existing node ${node.id} (tier=${node.gpuTier}).`)
   }
 
-  let inserted = 0
-  for (let i = 1; i <= days; i++) {
-    const date = new Date()
-    date.setUTCHours(0, 0, 0, 0)
-    date.setUTCDate(date.getUTCDate() - i)
+  // 60-second cadence keeps gaps under the 90s offline threshold in
+  // uptime-calculator.ts, so every minute of fake heartbeats counts as
+  // a minute of real uptime. 1440 rows per day = 24h continuous.
+  const HEARTBEAT_INTERVAL_SECONDS = 60
+  const HEARTBEATS_PER_DAY = 24 * 60 // 1440
+  let totalInserted = 0
 
-    try {
-      // Earning's identity comes from nodeId + date + market (the
-      // unique tuple); no separate walletAddress or gpuTier field on
-      // the row itself — those derive from the parent Node relation.
-      await prisma.earning.create({
-        data: {
-          nodeId: node.id,
-          date,
-          market: 'INTERNAL',
-          earnings: perDay,
-          gpuSeconds: 86_400,
-          jobCount: 1,
-        },
+  for (let i = 1; i <= days; i++) {
+    const dayStart = new Date()
+    dayStart.setUTCHours(0, 0, 0, 0)
+    dayStart.setUTCDate(dayStart.getUTCDate() - i)
+
+    const rows = []
+    for (let m = 0; m < HEARTBEATS_PER_DAY; m++) {
+      const ts = new Date(dayStart.getTime() + m * HEARTBEAT_INTERVAL_SECONDS * 1000)
+      rows.push({
+        nodeId: node.id,
+        timestamp: ts,
+        gpuUtilization: 65 + Math.floor(Math.random() * 20),
+        gpuTemperature: 55 + Math.floor(Math.random() * 15),
       })
-      inserted++
-    } catch (e) {
-      // @@unique([nodeId, date, market]) — skip if a row already exists
-      // for that day, otherwise re-running the script doubles up.
-      const msg = e instanceof Error ? e.message : String(e)
-      if (msg.includes('Unique constraint')) {
-        console.log(`Day -${i}: row already exists, skipped`)
-      } else {
-        throw e
-      }
     }
+    const result = await prisma.heartbeat.createMany({
+      data: rows,
+      skipDuplicates: true,
+    })
+    totalInserted += result.count
+    console.log(`Day -${i} (${dayStart.toISOString().slice(0, 10)}): inserted ${result.count} heartbeats`)
   }
 
   console.log('')
-  console.log(`Seeded ${inserted} day(s) of earnings at $${perDay}/day for ${user.nodeRunner.name}.`)
-  console.log(`Total fake earnings on the books: $${(inserted * perDay).toFixed(2)}`)
+  console.log(`Seeded ${totalInserted} heartbeat(s) across ${days} day(s) for ${user.nodeRunner.name}.`)
+  console.log(`Node id used: ${node.id} (tier=${node.gpuTier}).`)
   console.log('')
-  console.log('Now load https://user.tokenos.ai/dashboard as this operator.')
-  console.log('The forecast card should render "$X projected" with a range,')
-  console.log(`approximately $${(perDay * 30).toFixed(0)} (perDay * 30) +/- 15%.`)
+  console.log('The forecast helper will now see daysAnalyzed = number of seeded days +')
+  console.log('any prior real earning days. Refresh https://user.tokenos.ai/dashboard;')
+  console.log('the forecast card should flip from cold-start to the mature view.')
 }
 
 main()
