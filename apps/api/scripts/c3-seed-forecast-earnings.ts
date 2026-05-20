@@ -13,13 +13,12 @@
  *   pnpm --filter @a2e/api c3:seed-forecast asad@m.com
  *   pnpm --filter @a2e/api c3:seed-forecast asad@m.com 7 50
  *
- * Defaults: days=7, perDay=$50. Rows are backdated 1..days days ago and
- * marked with walletAddress=TEST_WALLET_C3_FORECAST so the cleanup script
- * can drop them later.
+ * Defaults: days=7, perDay=$50. Rows are backdated 1..days days ago.
  *
  * If the operator has no node, the script creates a throwaway test node
- * to attach the earnings to (Earning.nodeId is required and references
- * a real Node row).
+ * (id prefix 'test-c3-fnode-') to attach the earnings to. Earnings have
+ * an onDelete=Cascade relation on the parent Node, so c2c3:cleanup
+ * dropping any test-c3-* node also drops all earnings attached to it.
  */
 
 import { PrismaClient } from '@a2e/database'
@@ -94,11 +93,12 @@ async function main() {
     date.setUTCDate(date.getUTCDate() - i)
 
     try {
+      // Earning's identity comes from nodeId + date + market (the
+      // unique tuple); no separate walletAddress or gpuTier field on
+      // the row itself — those derive from the parent Node relation.
       await prisma.earning.create({
         data: {
           nodeId: node.id,
-          walletAddress: `TEST_WALLET_C3_FORECAST`,
-          gpuTier: node.gpuTier,
           date,
           market: 'INTERNAL',
           earnings: perDay,
