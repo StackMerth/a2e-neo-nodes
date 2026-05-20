@@ -62,7 +62,11 @@ export default function RegisterPage() {
     setLoading(true)
     try {
       const role = isBuyer ? 'COMPUTE_BUYER' : 'NODE_RUNNER'
-      const user = await register(email, password, role, referralCode ?? undefined)
+      // Normalize before sending so a stray space or a mobile auto-
+      // capitalized first letter doesn't create an account the user
+      // can't sign back into later. The server also normalizes.
+      const normalizedEmail = email.trim().toLowerCase()
+      const user = await register(normalizedEmail, password, role, referralCode ?? undefined)
       // Clear the stored code so a later signup on the same browser
       // doesn't accidentally re-attribute to the same referrer.
       try { localStorage.removeItem(REF_STORAGE_KEY) } catch { /* ignore */ }
@@ -113,6 +117,11 @@ export default function RegisterPage() {
         <Input
           label="Email"
           type="email"
+          inputMode="email"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          autoComplete="email"
           placeholder="you@example.com"
           value={email}
           onChange={e => setEmail(e.target.value)}
