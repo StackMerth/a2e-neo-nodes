@@ -143,7 +143,14 @@ export function NotificationBell({ collapsed = false }: { collapsed?: boolean })
       </motion.button>
 
       {open && (
-        <div className="absolute top-full right-0 mt-2 w-80 rounded-xl shadow-xl animate-scaleIn overflow-hidden z-50"
+        /* Mobile vs desktop positioning: on <sm screens the bell isn't
+            at the right edge of the viewport (sun toggle + avatar sit
+            to its right), so an absolute right-0 w-80 dropdown overflows
+            the left edge. Switching to fixed + inset-x-2 on mobile pins
+            the panel to the viewport with an 8px gutter on each side,
+            full-width up to a 24rem cap. On >=sm we keep the original
+            popover behaviour anchored to the bell. */
+        <div className="fixed sm:absolute inset-x-2 top-16 sm:top-full sm:inset-x-auto sm:right-0 sm:left-auto mt-0 sm:mt-2 w-auto sm:w-80 max-w-[24rem] sm:max-w-none mx-auto sm:mx-0 rounded-xl shadow-xl animate-scaleIn overflow-hidden z-50"
           style={{
             background: 'var(--bg-card)',
             border: '1px solid var(--border-color)',
