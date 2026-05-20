@@ -527,11 +527,13 @@ export default function NodesPage() {
                       border: '1px solid var(--glass-border)',
                     }}
                   >
-                    {/* Narrow viewports stack info on top, actions below
-                        so the badges and the action buttons stop fighting
-                        for the same horizontal row. sm: keeps the two-up
-                        layout for desktop. */}
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                    {/* The /nodes page lives next to the Add Node form on
+                        desktop, leaving the list narrower than a full row.
+                        Use xl: (1280px) for the side-by-side layout so on
+                        anything narrower the action buttons stack BELOW
+                        the info instead of crowding it. Badges + buttons
+                        both wrap so they never overlap. */}
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between xl:gap-4">
                       <Link href={`/nodes/${node.id}`} className="flex-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-2 mb-2">
                           <span className="w-3 h-3 rounded-full shrink-0" style={getStatusDotStyle(node.status)} />
@@ -568,7 +570,7 @@ export default function NodesPage() {
                         </div>
                       </Link>
 
-                      <div className="flex flex-wrap items-center gap-1 opacity-100 sm:opacity-50 sm:group-hover:opacity-100 transition-opacity">
+                      <div className="flex flex-wrap items-center gap-1 pt-2 xl:pt-0 border-t xl:border-0 border-border/40 opacity-100 xl:opacity-50 xl:group-hover:opacity-100 transition-opacity">
                         <Button
                           variant="ghost"
                           size="sm"

@@ -17,6 +17,9 @@ const submitJobSchema = z.object({
 const listJobsQuerySchema = z.object({
   status: z.enum(['PENDING', 'ROUTING', 'ASSIGNED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED']).optional(),
   market: z.enum(['INTERNAL', 'AKASH', 'IONET']).optional(),
+  // C2 wave 2: include consumer tiers so the admin dashboard's tier
+  // filter dropdown can narrow by RTX_4090 / RTX_3090 / CONSUMER too.
+  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']).optional(),
   nodeId: z.string().optional(),
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(100).default(20),
@@ -105,12 +108,13 @@ export async function jobRoutes(fastify: FastifyInstance) {
         })
       }
 
-      const { status, market, nodeId, page, limit } = parseResult.data
+      const { status, market, gpuTier, nodeId, page, limit } = parseResult.data
       const skip = (page - 1) * limit
 
-      const where: { status?: JobStatus; market?: Market; nodeId?: string } = {}
+      const where: { status?: JobStatus; market?: Market; gpuTier?: GpuTier; nodeId?: string } = {}
       if (status) where.status = status as JobStatus
       if (market) where.market = market as Market
+      if (gpuTier) where.gpuTier = gpuTier as GpuTier
       if (nodeId) where.nodeId = nodeId
 
       const [jobs, total] = await Promise.all([
