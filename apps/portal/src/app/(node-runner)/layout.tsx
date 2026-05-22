@@ -9,6 +9,7 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { Footer } from '@/components/layout/Footer'
 import { RoleIntroCallout } from '@/components/layout/RoleIntroCallout'
 import { TopHeader } from '@/components/layout/TopHeader'
+import { VerifyEmailBanner } from '@/components/layout/VerifyEmailBanner'
 
 const mainEase: [number, number, number, number] = [0.4, 0, 0.2, 1]
 
@@ -62,6 +63,9 @@ export default function NodeRunnerLayout({ children }: { children: React.ReactNo
         transition={{ duration: 0.3, ease: mainEase }}
       >
         <div className="page-container">
+          {/* Soft-gate verification reminder. Hidden when the user has
+              already verified or has no email on file (wallet-only). */}
+          <VerifyEmailBanner />
           {/* Self-gating callout: only renders if this user does not
               yet have the matching dual-identity flag. */}
           <RoleIntroCallout />

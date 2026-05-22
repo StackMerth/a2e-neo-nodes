@@ -103,15 +103,21 @@ export async function runWeeklyDigestTick(
     return { sent: 0, skipped: 0, reasonsSkipped: { unconfigured: 1 } }
   }
 
-  // Pool of candidates: every NodeRunner with an email and at least one
-  // node that's heartbeated in the last 30 days. The orderBy keeps the
-  // tick deterministic so the digest:run-once script always processes
-  // operators in the same order.
+  // Pool of candidates: every NodeRunner with a verified email and at
+  // least one node that's heartbeated in the last 30 days. The
+  // emailVerified gate stops the worker from spamming inboxes that
+  // were never confirmed (anti-abuse + Resend deliverability). The
+  // orderBy keeps the tick deterministic so the digest:run-once
+  // script always processes operators in the same order.
   const candidates = await prisma.nodeRunner.findMany({
     where: {
       email: { not: null },
       firstHeartbeatAt: { not: null },
       digestOptedOut: false,
+      // Email verification gate. Unverified accounts get no digest;
+      // they'll start receiving it the next Monday after they click
+      // the verification link.
+      user: { is: { emailVerified: true } },
       ...(options.targetEmail ? { email: options.targetEmail } : {}),
     },
     select: { id: true, name: true, email: true },

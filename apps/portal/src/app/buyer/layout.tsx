@@ -9,6 +9,7 @@ import { BuyerSidebar } from '@/components/layout/BuyerSidebar'
 import { Footer } from '@/components/layout/Footer'
 import { RoleIntroCallout } from '@/components/layout/RoleIntroCallout'
 import { TopHeader } from '@/components/layout/TopHeader'
+import { VerifyEmailBanner } from '@/components/layout/VerifyEmailBanner'
 
 const mainEase: [number, number, number, number] = [0.4, 0, 0.2, 1]
 
@@ -63,6 +64,11 @@ export default function BuyerLayout({ children }: { children: React.ReactNode })
         transition={{ duration: 0.3, ease: mainEase }}
       >
         <div className="page-container">
+          {/* Soft-gate verification reminder. Same banner as the node-
+              runner layout — buyers also need verified email to receive
+              transactional notifications (rental allocated, refund
+              issued, etc.). */}
+          <VerifyEmailBanner />
           {/* Self-gating callout: only renders if this user does not
               yet have isBuyer flag set. Hidden once enabled. */}
           <RoleIntroCallout />

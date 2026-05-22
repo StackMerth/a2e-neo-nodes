@@ -129,11 +129,19 @@ export const auth = {
         body: { address, signature, nonce, ...(role ? { role } : {}) },
       }
     ),
-  me: () => apiFetch<{ id: string; email: string | null; walletAddress: string | null; role: string; nodeRunnerId: string | null; createdAt: string }>(
+  me: () => apiFetch<{ id: string; email: string | null; walletAddress: string | null; role: string; nodeRunnerId: string | null; createdAt: string; emailVerified?: boolean }>(
     '/v1/portal/auth/me'
   ),
   logout: (refreshToken: string) =>
     apiFetch('/v1/portal/auth/logout', { method: 'POST', body: { refreshToken } }),
+  // Re-fires the verification email for the currently signed-in user.
+  // Backend auto-sends one at signup; this is the manual resend the
+  // dashboard banner offers when the original email got lost.
+  sendVerification: () =>
+    apiFetch<{ success: boolean; message: string }>(
+      '/v1/portal/auth/send-verification',
+      { method: 'POST', body: {} },
+    ),
 }
 
 // Node Runner API

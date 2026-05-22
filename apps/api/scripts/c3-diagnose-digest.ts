@@ -33,6 +33,7 @@ async function main() {
       digestOptedOut: true,
       firstHeartbeatAt: true,
       createdAt: true,
+      user: { select: { emailVerified: true } },
     },
   })
 
@@ -45,6 +46,7 @@ async function main() {
   console.log(`  id               : ${nr.id}`)
   console.log(`  name             : ${nr.name}`)
   console.log(`  email            : ${nr.email}`)
+  console.log(`  emailVerified    : ${nr.user?.emailVerified ?? 'null (no linked User)'}`)
   console.log(`  digestOptedOut   : ${nr.digestOptedOut}`)
   console.log(`  firstHeartbeatAt : ${nr.firstHeartbeatAt?.toISOString() ?? 'null'}`)
   console.log(`  createdAt        : ${nr.createdAt.toISOString()}`)
@@ -57,22 +59,30 @@ async function main() {
   console.log('')
   console.log('=== Eligibility check (weekly-digest where clause) ===')
   const emailOk = nr.email != null
+  const verifiedOk = nr.user?.emailVerified === true
   const firstHbOk = nr.firstHeartbeatAt != null
   const optInOk = nr.digestOptedOut === false
   const activeOk = recentHeartbeats > 0
 
   const fmt = (ok: boolean) => (ok ? '✅' : '❌')
   console.log(`  ${fmt(emailOk)}  email not null              : ${emailOk}`)
+  console.log(`  ${fmt(verifiedOk)}  user.emailVerified == true  : ${verifiedOk}`)
   console.log(`  ${fmt(firstHbOk)}  firstHeartbeatAt not null   : ${firstHbOk}`)
   console.log(`  ${fmt(optInOk)}  digestOptedOut == false     : ${optInOk}`)
   console.log(`  ${fmt(activeOk)}  >=1 node hb in last 30 days : ${activeOk} (count=${recentHeartbeats})`)
 
-  const eligible = emailOk && firstHbOk && optInOk && activeOk
+  const eligible = emailOk && verifiedOk && firstHbOk && optInOk && activeOk
   console.log('')
   console.log(`Result: ${eligible ? '✅ eligible — digest would fire' : '❌ excluded — digest skips this operator'}`)
   if (!eligible) {
     console.log('')
     console.log('Suggested fixes for failed clauses:')
+    if (!verifiedOk) {
+      console.log('  - Email is not verified. The operator needs to click the link in')
+      console.log('    the verification email (auto-sent at signup). Resend via:')
+      console.log('    POST /v1/portal/auth/send-verification (authenticated)')
+      console.log('    OR for tests: update User.emailVerified=true directly.')
+    }
     if (!firstHbOk) {
       console.log('  - firstHeartbeatAt is null. Run:')
       console.log(`    UPDATE "NodeRunner" SET "firstHeartbeatAt" = NOW() WHERE id = '${nr.id}';`)
