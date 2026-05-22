@@ -205,20 +205,29 @@ export function _resetEmailHealthForTests(): void {
 }
 
 function wrapTemplate(title: string, content: string): string {
+  // Brand wordmark: 'TokenOS' in white + '_DeAI' in brand green
+  // (#22c55e), matching the portal login screen, the PWA install icon,
+  // and the marketing landing. Same treatment is used in the offline
+  // page so the brand reads consistently across every surface.
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>${title}</title></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0f; color: #ffffff; margin: 0; padding: 0;">
   <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
     <div style="text-align: center; margin-bottom: 32px;">
-      <span style="font-size: 24px; font-weight: 700;">A<sup style="color: #22c55e;">2</sup>E Engine</span>
-      <p style="color: #71717a; font-size: 14px; margin-top: 4px;">TokenOS Compute Platform</p>
+      <span style="font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">
+        <span style="color: #ffffff;">TokenOS</span><span style="color: #22c55e;">_DeAI</span>
+      </span>
+      <p style="color: #71717a; font-size: 14px; margin-top: 6px;">Decentralized Compute Platform</p>
     </div>
     <div style="background: #111118; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 32px;">
       ${content}
     </div>
     <div style="text-align: center; margin-top: 32px; color: #71717a; font-size: 12px;">
-      <p>A&sup2;E Engine &mdash; user.tokenos.ai</p>
+      <p>
+        <span style="color: #cbd5e1;">TokenOS</span><span style="color: #22c55e;">_DeAI</span>
+        &mdash; <a href="https://user.tokenos.ai" style="color: #71717a; text-decoration: none;">user.tokenos.ai</a>
+      </p>
     </div>
   </div>
 </body>
