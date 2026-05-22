@@ -118,6 +118,23 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     next.on('connect_error', (err) => {
       // eslint-disable-next-line no-console
       console.warn('[WebSocket] Connection error:', err.message)
+      // First connect_error after an initial 'connecting' state means
+      // we're now in retry-loop territory. Flip the status so the UI
+      // reads 'reconnecting' (yellow spinner) instead of staying on
+      // the blue 'connecting' spinner forever when the very first
+      // handshake fails — matches the spirit of every retry that
+      // socket.io is about to fire.
+      setStatus((prev) => (prev === 'connected' ? prev : 'reconnecting'))
+    })
+
+    // socket.io's reconnect manager fires its own 'reconnect' event
+    // AFTER a successful re-handshake. We already handle this via the
+    // 'connect' listener (which fires for both initial + reconnect),
+    // but listening to the manager event too gives belt-and-suspenders
+    // coverage in case some edge case skips the inner 'connect'.
+    next.io.on('reconnect', () => {
+      setStatus('connected')
+      setConnectGeneration((g) => g + 1)
     })
 
     socketRef.current = next
@@ -153,6 +170,29 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [user, connect])
+
+  // Safety-net poll: every 5s, sync the React status state from the
+  // underlying socket.connected boolean. If for any reason the
+  // 'connect' / 'disconnect' event handlers didn't fire (event
+  // listener race, React strict-mode double-mount in dev, browser
+  // throttling, etc.), this catches the drift within one tick. Cheap
+  // enough that running it forever costs nothing.
+  useEffect(() => {
+    if (!user) return
+    const interval = window.setInterval(() => {
+      const s = socketRef.current
+      if (!s) return
+      const isConnected = s.connected
+      setStatus((prev) => {
+        if (isConnected && prev !== 'connected') return 'connected'
+        if (!isConnected && prev === 'connected') {
+          return navigator.onLine === false ? 'offline' : 'reconnecting'
+        }
+        return prev
+      })
+    }, 5000)
+    return () => window.clearInterval(interval)
+  }, [user])
 
   // Browser visibility + network listeners: come back the moment the
   // user is reachable again, don't wait for the next backoff tick.
