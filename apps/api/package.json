@@ -22,6 +22,7 @@
     "preempt:test": "tsx scripts/preempt-test.ts",
     "digest:run-once": "tsx scripts/digest-run-once.ts",
     "earnings:consolidate": "tsx scripts/earnings-consolidate-run-once.ts",
+    "earnings:inspect": "tsx scripts/earnings-inspect.ts",
     "c2:seed-node": "tsx scripts/c2-seed-test-node.ts",
     "c2:confirm-tx": "tsx scripts/c2-confirm-tx.ts",
     "c2:diagnose-request": "tsx scripts/c2-diagnose-request.ts",
