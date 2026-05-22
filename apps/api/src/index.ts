@@ -153,6 +153,11 @@ import {
   createWeeklyDigestWorker,
   scheduleWeeklyDigest,
 } from './jobs/weekly-digest'
+import {
+  createEarningsConsolidatorQueue,
+  createEarningsConsolidatorWorker,
+  scheduleEarningsConsolidator,
+} from './jobs/earnings-consolidator'
 
 const server = Fastify({
   logger: {
@@ -362,6 +367,11 @@ async function start() {
     createWeeklyDigestWorker({ redis: redisConnection, prisma: server.prisma })
     await scheduleWeeklyDigest(weeklyDigestQueue)
     server.log.info('Weekly digest worker initialized (7d tick)')
+
+    const earningsConsolidatorQueue = createEarningsConsolidatorQueue(redisConnection)
+    createEarningsConsolidatorWorker({ redis: redisConnection, prisma: server.prisma })
+    await scheduleEarningsConsolidator(earningsConsolidatorQueue)
+    server.log.info('Earnings consolidator worker initialized (24h tick)')
 
     await scheduleRateFetcher(rateFetcherQueue)
     await scheduleReconciliation(reconciliationQueue, 5)
