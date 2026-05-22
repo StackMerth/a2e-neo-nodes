@@ -130,6 +130,34 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       },
     })
 
+    // 30-day per-day earnings breakdown for the "Earnings, last 30 days"
+    // bar chart on /dashboard. The chart reads data.dailyEarnings from
+    // this exact endpoint's response. Without this field the chart
+    // silently falls back to a zero-filled placeholder, even when the
+    // Earning table is populated (which is the bug the earnings-
+    // consolidator finally surfaced — rows existed but the chart was
+    // sourcing the wrong key).
+    const dailyEarningsRows = nodeIds.length === 0
+      ? []
+      : await fastify.prisma.earning.findMany({
+          where: { nodeId: { in: nodeIds }, date: { gte: monthStart } },
+          select: { date: true, earnings: true },
+        })
+    const dayMap = new Map<string, number>()
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(todayStart.getTime() - i * 86400000)
+      dayMap.set(d.toISOString().slice(0, 10), 0)
+    }
+    for (const e of dailyEarningsRows) {
+      const key = new Date(e.date).toISOString().slice(0, 10)
+      if (dayMap.has(key)) {
+        dayMap.set(key, (dayMap.get(key) ?? 0) + e.earnings)
+      }
+    }
+    const dailyEarnings = Array.from(dayMap.entries()).map(([date, amount]) => ({
+      date, amount,
+    }))
+
     reply.send({
       earnings: {
         today: earningsToday._sum.earnings ?? 0,
@@ -151,6 +179,7 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       },
       totalPaidOut: totalPaid._sum.amount ?? 0,
       uptimePercent,
+      dailyEarnings,
     })
   })
 
