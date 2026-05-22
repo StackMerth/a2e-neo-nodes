@@ -981,11 +981,16 @@ export default function DashboardPage() {
                     sparkline reads from the last 7 days of dailyEarnings
                     so it visualizes the actual numbers feeding the
                     forecast — operator can see at a glance whether the
-                    projection is built on a rising or falling trend. */}
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-start">
-                  <div>
+                    projection is built on a rising or falling trend.
+                    Responsive: on <sm the sparkline drops below the
+                    headline so the number stays the dominant element;
+                    on >=sm it sits right of the headline, vertically
+                    centered with it, with breathing room around the
+                    curve so it doesn't read as clipped. */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="min-w-0">
                     <div className="flex items-baseline gap-3 flex-wrap">
-                      <p className="text-4xl font-bold font-mono leading-none" style={{ color: 'var(--primary)' }}>
+                      <p className="text-4xl sm:text-5xl font-bold font-mono leading-none tracking-tight" style={{ color: 'var(--primary)' }}>
                         ${forecast.projected.toFixed(2)}
                       </p>
                       {forecastTrend && (
@@ -997,12 +1002,19 @@ export default function DashboardPage() {
                     </p>
                   </div>
                   {forecastSparkline.length > 1 && (
-                    <div className="w-full sm:w-32 h-12 -mr-2">
+                    <div
+                      className="shrink-0 self-stretch sm:self-center w-full sm:w-40 h-14 rounded-md px-1.5 py-1"
+                      style={{
+                        background: 'rgba(34, 197, 94, 0.04)',
+                        border: '1px solid rgba(34, 197, 94, 0.10)',
+                      }}
+                      aria-label="Last 7 days earnings trend"
+                    >
                       <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={forecastSparkline} margin={{ top: 2, right: 2, bottom: 0, left: 0 }}>
+                        <AreaChart data={forecastSparkline} margin={{ top: 2, right: 4, bottom: 2, left: 4 }}>
                           <defs>
                             <linearGradient id="forecastSparkFill" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.5} />
+                              <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.55} />
                               <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
                             </linearGradient>
                           </defs>
@@ -1013,6 +1025,7 @@ export default function DashboardPage() {
                             strokeWidth={1.75}
                             fill="url(#forecastSparkFill)"
                             isAnimationActive={false}
+                            dot={false}
                           />
                         </AreaChart>
                       </ResponsiveContainer>
@@ -1061,7 +1074,12 @@ export default function DashboardPage() {
         {/* Daily earnings bar chart with summary KPI strip on top */}
         <SectionCard title="Earnings, last 30 days" icon={Zap}>
           {earningsSummary.total > 0 && (
-            <div className="grid grid-cols-3 gap-3 mb-4 pb-4" style={{ borderBottom: '1px solid var(--border-color)' }}>
+            /* KPI summary strip: stacks 1-up on narrow viewports so each
+                stat keeps room for its full mono value, then promotes
+                to a 3-column row on sm+ where the SectionCard is wide
+                enough for them to share. The divider stays on the
+                bottom edge regardless of orientation. */
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4 pb-4" style={{ borderBottom: '1px solid var(--border-color)' }}>
               <ChartSummaryStat label="Total (30d)" value={`$${earningsSummary.total.toFixed(2)}`} />
               <ChartSummaryStat label={`Avg / day · ${earningsSummary.activeCount} active`} value={`$${earningsSummary.avg.toFixed(2)}`} />
               <ChartSummaryStat
