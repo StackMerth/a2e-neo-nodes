@@ -33,6 +33,7 @@
     "c3:backfill-first-heartbeat": "tsx scripts/c3-backfill-first-heartbeat.ts",
     "c3:test-send-digest": "tsx scripts/c3-test-send-digest.ts",
     "c3:set-smtp": "tsx scripts/c3-set-smtp.ts",
+    "auth:force-verify": "tsx scripts/auth-force-verify-email.ts",
     "c2c3:cleanup": "tsx scripts/c2c3-test-cleanup.ts"
   },
   "dependencies": {
