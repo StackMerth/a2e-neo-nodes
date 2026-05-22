@@ -48,7 +48,7 @@ export function verifyWalletSignature(
   try {
     // Build the message the wallet signed
     const message = new TextEncoder().encode(
-      `Sign this message to authenticate with A²E Engine.\n\nNonce: ${nonce}`
+      `Sign this message to authenticate with TokenOS_DeAI.\n\nNonce: ${nonce}`
     );
 
     // Decode the signature from base58 or base64

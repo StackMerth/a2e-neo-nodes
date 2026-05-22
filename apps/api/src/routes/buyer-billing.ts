@@ -168,7 +168,7 @@ export async function buyerBillingRoutes(fastify: FastifyInstance) {
   </div>
 
   <div class="footer">
-    <p>A²E Engine — TokenOS Arbitrage & Orchestration</p>
+    <p><strong style="color: #ffffff;">TokenOS</strong><strong style="color: #22c55e;">_DeAI</strong> — Decentralized Compute Platform</p>
     <p>user.tokenos.ai</p>
   </div>
 </body>
