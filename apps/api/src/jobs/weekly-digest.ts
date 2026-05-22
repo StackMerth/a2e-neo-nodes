@@ -8,7 +8,7 @@
  *   - has at least one node with a heartbeat in the last 30 days
  *   - has not opted out (digestOptedOut=false)
  *
- * Per operator, build a "Your A2E weekly report" email containing:
+ * Per operator, build a "Your Compute Weekly Report" email containing:
  *   - the same forecast as the dashboard card (services/earnings/forecast)
  *   - uptime warnings for any node under 90% uptime over the last 30d
  *
@@ -169,7 +169,7 @@ export async function runWeeklyDigestTick(
       forecast,
       warnings,
     })
-    const ok = await sendEmail(nr.email, 'Your A2E weekly report', html)
+    const ok = await sendEmail(nr.email, 'Your Compute Weekly Report', html)
     if (ok) {
       sent += 1
     } else {
@@ -236,7 +236,7 @@ export function renderDigestHtml(payload: DigestPayload): string {
 
   // Body html — wraps in the sender's wrapTemplate styling at send time.
   return `
-    <h2 style="margin: 0 0 16px 0; font-size: 20px; color: #fafafa;">Your A2E weekly report</h2>
+    <h2 style="margin: 0 0 16px 0; font-size: 20px; color: #fafafa;">Your Compute Weekly Report</h2>
     <p style="margin: 0 0 24px 0; font-size: 14px; color: #cbd5e1;">
       Hi ${escapeHtml(operatorName)}, here's what your operator account looks like this week.
     </p>

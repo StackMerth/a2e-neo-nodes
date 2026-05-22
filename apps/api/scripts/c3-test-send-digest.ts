@@ -86,7 +86,7 @@ async function main() {
     warnings,
   })
 
-  const subject = `[TEST] Your A2E weekly report (preview)`
+  const subject = `[TEST] Your Compute Weekly Report (preview)`
   console.log('')
   console.log(`Sending to: ${recipientEmail}`)
   const ok = await sendEmail(recipientEmail, subject, html)
