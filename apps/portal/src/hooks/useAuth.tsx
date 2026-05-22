@@ -17,6 +17,12 @@ interface User {
   isNodeRunner?: boolean
   isAdmin?: boolean
   nodeRunnerId: string | null
+  // Email verification state. The auto-send fires on signup; the
+  // dashboard banner reads this flag to decide whether to show the
+  // 'verify your email' nudge + resend button. Undefined on legacy
+  // tokens; treat as 'unknown — assume unverified to be safe' in
+  // gating UI (banner shows; sensitive actions block).
+  emailVerified?: boolean
 }
 
 interface AuthContextType {

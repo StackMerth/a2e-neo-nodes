@@ -944,6 +944,25 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       })
     }
 
+    // Email-verification gate. Soft-gate design: operators can sign in,
+    // view their dashboard, install the PWA, etc. without verifying.
+    // But payout withdrawals require a verified email so we have a
+    // trusted channel for refund disputes, fraud alerts, and 1099 tax
+    // documents. Resend verification from /payouts/settings if needed.
+    const user = await fastify.prisma.user.findUnique({
+      where: { id: request.user!.userId },
+      select: { emailVerified: true, email: true },
+    })
+    if (!user?.emailVerified) {
+      return reply.code(403).send({
+        error: 'Email not verified',
+        message: user?.email
+          ? `Verify ${user.email} before withdrawing. Check your inbox or resend the verification email from /payouts/settings.`
+          : 'Verify your email before withdrawing.',
+        requiresEmailVerification: true,
+      })
+    }
+
     // Admin hard-hold check. Returns the unlock timestamp so the UI
     // can render a clear countdown / reason instead of a generic 403.
     if (nr.payoutLockUntil && nr.payoutLockUntil > new Date()) {

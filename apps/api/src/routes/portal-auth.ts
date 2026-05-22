@@ -57,6 +57,55 @@ const verifyEmailSchema = z.object({
 
 const PORTAL_URL = process.env.PORTAL_URL || 'https://user.tokenos.ai'
 
+/**
+ * Mint a fresh verification token + fire the verification email. Used
+ * by /register (auto-fire on signup) and /send-verification (manual
+ * resend from the unverified-banner button). Fire-and-forget by design
+ * — never block the calling request flow on SMTP. Returns the token so
+ * tests can grab it; callers should ignore it in prod.
+ */
+async function issueAndSendVerification(
+  fastify: FastifyInstance,
+  user: { id: string; email: string | null },
+): Promise<string | null> {
+  if (!user.email) return null
+  const token = crypto.randomBytes(32).toString('hex')
+  const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000)
+
+  await fastify.prisma.user.update({
+    where: { id: user.id },
+    data: {
+      emailVerificationToken: token,
+      emailVerificationExpiry: expiry,
+    },
+  })
+
+  const verifyLink = `${PORTAL_URL}/verify-email?token=${token}`
+
+  void sendEmail(
+    user.email,
+    'Verify your email — TokenOS_DeAI',
+    `<h2 style="color: #ffffff; margin: 0 0 16px;">Verify Your Email</h2>
+     <p style="color: #a1a1aa; line-height: 1.6;">
+       Welcome to TokenOS_DeAI. Click the button below to verify your
+       email address. Verified accounts can withdraw earnings and
+       receive the weekly compute report.
+     </p>
+     <div style="text-align: center; margin: 32px 0;">
+       <a href="${verifyLink}" style="display: inline-block; background: #22c55e; color: #0a0a0f; font-weight: 700; padding: 14px 32px; border-radius: 8px; text-decoration: none; letter-spacing: 0.5px;">
+         Verify Email
+       </a>
+     </div>
+     <p style="color: #71717a; font-size: 13px;">
+       Or copy this link: <span style="color: #cbd5e1;">${verifyLink}</span>
+     </p>
+     <p style="color: #71717a; font-size: 13px; margin-top: 16px;">
+       This link expires in 24 hours. If you didn't request this, you can safely ignore this email.
+     </p>`,
+  )
+  return token
+}
+
 export async function portalAuthRoutes(fastify: FastifyInstance) {
 
   /**
@@ -119,6 +168,13 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
           referralStatus = 'ERROR'
         }
       }
+
+      // Fire the verification email automatically right after the
+      // account exists. Don't await — SMTP failures shouldn't block
+      // the signup response. The user lands on the dashboard, sees the
+      // 'verify your email' banner, and can re-fire from there if the
+      // email never arrives.
+      void issueAndSendVerification(fastify, { id: user.id, email: user.email })
 
       reply.code(201).send({
         user: {
@@ -444,35 +500,7 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
       })
     }
 
-    const token = crypto.randomBytes(32).toString('hex')
-    const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
-
-    await fastify.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        emailVerificationToken: token,
-        emailVerificationExpiry: expiry,
-      },
-    })
-
-    const verifyLink = `${PORTAL_URL}/verify-email?token=${token}`
-
-    void sendEmail(
-      user.email,
-      'Verify your email — TokenOS_DeAI',
-      `<h2 style="color: #ffffff; margin: 0 0 16px;">Verify Your Email</h2>
-       <p style="color: #a1a1aa; line-height: 1.6;">
-         Click the button below to verify your email address.
-       </p>
-       <div style="text-align: center; margin: 32px 0;">
-         <a href="${verifyLink}" style="display: inline-block; background: #22c55e; color: #000000; font-weight: 600; padding: 12px 32px; border-radius: 8px; text-decoration: none;">
-           Verify Email
-         </a>
-       </div>
-       <p style="color: #71717a; font-size: 13px;">
-         This link expires in 24 hours. If you didn't request this, you can safely ignore this email.
-       </p>`,
-    )
+    await issueAndSendVerification(fastify, { id: user.id, email: user.email })
 
     reply.send({ success: true, message: 'Verification email sent' })
   })
