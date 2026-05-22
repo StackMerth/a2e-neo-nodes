@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer,
-  PieChart, Pie, Cell,
+  PieChart, Pie, Cell, Area, AreaChart,
 } from 'recharts'
 import {
   DollarSign,
@@ -24,6 +24,9 @@ import {
   ChevronLeft,
   ChevronRight,
   TrendingUp,
+  TrendingDown,
+  Minus,
+  Sparkles,
 } from 'lucide-react'
 import Link from 'next/link'
 import { nodeRunner } from '@/lib/api'
@@ -140,6 +143,120 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
           ? formatCurrency(payload[0].value)
           : payload[0].value}
       </p>
+    </div>
+  )
+}
+
+/**
+ * Richer tooltip for the daily earnings bar chart. Adds the
+ * "Mon · May 19" date treatment and treats zero-amount bars as
+ * "No earnings" so an empty day reads as a quiet info state instead
+ * of looking like missing data.
+ */
+function EarningsBarTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipPayloadItem[]; label?: string }) {
+  if (!active || !payload?.length) return null
+  const value = typeof payload[0].value === 'number' ? payload[0].value : 0
+  return (
+    <div className="rounded-md border px-3 py-2 shadow-lg" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+      <p className="font-mono text-[10px] uppercase tracking-[0.18em] mb-1" style={{ color: 'var(--text-muted)' }}>
+        {label ?? payload[0].name}
+      </p>
+      <p
+        className="font-mono text-sm"
+        style={{ color: value > 0 ? 'var(--primary)' : 'var(--text-muted)' }}
+      >
+        {value > 0 ? formatCurrency(value) : 'No earnings'}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * Small KPI stat used in the chart card's summary strip. Two lines:
+ * mono label up top, big value below, optional sub-line. Stays inside
+ * the SectionCard padding so it reads as part of the chart, not as a
+ * separate card.
+ */
+function ChartSummaryStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div>
+      <p className="font-mono text-[10px] uppercase tracking-[0.16em]" style={{ color: 'var(--text-muted)' }}>
+        {label}
+      </p>
+      <p className="font-mono text-lg font-semibold mt-1" style={{ color: 'var(--text-primary)' }}>
+        {value}
+      </p>
+      {sub && (
+        <p className="font-mono text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+          {sub}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Trend chip rendered next to the forecast headline. Reads ±N% with an
+ * arrow direction; subtle tone so the chip doesn't overpower the
+ * number itself. Returns nothing inside the JSX when delta is within
+ * the noise band (<= 1%) to avoid surfacing fake precision.
+ */
+function ForecastTrendChip({ deltaPct }: { deltaPct: number }) {
+  const isFlat = Math.abs(deltaPct) < 1
+  const isUp = deltaPct >= 1
+  const Icon = isFlat ? Minus : isUp ? TrendingUp : TrendingDown
+  const color = isFlat ? 'var(--text-muted)' : isUp ? 'var(--primary)' : '#ef4444'
+  const bg = isFlat
+    ? 'rgba(255,255,255,0.04)'
+    : isUp
+      ? 'rgba(34,197,94,0.12)'
+      : 'rgba(239,68,68,0.12)'
+  const sign = isFlat ? '' : isUp ? '+' : ''
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono"
+      style={{ background: bg, color }}
+      title="Vs the prior 7 days average"
+    >
+      <Icon size={12} />
+      {sign}{deltaPct.toFixed(1)}% vs last week
+    </span>
+  )
+}
+
+/**
+ * Horizontal range bar visualization for the ±15% forecast band.
+ * Renders the low / projected / high markers along a single line so
+ * the conservative band reads as a magnitude, not a comma-separated
+ * pair of numbers. The projected value sits at 50% by design (range
+ * is symmetric ±15% around it).
+ */
+function ForecastRangeBar({ low, projected, high }: { low: number; projected: number; high: number }) {
+  return (
+    <div className="space-y-1.5">
+      <div className="relative h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+        {/* Filled band running from low to high marker positions */}
+        <span
+          aria-hidden
+          className="absolute inset-y-0 rounded-full"
+          style={{
+            left: '0%',
+            right: '0%',
+            background: 'linear-gradient(90deg, rgba(34,197,94,0.25), rgba(34,197,94,0.45), rgba(34,197,94,0.25))',
+          }}
+        />
+        {/* Projected marker (50% by definition since range is symmetric) */}
+        <span
+          aria-hidden
+          className="absolute top-1/2 -translate-y-1/2 w-1 h-3 rounded-full"
+          style={{ left: '50%', transform: 'translate(-50%, -50%)', background: 'var(--primary)', boxShadow: '0 0 6px rgba(34,197,94,0.6)' }}
+        />
+      </div>
+      <div className="flex items-center justify-between text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
+        <span>${low.toFixed(2)}</span>
+        <span style={{ color: 'var(--text-secondary)' }}>${projected.toFixed(2)} projected</span>
+        <span>${high.toFixed(2)}</span>
+      </div>
     </div>
   )
 }
@@ -693,22 +810,66 @@ export default function DashboardPage() {
 
   const dailyEarningsData = useMemo(() => {
     if (!data?.dailyEarnings?.length) {
-      const days: { date: string; amount: number }[] = []
+      const days: { date: string; amount: number; isToday: boolean }[] = []
       const now = new Date()
+      const todayKey = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       for (let i = 29; i >= 0; i--) {
         const d = new Date(now)
         d.setDate(d.getDate() - i)
-        days.push({
-          date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          amount: 0,
-        })
+        const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        days.push({ date: label, amount: 0, isToday: label === todayKey })
       }
       return days
     }
-    return data.dailyEarnings.map((e) => ({
-      date: new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      amount: e.amount,
-    }))
+    const todayKey = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    return data.dailyEarnings.map((e) => {
+      const label = new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      return { date: label, amount: e.amount, isToday: label === todayKey }
+    })
+  }, [data])
+
+  // Summary KPIs for the chart header — total, avg over active days,
+  // and best single day. Active days = days with non-zero earnings, so
+  // the average isn't dragged down by all the offline days inside the
+  // 30-day window.
+  const earningsSummary = useMemo(() => {
+    const days = data?.dailyEarnings ?? []
+    const totals = days.reduce((acc, d) => acc + d.amount, 0)
+    const activeDays = days.filter((d) => d.amount > 0)
+    const avg = activeDays.length > 0 ? totals / activeDays.length : 0
+    const best = days.reduce<{ date: string; amount: number } | null>(
+      (acc, d) => (d.amount > (acc?.amount ?? 0) ? d : acc),
+      null,
+    )
+    return {
+      total: totals,
+      avg,
+      activeCount: activeDays.length,
+      best: best && best.amount > 0 ? best : null,
+    }
+  }, [data])
+
+  // Week-over-week trend for the forecast card — last 7 days avg vs
+  // the prior 7 days avg. Drives the up/down/flat chip next to the
+  // headline. Both averages compute over active (non-zero) days only
+  // so a recent string of zeros doesn't make the trend read negative.
+  const forecastTrend = useMemo(() => {
+    const days = data?.dailyEarnings ?? []
+    if (days.length < 14) return null
+    const last7 = days.slice(-7).filter((d) => d.amount > 0)
+    const prior7 = days.slice(-14, -7).filter((d) => d.amount > 0)
+    if (last7.length === 0 || prior7.length === 0) return null
+    const lastAvg = last7.reduce((a, d) => a + d.amount, 0) / last7.length
+    const priorAvg = prior7.reduce((a, d) => a + d.amount, 0) / prior7.length
+    const deltaPct = ((lastAvg - priorAvg) / priorAvg) * 100
+    return { lastAvg, priorAvg, deltaPct }
+  }, [data])
+
+  // 7-day sparkline data for the forecast card. Last 7 days from the
+  // dashboard endpoint, mapped to the shape recharts expects.
+  const forecastSparkline = useMemo(() => {
+    const days = data?.dailyEarnings ?? []
+    return days.slice(-7).map((d) => ({ date: d.date, amount: d.amount }))
   }, [data])
 
   if (loading) {
@@ -815,15 +976,72 @@ export default function DashboardPage() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
-                <div>
-                  <p className="text-3xl font-bold font-mono" style={{ color: 'var(--primary)' }}>
-                    ${forecast.projected.toFixed(2)}
-                  </p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                    Range <span className="font-mono">${forecast.rangeLow.toFixed(2)}</span> – <span className="font-mono">${forecast.rangeHigh.toFixed(2)}</span>
-                  </p>
+              <div className="space-y-4">
+                {/* Top row: headline + trend chip + sparkline. The
+                    sparkline reads from the last 7 days of dailyEarnings
+                    so it visualizes the actual numbers feeding the
+                    forecast — operator can see at a glance whether the
+                    projection is built on a rising or falling trend. */}
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-start">
+                  <div>
+                    <div className="flex items-baseline gap-3 flex-wrap">
+                      <p className="text-4xl font-bold font-mono leading-none" style={{ color: 'var(--primary)' }}>
+                        ${forecast.projected.toFixed(2)}
+                      </p>
+                      {forecastTrend && (
+                        <ForecastTrendChip deltaPct={forecastTrend.deltaPct} />
+                      )}
+                    </div>
+                    <p className="text-xs mt-2 font-mono uppercase tracking-[0.16em]" style={{ color: 'var(--text-muted)' }}>
+                      Projected · next 30 days
+                    </p>
+                  </div>
+                  {forecastSparkline.length > 1 && (
+                    <div className="w-full sm:w-32 h-12 -mr-2">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={forecastSparkline} margin={{ top: 2, right: 2, bottom: 0, left: 0 }}>
+                          <defs>
+                            <linearGradient id="forecastSparkFill" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.5} />
+                              <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <Area
+                            type="monotone"
+                            dataKey="amount"
+                            stroke="var(--primary)"
+                            strokeWidth={1.75}
+                            fill="url(#forecastSparkFill)"
+                            isAnimationActive={false}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                 </div>
+
+                {/* Range bar — horizontal visualization of the ±15%
+                    band with the projected value marked. Reads faster
+                    than the comma-separated low/high text the previous
+                    version used. */}
+                <ForecastRangeBar
+                  low={forecast.rangeLow}
+                  projected={forecast.projected}
+                  high={forecast.rangeHigh}
+                />
+
+                {/* Stats row: active days + daily average. Small
+                    monospaced strip so the methodology stays glanceable
+                    without expanding the details. */}
+                <div className="flex items-center gap-4 pt-1 text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles size={12} style={{ color: 'var(--primary)' }} />
+                    {forecast.daysAnalyzed} active {forecast.daysAnalyzed === 1 ? 'day' : 'days'}
+                  </span>
+                  <span style={{ color: 'var(--border-color)' }}>·</span>
+                  <span>${forecast.avgDailyEarnings.toFixed(2)}/day avg</span>
+                </div>
+
                 <details className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   <summary className="cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
                     How is this calculated?
@@ -840,11 +1058,32 @@ export default function DashboardPage() {
           </SectionCard>
         )}
 
-        {/* Daily earnings bar chart */}
+        {/* Daily earnings bar chart with summary KPI strip on top */}
         <SectionCard title="Earnings, last 30 days" icon={Zap}>
+          {earningsSummary.total > 0 && (
+            <div className="grid grid-cols-3 gap-3 mb-4 pb-4" style={{ borderBottom: '1px solid var(--border-color)' }}>
+              <ChartSummaryStat label="Total (30d)" value={`$${earningsSummary.total.toFixed(2)}`} />
+              <ChartSummaryStat label={`Avg / day · ${earningsSummary.activeCount} active`} value={`$${earningsSummary.avg.toFixed(2)}`} />
+              <ChartSummaryStat
+                label="Best day"
+                value={earningsSummary.best ? `$${earningsSummary.best.amount.toFixed(2)}` : '—'}
+                sub={earningsSummary.best?.date}
+              />
+            </div>
+          )}
           <div className="h-56 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={dailyEarningsData} margin={{ top: 10, right: 12, bottom: 0, left: -12 }}>
+                <defs>
+                  <linearGradient id="earningsBarFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.95} />
+                    <stop offset="100%" stopColor="var(--primary)" stopOpacity={0.45} />
+                  </linearGradient>
+                  <linearGradient id="earningsBarFillToday" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#86efac" stopOpacity={1} />
+                    <stop offset="100%" stopColor="var(--primary)" stopOpacity={0.6} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid stroke="var(--border-color)" strokeDasharray="3 3" vertical={false} />
                 <XAxis
                   dataKey="date"
@@ -857,9 +1096,17 @@ export default function DashboardPage() {
                   tick={{ fill: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-jetbrains)' }}
                   tickLine={false}
                   axisLine={false}
+                  tickFormatter={(v: number) => v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v.toFixed(0)}`}
                 />
-                <Tooltip cursor={{ fill: 'rgba(34,197,94,0.1)' }} content={<ChartTooltip />} />
-                <Bar dataKey="amount" fill="var(--primary)" radius={[2, 2, 0, 0]} />
+                <Tooltip cursor={{ fill: 'rgba(34,197,94,0.08)' }} content={<EarningsBarTooltip />} />
+                <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
+                  {dailyEarningsData.map((entry, idx) => (
+                    <Cell
+                      key={`cell-${idx}`}
+                      fill={entry.isToday ? 'url(#earningsBarFillToday)' : 'url(#earningsBarFill)'}
+                    />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
