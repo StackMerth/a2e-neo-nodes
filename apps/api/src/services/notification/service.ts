@@ -67,7 +67,7 @@ export async function createNotification(
 
         void sendEmail(
           user.email,
-          `${title} — A²E Engine`,
+          `${title} — TokenOS_DeAI`,
           `<h2 style="color: #ffffff; margin: 0 0 16px;">${title}</h2>
            <p style="color: #a1a1aa; line-height: 1.6;">${message}</p>`,
         )

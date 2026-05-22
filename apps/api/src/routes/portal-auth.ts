@@ -196,7 +196,7 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
 
     reply.send({
       nonce,
-      message: `Sign this message to authenticate with A²E Engine.\n\nNonce: ${nonce}`,
+      message: `Sign this message to authenticate with TokenOS_DeAI.\n\nNonce: ${nonce}`,
     })
   })
 
@@ -459,7 +459,7 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
 
     void sendEmail(
       user.email,
-      'Verify your email — A²E Engine',
+      'Verify your email — TokenOS_DeAI',
       `<h2 style="color: #ffffff; margin: 0 0 16px;">Verify Your Email</h2>
        <p style="color: #a1a1aa; line-height: 1.6;">
          Click the button below to verify your email address.
@@ -556,7 +556,7 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
 
     void sendEmail(
       parsed.data.email,
-      'Reset your password — A²E Engine',
+      'Reset your password — TokenOS_DeAI',
       `<h2 style="color: #ffffff; margin: 0 0 16px;">Reset Your Password</h2>
        <p style="color: #a1a1aa; line-height: 1.6;">
          We received a request to reset your password. Click the button below to choose a new one.

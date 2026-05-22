@@ -113,10 +113,10 @@ export async function adminSmtpRoutes(fastify: FastifyInstance) {
 
     const sent = await sendEmail(
       parsed.data.to,
-      'A²E Engine — Test Email',
+      'TokenOS_DeAI — Test Email',
       `<h2 style="color: #ffffff; margin: 0 0 16px;">SMTP Configuration Verified</h2>
        <p style="color: #a1a1aa; line-height: 1.6;">
-         This is a test email from the A&sup2;E Engine. If you received this, your SMTP settings are configured correctly.
+         This is a test email from the TokenOS_DeAI platform. If you received this, your SMTP settings are configured correctly.
        </p>
        <p style="color: #71717a; font-size: 13px; margin-top: 24px;">
          Sent at ${new Date().toISOString()}
