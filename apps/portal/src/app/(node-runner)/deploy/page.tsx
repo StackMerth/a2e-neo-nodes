@@ -116,16 +116,28 @@ export default function DeployPage() {
       initial="hidden"
       animate="show"
     >
-      {/* Header */}
-      <motion.div variants={item} className="relative py-6">
-        <div className="absolute inset-0 rounded-2xl" style={{ background: 'linear-gradient(to bottom, rgba(34,197,94,0.05), transparent)' }} />
-        <div className="relative">
-          <div className="flex items-center gap-3">
-            <Rocket size={28} style={{ color: 'var(--primary)' }} />
-            <h1 className="text-2xl md:text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>Deploy a Node</h1>
-          </div>
-          <p className="mt-1" style={{ color: 'var(--text-muted)' }}>Select your GPU tier, choose how many nodes to deploy, and submit payment.</p>
+      {/* Header — proper card-style spacing. The previous version
+          used an absolutely-positioned tinted background with py-6
+          only on the wrapper, which made the green tint hug the title
+          and subtitle too tightly (no horizontal breathing room, no
+          visible border, gradient cut off mid-character on right edge
+          of narrow viewports). Switching to padded card with a subtle
+          brand-tinted border + gradient on the inside. */}
+      <motion.div
+        variants={item}
+        className="rounded-2xl px-5 sm:px-8 py-6 sm:py-7"
+        style={{
+          background: 'linear-gradient(to bottom right, rgba(34,197,94,0.07), rgba(34,197,94,0.01) 60%, transparent)',
+          border: '1px solid rgba(34, 197, 94, 0.18)',
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <Rocket size={28} style={{ color: 'var(--primary)' }} />
+          <h1 className="text-2xl md:text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>Deploy a Node</h1>
         </div>
+        <p className="mt-2 text-sm sm:text-base max-w-2xl" style={{ color: 'var(--text-muted)' }}>
+          Select your GPU tier, choose how many nodes to deploy, and submit payment.
+        </p>
       </motion.div>
 
       {/* GPU Tier Selector */}

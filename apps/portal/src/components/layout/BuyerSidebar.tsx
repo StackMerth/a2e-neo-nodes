@@ -125,10 +125,20 @@ export function BuyerSidebar() {
             <Link
               key={item.path}
               href={item.path}
-              // Tapping any nav item expands the sidebar to reveal
-              // labels. Click-outside on the page closes it again
-              // (see asideRef useEffect at the top of the component).
-              onClick={() => setSidebarOpen(true)}
+              // Desktop: tapping any nav item expands the sidebar to
+              // reveal labels (click-outside elsewhere closes it; see
+              // the asideRef useEffect at the top of the component).
+              // Mobile (<lg / 1024px): the sidebar is an overlay drawer,
+              // so after the user picks a destination we collapse it
+              // again so the page underneath is visible — otherwise the
+              // overlay sits on top of the page they just navigated to.
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                  setSidebarOpen(false)
+                } else {
+                  setSidebarOpen(true)
+                }
+              }}
               className={`nav-item ${isActive ? 'active' : ''}`}
               title={!sidebarOpen ? item.label : undefined}
             >
