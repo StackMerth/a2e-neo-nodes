@@ -121,6 +121,8 @@ enum NotificationType {
   FIRST_HEARTBEAT_RECEIVED // C5: fires once per operator when first heartbeat lands
   FIRST_EARNING            // C5: fires once per operator on first non-zero Earning row
   NODE_DEGRADED            // C4: fires when benchmark score drops >20% from prior score
+  // Post-wave-2: email verification confirmation
+  EMAIL_VERIFIED           // Fires once when User.emailVerified flips from false -> true
 }
 
 model User {

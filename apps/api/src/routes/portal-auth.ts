@@ -6,6 +6,7 @@ import { generateNonce, verifyWalletSignature, findOrCreateUserByWallet } from '
 import { registerUser, authenticateUser, hashPassword } from '../services/auth/password.js'
 import { sendEmail } from '../services/email/sender.js'
 import { attributeReferral } from '../services/referral/attribution.js'
+import { createNotification } from '../services/notification/service.js'
 
 // Validation schemas
 
@@ -58,16 +59,20 @@ const verifyEmailSchema = z.object({
 const PORTAL_URL = process.env.PORTAL_URL || 'https://user.tokenos.ai'
 
 /**
- * Mint a fresh verification token + fire the verification email. Used
+ * Mint a fresh verification token + send the verification email. Used
  * by /register (auto-fire on signup) and /send-verification (manual
- * resend from the unverified-banner button). Fire-and-forget by design
- * — never block the calling request flow on SMTP. Returns the token so
- * tests can grab it; callers should ignore it in prod.
+ * resend from the unverified-banner button).
+ *
+ * Returns { token, sent } so callers can decide what to do with a
+ * delivery failure. The /register path treats failure as soft (signup
+ * still succeeds, user can resend later); /send-verification treats
+ * failure as hard (resend button should report 'we tried but Resend
+ * dropped it' to the user instead of silently lying that it worked).
  */
 async function issueAndSendVerification(
   fastify: FastifyInstance,
   user: { id: string; email: string | null },
-): Promise<string | null> {
+): Promise<{ token: string; sent: boolean } | null> {
   if (!user.email) return null
   const token = crypto.randomBytes(32).toString('hex')
   const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000)
@@ -82,7 +87,7 @@ async function issueAndSendVerification(
 
   const verifyLink = `${PORTAL_URL}/verify-email?token=${token}`
 
-  void sendEmail(
+  const sent = await sendEmail(
     user.email,
     'Verify your email — TokenOS_DeAI',
     `<h2 style="color: #ffffff; margin: 0 0 16px;">Verify Your Email</h2>
@@ -103,7 +108,7 @@ async function issueAndSendVerification(
        This link expires in 24 hours. If you didn't request this, you can safely ignore this email.
      </p>`,
   )
-  return token
+  return { token, sent }
 }
 
 export async function portalAuthRoutes(fastify: FastifyInstance) {
@@ -500,7 +505,26 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
       })
     }
 
-    await issueAndSendVerification(fastify, { id: user.id, email: user.email })
+    // Wait for the SMTP send result here (unlike the /register auto-
+    // fire path which is intentionally fire-and-forget). Operators
+    // clicking 'Resend email' on the banner deserve a real answer:
+    // if Resend dropped the message — recipient not in audience, daily
+    // quota hit, etc. — we want to surface that, not pretend it worked.
+    const result = await issueAndSendVerification(fastify, { id: user.id, email: user.email })
+
+    if (!result) {
+      return reply.code(400).send({
+        error: 'Bad Request',
+        message: 'No email address associated with this account',
+      })
+    }
+
+    if (!result.sent) {
+      return reply.code(502).send({
+        error: 'Email delivery failed',
+        message: 'The verification token was stored but the email couldn\'t be delivered. If you signed up recently, the sender domain may still be in test mode — check spam, or contact support.',
+      })
+    }
 
     reply.send({ success: true, message: 'Verification email sent' })
   })
@@ -543,6 +567,21 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
         emailVerificationExpiry: null,
       },
     })
+
+    // Fire EMAIL_VERIFIED notification so the operator gets:
+    //   - A row in the bell-icon dropdown saying their email is verified
+    //   - A real-time toast via the existing 'notification:new' WS event
+    //     (TopHeader listens; pops a toast as soon as the row lands)
+    //   - The bell's red unread-count badge bumps by 1
+    // Fire-and-forget so a notification table issue can never fail the
+    // verification step itself.
+    void createNotification(
+      user.id,
+      'EMAIL_VERIFIED',
+      'Email verified',
+      'Your email is now verified. Withdrawals and the weekly compute report are unlocked.',
+      '/payouts/settings',
+    )
 
     reply.send({ success: true, message: 'Email verified successfully' })
   })
