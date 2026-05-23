@@ -100,6 +100,9 @@ const COLORS = {
 const TIER_COLORS: Record<string, string> = {
   H100:  COLORS.green,
   H200:  COLORS.blue,
+  // L40S: teal accent, distinct from the consumer-tier cyan cluster
+  // and the datacenter purple/red palette.
+  L40S:  '#14b8a6',
   B200:  COLORS.purple,
   B300:  COLORS.amber,
   GB300: COLORS.red,

@@ -4,12 +4,12 @@ import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import type { GpuTier, Market } from '@a2e/database'
 
 const ratesQuerySchema = z.object({
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']).optional(),
+  gpuTier: z.enum(['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']).optional(),
   market: z.enum(['INTERNAL', 'AKASH', 'IONET', 'VASTAI']).optional(),
 })
 
 const rateHistoryQuerySchema = z.object({
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
+  gpuTier: z.enum(['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
   market: z.enum(['AKASH', 'IONET', 'VASTAI']),
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
@@ -47,7 +47,7 @@ export async function rateRoutes(fastify: FastifyInstance) {
 
       const tiers: GpuTier[] = gpuTier
         ? [gpuTier as GpuTier]
-        : ['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']
+        : ['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']
 
       const rates: Array<{
         market: string
@@ -88,7 +88,7 @@ export async function rateRoutes(fastify: FastifyInstance) {
         })
       }
 
-      const tierOrder: Record<string, number> = { H100: 1, H200: 2, B200: 3, B300: 4, GB300: 5 }
+      const tierOrder: Record<string, number> = { H100: 1, H200: 2, L40S: 2.5, B200: 3, B300: 4, GB300: 5 }
       const marketOrder: Record<string, number> = { INTERNAL: 1, AKASH: 2, IONET: 3, VASTAI: 4 }
       rates.sort((a, b) => {
         const tierDiff = (tierOrder[a.gpuTier] ?? 99) - (tierOrder[b.gpuTier] ?? 99)

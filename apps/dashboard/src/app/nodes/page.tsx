@@ -32,6 +32,8 @@ const GPU_TIERS = [
   { value: 'B200', label: 'NVIDIA B200' },
   { value: 'B300', label: 'NVIDIA B300' },
   { value: 'GB300', label: 'NVIDIA GB300' },
+  // L40S: Ada-Lovelace datacenter card; mid-tier between H100 and consumer.
+  { value: 'L40S', label: 'NVIDIA L40S' },
   // C2 wave 2: consumer / prosumer tiers (inference-only).
   { value: 'RTX_4090', label: 'NVIDIA RTX 4090' },
   { value: 'RTX_3090', label: 'NVIDIA RTX 3090' },

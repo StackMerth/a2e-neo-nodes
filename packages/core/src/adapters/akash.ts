@@ -61,6 +61,9 @@ interface LiveDeploymentRecord {
 const GPU_TIER_TO_AKASH: Record<GpuTier, string[]> = {
   H100: ['h100', 'nvidia-h100', 'H100 80GB'],
   H200: ['h200', 'nvidia-h200', 'H200'],
+  // L40S: Ada-Lovelace datacenter card; providers advertise either the
+  // bare SKU or with the nvidia- prefix.
+  L40S: ['l40s', 'nvidia-l40s', 'L40S'],
   B200: ['b200', 'nvidia-b200', 'B200'],
   B300: ['b300', 'nvidia-b300', 'B300'],
   GB300: ['gb300', 'nvidia-gb300', 'GB300'],

@@ -27,6 +27,9 @@ const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'https://user.tokenos.a
 const GPU_META: Record<string, { architecture: string; vram: string; accent: string }> = {
   H100:  { architecture: 'Hopper',    vram: '80GB HBM3',   accent: '#22c55e' },
   H200:  { architecture: 'Hopper',    vram: '141GB HBM3e', accent: '#3b82f6' },
+  // L40S: Ada-Lovelace datacenter card; cyan accent keeps it distinct
+  // from the consumer-tier teal cluster below.
+  L40S:  { architecture: 'Ada Lovelace', vram: '48GB GDDR6', accent: '#06b6d4' },
   B200:  { architecture: 'Blackwell', vram: '192GB HBM3e', accent: '#8b5cf6' },
   B300:  { architecture: 'Blackwell Ultra', vram: '288GB HBM3e', accent: '#f59e0b' },
   GB300: { architecture: 'Grace Blackwell', vram: 'NVL72',  accent: '#ef4444' },
@@ -63,7 +66,7 @@ export function RentGrid({ stats, analytics }: { stats: StatsResponse; analytics
   // Render a tile for every tier that has metadata + appears in stats.
   // Tiers with zero idle nodes still render so buyers can see the
   // supply chip flip to Low/None.
-  const tiers = (['H100', 'H200', 'B200', 'B300', 'GB300'] as const).filter(t => GPU_META[t])
+  const tiers = (['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300'] as const).filter(t => GPU_META[t])
 
   return (
     <>

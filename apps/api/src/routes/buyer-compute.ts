@@ -5,9 +5,14 @@ import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import { checkIdempotencyKey, storeIdempotencyResponse } from '../services/idempotency/keys.js'
 import { getSolanaConfig, processPayment } from '../services/payment/solana.js'
 import { getOperatorBalanceBreakdown } from '../services/settlement/engine.js'
+import {
+  getOrCreateBalance,
+  debitBalance,
+  InsufficientBalanceError,
+} from '../services/balance/balance-service.js'
 
 const GPU_DAILY_RATES: Record<string, number> = {
-  H100: 140.15, H200: 179.85, B200: 321.10, B300: 431.75, GB300: 499.35,
+  H100: 140.15, H200: 179.85, L40S: 21, B200: 321.10, B300: 431.75, GB300: 499.35,
   // C2 wave 2: consumer / prosumer tier pricing (market-standard,
   // tunable via YieldFloor per-tier in admin /rates). Allocator
   // gates these to workloadType=INFERENCE only — see compute-allocator.ts.
@@ -15,7 +20,7 @@ const GPU_DAILY_RATES: Record<string, number> = {
 }
 
 const requestSchema = z.object({
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
+  gpuTier: z.enum(['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
   // gpuCount cap: 64 covers single-rack NVL72 / NVL36 cluster requests
   // with headroom. >64 requires an admin-side enterprise quote — keeps
   // a single self-serve buyer from accidentally requesting half the
@@ -32,8 +37,11 @@ const requestSchema = z.object({
   // is the on-chain signature). INTERNAL_BALANCE = paid from the
   // user's accumulated operator balance (txHash optional, server
   // generates INTERNAL:<computeRequestId>; user must also be a
-  // NodeRunner with enough available balance).
-  paymentSource: z.enum(['USDC', 'INTERNAL_BALANCE']).default('USDC'),
+  // NodeRunner with enough available balance). BUYER_BALANCE = drawn
+  // from the buyer's pre-loaded credit balance (txHash optional,
+  // server generates BAL:<computeRequestId>; balanceTransactionId is
+  // linked back so refunds credit the same balance).
+  paymentSource: z.enum(['USDC', 'INTERNAL_BALANCE', 'BUYER_BALANCE']).default('USDC'),
   txHash: z.string().min(1).optional(),
   // M3: pricing tier (default ON_DEMAND keeps existing flows working).
   //   ON_DEMAND — full price, never preempted, no commitment
@@ -84,8 +92,9 @@ const requestSchema = z.object({
   data => data.tier === 'RESERVED' || data.commitmentDays === undefined,
   { message: 'commitmentDays only allowed on RESERVED tier', path: ['commitmentDays'] },
 ).refine(
-  // USDC payments must carry a txHash; INTERNAL_BALANCE doesn't (server
-  // generates a synthetic INTERNAL:<id> hash post-insert).
+  // USDC payments must carry a txHash; INTERNAL_BALANCE and BUYER_BALANCE
+  // don't (server generates a synthetic INTERNAL:<id> / BAL:<id> hash
+  // post-insert).
   data => data.paymentSource !== 'USDC' || (data.txHash && data.txHash.length > 0),
   { message: 'txHash is required for USDC payments', path: ['txHash'] },
 ).refine(
@@ -253,6 +262,24 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     const totalCost = ratePerDay * gpuCount * effectiveDurationDays
     const userId = request.user!.userId
 
+    // Buyer-balance pre-check: confirm the pre-loaded credit balance
+    // covers this rental BEFORE the idempotency layer so an
+    // insufficient-balance rejection isn't accidentally cached as a
+    // successful response. Real debit happens inside the create
+    // transaction below.
+    if (paymentSource === 'BUYER_BALANCE') {
+      const snapshot = await getOrCreateBalance(fastify.prisma, userId)
+      if (snapshot.balanceUsd < totalCost) {
+        return reply.code(402).send({
+          error: 'Payment Required',
+          message: `Insufficient buyer balance: need $${totalCost.toFixed(2)}, have $${snapshot.balanceUsd.toFixed(2)} available.`,
+          required: totalCost,
+          available: snapshot.balanceUsd,
+          topupHint: 'Top up at /buyer/balance.',
+        })
+      }
+    }
+
     // Internal-spend: resolve the buyer's NodeRunner profile and
     // confirm available balance covers the rental. Done BEFORE the
     // idempotency check so an insufficient-balance rejection never
@@ -395,6 +422,52 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
           where: { id: created.id },
           data: { txHash: `INTERNAL:${created.id}` },
         })
+      })
+    } else if (paymentSource === 'BUYER_BALANCE') {
+      // Create the ComputeRequest with a placeholder txHash, debit
+      // the balance (which writes the SPEND_RENTAL ledger entry), then
+      // flip the txHash + link the balanceTransactionId so the refund
+      // path can find both ends of the link. The debit is itself
+      // transactional inside the service; if it throws (e.g. a race
+      // dropped the balance below totalCost between the pre-check and
+      // now), we delete the orphan request to keep state clean.
+      const placeholder = await fastify.prisma.computeRequest.create({
+        data: { ...baseData, txHash: 'BAL:PENDING' },
+      })
+      try {
+        await debitBalance(fastify.prisma, {
+          userId,
+          amountUsd: totalCost,
+          type: 'SPEND_RENTAL',
+          description: `Rental ${gpuCount}x ${gpuTier} for ${effectiveDurationDays}d`,
+          referenceId: placeholder.id,
+        })
+      } catch (err) {
+        await fastify.prisma.computeRequest.delete({ where: { id: placeholder.id } })
+        if (err instanceof InsufficientBalanceError) {
+          return reply.code(402).send({
+            error: 'Payment Required',
+            message: err.message,
+            required: err.requestedAmount,
+            available: err.currentBalance,
+            topupHint: 'Top up at /buyer/balance.',
+          })
+        }
+        throw err
+      }
+      // Resolve the BalanceTransaction id we just created so we can
+      // link it on the request. Looked up by (type, referenceId) which
+      // is unique on that table.
+      const ledgerEntry = await fastify.prisma.balanceTransaction.findFirst({
+        where: { type: 'SPEND_RENTAL', referenceId: placeholder.id },
+        select: { id: true },
+      })
+      computeRequest = await fastify.prisma.computeRequest.update({
+        where: { id: placeholder.id },
+        data: {
+          txHash: `BAL:${placeholder.id}`,
+          balanceTransactionId: ledgerEntry?.id ?? null,
+        },
       })
     } else {
       // USDC path stays a single create — same shape as before

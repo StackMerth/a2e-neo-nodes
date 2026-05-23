@@ -2,8 +2,9 @@
 
 // GPU Tiers supported by TokenOS. Wave 2 added CONSUMER + RTX_4090 +
 // RTX_3090 — these are inference-only at the allocator level (see
-// WorkloadType + compute-allocator.ts).
-export type GpuTier = 'H100' | 'H200' | 'B200' | 'B300' | 'GB300' | 'OTHER' | 'CONSUMER' | 'RTX_4090' | 'RTX_3090'
+// WorkloadType + compute-allocator.ts). L40S is a datacenter mid-tier
+// (ada-lovelace), eligible for every workload type just like H/B-series.
+export type GpuTier = 'H100' | 'H200' | 'L40S' | 'B200' | 'B300' | 'GB300' | 'OTHER' | 'CONSUMER' | 'RTX_4090' | 'RTX_3090'
 
 // Buyer-declared workload type — drives the allocator's consumer-tier
 // eligibility filter. INFERENCE matches all tiers; TRAINING/MIXED
@@ -43,6 +44,10 @@ export const GPU_TIER_CONFIG: Record<
 > = {
   H100: { retailRate: 140.15, costFloor: 83, vram: 80, tier: 1 },
   H200: { retailRate: 179.85, costFloor: 105, vram: 141, tier: 2 },
+  // L40S: datacenter Ada-Lovelace card. Mid-tier between H100 and
+  // consumer RTX. Market reference ~$0.88/hr (Vast.ai, RunPod, AITECH).
+  // $21/day ≈ $0.875/hr. Cost floor leaves room for operator margin.
+  L40S: { retailRate: 21, costFloor: 12, vram: 48, tier: 2.5 },
   B200: { retailRate: 321.1, costFloor: 170, vram: 192, tier: 3 },
   B300: { retailRate: 431.75, costFloor: 250, vram: 288, tier: 4 },
   GB300: { retailRate: 499.35, costFloor: 300, vram: 288, tier: 5 },

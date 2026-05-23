@@ -1181,11 +1181,11 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
   // ===================================================================
 
   const GPU_PRICING: Record<string, number> = {
-    H100: 2500, H200: 3125, B200: 5250, B300: 7500, GB300: 9000,
+    H100: 2500, H200: 3125, L40S: 750, B200: 5250, B300: 7500, GB300: 9000,
   }
 
   const deploySchema = z.object({
-    gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
+    gpuTier: z.enum(['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
     nodeCount: z.number().int().min(1).max(5).default(1),
     txHash: z.string().min(1, 'Transaction hash is required'),
     cryptoAmount: z.number().positive().optional(),

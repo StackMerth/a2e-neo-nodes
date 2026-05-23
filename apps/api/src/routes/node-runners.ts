@@ -18,7 +18,7 @@ const createInvestmentSchema = z.object({
   cryptoAmount: z.number().positive().optional(),
   cryptoCurrency: z.string().optional(),
   txHash: z.string().optional(),
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
+  gpuTier: z.enum(['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'OTHER', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
 })
 
 const confirmInvestmentSchema = z.object({

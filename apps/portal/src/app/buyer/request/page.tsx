@@ -29,6 +29,8 @@ const GPU_TIERS: GpuTier[] = [
   { id: 'B200', name: 'B200', dailyRate: 13.38 },
   { id: 'B300', name: 'B300', dailyRate: 17.99 },
   { id: 'GB300', name: 'GB300', dailyRate: 20.81 },
+  // L40S: NVIDIA Ada-Lovelace datacenter card. $21/day = $0.88/hr retail.
+  { id: 'L40S', name: 'L40S', dailyRate: 0.88 },
   // C2 wave 2: consumer / prosumer tiers. Lower price, inference-only.
   { id: 'RTX_4090', name: 'RTX 4090', dailyRate: 0.58, inferenceOnly: true },
   { id: 'RTX_3090', name: 'RTX 3090', dailyRate: 0.37, inferenceOnly: true },
@@ -38,6 +40,8 @@ const GPU_TIERS: GpuTier[] = [
 const HOURLY_RATES: Record<string, number> = {
   H100: 5.84,
   H200: 7.49,
+  // L40S: $21/day = $0.875/hr retail.
+  L40S: 21 / 24,
   B200: 13.38,
   B300: 17.99,
   GB300: 20.81,
@@ -92,6 +96,15 @@ const TIER_STYLES: Record<string, { border: string; bg: string; text: string; gl
     text: 'var(--danger)',
     glow: '0 0 20px rgba(239,68,68,0.1)',
     ring: 'rgba(239,68,68,0.5)',
+  },
+  // L40S: cyan accent — distinct from datacenter purples/reds and from
+  // the consumer-tier teal cluster below.
+  L40S: {
+    border: 'rgba(6,182,212,0.4)',
+    bg: 'rgba(6,182,212,0.05)',
+    text: '#06b6d4',
+    glow: '0 0 20px rgba(6,182,212,0.1)',
+    ring: 'rgba(6,182,212,0.5)',
   },
   // C2 wave 2: consumer tiers share a single teal palette so they read
   // as a distinct "edge" cluster instead of competing with datacenter
@@ -250,25 +263,31 @@ export default function RequestComputePage() {
   // selection so they don't have to scroll back up.
   const [workloadType, setWorkloadType] = useState<WorkloadType>('MIXED')
 
-  // Internal-spend: only shown to dual-role users (operator + buyer).
-  // `eligible` is set from the API on mount; `available` ticks down
-  // as the user adjusts gpuCount / duration / tier so they can see at
-  // a glance whether the balance covers the rental.
-  const [paymentSource, setPaymentSource] = useState<'USDC' | 'INTERNAL_BALANCE'>('USDC')
+  // Payment source picker:
+  //   USDC             — fresh on-chain Solana transfer (always available)
+  //   INTERNAL_BALANCE — operator-earned credit (dual-role users only)
+  //   BUYER_BALANCE    — pre-loaded buyer credit (any buyer who topped up)
+  // Picker auto-hides when neither balance route is usable, defaulting
+  // straight back to the legacy USDC-only flow.
+  const [paymentSource, setPaymentSource] = useState<'USDC' | 'INTERNAL_BALANCE' | 'BUYER_BALANCE'>('USDC')
   const [internalEligible, setInternalEligible] = useState(false)
   const [internalAvailable, setInternalAvailable] = useState(0)
+  const [buyerBalanceUsd, setBuyerBalanceUsd] = useState<number>(0)
   useEffect(() => {
     let cancelled = false
-    buyer
-      .internalBalance()
-      .then((r) => {
-        if (cancelled) return
-        setInternalEligible(r.eligible)
-        setInternalAvailable(r.available)
-      })
-      .catch(() => {
-        // Quiet failure - default stays "not eligible", picker stays hidden.
-      })
+    void Promise.all([
+      buyer.internalBalance().catch(() => null),
+      buyer.balance.get().catch(() => null),
+    ]).then(([internal, balance]) => {
+      if (cancelled) return
+      if (internal) {
+        setInternalEligible(internal.eligible)
+        setInternalAvailable(internal.available)
+      }
+      if (balance) {
+        setBuyerBalanceUsd(balance.balanceUsd)
+      }
+    })
     return () => {
       cancelled = true
     }
@@ -295,11 +314,15 @@ export default function RequestComputePage() {
       return
     }
     if (paymentSource === 'USDC' && !txHash.trim()) {
-      toast('error', 'Enter your Solana transaction hash, or switch to "Pay from operator balance"')
+      toast('error', 'Enter your Solana transaction hash, or switch to a balance payment method')
       return
     }
     if (paymentSource === 'INTERNAL_BALANCE' && internalAvailable < totalCost) {
       toast('error', `Insufficient operator balance: need $${totalCost.toFixed(2)}, have $${internalAvailable.toFixed(2)}`)
+      return
+    }
+    if (paymentSource === 'BUYER_BALANCE' && buyerBalanceUsd < totalCost) {
+      toast('error', `Insufficient buyer balance: need $${totalCost.toFixed(2)}, have $${buyerBalanceUsd.toFixed(2)}. Top up at /buyer/balance.`)
       return
     }
     const trimmedPubKey = sshPubKey.trim()
@@ -340,9 +363,15 @@ export default function RequestComputePage() {
     }
   }
 
-  // Insufficient-balance flag drives the Submit button + a subtle
+  // Insufficient-balance flags drive the Submit button + a subtle
   // warning under the picker. Recomputed on every render — cheap.
   const internalShort = paymentSource === 'INTERNAL_BALANCE' && internalAvailable < totalCost
+  const buyerBalanceShort = paymentSource === 'BUYER_BALANCE' && buyerBalanceUsd < totalCost
+  // Show the payment-method picker when at least one balance route is
+  // usable (either dual-role operator OR buyer with topped-up credit).
+  // Pure first-time buyers with $0 balance fall through to the legacy
+  // USDC-only flow and never see the picker.
+  const showPaymentPicker = internalEligible || buyerBalanceUsd > 0
 
   return (
     <DashboardShell
@@ -899,18 +928,20 @@ export default function RequestComputePage() {
           </FormCard>
         )}
 
-        {/* Payment method picker — only rendered when the user is also
-            an operator (dual identity). Pure buyers never see this
-            section. INTERNAL_BALANCE hides the tx-hash input below;
-            USDC keeps the legacy flow exactly as it was. */}
-        {internalEligible && (
+        {/* Payment method picker — shown when the buyer has at least
+            one balance route available (operator earnings OR pre-loaded
+            buyer credit). Pure first-time buyers never see this section
+            and stay on the legacy USDC-only flow. */}
+        {showPaymentPicker && (
           <FormCard
             title="Payment method"
-            description="Pay with USDC on Solana, or draw from your accumulated operator balance."
+            description="Pay with USDC on Solana or draw from a balance you have already loaded."
             icon={CreditCard}
           >
             <FormSection>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div
+                className={`grid grid-cols-1 ${internalEligible && buyerBalanceUsd > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-3`}
+              >
                 <button
                   type="button"
                   onClick={() => setPaymentSource('USDC')}
@@ -928,26 +959,51 @@ export default function RequestComputePage() {
                   <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Requires a transaction hash.</p>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => setPaymentSource('INTERNAL_BALANCE')}
-                  className="text-left rounded-xl p-4 transition-all duration-200"
-                  style={paymentSource === 'INTERNAL_BALANCE'
-                    ? { background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.45)', boxShadow: '0 0 12px rgba(59,130,246,0.18)' }
-                    : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
-                  }
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Operator balance</span>
-                    <PiggyBank size={16} style={{ color: 'var(--info, #3b82f6)' }} />
-                  </div>
-                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    Available: <span className="font-mono">${internalAvailable.toFixed(2)}</span>
-                  </p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                    No on-chain tx, no cool-down. Settles instantly.
-                  </p>
-                </button>
+                {buyerBalanceUsd > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentSource('BUYER_BALANCE')}
+                    className="text-left rounded-xl p-4 transition-all duration-200"
+                    style={paymentSource === 'BUYER_BALANCE'
+                      ? { background: 'rgba(6,182,212,0.10)', border: '1px solid rgba(6,182,212,0.45)', boxShadow: '0 0 12px rgba(6,182,212,0.18)' }
+                      : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
+                    }
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Pre-loaded balance</span>
+                      <Wallet size={16} style={{ color: '#06b6d4' }} />
+                    </div>
+                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      Available: <span className="font-mono">${buyerBalanceUsd.toFixed(2)}</span>
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                      Pulls from credit you topped up. Settles instantly.
+                    </p>
+                  </button>
+                )}
+
+                {internalEligible && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentSource('INTERNAL_BALANCE')}
+                    className="text-left rounded-xl p-4 transition-all duration-200"
+                    style={paymentSource === 'INTERNAL_BALANCE'
+                      ? { background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.45)', boxShadow: '0 0 12px rgba(59,130,246,0.18)' }
+                      : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
+                    }
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Operator balance</span>
+                      <PiggyBank size={16} style={{ color: 'var(--info, #3b82f6)' }} />
+                    </div>
+                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      Available: <span className="font-mono">${internalAvailable.toFixed(2)}</span>
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                      Earned from running nodes. No on-chain tx, no cool-down.
+                    </p>
+                  </button>
+                )}
               </div>
 
               {internalShort && (
@@ -959,7 +1015,19 @@ export default function RequestComputePage() {
                     color: '#ef4444',
                   }}
                 >
-                  Need <span className="font-mono">${totalCost.toFixed(2)}</span> but only <span className="font-mono">${internalAvailable.toFixed(2)}</span> is available. Reduce GPU count / duration or switch to USDC.
+                  Need <span className="font-mono">${totalCost.toFixed(2)}</span> but only <span className="font-mono">${internalAvailable.toFixed(2)}</span> in operator balance. Reduce GPU count / duration or switch payment method.
+                </p>
+              )}
+              {buyerBalanceShort && (
+                <p
+                  className="text-xs mt-3 px-3 py-2 rounded-md"
+                  style={{
+                    background: 'rgba(239,68,68,0.08)',
+                    border: '1px solid rgba(239,68,68,0.25)',
+                    color: '#ef4444',
+                  }}
+                >
+                  Need <span className="font-mono">${totalCost.toFixed(2)}</span> but only <span className="font-mono">${buyerBalanceUsd.toFixed(2)}</span> in your balance. Top up at <a href="/buyer/balance" className="underline">Balance</a> or switch to USDC.
                 </p>
               )}
             </FormSection>
@@ -967,13 +1035,15 @@ export default function RequestComputePage() {
         )}
 
         {/* Payment confirmation. For USDC the buyer pastes the Solana
-            tx hash. For INTERNAL_BALANCE the section degrades to a
-            confirm panel showing the debit math — no hash needed. */}
+            tx hash. For the two balance paths the section degrades
+            to a confirm panel showing the debit math — no hash needed. */}
         <FormCard
           title="Payment"
           description={paymentSource === 'USDC'
             ? 'Paste your Solana transaction hash after sending the payment.'
-            : 'Confirm the debit from your operator balance.'}
+            : paymentSource === 'BUYER_BALANCE'
+              ? 'Confirm the debit from your pre-loaded balance.'
+              : 'Confirm the debit from your operator balance.'}
           icon={Wallet}
           footer={
             <Button
@@ -983,7 +1053,8 @@ export default function RequestComputePage() {
               disabled={
                 !selectedTier ||
                 (paymentSource === 'USDC' && !txHash.trim()) ||
-                internalShort
+                internalShort ||
+                buyerBalanceShort
               }
               className="px-8"
             >
@@ -1000,30 +1071,34 @@ export default function RequestComputePage() {
                 value={txHash}
                 onChange={e => setTxHash(e.target.value)}
               />
-            ) : (
-              <div
-                className="rounded-md p-4 space-y-2 text-sm"
-                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
-              >
-                <div className="flex justify-between">
-                  <span style={{ color: 'var(--text-muted)' }}>Balance before</span>
-                  <span className="font-mono" style={{ color: 'var(--text-primary)' }}>${internalAvailable.toFixed(2)}</span>
+            ) : (() => {
+              const before = paymentSource === 'BUYER_BALANCE' ? buyerBalanceUsd : internalAvailable
+              const short = paymentSource === 'BUYER_BALANCE' ? buyerBalanceShort : internalShort
+              return (
+                <div
+                  className="rounded-md p-4 space-y-2 text-sm"
+                  style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
+                >
+                  <div className="flex justify-between">
+                    <span style={{ color: 'var(--text-muted)' }}>Balance before</span>
+                    <span className="font-mono" style={{ color: 'var(--text-primary)' }}>${before.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span style={{ color: 'var(--text-muted)' }}>This rental</span>
+                    <span className="font-mono" style={{ color: '#ef4444' }}>-${totalCost.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between pt-2" style={{ borderTop: '1px solid var(--border-color)' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Balance after</span>
+                    <span
+                      className="font-mono font-semibold"
+                      style={{ color: short ? '#ef4444' : 'var(--primary)' }}
+                    >
+                      ${Math.max(0, before - totalCost).toFixed(2)}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span style={{ color: 'var(--text-muted)' }}>This rental</span>
-                  <span className="font-mono" style={{ color: '#ef4444' }}>-${totalCost.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between pt-2" style={{ borderTop: '1px solid var(--border-color)' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Balance after</span>
-                  <span
-                    className="font-mono font-semibold"
-                    style={{ color: internalShort ? '#ef4444' : 'var(--primary)' }}
-                  >
-                    ${Math.max(0, internalAvailable - totalCost).toFixed(2)}
-                  </span>
-                </div>
-              </div>
-            )}
+              )
+            })()}
           </FormSection>
         </FormCard>
       </div>

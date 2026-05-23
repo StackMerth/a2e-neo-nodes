@@ -38,6 +38,11 @@ const CASES: Case[] = [
   { model: 'NVIDIA H100 80GB HBM3', expected: 'H100' },
   { model: 'H100 SXM5', expected: 'H100' },
   { model: 'NVIDIA H200', expected: 'H200' },
+  // L40S regression checks. Both the bare SKU + the older L40 collapse
+  // into the L40S tier per the detector mapping.
+  { model: 'NVIDIA L40S', expected: 'L40S' },
+  { model: 'L40S', expected: 'L40S' },
+  { model: 'NVIDIA L40', expected: 'L40S' },
   { model: 'NVIDIA B200', expected: 'B200' },
   { model: 'NVIDIA B300', expected: 'B300' },
   { model: 'NVIDIA GB300', expected: 'GB300' },

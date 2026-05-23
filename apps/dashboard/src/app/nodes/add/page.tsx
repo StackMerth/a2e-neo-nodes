@@ -29,6 +29,8 @@ const GPU_TIERS = [
   { value: 'B200', label: 'NVIDIA B200', vram: '192 GB', price: '$321/day' },
   { value: 'B300', label: 'NVIDIA B300', vram: '288 GB', price: '$432/day' },
   { value: 'GB300', label: 'NVIDIA GB300', vram: '384 GB', price: '$499/day' },
+  // L40S: Ada-Lovelace datacenter card; mid-tier between H100 and consumer.
+  { value: 'L40S', label: 'NVIDIA L40S', vram: '48 GB', price: '$21/day' },
   // C2 wave 2: consumer / prosumer tiers (inference-only).
   { value: 'RTX_4090', label: 'NVIDIA RTX 4090', vram: '24 GB', price: '$14/day' },
   { value: 'RTX_3090', label: 'NVIDIA RTX 3090', vram: '24 GB', price: '$9/day' },
