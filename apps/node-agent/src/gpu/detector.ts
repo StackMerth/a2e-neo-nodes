@@ -45,6 +45,16 @@ const GPU_TIER_MAP: Record<string, GpuTier> = {
   'GB300 NVL': 'GB300',
   'NVIDIA GB300': 'GB300',
 
+  // L40S variants (NVIDIA Ada-Lovelace datacenter card). 'L40' alone
+  // is the older Ada card; we collapse it into L40S here because the
+  // billing tier + capability profile are close enough that an admin
+  // reclassification later is cheaper than refusing to register the
+  // node.
+  'L40S': 'L40S',
+  'NVIDIA L40S': 'L40S',
+  'L40': 'L40S',
+  'NVIDIA L40': 'L40S',
+
   // C2 wave 2: consumer / prosumer GPUs
   'RTX 4090': 'RTX_4090',
   'GeForce RTX 4090': 'RTX_4090',

@@ -338,12 +338,14 @@ export const buyer = {
     gpuCount: number
     durationDays: number
     purpose?: string
-    // USDC payments require a txHash. INTERNAL_BALANCE rentals omit it
-    // (server generates INTERNAL:<id>).
+    // USDC payments require a txHash. INTERNAL_BALANCE and
+    // BUYER_BALANCE rentals omit it (server generates INTERNAL:<id> /
+    // BAL:<id>).
     txHash?: string
-    // Payment source. USDC default, INTERNAL_BALANCE for dual-role
-    // users paying from their accumulated operator balance.
-    paymentSource?: 'USDC' | 'INTERNAL_BALANCE'
+    // Payment source. USDC default; INTERNAL_BALANCE for dual-role
+    // users paying from operator earnings; BUYER_BALANCE for any
+    // buyer paying from pre-loaded credit (see /buyer/balance).
+    paymentSource?: 'USDC' | 'INTERNAL_BALANCE' | 'BUYER_BALANCE'
     // M3: pricing tier + optional commitment (RESERVED only)
     tier?: 'ON_DEMAND' | 'SPOT' | 'RESERVED'
     commitmentDays?: number
@@ -386,6 +388,54 @@ export const buyer = {
     ),
   settings: (data: unknown) => apiFetch('/v1/buyer/settings', { method: 'PATCH', body: data }),
   billing: () => apiFetch('/v1/buyer/billing'),
+
+  // Credit balance: buyer pre-loads USD-denominated credit, rentals
+  // draw from it. Backed by /v1/buyer/balance/* endpoints.
+  balance: {
+    get: () =>
+      apiFetch<{
+        balanceUsd: number
+        totalToppedUp: number
+        totalSpent: number
+        totalRefunded: number
+        currency: 'USD'
+      }>('/v1/buyer/balance'),
+    transactions: (limit = 25, cursor?: string) =>
+      apiFetch<{
+        transactions: Array<{
+          id: string
+          type: string
+          amountUsd: number
+          description: string
+          referenceId: string | null
+          balanceAfter: number
+          createdAt: string
+        }>
+      }>(
+        `/v1/buyer/balance/transactions?limit=${limit}${cursor ? `&cursor=${cursor}` : ''}`,
+      ),
+    topupDestination: () =>
+      apiFetch<{
+        wallet: string | null
+        currency: 'USDC'
+        network: 'devnet' | 'mainnet'
+        configured: boolean
+        message?: string
+      }>('/v1/buyer/balance/topup-destination'),
+    topupSolana: (data: { txHash: string; amountUsd: number; note?: string }) =>
+      apiFetch<{
+        success: true
+        creditedUsd?: number
+        alreadyCredited?: boolean
+        balance: {
+          balanceUsd: number
+          totalToppedUp: number
+          totalSpent: number
+          totalRefunded: number
+        }
+        devMode: boolean
+      }>('/v1/buyer/balance/topup-solana', { method: 'POST', body: data }),
+  },
   // Invoice route returns HTML. Bearer-token auth means we can't use a
   // plain <a href> — browsers don't attach the token to new-tab opens.
   // Fetch the HTML with auth, open in a new window via Blob URL so the

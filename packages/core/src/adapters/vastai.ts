@@ -63,6 +63,9 @@ const DEFAULT_DISK_GB = 10
 const GPU_TIER_TO_VASTAI: Record<GpuTier, string[]> = {
   H100: ['H100', 'H100 SXM', 'H100 PCIE'],
   H200: ['H200'],
+  // L40S: Vast.ai lists these as a distinct SKU; PCIE is the only
+  // current form factor for the L40S.
+  L40S: ['L40S', 'L40S PCIE'],
   B200: ['B200'],
   B300: ['B300'],
   GB300: ['GB300'],

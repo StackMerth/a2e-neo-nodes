@@ -67,6 +67,8 @@ export async function calculateJobCost(
   const defaultRates: Record<GpuTier, number> = {
     H100: 3.46,
     H200: 4.38,
+    // L40S: 21/day = 0.875/hr, matches GPU_TIER_CONFIG retailRate.
+    L40S: 0.88,
     B200: 7.08,
     B300: 10.0,
     GB300: 15.0,

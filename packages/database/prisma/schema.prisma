@@ -17,6 +17,11 @@ datasource db {
 enum GpuTier {
   H100
   H200
+  // L40S: NVIDIA data-center inference / mid-training card. Mid-tier
+  // datacenter SKU (between consumer RTX and the H/B-series). Counts
+  // as a data-center tier for allocator routing — eligible for every
+  // workload type, NOT subject to the consumer inference-only filter.
+  L40S
   B200
   B300
   GB300
@@ -187,6 +192,7 @@ model User {
   computeRequests  ComputeRequest[]
   apiKeys          ApiKey[]
   ratingsGiven     Rating[]
+  buyerBalance     BuyerBalance?
 
   @@index([role])
   @@index([signupIp])
@@ -401,8 +407,9 @@ enum PayoutMode {
 // rental from their accumulated platform balance instead, and an
 // InternalSpend row records the debit.
 enum PaymentSource {
-  USDC
-  INTERNAL_BALANCE
+  USDC              // fresh on-chain Solana payment (txHash required)
+  INTERNAL_BALANCE  // operator earnings used to fund a rental (dual-role accounts)
+  BUYER_BALANCE     // pre-loaded buyer credit (see BuyerBalance + BalanceTransaction)
 }
 
 // C7 (tax wave 1): IRS taxpayer-identification-number type. Drives
@@ -1225,8 +1232,14 @@ model ComputeRequest {
   // Payment source. USDC = real Solana transfer (txHash is the real
   // on-chain signature). INTERNAL_BALANCE = paid from operator
   // platform balance — txHash is INTERNAL:<computeRequestId> and a
-  // matching InternalSpend row records the debit.
+  // matching InternalSpend row records the debit. BUYER_BALANCE =
+  // drawn from pre-loaded buyer credit — txHash is BAL:<computeRequestId>
+  // and balanceTransactionId links to the SPEND_RENTAL ledger entry.
   paymentSource   PaymentSource        @default(USDC)
+  // Wave 3 (AITECH topup): link to the BalanceTransaction row when
+  // paymentSource = BUYER_BALANCE. Used by the refund path to credit
+  // unused minutes back to the same buyer balance.
+  balanceTransactionId String?
 
   // C2 wave 2: buyer's workload-type declaration. Defaults to MIXED
   // for safety (preserves pre-wave-2 semantics for any pre-existing
@@ -1550,4 +1563,55 @@ enum WithdrawalStatus {
   PROCESSING     // Transfer in progress
   COMPLETED      // Funds transferred, TX hash recorded
   REJECTED       // Admin rejected
+}
+
+// ============================================================================
+// BUYER CREDIT BALANCE  (Wave 3 / borrowed from AITECH topup pattern)
+// ============================================================================
+// Buyer pre-loads a USD-denominated balance, then rentals draw from it
+// instead of requiring a fresh Solana txhash per request. Refunds for
+// early-stop rentals credit back to the balance. The custodial wallet
+// (admin) still holds the underlying USDC; this table tracks the
+// buyer-facing claim on those funds, with every credit/debit recorded
+// as a BalanceTransaction so the ledger is fully reconstructable.
+
+model BuyerBalance {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balanceUsd    Float    @default(0)  // current spendable balance
+  totalToppedUp Float    @default(0)  // lifetime topup sum (audit)
+  totalSpent    Float    @default(0)  // lifetime spend on rentals
+  totalRefunded Float    @default(0)  // lifetime refunds credited back
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transactions  BalanceTransaction[]
+}
+
+model BalanceTransaction {
+  id           String          @id @default(cuid())
+  balanceId    String
+  balance      BuyerBalance    @relation(fields: [balanceId], references: [id], onDelete: Cascade)
+  type         BalanceTxType
+  // Signed amount: positive = credit, negative = debit. Denominated USD.
+  amountUsd    Float
+  description  String
+  // Referenced object id: ComputeRequest.id for SPEND/REFUND_RENTAL,
+  // Solana txHash for TOPUP_SOLANA, NULL for admin-credit promos.
+  referenceId  String?
+  balanceAfter Float           // ledger snapshot after this tx
+  createdAt    DateTime        @default(now())
+
+  @@unique([type, referenceId])  // prevents double-credit of the same txHash
+  @@index([balanceId, createdAt])
+}
+
+enum BalanceTxType {
+  TOPUP_SOLANA   // user paid SOL/USDC to admin wallet, credited
+  TOPUP_STRIPE   // reserved for fiat onramp (not wired yet)
+  TOPUP_ADMIN    // manual admin credit (promo, support refund)
+  SPEND_RENTAL   // rental cost deducted at request time
+  REFUND_RENTAL  // partial refund from early-stop or unused minutes
+  REFUND_FAILED  // allocator couldn't match — full credit back
 }

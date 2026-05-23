@@ -6,7 +6,7 @@ import type { GpuTier, Market, JobStatus } from '@a2e/database'
 
 const routeRequestSchema = z.object({
   deploymentId: z.string().min(1).max(128),
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
+  gpuTier: z.enum(['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
   hasInternalDemand: z.boolean().default(false),
   durationSeconds: z.number().positive().optional(),
 })

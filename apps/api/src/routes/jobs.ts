@@ -8,7 +8,7 @@ import '../types' // Type augmentations
 
 const submitJobSchema = z.object({
   deploymentId: z.string().min(1).max(128),
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
+  gpuTier: z.enum(['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
   nodeId: z.string().optional(),
   hasInternalDemand: z.boolean().optional().default(false),
   autoRoute: z.boolean().optional().default(true),
@@ -19,7 +19,7 @@ const listJobsQuerySchema = z.object({
   market: z.enum(['INTERNAL', 'AKASH', 'IONET']).optional(),
   // C2 wave 2: include consumer tiers so the admin dashboard's tier
   // filter dropdown can narrow by RTX_4090 / RTX_3090 / CONSUMER too.
-  gpuTier: z.enum(['H100', 'H200', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']).optional(),
+  gpuTier: z.enum(['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']).optional(),
   nodeId: z.string().optional(),
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(100).default(20),

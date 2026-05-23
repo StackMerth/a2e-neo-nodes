@@ -35,6 +35,7 @@ describe('DefaultRateProvider', () => {
       const expectedRates: Record<GpuTier, number> = {
         H100: 140.15,
         H200: 179.85,
+        L40S: 21,
         B200: 321.1,
         B300: 431.75,
         GB300: 499.35,

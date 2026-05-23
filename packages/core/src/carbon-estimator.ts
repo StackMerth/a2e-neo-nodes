@@ -40,6 +40,8 @@ import type { GpuTier } from '@a2e/shared'
 export const GPU_TDP_WATTS: Record<GpuTier, number> = {
   H100: 700,
   H200: 700,
+  // L40S: NVIDIA Ada-Lovelace datacenter card, 350W TGP from spec sheet.
+  L40S: 350,
   B200: 1000,
   B300: 1200,
   GB300: 1400,

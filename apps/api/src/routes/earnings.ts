@@ -245,6 +245,7 @@ export async function earningsRoutes(fastify: FastifyInstance) {
       const tiers: Record<GpuTier, { earnings: number; gpuHours: number; jobCount: number }> = {
         H100: { earnings: 0, gpuHours: 0, jobCount: 0 },
         H200: { earnings: 0, gpuHours: 0, jobCount: 0 },
+        L40S: { earnings: 0, gpuHours: 0, jobCount: 0 },
         B200: { earnings: 0, gpuHours: 0, jobCount: 0 },
         B300: { earnings: 0, gpuHours: 0, jobCount: 0 },
         GB300: { earnings: 0, gpuHours: 0, jobCount: 0 },

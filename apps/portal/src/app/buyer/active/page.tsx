@@ -91,6 +91,8 @@ interface PreemptionPayload {
 const TIER_COLORS: Record<string, string> = {
   H100: '#22c55e',
   H200: '#3b82f6',
+  // L40S: cyan accent, distinct from the consumer-tier teal cluster.
+  L40S: '#06b6d4',
   B200: '#8b5cf6',
   B300: '#f59e0b',
   GB300: '#ef4444',

@@ -67,7 +67,7 @@ type Tab = 'overview' | 'records' | 'by-tier'
 // admin earnings tables read top-down by capability. Earnings rows are
 // recorded with whatever tier produced them, so omitting these would
 // silently hide consumer-tier earnings from the admin view.
-const GPU_TIERS = ['H100', 'H200', 'B200', 'B300', 'GB300', 'RTX_4090', 'RTX_3090', 'CONSUMER']
+const GPU_TIERS = ['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'RTX_4090', 'RTX_3090', 'CONSUMER']
 
 export default function EarningsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
@@ -168,6 +168,7 @@ export default function EarningsPage() {
     switch (tier) {
       case 'H100': return 'bg-green-500'
       case 'H200': return 'bg-blue-500'
+      case 'L40S': return 'bg-cyan-500'
       case 'B200': return 'bg-purple-500'
       case 'B300': return 'bg-orange-500'
       case 'GB300': return 'bg-red-500'

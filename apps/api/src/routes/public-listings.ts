@@ -42,7 +42,7 @@ const REPUTATION_RANK: Record<ReputationTier, number> = {
   PLATINUM: 3,
 }
 
-const VALID_GPU_TIERS = new Set<GpuTier>(['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER', 'CONSUMER', 'RTX_4090', 'RTX_3090'])
+const VALID_GPU_TIERS = new Set<GpuTier>(['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'OTHER', 'CONSUMER', 'RTX_4090', 'RTX_3090'])
 const VALID_PRICING_TIERS = new Set(['ON_DEMAND', 'SPOT', 'RESERVED'])
 const VALID_REP_TIERS = new Set<ReputationTier>(['BRONZE', 'SILVER', 'GOLD', 'PLATINUM'])
 
@@ -71,7 +71,7 @@ const LISTINGS_SCHEMA = {
   querystring: {
     type: 'object',
     properties: {
-      gpuTier: { type: 'string', enum: ['H100', 'H200', 'B200', 'B300', 'GB300', 'OTHER', 'CONSUMER', 'RTX_4090', 'RTX_3090'] },
+      gpuTier: { type: 'string', enum: ['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'OTHER', 'CONSUMER', 'RTX_4090', 'RTX_3090'] },
       region: { type: 'string', description: 'Operator region string match' },
       maxRatePerHour: { type: 'number', minimum: 0 },
       tier: { type: 'string', enum: ['ON_DEMAND', 'SPOT', 'RESERVED'], default: 'ON_DEMAND' },

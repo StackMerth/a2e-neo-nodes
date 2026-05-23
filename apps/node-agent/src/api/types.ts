@@ -6,6 +6,7 @@
 export type GpuTier =
   | 'H100'
   | 'H200'
+  | 'L40S'
   | 'B200'
   | 'B300'
   | 'GB300'
