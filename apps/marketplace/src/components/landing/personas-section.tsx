@@ -85,15 +85,16 @@ export function PersonasSection() {
             so the section is identifiable even if the IntersectionObserver
             never fires (e.g. an aggressive privacy extension blocks it). */}
         <div className="max-w-3xl mb-12 sm:mb-16">
-          <span className="inline-flex items-center gap-3 text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground mb-5">
+          <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground mb-5">
             <span className="w-8 h-px bg-brand" />
-            Built for
+            Who it&apos;s for
           </span>
-          <h2 className="text-5xl sm:text-6xl lg:text-7xl font-display tracking-tight leading-[0.95] mb-6 text-foreground">
-            Who it&apos;s for.
+          <h2 className="text-3xl sm:text-4xl lg:text-6xl font-display tracking-tight leading-[0.95] mb-5">
+            Six audiences.
+            <br />
+            <span className="text-muted-foreground/60">One rate sheet.</span>
           </h2>
           <p className="text-base sm:text-lg lg:text-xl text-muted-foreground leading-relaxed max-w-2xl">
-            Six audiences, <span className="text-brand">one rate sheet.</span>{" "}
             Whether you&apos;re fine-tuning on a Saturday or running production
             inference behind an enterprise SLA, the same per-minute meter and
             the same SSH access path serve you both.
