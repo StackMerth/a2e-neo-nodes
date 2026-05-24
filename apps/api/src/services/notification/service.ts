@@ -2,6 +2,9 @@ import { prisma } from '@a2e/database'
 import type { NotificationType } from '@a2e/database'
 import type { Server as SocketServer } from 'socket.io'
 import { sendEmail, isEmailConfigured } from '../email/sender.js'
+import { sendPushToUser, isPushConfigured } from './push.js'
+
+const PORTAL_URL = process.env.PORTAL_URL ?? 'https://user.tokenos.ai'
 
 /** WebSocket server reference — set during server startup */
 let io: SocketServer | null = null
@@ -51,6 +54,27 @@ export async function createNotification(
     message,
     link: link ?? null,
   })
+
+  // Send web push to every subscribed device (non-blocking). Push
+  // is throttle-less + free for the user, so unlike email we fire
+  // on every notification type rather than only the high-priority
+  // list. Service worker handles tag-based stacking client-side so
+  // a burst of compute:tick events does not pile up in the tray.
+  if (isPushConfigured()) {
+    void (async () => {
+      try {
+        await sendPushToUser(userId, {
+          title,
+          body: message,
+          url: link ? `${PORTAL_URL}${link}` : PORTAL_URL,
+          tag: type,
+        })
+      } catch {
+        // Push delivery failures must never bubble up — the
+        // notification row + websocket emit have already happened.
+      }
+    })()
+  }
 
   // Send email for high-priority notification types (non-blocking)
   if (EMAIL_NOTIFICATION_TYPES.includes(type)) {

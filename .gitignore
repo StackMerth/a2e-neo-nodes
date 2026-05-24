@@ -16,6 +16,10 @@ apps/portal/public/sw.js.map
 apps/portal/public/workbox-*.js
 apps/portal/public/workbox-*.js.map
 apps/portal/public/fallback-*.js
+# Phase 5: custom worker file (push handler) is also build output —
+# source lives in apps/portal/worker/index.ts and the hashed JS is
+# emitted into public/ on every build.
+apps/portal/public/worker-*.js
 
 # Test
 coverage/
