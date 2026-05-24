@@ -142,6 +142,21 @@ export const auth = {
       '/v1/portal/auth/send-verification',
       { method: 'POST', body: {} },
     ),
+
+  // Phase B sign-to-link flow: caller fetches a challenge, the wallet
+  // signs the message, caller posts the signed blob back to /verify.
+  // Result is the wallet linked to the User row, gated on a real
+  // signature check (vs the unsigned PATCH /v1/portal/user/wallet
+  // endpoint we keep around for manual-paste / hardware-wallet flows).
+  linkWalletChallenge: (address: string) =>
+    apiFetch<{ nonce: string; message: string }>(
+      `/v1/portal/user/link-wallet/challenge?address=${encodeURIComponent(address)}`,
+    ),
+  linkWalletVerify: (data: { walletAddress: string; signature: string; nonce: string }) =>
+    apiFetch<{ success: boolean; walletAddress: string }>(
+      '/v1/portal/user/link-wallet/verify',
+      { method: 'POST', body: data },
+    ),
 }
 
 // Node Runner API
