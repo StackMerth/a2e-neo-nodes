@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
-import { User, Bell, Shield, Lock, KeyRound, Wallet, Save } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { User, Bell, Shield, Lock, KeyRound, Wallet, Save, FileText, Download } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
 import { useToast } from '@/components/ui/Toast'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, nodeRunner } from '@/lib/api'
 import {
   DashboardShell,
   FormCard,
@@ -162,6 +163,16 @@ export default function SettingsPage() {
           </FormSection>
         </FormCard>
 
+        {/* C3 wave 2: weekly digest opt-out. Lives on General Settings
+            (was on /payouts/settings) so all general-account toggles
+            sit together. */}
+        <EmailPreferencesCard />
+
+        {/* C7 wave 1: tax info collection + 1099 export. Lives on
+            General Settings (was on /payouts/settings) so identity
+            and tax records are managed in one place. */}
+        <TaxInfoCard />
+
         <FormCard
           title="Security"
           description="Password management and two-factor authentication"
@@ -208,5 +219,311 @@ function Row({
         {value}
       </span>
     </div>
+  )
+}
+
+/**
+ * Weekly summary email opt-out. Reads digestOptedOut from the profile,
+ * persists it via nodeRunner.settings on Save. Self-contained so it
+ * does not bleed into the surrounding notification-preferences toggles
+ * (those are local UI state only; this one round-trips to the API).
+ */
+function EmailPreferencesCard() {
+  const { toast } = useToast()
+  const [optedOut, setOptedOut] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    nodeRunner
+      .profile()
+      .then((p) => {
+        if (cancelled) return
+        setOptedOut((p as { digestOptedOut?: boolean }).digestOptedOut ?? false)
+      })
+      .catch(() => { /* ignore */ })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  async function save() {
+    setSaving(true)
+    try {
+      await nodeRunner.settings({ digestOptedOut: optedOut })
+      toast('success', 'Email preferences saved')
+      setDirty(false)
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return null
+
+  return (
+    <FormCard
+      title="Email Preferences"
+      description="Weekly summary email with forecast + uptime warnings"
+      icon={FileText}
+    >
+      <FormSection>
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!optedOut}
+            onChange={(e) => { setOptedOut(!e.target.checked); setDirty(true) }}
+            className="mt-1 w-4 h-4"
+            style={{ accentColor: 'var(--primary)' }}
+          />
+          <div className="flex-1">
+            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              Send me the weekly summary email
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              Mondays at 09:00 UTC: 30-day earnings forecast plus a flag for any node under 90% uptime. Requires a verified email on this account.
+            </p>
+          </div>
+        </label>
+        {dirty && (
+          <div className="flex justify-end mt-3">
+            <Button onClick={save} loading={saving} size="sm">
+              <Save size={14} className="mr-1" />
+              Save
+            </Button>
+          </div>
+        )}
+      </FormSection>
+    </FormCard>
+  )
+}
+
+/**
+ * C7 wave 1: tax-info collection + per-year CSV download.
+ *
+ * Form is always optional. The CSV still works for operators who
+ * don't fill it in — they just won't get pre-filled legal-name/TIN
+ * cells in the operator-header row. Storing the TIN in plain text
+ * on the server is a known tradeoff (encryption-at-rest follow-up
+ * noted in the plan); we mask it to last-4 on read paths so a
+ * leaked browser session doesn't expose the full id.
+ *
+ * Download CTA defaults the year picker to "last completed year" —
+ * that's what operators want for tax-prep season.
+ */
+function TaxInfoCard() {
+  const { toast } = useToast()
+  const [loading, setLoading] = useState(true)
+  const [legalName, setLegalName] = useState('')
+  const [taxIdType, setTaxIdType] = useState<'SSN' | 'EIN'>('SSN')
+  const [taxId, setTaxId] = useState('')
+  const [taxAddress, setTaxAddress] = useState('')
+  const [taxJurisdiction, setTaxJurisdiction] = useState('US')
+  const [taxIdLast4, setTaxIdLast4] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+  const [w9SubmittedAt, setW9SubmittedAt] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const thisYear = new Date().getUTCFullYear()
+  const [year, setYear] = useState(thisYear - 1 < 2020 ? thisYear : thisYear - 1)
+
+  useEffect(() => {
+    let cancelled = false
+    nodeRunner
+      .taxInfo()
+      .then((r) => {
+        if (cancelled) return
+        setLegalName(r.legalName)
+        if (r.taxIdType) setTaxIdType(r.taxIdType)
+        setTaxIdLast4(r.taxIdLast4)
+        setSubmitted(r.taxIdSubmitted)
+        setTaxAddress(r.taxAddress)
+        setTaxJurisdiction(r.taxJurisdiction || 'US')
+        setW9SubmittedAt(r.w9SubmittedAt)
+      })
+      .catch(() => { /* 404 = no profile yet; quiet */ })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  async function handleSave() {
+    if (!legalName.trim() || !taxId.trim() || !taxAddress.trim()) {
+      toast('error', 'Legal name, TIN, and address are all required')
+      return
+    }
+    setSaving(true)
+    try {
+      const r = await nodeRunner.updateTaxInfo({
+        legalName: legalName.trim(),
+        taxIdType,
+        taxId: taxId.trim(),
+        taxAddress: taxAddress.trim(),
+        taxJurisdiction,
+      })
+      toast('success', 'Tax info saved')
+      setW9SubmittedAt(r.w9SubmittedAt)
+      setSubmitted(true)
+      const digits = taxId.replace(/\D/g, '')
+      setTaxIdLast4(digits.slice(-4))
+      setTaxId('')
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Failed to save tax info')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDownload() {
+    setDownloading(true)
+    try {
+      await nodeRunner.downloadTaxYear(year)
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Tax CSV download failed')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  if (loading) return null
+
+  return (
+    <FormCard
+      title="Tax info (optional)"
+      description="Required only if you want pre-filled 1099-MISC export. Stored privately; never shared with buyers."
+      icon={FileText}
+    >
+      <FormSection>
+        {submitted && w9SubmittedAt && (
+          <div
+            className="rounded-md p-3 mb-2 text-xs flex items-center gap-2"
+            style={{
+              background: 'rgba(34,197,94,0.06)',
+              border: '1px solid rgba(34,197,94,0.25)',
+              color: 'var(--primary)',
+            }}
+          >
+            <FileText size={12} />
+            <span>
+              W-9 on file since {new Date(w9SubmittedAt).toLocaleDateString()}.
+              TIN ends in <span className="font-mono">{taxIdLast4}</span>. You can update below to replace.
+            </span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="sm:col-span-2">
+            <Input
+              label="Legal Name (as it appears on your tax filings)"
+              value={legalName}
+              onChange={(e) => setLegalName(e.target.value)}
+              placeholder="Jane Q. Operator"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+              TIN Type
+            </label>
+            <div className="flex gap-2">
+              {(['SSN', 'EIN'] as const).map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setTaxIdType(opt)}
+                  className="px-4 py-2 rounded-md text-sm font-medium transition-all"
+                  style={taxIdType === opt
+                    ? { background: 'var(--primary)', color: '#fff' }
+                    : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }
+                  }
+                >
+                  {opt === 'SSN' ? 'SSN (individual)' : 'EIN (entity)'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <Input
+              label={submitted ? `TIN (replace; current ends in ${taxIdLast4})` : 'TIN'}
+              value={taxId}
+              onChange={(e) => setTaxId(e.target.value)}
+              placeholder={taxIdType === 'SSN' ? '123-45-6789' : '12-3456789'}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+              Address (single line)
+            </label>
+            <textarea
+              className="w-full rounded-md px-3 py-2 text-sm"
+              style={{
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-primary)',
+              }}
+              value={taxAddress}
+              onChange={(e) => setTaxAddress(e.target.value)}
+              placeholder="123 Main St, City, State, ZIP"
+              rows={2}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+              Jurisdiction
+            </label>
+            <select
+              value={taxJurisdiction}
+              onChange={(e) => setTaxJurisdiction(e.target.value)}
+              className="w-full rounded-md px-3 py-2 text-sm"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+            >
+              <option value="US">United States</option>
+              <option value="INTERNATIONAL" disabled>International — coming soon (W-8BEN)</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="flex justify-end mt-3">
+          <Button onClick={handleSave} loading={saving}>
+            <Save size={14} className="mr-2" />
+            Save tax info
+          </Button>
+        </div>
+
+        <div
+          className="mt-6 pt-4 flex flex-wrap items-end gap-3"
+          style={{ borderTop: '1px solid var(--border-color)' }}
+        >
+          <div>
+            <label className="block text-xs font-mono uppercase tracking-[0.16em] mb-1.5" style={{ color: 'var(--text-muted)' }}>
+              Download tax-year CSV
+            </label>
+            <select
+              value={year}
+              onChange={(e) => setYear(parseInt(e.target.value, 10))}
+              className="rounded-md px-3 py-2 text-sm"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+            >
+              {Array.from({ length: thisYear - 2019 }, (_, i) => thisYear - i).map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+          <Button variant="secondary" onClick={handleDownload} loading={downloading}>
+            <Download size={14} className="mr-2" />
+            Download {year} CSV
+          </Button>
+        </div>
+        <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+          The CSV breaks earnings down by month with payout tx hashes for audit. Hand to your CPA for 1099-MISC prep. We don&apos;t auto-file with the IRS — that&apos;s on you.
+        </p>
+      </FormSection>
+    </FormCard>
   )
 }
