@@ -17,6 +17,7 @@ import { ChevronRight } from 'lucide-react'
 import { Navigation } from '@/components/landing/navigation'
 import { FooterSection } from '@/components/landing/footer-section'
 import { ListingRentButton } from '@/components/rent/listing-rent-button'
+import { RentGrid } from '@/components/rent/rent-grid'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://a2e-api.onrender.com'
 
@@ -90,6 +91,33 @@ async function fetchListings(params: URLSearchParams): Promise<ListingsResponse 
   }
 }
 
+// Stats + analytics feed the tier-tile grid that lives above the
+// listings filter. Same two endpoints the (now-retired) /rent page
+// used, so the cold-start cache stays shared.
+interface StatsResponse {
+  totalNodesOnline: number
+  nodesByTier: Array<{ gpuTier: string; count: number }>
+  topPricesByTier: Array<{ gpuTier: string; ratePerHour: number; ratePerMinute: number }>
+}
+interface AnalyticsResponse {
+  rateHistory: Record<string, Array<{ date: string; ratePerHour: number }>>
+  rateTable: Array<{ gpuTier: string; current: number; median30d: number; min30d: number; max30d: number; deltaPct30d: number }>
+}
+async function fetchStats(): Promise<StatsResponse | null> {
+  try {
+    const res = await fetch(`${API_URL}/v1/public/stats`, { next: { revalidate: 30 } })
+    if (!res.ok) return null
+    return (await res.json()) as StatsResponse
+  } catch { return null }
+}
+async function fetchAnalytics(): Promise<AnalyticsResponse | null> {
+  try {
+    const res = await fetch(`${API_URL}/v1/public/network-analytics`, { next: { revalidate: 60 } })
+    if (!res.ok) return null
+    return (await res.json()) as AnalyticsResponse
+  } catch { return null }
+}
+
 export const metadata = {
   title: 'Marketplace',
   description: 'Browse live GPU inventory across operators. Filter by tier, region, pricing model, and reputation.',
@@ -116,7 +144,11 @@ export default async function MarketplacePage({
   }
   if (!params.has('tier')) params.set('tier', 'ON_DEMAND')
 
-  const data = await fetchListings(params)
+  const [data, stats, analytics] = await Promise.all([
+    fetchListings(params),
+    fetchStats(),
+    fetchAnalytics(),
+  ])
   if (!data) {
     return (
       <main className="min-h-screen flex items-center justify-center px-6">
@@ -134,7 +166,7 @@ export default async function MarketplacePage({
     <main className="relative min-h-screen overflow-x-hidden noise-overlay">
       <Navigation />
 
-      <section className="pt-24 sm:pt-32 lg:pt-40 pb-10 sm:pb-16 lg:pb-24 px-6 lg:px-12">
+      <section className="pt-24 sm:pt-32 lg:pt-40 pb-10 sm:pb-12 lg:pb-16 px-6 lg:px-12">
         <div className="max-w-[1400px] mx-auto">
           <div className="flex items-center gap-3 mb-6 sm:mb-8">
             <span className="w-8 h-px bg-foreground/30" />
@@ -146,12 +178,38 @@ export default async function MarketplacePage({
             Pick a GPU.
           </h1>
           <p className="text-base sm:text-lg text-muted-foreground max-w-2xl leading-relaxed">
-            Every row below is an operator with idle nodes ready to allocate. Cheapest first, then higher reputation, then larger availability. Filter on the right; the URL updates so you can share or bookmark the view.
+            Quick-rent by tier above, or scroll down to filter the full operator catalog. Per-minute billing, settled on Solana, SSH access in under a minute.
           </p>
         </div>
       </section>
 
+      {/* Tier-tile quick-rent grid. Lives on the marketplace page now
+          (was on the separate /rent route, which has been consolidated
+          per UX feedback that two pages doing similar jobs created a
+          "which one do I click?" moment). */}
+      {stats && analytics && (
+        <section className="px-6 lg:px-12 pb-10 sm:pb-14 lg:pb-20">
+          <div className="max-w-[1400px] mx-auto">
+            <div className="flex items-center gap-3 mb-6">
+              <span className="w-8 h-px bg-brand" />
+              <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                Tier overview
+              </span>
+            </div>
+            <RentGrid stats={stats} analytics={analytics} />
+          </div>
+        </section>
+      )}
+
       <section className="px-6 lg:px-12 pb-16 sm:pb-24">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="flex items-center gap-3 mb-6 sm:mb-8">
+            <span className="w-8 h-px bg-brand" />
+            <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
+              Operator catalog
+            </span>
+          </div>
+        </div>
         <div className="max-w-[1400px] mx-auto grid lg:grid-cols-[280px_1fr] gap-8 lg:gap-12">
           {/* Filter panel: plain GET form, server-rendered. */}
           <aside className="lg:sticky lg:top-32 self-start">

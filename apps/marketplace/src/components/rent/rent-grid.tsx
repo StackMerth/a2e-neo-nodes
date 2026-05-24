@@ -126,11 +126,33 @@ function RentTile({
 
   return (
     <div
-      className={`relative rounded-xl p-5 sm:p-6 bg-card flex flex-col gap-4 transition-colors ${
+      className={`relative rounded-xl p-5 sm:p-6 bg-card flex flex-col gap-4 transition-all duration-300 hover:-translate-y-0.5 ${
         meta.popular
-          ? 'border-2 border-foreground hover:border-foreground'
+          ? 'border-2 border-foreground'
           : 'border border-border hover:border-foreground/30'
       }`}
+      style={
+        // Popular tile takes its hover border + soft shadow from the
+        // accent color so the hover reaction matches the badge tint
+        // rather than the generic foreground stroke other tiles use.
+        meta.popular
+          ? {
+              transition: 'transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease',
+            }
+          : undefined
+      }
+      onMouseEnter={(e) => {
+        if (meta.popular) {
+          e.currentTarget.style.borderColor = meta.accent
+          e.currentTarget.style.boxShadow = `0 12px 32px -8px ${meta.accent}40`
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (meta.popular) {
+          e.currentTarget.style.borderColor = ''
+          e.currentTarget.style.boxShadow = ''
+        }
+      }}
     >
       {/* MOST POPULAR badge — floats off the top-left corner on the
           tile flagged popular in GPU_META. Editorial mono tag, brand
