@@ -80,10 +80,23 @@ async function main() {
   }
   console.log(`  warnings: ${warnings.length} node(s) under ${UPTIME_WARNING_THRESHOLD_PCT}% uptime`)
 
+  // C3 wave 2.1: pricing tips + tax reminder sections also live in
+  // the digest now. Test sender uses small mock payloads so operators
+  // previewing the email see every section lit up instead of waiting
+  // for the real worker tick to fire with their real data.
   const html = renderDigestHtml({
     operatorName: nr.name ?? 'there',
     forecast,
     warnings,
+    pricingTips: [
+      { text: '[PREVIEW] 80% of your rentals were ON_DEMAND. Tagging more nodes as SPOT-eligible captures discount-tier buyers without a commitment.' },
+      { text: '[PREVIEW] All your nodes are in us-east-1. Spreading across regions lets latency-constrained buyers discover you.' },
+    ],
+    taxReminder: {
+      ytdEarnings: 1234,
+      w9OnFile: false,
+      crossesIrsThreshold: true,
+    },
   })
 
   const subject = `[TEST] Your Compute Weekly Report (preview)`
