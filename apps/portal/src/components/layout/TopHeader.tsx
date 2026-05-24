@@ -19,6 +19,7 @@ import { NotificationBell } from './NotificationBell'
 import { UserMenu } from './UserMenu'
 import { GlobalSearch } from './GlobalSearch'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
+import { BalanceIndicator } from './BalanceIndicator'
 
 export function TopHeader() {
   const { user } = useAuth()
@@ -75,6 +76,11 @@ export function TopHeader() {
           read as distinct controls, not glued together. ml-auto pushes
           to the right edge when the search is hidden at sm widths. */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
+        {/* Balance pill — context-aware: buyer balance on /buyer/*
+            routes, operator earnings everywhere else. Click to land
+            on the corresponding detail page. Hidden on the smallest
+            screens to keep the bar uncrowded. */}
+        <BalanceIndicator />
         {/* Connection-status dot — auto-hides after 5s of healthy
             connection, pops back when reconnecting / offline so the
             operator knows whether real-time updates are flowing. */}
