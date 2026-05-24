@@ -8,9 +8,11 @@ import { portalUrls } from "@/lib/portal-urls";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 // Public-facing nav surfaces, all reachable without an account.
+// "Rent" used to be a separate route showing the tier-tile grid; it
+// got consolidated into /marketplace alongside the operator catalog
+// per UX feedback, and the old /rent route now redirects to here.
 const navLinks: Array<{ name: string; href: string; external?: boolean }> = [
   { name: "Marketplace", href: "/marketplace" },
-  { name: "Rent", href: "/rent" },
   { name: "Operators", href: "/leaderboard" },
   { name: "Stats", href: "/stats" },
   { name: "Pricing", href: "/#pricing" },
