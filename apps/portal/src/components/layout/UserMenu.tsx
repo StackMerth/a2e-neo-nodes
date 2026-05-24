@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/hooks/useAuth'
-import { LayoutDashboard, LifeBuoy, LogOut, User } from 'lucide-react'
+import { LayoutDashboard, LifeBuoy, LogOut, User, ArrowLeftRight } from 'lucide-react'
 
 interface UserMenuProps {
   collapsed: boolean
@@ -29,6 +29,7 @@ export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMen
     maxHeight: number
   } | null>(null)
   const router = useRouter()
+  const pathname = usePathname()
   const { logout, user } = useAuth()
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
@@ -89,14 +90,28 @@ export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMen
     router.push('/login')
   }
 
-  const isBuyer = user?.role === 'COMPUTE_BUYER'
-  const isAdmin = user?.role === 'ADMIN'
-  const dashboardLabel = isAdmin ? 'Admin Dashboard' : "Buyer's Portal"
-  const dashboardHref = isBuyer ? '/buyer/dashboard' : '/dashboard'
+  const isAdmin = user?.role === 'ADMIN' || !!user?.isAdmin
+  // Use the dual-role flags so users with both roles can switch; the
+  // old `role === 'COMPUTE_BUYER'` check missed everyone who signed up
+  // as a node-runner and later opted into buyer too (and vice versa).
+  const hasBuyerRole = !!user?.isBuyer || user?.role === 'COMPUTE_BUYER' || user?.role === 'CUSTOMER'
+  const hasNodeRunnerRole = !!user?.isNodeRunner || user?.role === 'NODE_RUNNER'
+
+  // Context-aware "switch portal" link: the label and destination
+  // flip based on WHICH side the user is currently looking at. If
+  // they are already on /buyer/* show a link to the operator side,
+  // and vice versa. Hidden entirely for single-role users (no
+  // opposite side to switch to).
+  const onBuyerSide = pathname?.startsWith('/buyer') ?? false
+  const switchLabel = onBuyerSide ? "Node Runner's Portal" : "Buyer's Portal"
+  const switchHref = onBuyerSide ? '/dashboard' : '/buyer/dashboard'
+  const canSwitch = hasBuyerRole && hasNodeRunnerRole
 
   const roleLabel = isAdmin
     ? 'Administrator'
-    : isBuyer
+    : hasBuyerRole && hasNodeRunnerRole
+    ? 'Buyer + Node Runner'
+    : hasBuyerRole
     ? 'Compute Buyer'
     : 'Node Runner'
 
@@ -180,14 +195,26 @@ export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMen
                   router.push('/settings')
                 }}
               />
-              <MenuItem
-                icon={<LayoutDashboard className="w-4 h-4" />}
-                label={dashboardLabel}
-                onClick={() => {
-                  setOpen(false)
-                  router.push(dashboardHref)
-                }}
-              />
+              {isAdmin && (
+                <MenuItem
+                  icon={<LayoutDashboard className="w-4 h-4" />}
+                  label="Admin Dashboard"
+                  onClick={() => {
+                    setOpen(false)
+                    router.push('/dashboard')
+                  }}
+                />
+              )}
+              {canSwitch && (
+                <MenuItem
+                  icon={<ArrowLeftRight className="w-4 h-4" />}
+                  label={`Switch to ${switchLabel}`}
+                  onClick={() => {
+                    setOpen(false)
+                    router.push(switchHref)
+                  }}
+                />
+              )}
               <MenuItem
                 icon={<LifeBuoy className="w-4 h-4" />}
                 label="Open support ticket"

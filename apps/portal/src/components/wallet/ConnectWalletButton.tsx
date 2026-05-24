@@ -41,7 +41,7 @@ export function ConnectWalletButton() {
         type="button"
         onClick={() => setVisible(true)}
         disabled={connecting}
-        className="hidden md:inline-flex items-center gap-2 h-9 px-3 rounded-md border border-border transition-all hover:opacity-90 shrink-0 disabled:opacity-60"
+        className="hidden sm:inline-flex items-center gap-2 h-9 px-3 rounded-md border border-border transition-all hover:opacity-90 shrink-0 disabled:opacity-60"
         style={{ background: 'var(--bg-elevated)' }}
         title="Connect a Solana wallet"
       >
@@ -63,7 +63,7 @@ export function ConnectWalletButton() {
   }
 
   return (
-    <div className="relative shrink-0 hidden md:inline-block" ref={menuRef}>
+    <div className="relative shrink-0 hidden sm:inline-block" ref={menuRef}>
       <button
         type="button"
         onClick={() => setMenuOpen((o) => !o)}
