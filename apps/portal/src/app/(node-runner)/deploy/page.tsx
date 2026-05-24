@@ -1,10 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Rocket, CircleCheck, Hash } from 'lucide-react'
-import { nodeRunner } from '@/lib/api'
+import { Rocket, CircleCheck, Hash, Wallet as WalletIcon, Zap } from 'lucide-react'
+import { useWallet } from '@solana/wallet-adapter-react'
+import { useWalletModal } from '@solana/wallet-adapter-react-ui'
+import { buyer, nodeRunner } from '@/lib/api'
+import { useUsdcPayment } from '@/hooks/useUsdcPayment'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -81,23 +84,82 @@ export default function DeployPage() {
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  // Wallet sign-to-pay support. Operators with a connected wallet can
+  // sign a USDC transfer in their wallet rather than copy-pasting a
+  // hash. The paste field remains as a fallback for hardware-wallet
+  // or off-portal payment paths.
+  const { publicKey, wallet } = useWallet()
+  const { setVisible: openWalletModal } = useWalletModal()
+  const { pay: walletPay } = useUsdcPayment()
+  const [topupDestination, setTopupDestination] = useState<{ wallet: string | null; configured: boolean; network: string } | null>(null)
+  const [showManualPaste, setShowManualPaste] = useState(false)
+  const [walletPhase, setWalletPhase] = useState<'idle' | 'signing' | 'submitting'>('idle')
+  useEffect(() => {
+    // Deployment payments go to the same platform-side USDC wallet
+    // that buyer topups go to (custodial setup). Re-using the
+    // /v1/buyer/balance/topup-destination endpoint avoids duplicating
+    // wallet config in two places.
+    buyer.balance.topupDestination()
+      .then((r) => setTopupDestination({ wallet: r.wallet, configured: r.configured, network: r.network }))
+      .catch(() => { /* fail silently; the paste fallback still works */ })
+  }, [])
+
   const tier = GPU_TIERS.find(t => t.id === selectedTier)
   const totalCost = tier ? tier.price * nodeCount : 0
   const monthlyYield = tier ? tier.dailyYield * 30 * nodeCount : 0
   const roi30d = tier ? ((tier.dailyYield * 30) / tier.price) * 100 : 0
 
+  const walletConnected = !!publicKey
+  const walletPaySelected = walletConnected && !showManualPaste
+
   async function handleSubmit() {
-    if (!selectedTier || !txHash.trim()) {
-      toast('error', 'Please select a GPU tier and enter a transaction hash')
+    if (!selectedTier) {
+      toast('error', 'Please select a GPU tier')
+      return
+    }
+    if (!walletPaySelected && !txHash.trim()) {
+      toast('error', 'Enter a transaction hash, or connect a wallet to sign automatically')
+      return
+    }
+    if (walletPaySelected && (!topupDestination?.configured || !topupDestination.wallet)) {
+      toast('error', 'Topup destination not configured. Use manual paste or contact support.')
       return
     }
 
     setSubmitting(true)
+
+    // Wallet sign-and-pay: sign in wallet first, take the signature
+    // as the txHash. Any throw (user rejection, insufficient USDC,
+    // RPC fail) bails before we touch the deploy endpoint so a
+    // failed pay never leaves an orphan PENDING deployment behind.
+    let resolvedTxHash = txHash.trim()
+    if (walletPaySelected) {
+      try {
+        setWalletPhase('signing')
+        const { signature } = await walletPay({
+          recipient: topupDestination!.wallet!,
+          amountUsd: totalCost,
+        })
+        resolvedTxHash = signature
+        setWalletPhase('submitting')
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Wallet payment failed'
+        if (msg.toLowerCase().includes('user rejected')) {
+          toast('error', 'Cancelled in your wallet.')
+        } else {
+          toast('error', msg)
+        }
+        setWalletPhase('idle')
+        setSubmitting(false)
+        return
+      }
+    }
+
     try {
       await nodeRunner.deploy({
         gpuTier: selectedTier,
         nodeCount,
-        txHash: txHash.trim(),
+        txHash: resolvedTxHash,
         deploymentNote: note.trim() || undefined,
       })
       toast('success', 'Deployment request submitted successfully')
@@ -106,6 +168,7 @@ export default function DeployPage() {
       toast('error', e instanceof Error ? e.message : 'Failed to submit deployment request')
     } finally {
       setSubmitting(false)
+      setWalletPhase('idle')
     }
   }
 
@@ -250,15 +313,68 @@ export default function DeployPage() {
         </motion.div>
       )}
 
-      {/* Payment */}
+      {/* Payment — wallet sign-to-pay preferred when a wallet is
+          connected, paste form as fallback for hardware/exchange paths. */}
       <motion.div variants={item} className="space-y-4">
         <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Payment</h2>
-        <Input
-          label="Transaction Hash (Solana)"
-          placeholder="Enter your Solana transaction hash..."
-          value={txHash}
-          onChange={e => setTxHash(e.target.value)}
-        />
+
+        {walletPaySelected ? (
+          <div className="space-y-2">
+            <div
+              className="rounded-lg p-4 flex items-center gap-3"
+              style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)' }}
+            >
+              <Zap size={18} style={{ color: 'var(--primary)' }} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                  Pay with {wallet?.adapter.name ?? 'connected wallet'}
+                </p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Submitting will prompt {wallet?.adapter.name ?? 'your wallet'} to sign a USDC transfer of <span className="font-mono">${totalCost.toFixed(2)}</span>.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowManualPaste(true)}
+              className="text-xs font-mono uppercase tracking-[0.16em] hover:opacity-80 transition-opacity"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              + Send from another wallet (manual paste)
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {!walletConnected && (
+              <button
+                type="button"
+                onClick={() => openWalletModal(true)}
+                className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-lg text-sm font-semibold transition-all hover:opacity-90"
+                style={{ background: 'var(--primary)', color: '#fff' }}
+              >
+                <WalletIcon size={16} />
+                Connect wallet to pay automatically
+              </button>
+            )}
+            <Input
+              label="Transaction Hash (Solana)"
+              placeholder="Enter your Solana transaction hash..."
+              value={txHash}
+              onChange={e => setTxHash(e.target.value)}
+            />
+            {walletConnected && showManualPaste && (
+              <button
+                type="button"
+                onClick={() => setShowManualPaste(false)}
+                className="text-xs font-mono uppercase tracking-[0.16em] hover:opacity-80 transition-opacity"
+                style={{ color: 'var(--primary)' }}
+              >
+                ← Pay with connected wallet instead
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="space-y-1.5">
           <label className="block text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Deployment Note (optional)</label>
           <textarea
@@ -281,10 +397,21 @@ export default function DeployPage() {
           size="lg"
           onClick={handleSubmit}
           loading={submitting}
-          disabled={!selectedTier || !txHash.trim()}
+          disabled={!selectedTier || (!walletPaySelected && !txHash.trim())}
           className="px-8"
         >
-          Request Deployment
+          {walletPaySelected ? (
+            <>
+              <Zap size={16} className="mr-2" />
+              {walletPhase === 'signing'
+                ? 'Awaiting wallet…'
+                : walletPhase === 'submitting'
+                  ? 'Submitting…'
+                  : `Pay $${totalCost.toFixed(2)} & Deploy`}
+            </>
+          ) : (
+            'Request Deployment'
+          )}
         </Button>
       </motion.div>
     </motion.div>
