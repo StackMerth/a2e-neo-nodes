@@ -52,8 +52,13 @@ export default function EarningsPage() {
   useEffect(() => { loadData() }, [period])
 
   useEffect(() => {
-    nodeRunner.withdrawalBalance()
-      .then((res) => setWithdrawalBalance((res as { available: number }).available ?? 0))
+    // Source the available balance from the same endpoint /payouts
+    // uses (payoutMode), not the legacy /withdrawals/balance endpoint.
+    // The two endpoints compute the available figure differently, so
+    // pulling from different sources made the Earnings card and the
+    // Payouts page disagree on the lifetime number.
+    nodeRunner.payoutMode()
+      .then((res) => setWithdrawalBalance(Number((res as { available?: number })?.available ?? 0)))
       .catch(() => { /* ignore */ })
   }, [])
 

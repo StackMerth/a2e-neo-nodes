@@ -903,10 +903,10 @@ export default function DashboardPage() {
               detail: `Today ${formatCurrency(data?.earnings.today ?? 0)}`,
               icon: DollarSign,
               tone: 'green',
-              // Clicking the Earnings card lands the operator on the
-              // Payouts list (settlement history) — the closest match
-              // to "see where this money goes / has gone".
-              href: '/payouts',
+              // Clicking the Earnings card lands on the Earnings
+              // dashboard (period-scoped reporting). Withdraw flow
+              // is reached via the dedicated balance pill / Payouts.
+              href: '/earnings',
             },
             {
               label: 'Nodes Online',
@@ -914,6 +914,7 @@ export default function DashboardPage() {
               detail: `Renting now: ${data?.nodes.inUse ?? 0}`,
               icon: Server,
               tone: 'cyan',
+              href: '/nodes',
             },
             {
               label: 'Jobs',
@@ -921,6 +922,7 @@ export default function DashboardPage() {
               detail: `Running: ${data?.jobs.running ?? 0}`,
               icon: Activity,
               tone: 'purple',
+              href: '/jobs',
             },
           ]}
         />
