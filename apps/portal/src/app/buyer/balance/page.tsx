@@ -355,7 +355,13 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
   const walletAddr = publicKey?.toBase58() ?? ''
   const walletShort = walletAddr ? `${walletAddr.slice(0, 4)}…${walletAddr.slice(-4)}` : ''
   const networkLabel = destination?.network === 'mainnet' ? 'Solana mainnet' : 'Solana devnet'
-  const networkMatches = !destination?.network || destination.network === walletNetwork
+  // Note: we intentionally do NOT block on the wallet's UI network
+  // setting. The wallet-adapter ConnectionProvider drives which RPC
+  // any signed tx hits — the wallet's own "network" toggle is
+  // cosmetic for this dApp's flows. A previous version warned about
+  // a "mismatch" here, but the mismatch detection was bogus (both
+  // sides read from the same env var) so it never fired anyway.
+  // Re-introduce only if we add a real wallet-side network probe.
 
   return (
     <div
@@ -376,20 +382,6 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
             ? 'Sign a USDC transfer in your wallet and your balance credits automatically.'
             : 'Connect a Solana wallet to sign-to-pay, or send manually and paste the transaction hash.'}
         </p>
-
-        {/* Network mismatch warning — connected wallet is on a
-            different cluster than the topup destination expects. */}
-        {walletConnected && !networkMatches && (
-          <div
-            className="rounded-xl p-3 mb-4 flex gap-3"
-            style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}
-          >
-            <AlertCircle size={16} className="shrink-0 mt-0.5" style={{ color: 'var(--warning)' }} />
-            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-              Your wallet is on {walletNetwork}; the platform expects {networkLabel}. Switch networks in your wallet or use manual paste.
-            </div>
-          </div>
-        )}
 
         {/* Success state after a wallet pay confirms */}
         {completedTx && (
@@ -472,7 +464,7 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
         {walletConnected ? (
           <button
             onClick={handleWalletPay}
-            disabled={phase !== 'idle' || !destination?.configured || !networkMatches}
+            disabled={phase !== 'idle' || !destination?.configured}
             className="w-full inline-flex items-center justify-center gap-2 h-12 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ background: 'var(--primary)', color: '#fff' }}
           >

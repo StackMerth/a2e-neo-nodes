@@ -146,6 +146,7 @@ export default function BuyerDashboardPage() {
               detail: 'Running rentals',
               icon: Server,
               tone: 'green',
+              href: '/buyer/active',
             },
             {
               label: 'Pending Requests',
@@ -153,6 +154,7 @@ export default function BuyerDashboardPage() {
               detail: 'Awaiting allocation',
               icon: Loader2,
               tone: 'orange',
+              href: '/buyer/requests',
             },
             {
               label: 'Total Spent',
@@ -160,6 +162,7 @@ export default function BuyerDashboardPage() {
               detail: 'Lifetime USDC',
               icon: DollarSign,
               tone: 'cyan',
+              href: '/buyer/billing',
             },
           ]}
         />
