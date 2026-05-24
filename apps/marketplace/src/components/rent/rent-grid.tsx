@@ -24,13 +24,17 @@ const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'https://user.tokenos.a
 // hardware identity beneath the tier code.
 // ---------------------------------------------------------------------
 
-const GPU_META: Record<string, { architecture: string; vram: string; accent: string }> = {
+// `popular` flag drives the "MOST POPULAR" badge on the rent tile.
+// B200 Blackwell with 192GB HBM3e is the highest-demand SKU on the
+// platform — set the flag here so the badge follows the data instead
+// of being hard-coded into the JSX.
+const GPU_META: Record<string, { architecture: string; vram: string; accent: string; popular?: boolean }> = {
   H100:  { architecture: 'Hopper',    vram: '80GB HBM3',   accent: '#22c55e' },
   H200:  { architecture: 'Hopper',    vram: '141GB HBM3e', accent: '#3b82f6' },
   // L40S: Ada-Lovelace datacenter card; cyan accent keeps it distinct
   // from the consumer-tier teal cluster below.
   L40S:  { architecture: 'Ada Lovelace', vram: '48GB GDDR6', accent: '#06b6d4' },
-  B200:  { architecture: 'Blackwell', vram: '192GB HBM3e', accent: '#8b5cf6' },
+  B200:  { architecture: 'Blackwell', vram: '192GB HBM3e', accent: '#8b5cf6', popular: true },
   B300:  { architecture: 'Blackwell Ultra', vram: '288GB HBM3e', accent: '#f59e0b' },
   GB300: { architecture: 'Grace Blackwell', vram: 'NVL72',  accent: '#ef4444' },
   // C2 wave 2: consumer / prosumer entries. Not rendered as primary
@@ -121,7 +125,30 @@ function RentTile({
     : { label: 'High', level: 3 }
 
   return (
-    <div className="rounded-xl p-5 sm:p-6 bg-card border border-border flex flex-col gap-4 transition-colors hover:border-foreground/30">
+    <div
+      className={`relative rounded-xl p-5 sm:p-6 bg-card flex flex-col gap-4 transition-colors ${
+        meta.popular
+          ? 'border-2 border-foreground hover:border-foreground'
+          : 'border border-border hover:border-foreground/30'
+      }`}
+    >
+      {/* MOST POPULAR badge — floats off the top-left corner on the
+          tile flagged popular in GPU_META. Editorial mono tag, brand
+          accent background so it reads as a deliberate mark rather
+          than a decorative chip. */}
+      {meta.popular && (
+        <span
+          className="absolute -top-3 left-4 px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.18em]"
+          style={{
+            background: meta.accent,
+            color: '#0a0a0f',
+            borderRadius: 2,
+          }}
+        >
+          Most Popular
+        </span>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
