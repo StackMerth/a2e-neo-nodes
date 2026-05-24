@@ -1,12 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { User, Bell, Shield, Lock, KeyRound, Wallet, Save, FileText, Download } from 'lucide-react'
+import { User, Bell, Shield, Lock, KeyRound, Wallet, Save, FileText, Download, Zap, ShieldCheck } from 'lucide-react'
+import { useWallet } from '@solana/wallet-adapter-react'
+import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useToast } from '@/components/ui/Toast'
-import { apiFetch, nodeRunner } from '@/lib/api'
+import { apiFetch, auth, nodeRunner } from '@/lib/api'
 import {
   DashboardShell,
   FormCard,
@@ -32,6 +34,15 @@ export default function SettingsPage() {
 
   const [walletInput, setWalletInput] = useState('')
   const [savingWallet, setSavingWallet] = useState(false)
+  const [showManualLink, setShowManualLink] = useState(false)
+  const [signingLink, setSigningLink] = useState(false)
+
+  // Wallet-adapter sign-to-link flow: prove ownership of the connected
+  // wallet by signing a server-issued nonce, then attach the address
+  // to the User row. Preferred over the legacy paste flow because the
+  // legacy flow accepts any address the user claims without proof.
+  const { publicKey, signMessage, wallet } = useWallet()
+  const { setVisible: openWalletModal } = useWalletModal()
 
   async function saveWallet() {
     const candidate = walletInput.trim()
@@ -46,6 +57,36 @@ export default function SettingsPage() {
       toast('error', message)
     } finally {
       setSavingWallet(false)
+    }
+  }
+
+  async function signAndLinkWallet() {
+    if (!publicKey || !signMessage) {
+      openWalletModal(true)
+      return
+    }
+    setSigningLink(true)
+    try {
+      const address = publicKey.toBase58()
+      const { nonce, message } = await auth.linkWalletChallenge(address)
+      const encoded = new TextEncoder().encode(message)
+      const signatureBytes = await signMessage(encoded)
+      // bs58 used because the verify endpoint accepts base58 first
+      // (Phantom default) and falls back to base64. Base58 is what
+      // every other Solana auth flow on the platform produces.
+      const bs58 = await import('bs58')
+      const signature = bs58.default.encode(signatureBytes)
+      await auth.linkWalletVerify({ walletAddress: address, signature, nonce })
+      toast('success', 'Wallet linked. Refresh to see it on your profile.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not link wallet'
+      if (message.toLowerCase().includes('user rejected')) {
+        toast('error', 'Cancelled in your wallet.')
+      } else {
+        toast('error', message)
+      }
+    } finally {
+      setSigningLink(false)
     }
   }
 
@@ -87,36 +128,92 @@ export default function SettingsPage() {
         {!user?.walletAddress && (
           <FormCard
             title="Link a Solana wallet"
-            description="Email signups land without a wallet. Paste your Solana payout address so settlements, refunds, and referral commission can flow to you."
+            description="Email signups land without a wallet. Connect a wallet and sign a one-time message to attach it, or paste an address manually for hardware wallets and multisigs."
             icon={Wallet}
           >
             <FormSection>
-              <div className="flex gap-3">
-                <input
-                  type="text"
-                  placeholder="e.g. 6dNUZBg...A9pK"
-                  value={walletInput}
-                  onChange={e => setWalletInput(e.target.value)}
-                  className="flex-1 font-mono text-sm rounded-md px-3 py-2 focus:outline-none focus:border-primary transition-colors"
-                  style={{
-                    background: 'var(--bg-elevated)',
-                    border: '1px solid var(--border-color)',
-                    color: 'var(--text-primary)',
-                  }}
-                  spellCheck={false}
-                  autoComplete="off"
-                />
-                <Button
-                  onClick={saveWallet}
-                  disabled={savingWallet || walletInput.trim().length < 32}
-                >
-                  <Save size={14} className="mr-1" />
-                  Save
-                </Button>
-              </div>
-              <p className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>
-                We never see your private key. This is just the public address you would paste on any other Solana service.
-              </p>
+              {/* Primary: sign-to-link flow. Connects via wallet-adapter,
+                  signs a server-issued nonce, posts the signature back
+                  for cryptographic ownership verification. */}
+              {!showManualLink ? (
+                <div className="space-y-3">
+                  {publicKey ? (
+                    <>
+                      <div
+                        className="rounded-md p-3 flex items-center gap-3"
+                        style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)' }}
+                      >
+                        <ShieldCheck size={18} style={{ color: 'var(--primary)' }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                            {wallet?.adapter.name ?? 'Wallet'} connected
+                          </p>
+                          <p className="text-xs font-mono truncate" style={{ color: 'var(--text-muted)' }}>
+                            {publicKey.toBase58()}
+                          </p>
+                        </div>
+                      </div>
+                      <Button onClick={signAndLinkWallet} loading={signingLink} className="w-full">
+                        <Zap size={14} className="mr-1.5" />
+                        Sign to link this wallet
+                      </Button>
+                    </>
+                  ) : (
+                    <Button onClick={() => openWalletModal(true)} className="w-full">
+                      <Wallet size={14} className="mr-1.5" />
+                      Connect wallet to link
+                    </Button>
+                  )}
+                  <p className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>
+                    Linking via signature proves you own the wallet. Signing a message is free; no on-chain transaction is sent.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowManualLink(true)}
+                    className="text-xs font-mono uppercase tracking-[0.16em] hover:opacity-80 transition-opacity"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    + Paste address manually instead
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex gap-3">
+                    <input
+                      type="text"
+                      placeholder="e.g. 6dNUZBg...A9pK"
+                      value={walletInput}
+                      onChange={e => setWalletInput(e.target.value)}
+                      className="flex-1 font-mono text-sm rounded-md px-3 py-2 focus:outline-none focus:border-primary transition-colors"
+                      style={{
+                        background: 'var(--bg-elevated)',
+                        border: '1px solid var(--border-color)',
+                        color: 'var(--text-primary)',
+                      }}
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                    <Button
+                      onClick={saveWallet}
+                      disabled={savingWallet || walletInput.trim().length < 32}
+                    >
+                      <Save size={14} className="mr-1" />
+                      Save
+                    </Button>
+                  </div>
+                  <p className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>
+                    Manual paste does not verify ownership. Use only for wallets you cannot connect to a web app (hardware wallet, multisig, exchange withdrawal address).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowManualLink(false)}
+                    className="text-xs font-mono uppercase tracking-[0.16em] hover:opacity-80 transition-opacity"
+                    style={{ color: 'var(--primary)' }}
+                  >
+                    ← Use connect-and-sign instead
+                  </button>
+                </div>
+              )}
             </FormSection>
           </FormCard>
         )}

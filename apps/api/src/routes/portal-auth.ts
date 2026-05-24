@@ -464,6 +464,96 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
   })
 
   /**
+   * POST /v1/portal/user/link-wallet/challenge — issue a sign-this-to-prove-
+   * ownership message for the wallet the user is about to link.
+   *
+   * This is the signed counterpart to the unsigned PATCH above. The
+   * email-only user connects a wallet via wallet-adapter, requests a
+   * challenge, asks their wallet to sign it, and submits the signed
+   * blob to /link-wallet/verify. The unsigned PATCH stays for the
+   * manual-paste fallback used by hardware-wallet / multisig
+   * scenarios; new sign-to-link flow is preferred.
+   */
+  fastify.get('/v1/portal/user/link-wallet/challenge', {
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    if (!request.user) return reply.code(401).send({ error: 'Unauthorized' })
+
+    const address = (request.query as { address?: string }).address?.trim()
+    if (!address || address.length < 32 || address.length > 64 || !/^[A-HJ-NP-Za-km-z1-9]+$/.test(address)) {
+      return reply.code(400).send({ error: 'Invalid Solana wallet address' })
+    }
+
+    // Reuse the same in-memory nonce store the regular wallet-auth
+    // flow uses — the verify step looks up the nonce by wallet
+    // address regardless of which endpoint requested it.
+    const nonce = generateNonce(address)
+
+    reply.send({
+      nonce,
+      message: `Sign this message to authenticate with TokenOS_DeAI.\n\nNonce: ${nonce}`,
+    })
+  })
+
+  /**
+   * POST /v1/portal/user/link-wallet/verify — verify the signature and
+   * write the wallet onto the User row.
+   *
+   * Requires:
+   *   - User is authenticated (Bearer token).
+   *   - Signature verifies against the wallet's public key and the
+   *     nonce we just issued via /link-wallet/challenge.
+   *   - Wallet is not already in use by another account.
+   */
+  fastify.post('/v1/portal/user/link-wallet/verify', {
+    preHandler: [fastify.authenticate],
+  }, async (request, reply) => {
+    if (!request.user) return reply.code(401).send({ error: 'Unauthorized' })
+
+    const body = request.body as { walletAddress?: string; signature?: string; nonce?: string }
+    const wallet = (body.walletAddress ?? '').trim()
+    const signature = (body.signature ?? '').trim()
+    const nonce = (body.nonce ?? '').trim()
+
+    if (!wallet || wallet.length < 32 || wallet.length > 64 || !/^[A-HJ-NP-Za-km-z1-9]+$/.test(wallet)) {
+      return reply.code(400).send({ error: 'Invalid Solana wallet address' })
+    }
+    if (!signature || !nonce) {
+      return reply.code(400).send({ error: 'Signature and nonce are required' })
+    }
+
+    // Cryptographic check: did the wallet actually sign the nonce we
+    // just issued? Bails if the nonce has been consumed, expired, or
+    // the signature does not verify.
+    const ok = verifyWalletSignature(wallet, signature, nonce)
+    if (!ok) {
+      return reply.code(401).send({ error: 'Signature verification failed' })
+    }
+
+    // Reject if another account already owns this wallet.
+    const conflict = await fastify.prisma.user.findFirst({
+      where: { walletAddress: wallet, NOT: { id: request.user.userId } },
+      select: { id: true },
+    })
+    if (conflict) {
+      return reply.code(409).send({ error: 'Wallet already in use by another account' })
+    }
+
+    await fastify.prisma.$transaction(async tx => {
+      await tx.user.update({
+        where: { id: request.user!.userId },
+        data: { walletAddress: wallet },
+      })
+      await tx.nodeRunner.updateMany({
+        where: { userId: request.user!.userId },
+        data: { walletAddress: wallet },
+      })
+    })
+
+    reply.send({ success: true, walletAddress: wallet })
+  })
+
+  /**
    * POST /v1/portal/auth/logout-all — Revoke all refresh tokens (logout everywhere)
    */
   fastify.post('/v1/portal/auth/logout-all', {
