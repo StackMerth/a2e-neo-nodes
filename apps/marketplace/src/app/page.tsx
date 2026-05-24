@@ -3,6 +3,7 @@ import { HeroSection } from '@/components/landing/hero-section'
 import { BuiltOnSection } from '@/components/landing/built-on-section'
 import { FeaturesSection } from '@/components/landing/features-section'
 import { PersonasSection } from '@/components/landing/personas-section'
+import { GetStartedSection } from '@/components/landing/get-started-section'
 import { HowItWorksSection } from '@/components/landing/how-it-works-section'
 import { InfrastructureSection } from '@/components/landing/infrastructure-section'
 import { MetricsSection } from '@/components/landing/metrics-section'
@@ -23,6 +24,7 @@ export default function HomePage() {
       <BuiltOnSection />
       <FeaturesSection />
       <PersonasSection />
+      <GetStartedSection />
       <HowItWorksSection />
       <InfrastructureSection />
       <MetricsSection />
