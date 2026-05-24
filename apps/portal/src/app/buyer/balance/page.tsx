@@ -1,9 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Wallet, Plus, ArrowDownLeft, ArrowUpRight, RefreshCw, AlertCircle, Copy, Check } from 'lucide-react'
+import { Wallet, Plus, ArrowDownLeft, ArrowUpRight, RefreshCw, AlertCircle, Copy, Check, Zap, ExternalLink, Loader2 } from 'lucide-react'
+import { useWallet } from '@solana/wallet-adapter-react'
+import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { buyer } from '@/lib/api'
 import { useToast } from '@/components/ui/Toast'
+import { useUsdcPayment } from '@/hooks/useUsdcPayment'
 
 interface Balance {
   balanceUsd: number
@@ -210,14 +213,30 @@ function SummaryStat({ label, amount, tone }: { label: string; amount: number; t
   )
 }
 
+const PRESET_AMOUNTS = [50, 100, 500, 1000]
+
+type Phase = 'idle' | 'awaiting-signature' | 'confirming' | 'crediting'
+
 function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (balance: Balance) => void }) {
   const { toast } = useToast()
+  const { publicKey, wallet } = useWallet()
+  const { setVisible: openWalletModal } = useWalletModal()
+  const { pay, network: walletNetwork } = useUsdcPayment()
+
   const [destination, setDestination] = useState<TopupDestination | null>(null)
-  const [txHash, setTxHash] = useState('')
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
-  const [submitting, setSubmitting] = useState(false)
   const [copied, setCopied] = useState(false)
+
+  // Wallet-pay state
+  const [phase, setPhase] = useState<Phase>('idle')
+  const [completedTx, setCompletedTx] = useState<string | null>(null)
+
+  // Manual-paste fallback (collapsed by default when a wallet is
+  // connected; shown by default when no wallet is present).
+  const [showManual, setShowManual] = useState(false)
+  const [manualTxHash, setManualTxHash] = useState('')
+  const [manualSubmitting, setManualSubmitting] = useState(false)
 
   useEffect(() => {
     buyer.balance
@@ -226,6 +245,13 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
       .catch((e) => toast('error', e instanceof Error ? e.message : 'Failed to load topup destination'))
   }, [toast])
 
+  // If no wallet is connected, manual paste becomes the primary path
+  // (the Connect Wallet CTA still shows above it but the paste form
+  // is expanded so first-time visitors see the fallback immediately).
+  useEffect(() => {
+    if (!publicKey) setShowManual(true)
+  }, [publicKey])
+
   async function copyAddress() {
     if (!destination?.wallet) return
     await navigator.clipboard.writeText(destination.wallet)
@@ -233,16 +259,69 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
     setTimeout(() => setCopied(false), 1500)
   }
 
-  async function handleSubmit() {
+  // Wallet-pay flow: sign in wallet -> await chain confirmation ->
+  // POST the signature to the existing topup-solana endpoint -> show
+  // success state with a Solscan link.
+  async function handleWalletPay() {
     const amountNumber = Number(amount)
-    if (!txHash.trim() || !Number.isFinite(amountNumber) || amountNumber <= 0) {
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+      toast('error', 'Enter the USD amount you want to topup.')
+      return
+    }
+    if (!destination?.configured || !destination.wallet) {
+      toast('error', destination?.message ?? 'Topup destination not configured.')
+      return
+    }
+    if (!publicKey) {
+      openWalletModal(true)
+      return
+    }
+
+    setCompletedTx(null)
+    try {
+      setPhase('awaiting-signature')
+      // sendTransaction in the hook handles signature + confirmation
+      // in one call. The internal state on the hook tracks submitting,
+      // but we want to surface our own phase strings here.
+      const { signature } = await pay({
+        recipient: destination.wallet,
+        amountUsd: amountNumber,
+      })
+      setPhase('crediting')
+      const result = await buyer.balance.topupSolana({
+        txHash: signature,
+        amountUsd: amountNumber,
+        note: note.trim() || undefined,
+      })
+      if (result.alreadyCredited) {
+        toast('info', 'This transaction was already credited.')
+      } else {
+        toast('success', `Credited $${result.creditedUsd?.toFixed(2)} to your balance.`)
+      }
+      setCompletedTx(signature)
+      onSuccess(result.balance)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Payment failed'
+      // Common wallet-side rejection: surface a friendlier copy.
+      if (msg.toLowerCase().includes('user rejected')) {
+        toast('error', 'Cancelled in your wallet.')
+      } else {
+        toast('error', msg)
+      }
+      setPhase('idle')
+    }
+  }
+
+  async function handleManualPaste() {
+    const amountNumber = Number(amount)
+    if (!manualTxHash.trim() || !Number.isFinite(amountNumber) || amountNumber <= 0) {
       toast('error', 'Enter a transaction hash and the USD amount you sent.')
       return
     }
-    setSubmitting(true)
+    setManualSubmitting(true)
     try {
       const result = await buyer.balance.topupSolana({
-        txHash: txHash.trim(),
+        txHash: manualTxHash.trim(),
         amountUsd: amountNumber,
         note: note.trim() || undefined,
       })
@@ -255,9 +334,28 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
     } catch (e) {
       toast('error', e instanceof Error ? e.message : 'Topup failed')
     } finally {
-      setSubmitting(false)
+      setManualSubmitting(false)
     }
   }
+
+  const phaseLabel = (() => {
+    switch (phase) {
+      case 'awaiting-signature':
+        return 'Awaiting wallet signature…'
+      case 'confirming':
+        return 'Confirming on Solana…'
+      case 'crediting':
+        return 'Crediting your balance…'
+      default:
+        return null
+    }
+  })()
+
+  const walletConnected = !!publicKey
+  const walletAddr = publicKey?.toBase58() ?? ''
+  const walletShort = walletAddr ? `${walletAddr.slice(0, 4)}…${walletAddr.slice(-4)}` : ''
+  const networkLabel = destination?.network === 'mainnet' ? 'Solana mainnet' : 'Solana devnet'
+  const networkMatches = !destination?.network || destination.network === walletNetwork
 
   return (
     <div
@@ -274,66 +372,85 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
           Top up balance
         </h2>
         <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>
-          Send USDC to the destination below, then paste the transaction hash.
+          {walletConnected
+            ? 'Sign a USDC transfer in your wallet and your balance credits automatically.'
+            : 'Connect a Solana wallet to sign-to-pay, or send manually and paste the transaction hash.'}
         </p>
 
-        {destination?.configured && destination.wallet ? (
-          <div className="rounded-xl p-4 mb-5" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
-            <div className="text-[10px] uppercase tracking-[0.18em] font-mono mb-2" style={{ color: 'var(--text-muted)' }}>
-              Send {destination.currency} on Solana {destination.network} to
-            </div>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 text-xs break-all" style={{ color: 'var(--text-primary)' }}>{destination.wallet}</code>
-              <button
-                onClick={copyAddress}
-                className="shrink-0 p-2 rounded-lg transition-colors"
-                style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}
-                title="Copy address"
-              >
-                {copied ? <Check size={14} style={{ color: 'var(--success)' }} /> : <Copy size={14} style={{ color: 'var(--text-secondary)' }} />}
-              </button>
-            </div>
-          </div>
-        ) : (
+        {/* Network mismatch warning — connected wallet is on a
+            different cluster than the topup destination expects. */}
+        {walletConnected && !networkMatches && (
           <div
-            className="rounded-xl p-4 mb-5 flex gap-3"
+            className="rounded-xl p-3 mb-4 flex gap-3"
             style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}
           >
-            <AlertCircle size={18} className="shrink-0 mt-0.5" style={{ color: 'var(--warning)' }} />
+            <AlertCircle size={16} className="shrink-0 mt-0.5" style={{ color: 'var(--warning)' }} />
             <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-              {destination?.message ?? 'Topup wallet not configured yet. Contact support before sending funds.'}
+              Your wallet is on {walletNetwork}; the platform expects {networkLabel}. Switch networks in your wallet or use manual paste.
             </div>
           </div>
         )}
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-mono uppercase tracking-[0.16em] mb-1.5" style={{ color: 'var(--text-muted)' }}>
-              Transaction hash
-            </label>
-            <input
-              type="text"
-              value={txHash}
-              onChange={(e) => setTxHash(e.target.value)}
-              placeholder="Paste the Solana signature"
-              className="w-full rounded-lg px-3 py-2.5 text-sm"
-              style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-            />
+        {/* Success state after a wallet pay confirms */}
+        {completedTx && (
+          <div
+            className="rounded-xl p-4 mb-5 flex items-start gap-3"
+            style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)' }}
+          >
+            <Check size={18} className="shrink-0 mt-0.5" style={{ color: 'var(--success)' }} />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                Balance credited
+              </div>
+              <a
+                href={`https://solscan.io/tx/${completedTx}${destination?.network === 'devnet' ? '?cluster=devnet' : ''}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-mono break-all hover:underline"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                {completedTx.slice(0, 12)}…{completedTx.slice(-8)}
+                <ExternalLink size={11} />
+              </a>
+            </div>
           </div>
+        )}
+
+        {/* Amount + note inputs (shared between both paths) */}
+        <div className="space-y-4 mb-5">
           <div>
             <label className="block text-xs font-mono uppercase tracking-[0.16em] mb-1.5" style={{ color: 'var(--text-muted)' }}>
-              USD amount sent
+              USD amount
             </label>
             <input
               type="number"
               step="0.01"
               min="0"
+              inputMode="decimal"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="100.00"
-              className="w-full rounded-lg px-3 py-2.5 text-sm"
+              disabled={phase !== 'idle'}
+              className="w-full rounded-lg px-3 py-2.5 text-base font-semibold tabular-nums"
               style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
             />
+            <div className="flex flex-wrap gap-2 mt-2">
+              {PRESET_AMOUNTS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setAmount(String(p))}
+                  disabled={phase !== 'idle'}
+                  className="px-3 py-1 rounded-full text-xs font-mono transition-colors"
+                  style={Number(amount) === p
+                    ? { background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)', color: 'var(--primary)' }
+                    : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }
+                  }
+                >
+                  ${p}
+                </button>
+              ))}
+            </div>
           </div>
           <div>
             <label className="block text-xs font-mono uppercase tracking-[0.16em] mb-1.5" style={{ color: 'var(--text-muted)' }}>
@@ -344,28 +461,118 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="What this topup is for"
+              disabled={phase !== 'idle'}
               className="w-full rounded-lg px-3 py-2.5 text-sm"
               style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
             />
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 mt-6">
+        {/* Primary action: sign-to-pay (wallet connected) OR connect (not connected) */}
+        {walletConnected ? (
+          <button
+            onClick={handleWalletPay}
+            disabled={phase !== 'idle' || !destination?.configured || !networkMatches}
+            className="w-full inline-flex items-center justify-center gap-2 h-12 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ background: 'var(--primary)', color: '#fff' }}
+          >
+            {phase !== 'idle' ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                {phaseLabel}
+              </>
+            ) : (
+              <>
+                <Zap size={16} />
+                Pay ${Number(amount || 0).toFixed(2)} with {wallet?.adapter.name ?? 'wallet'} ({walletShort})
+              </>
+            )}
+          </button>
+        ) : (
+          <button
+            onClick={() => openWalletModal(true)}
+            className="w-full inline-flex items-center justify-center gap-2 h-12 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+            style={{ background: 'var(--primary)', color: '#fff' }}
+          >
+            <Wallet size={16} />
+            Connect wallet to pay
+          </button>
+        )}
+
+        {/* Manual paste fallback — collapsible */}
+        <div className="mt-5 pt-4" style={{ borderTop: '1px solid var(--border-color)' }}>
+          <button
+            type="button"
+            onClick={() => setShowManual((s) => !s)}
+            className="text-xs font-mono uppercase tracking-[0.16em] hover:opacity-80 transition-opacity"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {showManual ? '− Hide manual paste' : '+ Send from another wallet (manual paste)'}
+          </button>
+
+          {showManual && (
+            <div className="mt-4 space-y-4">
+              {destination?.configured && destination.wallet ? (
+                <div className="rounded-xl p-3" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
+                  <div className="text-[10px] uppercase tracking-[0.18em] font-mono mb-2" style={{ color: 'var(--text-muted)' }}>
+                    Send {destination.currency} on {networkLabel} to
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs break-all" style={{ color: 'var(--text-primary)' }}>{destination.wallet}</code>
+                    <button
+                      onClick={copyAddress}
+                      className="shrink-0 p-2 rounded-lg transition-colors"
+                      style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}
+                      title="Copy address"
+                    >
+                      {copied ? <Check size={14} style={{ color: 'var(--success)' }} /> : <Copy size={14} style={{ color: 'var(--text-secondary)' }} />}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="rounded-xl p-3 flex gap-3"
+                  style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}
+                >
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" style={{ color: 'var(--warning)' }} />
+                  <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    {destination?.message ?? 'Topup wallet not configured yet. Contact support.'}
+                  </div>
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-mono uppercase tracking-[0.16em] mb-1.5" style={{ color: 'var(--text-muted)' }}>
+                  Transaction hash
+                </label>
+                <input
+                  type="text"
+                  value={manualTxHash}
+                  onChange={(e) => setManualTxHash(e.target.value)}
+                  placeholder="Paste the Solana signature"
+                  className="w-full rounded-lg px-3 py-2.5 text-sm font-mono"
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                />
+              </div>
+              <button
+                onClick={handleManualPaste}
+                disabled={manualSubmitting || !destination?.configured}
+                className="w-full px-5 h-11 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+              >
+                {manualSubmitting ? 'Verifying…' : 'Credit balance from manual paste'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end mt-5">
           <button
             onClick={onClose}
-            disabled={submitting}
+            disabled={phase !== 'idle'}
             className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
             style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
           >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || !destination?.configured}
-            className="px-5 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
-            style={{ background: 'var(--primary)', color: '#fff' }}
-          >
-            {submitting ? 'Verifying...' : 'Credit balance'}
+            {completedTx ? 'Done' : 'Cancel'}
           </button>
         </div>
       </div>
