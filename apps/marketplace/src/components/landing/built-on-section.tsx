@@ -107,7 +107,7 @@ const stats = [
   { value: "Open", label: "Source on GitHub" },
 ];
 
-const ROTATE_MS = 6000;
+const ROTATE_MS = 4500;
 
 export function BuiltOnSection() {
   const [isVisible, setIsVisible] = useState(false);
