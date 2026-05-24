@@ -6,10 +6,12 @@
  * the portal (topup, rental USDC payment, node-runner deploy payment,
  * and link-wallet for email users).
  *
- * Only Phantom, Solflare, and Backpack are registered — the three
- * wallets that cover ~95% of Solana users. Bundling the full
- * wallet-adapter-wallets export pulls in ~1MB of optional adapters
- * (Particle, Trust, Glow, etc.) most of which are dead weight here.
+ * Imports Phantom + Solflare from their standalone packages, NOT from
+ * the umbrella @solana/wallet-adapter-wallets. The umbrella pulls in
+ * every adapter (Torus, Particle, Trust, Glow, etc.); Torus in
+ * particular drags in ethereum-cryptography which conflicts with a
+ * newer @noble/hashes shape and breaks the production webpack build.
+ * Standalone packages have no such fanout.
  *
  * RPC endpoint preference order:
  *   1. NEXT_PUBLIC_SOLANA_RPC_URL env var (typically the Helius URL
@@ -17,15 +19,19 @@
  *   2. NEXT_PUBLIC_SOLANA_NETWORK env var ('mainnet' or 'devnet') →
  *      public default RPC for that network
  *   3. Devnet by default — matches the API's PAYMENT_MODE=dev default.
+ *
+ * Note on the wallet-adapter CSS: imported at the layout level
+ * (apps/portal/src/app/layout.tsx), NOT inside this client component.
+ * Side-effect CSS imports inside `'use client'` modules do not bundle
+ * cleanly in Next.js App Router production builds.
  */
 
 import { useMemo, type ReactNode } from 'react'
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react'
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui'
-import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets'
+import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom'
+import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare'
 import { clusterApiUrl } from '@solana/web3.js'
-
-require('@solana/wallet-adapter-react-ui/styles.css')
 
 function resolveEndpoint(): string {
   const explicit = process.env.NEXT_PUBLIC_SOLANA_RPC_URL?.trim()

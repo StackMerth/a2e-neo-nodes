@@ -1,6 +1,10 @@
 import type { Metadata, Viewport } from 'next'
 import { Instrument_Sans, Inter, JetBrains_Mono } from 'next/font/google'
 import '../globals.css'
+// Solana wallet-adapter modal styling. Must be imported at the
+// layout level — the CSS side-effect import does not bundle cleanly
+// inside the WalletContextProvider client component.
+import '@solana/wallet-adapter-react-ui/styles.css'
 import { Providers } from './providers'
 import { CrispChat } from '@/components/CrispChat'
 import { ThemeProvider } from '@/components/theme-provider'
