@@ -46,6 +46,7 @@ import {
   portalAuthRoutes,
   portalNodeRunnerRoutes,
   portalNotificationRoutes,
+  portalPushRoutes,
   adminDeploymentRoutes,
   buyerComputeRoutes,
   adminComputeRoutes,
@@ -212,6 +213,7 @@ async function start() {
     await server.register(portalAuthRoutes)
     await server.register(portalNodeRunnerRoutes)
     await server.register(portalNotificationRoutes)
+    await server.register(portalPushRoutes)
     await server.register(adminDeploymentRoutes)
     await server.register(buyerComputeRoutes)
     await server.register(adminComputeRoutes)

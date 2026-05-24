@@ -189,10 +189,11 @@ model User {
   nodeRunner       NodeRunner?
   notifications    Notification[]
   refreshTokens    RefreshToken[]
-  computeRequests  ComputeRequest[]
-  apiKeys          ApiKey[]
-  ratingsGiven     Rating[]
-  buyerBalance     BuyerBalance?
+  computeRequests   ComputeRequest[]
+  apiKeys           ApiKey[]
+  ratingsGiven      Rating[]
+  buyerBalance      BuyerBalance?
+  pushSubscriptions PushSubscription[]
 
   @@index([role])
   @@index([signupIp])
@@ -1614,4 +1615,41 @@ enum BalanceTxType {
   SPEND_RENTAL   // rental cost deducted at request time
   REFUND_RENTAL  // partial refund from early-stop or unused minutes
   REFUND_FAILED  // allocator couldn't match — full credit back
+}
+
+// ============================================================================
+// WEB PUSH (VAPID) SUBSCRIPTIONS  (Phase 5 / wave-3 notifications upgrade)
+// ============================================================================
+// Browsers register a push subscription with the Push Service (Mozilla
+// Autopush, Firebase Cloud Messaging, etc.) and hand the resulting
+// endpoint + keys to the app. Server side, we store one row per
+// (user, endpoint) so a user with two devices (laptop + phone PWA)
+// gets the notification on both. Per W3C Push API spec, p256dh +
+// auth are base64url-encoded; we keep them as opaque strings.
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Globally-unique URL the Push Service issued; primary lookup key.
+  endpoint  String   @unique
+
+  // P-256 public key + 16-byte auth secret. Used by web-push to
+  // encrypt the payload to the subscriber. Opaque to us.
+  p256dh    String
+  auth      String
+
+  // User-Agent string at subscribe time (best-effort device label).
+  // Not used for routing — purely so the operator can see which
+  // device they registered from when revoking a subscription.
+  userAgent String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Last successful push send. Lets a cleanup job retire endpoints
+  // that have been gone for a long time (e.g., 60+ days of 410s).
+  lastSentAt DateTime?
+
+  @@index([userId])
 }

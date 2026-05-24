@@ -31,6 +31,10 @@ const withPWA = require('@ducanh2912/next-pwa').default({
   fallbacks: {
     document: '/offline',
   },
+  // Custom service-worker code (push + notificationclick handlers)
+  // lives in ./worker/index.ts. next-pwa compiles it and prepends
+  // it to the generated workbox sw.js at build time.
+  customWorkerSrc: 'worker',
 })
 
 module.exports = withPWA(nextConfig)
