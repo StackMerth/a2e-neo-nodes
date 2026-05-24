@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TokenOS_DeAI Testing Guide</title>
+<style>
+  :root {
+    --bg: #fefdf9;
+    --ink: #0a0a0f;
+    --muted: #5b6470;
+    --brand: #22c55e;
+    --brand-deep: #15803d;
+    --brand-wash: rgba(34, 197, 94, 0.06);
+    --border: rgba(10, 10, 15, 0.10);
+    --border-soft: rgba(10, 10, 15, 0.05);
+    --warn-bg: #fff7ed;
+    --warn-border: #fb923c;
+    --warn-ink: #9a3412;
+    --fail: #dc2626;
+  }
+
+  @page {
+    size: A4;
+    margin: 16mm 14mm 18mm 14mm;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 28px 32px 48px;
+  }
+
+  /* Print-only instruction banner */
+  .print-banner {
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 28px;
+    font-size: 10.5pt;
+    color: #3730a3;
+  }
+  .print-banner kbd {
+    display: inline-block;
+    padding: 2px 6px;
+    background: white;
+    border: 1px solid #c7d2fe;
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 9pt;
+    color: #1e1b4b;
+  }
+  @media print {
+    .print-banner { display: none; }
+  }
+
+  /* Cover */
+  .cover {
+    padding: 36px 30px;
+    background: linear-gradient(135deg, var(--brand-wash) 0%, transparent 70%);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    margin-bottom: 28px;
+    page-break-after: always;
+  }
+  .cover-eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: var(--muted);
+    margin-bottom: 24px;
+  }
+  .wordmark {
+    font-size: 30pt;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin-bottom: 28px;
+  }
+  .wordmark .token { color: var(--ink); }
+  .wordmark .deai { color: var(--brand); }
+  .doc-title {
+    font-size: 36pt;
+    font-weight: 700;
+    line-height: 1.1;
+    margin: 0 0 14px;
+    letter-spacing: -0.02em;
+  }
+  .doc-subtitle {
+    font-size: 14pt;
+    color: var(--muted);
+    margin: 0 0 32px;
+    max-width: 520px;
+    line-height: 1.45;
+  }
+  .cover-meta {
+    display: flex;
+    gap: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .meta-item .meta-label {
+    font-family: ui-monospace, monospace;
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .meta-item .meta-value {
+    font-size: 11pt;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  /* Credentials box */
+  .credentials-box {
+    background: var(--warn-bg);
+    border: 2px dashed var(--warn-border);
+    border-radius: 10px;
+    padding: 22px 26px;
+    margin-bottom: 32px;
+  }
+  .credentials-box .creds-eyebrow {
+    font-family: ui-monospace, monospace;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: #c2410c;
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+  .credentials-box h2 {
+    margin: 0 0 4px;
+    color: var(--warn-ink);
+    font-size: 16pt;
+    border: none;
+    padding: 0;
+  }
+  .credentials-box .creds-help {
+    font-size: 10pt;
+    color: #7c2d12;
+    margin-bottom: 18px;
+  }
+  .creds-grid {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 12px 18px;
+    font-size: 11pt;
+  }
+  .creds-grid .field-label {
+    font-weight: 600;
+    color: var(--ink);
+    padding-top: 4px;
+  }
+  .creds-grid .field-value {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: var(--ink);
+    background: white;
+    border: 1px solid rgba(154, 52, 18, 0.25);
+    border-radius: 6px;
+    padding: 8px 12px;
+    min-height: 22px;
+  }
+  .creds-grid .field-value.prefilled {
+    background: rgba(34, 197, 94, 0.05);
+    border-color: rgba(34, 197, 94, 0.25);
+    color: var(--brand-deep);
+    font-weight: 600;
+  }
+
+  /* Section headings */
+  h1 {
+    font-size: 22pt;
+    font-weight: 700;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  h2 {
+    font-size: 18pt;
+    font-weight: 700;
+    margin: 40px 0 14px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--brand);
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 13pt;
+    font-weight: 700;
+    margin: 24px 0 10px;
+    page-break-after: avoid;
+  }
+  h4 {
+    font-size: 11pt;
+    font-weight: 700;
+    margin: 16px 0 8px;
+    color: var(--ink);
+    page-break-after: avoid;
+  }
+
+  p { margin: 0 0 12px; }
+  ul, ol { margin: 8px 0 14px; padding-left: 22px; }
+  li { margin: 4px 0; }
+
+  /* Inline code */
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 9.5pt;
+    background: var(--brand-wash);
+    color: var(--brand-deep);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(34, 197, 94, 0.18);
+  }
+
+  pre {
+    background: #f7f5ef;
+    border-left: 3px solid var(--brand);
+    padding: 12px 16px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 10pt;
+    border-radius: 6px;
+    margin: 10px 0;
+    page-break-inside: avoid;
+  }
+
+  a { color: var(--brand-deep); text-decoration: underline; }
+
+  /* Section header with number badge */
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 6px;
+  }
+  .section-num {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: var(--brand);
+    color: white;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700;
+    font-size: 14pt;
+    flex-shrink: 0;
+  }
+  .section-meta {
+    flex: 1;
+  }
+  .section-meta h2 {
+    border: none;
+    padding: 0;
+    margin: 0;
+    font-size: 18pt;
+  }
+  .section-meta .section-time {
+    font-family: ui-monospace, monospace;
+    font-size: 9pt;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    margin-top: 2px;
+  }
+  .section-divider {
+    height: 2px;
+    background: linear-gradient(to right, var(--brand) 0%, transparent 100%);
+    margin: 14px 0 22px;
+  }
+
+  /* Step block */
+  .step {
+    padding: 12px 16px 14px;
+    border-left: 3px solid var(--border);
+    margin: 14px 0;
+    page-break-inside: avoid;
+  }
+  .step-label {
+    font-family: ui-monospace, monospace;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .step-title {
+    font-weight: 700;
+    font-size: 11.5pt;
+    margin-bottom: 8px;
+  }
+  .step p:last-child { margin-bottom: 0; }
+
+  /* Pass / Fail callouts */
+  .pass {
+    background: var(--brand-wash);
+    border-left: 3px solid var(--brand);
+    padding: 10px 14px;
+    margin: 10px 0;
+    font-size: 10.5pt;
+    border-radius: 0 6px 6px 0;
+    page-break-inside: avoid;
+  }
+  .pass strong { color: var(--brand-deep); }
+  .pass::before { content: "✓ "; color: var(--brand-deep); font-weight: 700; }
+
+  .fail {
+    background: rgba(220, 38, 38, 0.05);
+    border-left: 3px solid var(--fail);
+    padding: 10px 14px;
+    margin: 10px 0;
+    font-size: 10.5pt;
+    border-radius: 0 6px 6px 0;
+    page-break-inside: avoid;
+  }
+  .fail strong { color: var(--fail); }
+  .fail::before { content: "✗ "; color: var(--fail); font-weight: 700; }
+
+  .note {
+    background: #eff6ff;
+    border-left: 3px solid #3b82f6;
+    padding: 10px 14px;
+    margin: 10px 0;
+    font-size: 10pt;
+    border-radius: 0 6px 6px 0;
+    color: #1e3a8a;
+  }
+  .note strong { color: #1e3a8a; }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 10pt;
+  }
+  th, td {
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    background: rgba(0, 0, 0, 0.03);
+    font-weight: 600;
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+
+  /* URL pills */
+  .url-pill {
+    display: inline-block;
+    font-family: ui-monospace, monospace;
+    font-size: 10pt;
+    background: white;
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 6px;
+    color: var(--ink);
+  }
+
+  /* Section pages */
+  .section {
+    page-break-inside: auto;
+    margin-bottom: 32px;
+  }
+  .section + .section {
+    page-break-before: auto;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 60px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+    font-size: 9pt;
+    color: var(--muted);
+    text-align: center;
+  }
+  .footer .footer-mark {
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .footer .footer-mark .deai { color: var(--brand); }
+
+  /* Avoid breaking section headers from their content */
+  .keep { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="print-banner">
+    <strong>📄 Save this as a PDF:</strong> Press <kbd>Ctrl</kbd>+<kbd>P</kbd> (Windows / Linux) or <kbd>Cmd</kbd>+<kbd>P</kbd> (Mac), choose <em>Save as PDF</em> as the destination, then click Save. The PDF retains all styling and is ready to send to your tester.
+  </div>
+
+  <!-- Cover -->
+  <div class="cover">
+    <div class="cover-eyebrow">Quality Assurance · Platform Release</div>
+    <div class="wordmark"><span class="token">TokenOS</span><span class="deai">_DeAI</span></div>
+    <h1 class="doc-title">Testing Guide</h1>
+    <p class="doc-subtitle">End-to-end test pass for the May 2026 platform release. Covers homepage, account, balance, GPU inventory, dashboard, mobile, install, network, and email branding.</p>
+    <div class="cover-meta">
+      <div class="meta-item">
+        <div class="meta-label">Estimated time</div>
+        <div class="meta-value">~45 minutes</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Sections</div>
+        <div class="meta-value">9 grouped</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Equipment</div>
+        <div class="meta-value">Laptop + phone</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Credentials -->
+  <div class="credentials-box">
+    <div class="creds-eyebrow">⚠ Fill in before sending to tester</div>
+    <h2>Tester credentials</h2>
+    <p class="creds-help">Open this HTML in your browser, fill the four white fields with the credentials your tester will use, then print to PDF. Once saved, the values are baked in.</p>
+    <div class="creds-grid">
+      <div class="field-label">Test account email</div>
+      <div class="field-value">&nbsp;</div>
+
+      <div class="field-label">Password</div>
+      <div class="field-value">&nbsp;</div>
+
+      <div class="field-label">Inbox to check<br><span style="font-weight:400;font-size:9pt;color:var(--muted);">(for email verification)</span></div>
+      <div class="field-value">&nbsp;</div>
+
+      <div class="field-label">Test transaction code<br><span style="font-weight:400;font-size:9pt;color:var(--muted);">(use during Section 3)</span></div>
+      <div class="field-value prefilled">DEV_test_topup_001</div>
+    </div>
+  </div>
+
+  <!-- Intro section -->
+  <div class="section">
+    <h2>Before you start</h2>
+
+    <h3>What you're testing</h3>
+    <p>A batch of new and recently shipped features across the TokenOS platform: the public marketplace homepage, a new credit balance system, email verification, real-time connection indicator, install-to-home-screen support, a new GPU type, mobile sidebar behavior, and some redesigned dashboards.</p>
+
+    <h3>What you need</h3>
+    <ul>
+      <li>The credentials in the orange box above</li>
+      <li>A laptop or desktop computer (Chrome, Edge, or Safari) for sections 1–5 and 9</li>
+      <li>A smartphone (iOS Safari or Android Chrome) for sections 6, 7, 8</li>
+      <li>A WiFi connection you can switch off and on for section 7</li>
+    </ul>
+
+    <h3>How to report problems</h3>
+    <p>Take a screenshot of anything that looks wrong, blank, or unexpected. Note the exact step number you were on (e.g. "Section 3.5"). Send everything back in one message.</p>
+
+    <div class="note"><strong>Tip:</strong> Each section can be done independently. If you only have time for a few, prioritize Sections 1, 3, and 4 — those cover the highest-impact features.</div>
+  </div>
+
+  <!-- SECTION 1 -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-num">1</div>
+      <div class="section-meta">
+        <h2>Marketplace homepage</h2>
+        <div class="section-time">5 minutes · no login required</div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+
+    <p>Open <span class="url-pill">https://market.tokenos.ai/</span> in your browser.</p>
+
+    <div class="step">
+      <div class="step-label">Step 1.1</div>
+      <div class="step-title">Find the "Bring your tools" trust strip</div>
+      <p>Scroll past the big hero. You will find a section with:</p>
+      <ul>
+        <li>An eyebrow label: <strong>The stack you already run</strong></li>
+        <li>A two-line display headline: <strong>"Bring your tools. Run them on real silicon."</strong></li>
+        <li>A 3-number stat band: <strong>10+ Frameworks &amp; tools</strong> / <strong>100% NVIDIA inventory</strong> / <strong>Open Source on GitHub</strong></li>
+        <li>A bento layout: a large <strong>NVIDIA</strong> hero tile on the left with a "Featured" eyebrow and description, plus 9 smaller satellite tiles (CUDA, PyTorch, TensorFlow, HuggingFace, vLLM, Ollama, Docker, Ubuntu, GitHub)</li>
+        <li>A small footnote at the bottom about not representing the listed projects</li>
+      </ul>
+      <p>On desktop: hover slowly over each satellite tile. You should see a thin brand-colored line slide in along the bottom, the wordmark nudge slightly right, the colored dot grow slightly, and a very subtle color wash appear. Hover the NVIDIA tile: the green accent bar at the top should expand from one-third to full width.</p>
+      <div class="pass"><strong>Pass:</strong> bento layout renders correctly, all hover effects work, NVIDIA hero tile is visually dominant.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 1.2</div>
+      <div class="step-title">Mobile-width test</div>
+      <p>Drag the browser window narrower until it is roughly phone-sized.</p>
+      <div class="pass"><strong>Pass:</strong> the NVIDIA tile stacks at the top full-width, the other 9 tiles form a 2-column grid below, nothing overlaps.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 1.3</div>
+      <div class="step-title">Cost calculator section</div>
+      <p>Keep scrolling. You will find <strong>"What you would pay elsewhere"</strong>.</p>
+      <p>Left side: a GPU tier picker (6 buttons), a GPU count box with + and − buttons, a slider with three preset buttons.</p>
+      <p>Right side: a big green dollar amount, a percent-off message, and four price tiles (TokenOS, AWS, Azure, GCP).</p>
+      <p>Try this sequence:</p>
+      <ol>
+        <li>Click <strong>H100</strong> → TokenOS price and three hyperscaler prices appear, TokenOS is far cheaper.</li>
+        <li>Click <strong>+</strong> next to GPU count a few times → all numbers scale up.</li>
+        <li>Click the <strong>Light use</strong> preset → numbers shrink.</li>
+        <li>Click <strong>L40S</strong> → numbers refresh.</li>
+        <li>Click <strong>B200</strong> → the right side changes to <em>"NVIDIA B200 is not generally available on AWS, Azure, or GCP today."</em> with only the TokenOS price. No invented hyperscaler numbers.</li>
+        <li>Click <strong>B300</strong> and <strong>GB300</strong> → same honest "not on hyperscalers" message.</li>
+        <li>Click back to <strong>H100</strong> → comparison view returns.</li>
+      </ol>
+      <div class="pass"><strong>Pass:</strong> numbers update smoothly on every click, B-series tiers honestly admit no hyperscaler equivalent exists.</div>
+    </div>
+  </div>
+
+  <!-- SECTION 2 -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-num">2</div>
+      <div class="section-meta">
+        <h2>Sign in &amp; email verification</h2>
+        <div class="section-time">5 minutes</div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+
+    <p>Go to <span class="url-pill">https://user.tokenos.ai/</span> and sign in with the credentials in the orange box above.</p>
+
+    <div class="step">
+      <div class="step-label">Step 2.1</div>
+      <div class="step-title">Look for the verification banner</div>
+      <p>Right after signing in, look at the top of the dashboard.</p>
+      <ul>
+        <li>If you see a yellow banner saying <strong>"Verify your email"</strong> with a "Resend email" button: continue to step 2.2.</li>
+        <li>If you do not see a banner: this account is already verified. Skip to step 2.3.</li>
+      </ul>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 2.2</div>
+      <div class="step-title">Trigger and complete email verification</div>
+      <p>Click the <strong>Resend email</strong> button on the banner. A green confirmation appears.</p>
+      <p>Open the inbox listed in the orange credentials box. You should receive an email within 30 seconds. It should have:</p>
+      <ul>
+        <li>Subject: <strong>"Verify your email — TokenOS_DeAI"</strong></li>
+        <li>Header showing the two-tone wordmark: white "TokenOS" + green "_DeAI"</li>
+        <li>A "Verify email" button</li>
+      </ul>
+      <p>Click the button. You should land on a "verified successfully" page.</p>
+      <p>Go back to the portal tab and refresh. The yellow banner should be gone, a green notification briefly pops up, and the bell icon top-right shows a new notification.</p>
+      <div class="pass"><strong>Pass:</strong> email arrives with TokenOS_DeAI branding, click verifies the account, banner disappears, notification appears.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 2.3</div>
+      <div class="step-title">Connection status indicator</div>
+      <p>Look at the top-right header area, just to the left of the bell icon. On first page load you may briefly see a small icon (green WiFi or a spinner). After about 5 seconds it should fade away.</p>
+      <div class="pass"><strong>Pass:</strong> icon appears briefly on load, then auto-hides.</div>
+    </div>
+  </div>
+
+  <!-- SECTION 3 -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-num">3</div>
+      <div class="section-meta">
+        <h2>Balance &amp; topup flow <span style="font-weight:400;color:var(--muted);font-size:12pt;">— main test</span></h2>
+        <div class="section-time">15 minutes</div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+
+    <div class="step">
+      <div class="step-label">Step 3.1</div>
+      <div class="step-title">Find the Balance page</div>
+      <p>In the left sidebar, look for <strong>"Balance"</strong> with a wallet icon (sits between "Active Compute" and "Billing"). Click it.</p>
+      <p>You should see:</p>
+      <ul>
+        <li>Page title "Balance" with a green wallet icon</li>
+        <li>A big <strong>$0.00</strong> balance (if you have never topped up)</li>
+        <li>Three small stat boxes: Lifetime topped up / Lifetime spent / Refunded back</li>
+        <li>A "Transactions" panel saying "No transactions yet"</li>
+      </ul>
+      <div class="pass"><strong>Pass:</strong> page loads cleanly, no error.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 3.2</div>
+      <div class="step-title">Open the Top up dialog</div>
+      <p>Click the green <strong>Top up</strong> button (top right).</p>
+      <p>A pop-up appears with:</p>
+      <ul>
+        <li>Title "Top up balance" and a one-line subtitle about sending USDC</li>
+        <li>A box showing <strong>"SEND USDC ON SOLANA DEVNET TO"</strong> followed by a long Solana wallet address and a small copy icon</li>
+        <li>Three labeled inputs: <strong>Transaction hash</strong>, <strong>USD amount sent</strong>, <strong>Note (optional)</strong></li>
+        <li>Cancel and green "Credit balance" buttons at the bottom</li>
+      </ul>
+      <div class="pass"><strong>Pass:</strong> modal opens with this layout, no broken elements.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 3.3</div>
+      <div class="step-title">Test the copy button</div>
+      <p>Click the copy icon next to the wallet address.</p>
+      <div class="pass"><strong>Pass:</strong> the icon briefly changes to a green checkmark for about 1.5 seconds.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 3.4</div>
+      <div class="step-title">Credit a test balance</div>
+      <p>In the <strong>Transaction hash</strong> field, type or paste exactly the test transaction code from the orange box at the top of this document:</p>
+      <pre>DEV_test_topup_001</pre>
+      <p>(This is a special test code that works only on the test version of the site. Real customers would paste their real Solana transaction.)</p>
+      <p>In the <strong>USD amount sent</strong> field, type <strong>500</strong>.</p>
+      <p>In the <strong>Note</strong> field, optionally type something like "Tester first topup".</p>
+      <p>Click <strong>Credit balance</strong>.</p>
+      <p>The button briefly shows a spinning loader ("Verifying…"), then:</p>
+      <ul>
+        <li>Green notification at the top: <strong>"Credited $500.00 to your balance."</strong></li>
+        <li>Modal closes, Balance page refreshes</li>
+      </ul>
+      <div class="pass"><strong>Pass:</strong> balance now shows <strong>$500.00</strong>. "Lifetime topped up" shows $500. Transactions list has one green entry: <strong>+$500.00</strong> with description "Solana topup".</div>
+      <div class="fail"><strong>Fail:</strong> if you see a red error like "invalid_body" or "Topup failed", screenshot it and stop.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 3.5</div>
+      <div class="step-title">Duplicate-protection test (this is intentional)</div>
+      <p>Click <strong>Top up</strong> again. Paste the same code (<code>DEV_test_topup_001</code>), amount 500. Submit.</p>
+      <div class="pass"><strong>Pass:</strong> notification says <strong>"This transaction was already credited."</strong> Balance stays at $500 (does NOT become $1000). Transactions list still has only one +$500 entry.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 3.6</div>
+      <div class="step-title">Top up a second time with a fresh code</div>
+      <p>Open the dialog again. Use a different code:</p>
+      <pre>DEV_test_topup_002</pre>
+      <p>Set amount to <strong>100</strong>. Submit.</p>
+      <div class="pass"><strong>Pass:</strong> notification "Credited $100.00". Balance now <strong>$600.00</strong>. Two green transactions visible.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 3.7</div>
+      <div class="step-title">Spend the balance on a rental</div>
+      <p>Click <strong>Request Compute</strong> in the sidebar.</p>
+      <p>Fill out the form:</p>
+      <ul>
+        <li>GPU tier: click <strong>H100</strong></li>
+        <li>Number of GPUs: leave at 1</li>
+        <li>Duration: leave at default (1 or 7 days)</li>
+        <li>Workload type: leave at default</li>
+      </ul>
+      <p>Scroll down. Cost summary shows roughly <strong>$140 for 1 day</strong> (or higher for longer durations).</p>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 3.8</div>
+      <div class="step-title">Find the new payment method picker</div>
+      <p>Scroll to find a section called <strong>"Payment method"</strong>. It should have 2 or 3 tiles side by side:</p>
+      <ul>
+        <li>USDC on Solana (green)</li>
+        <li><strong>Pre-loaded balance</strong> (cyan, showing "Available: $600.00")</li>
+        <li>Possibly Operator balance (blue)</li>
+      </ul>
+      <div class="pass"><strong>Pass:</strong> the cyan "Pre-loaded balance" tile is present and shows $600.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 3.9</div>
+      <div class="step-title">Click "Pre-loaded balance"</div>
+      <p>The cyan tile should highlight. Scroll further to the Payment section at the bottom. It should now show a math panel:</p>
+      <ul>
+        <li>Balance before: <strong>$600.00</strong></li>
+        <li>This rental: <strong>−$140.15</strong> (or similar)</li>
+        <li>Balance after: <strong>$459.85</strong></li>
+      </ul>
+      <p>The big "Transaction Hash (Solana)" paste field should be <strong>hidden</strong> (only shows for the USDC option).</p>
+      <div class="pass"><strong>Pass:</strong> math is correct, paste field is hidden.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 3.10</div>
+      <div class="step-title">Submit the rental</div>
+      <p>If the form requires an SSH public key, paste this dummy value:</p>
+      <pre>ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDQ test@tester</pre>
+      <p>Click <strong>Submit Request</strong> at the bottom. A success notification appears, then the page navigates to a rental details page.</p>
+      <div class="pass"><strong>Pass:</strong> rental is created successfully.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 3.11</div>
+      <div class="step-title">Confirm the balance was debited</div>
+      <p>Click <strong>Balance</strong> in the sidebar.</p>
+      <div class="pass"><strong>Pass:</strong>
+        <ul style="margin-top:6px;">
+          <li>Balance now shows <strong>$459.85</strong> (600 minus the rental cost)</li>
+          <li>A new RED entry at the top of the Transactions list: <strong>−$140.15</strong> with description "Rental 1x H100 for 1d"</li>
+          <li>Three transactions total visible (two green topups, one red rental)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 3.12</div>
+      <div class="step-title">Insufficient-balance warning</div>
+      <p>Go back to Request Compute. Set Number of GPUs to <strong>5</strong>, Duration to <strong>30 days</strong>. Total cost is now way over $459.85.</p>
+      <p>Stay on "Pre-loaded balance" as the payment method.</p>
+      <div class="pass"><strong>Pass:</strong>
+        <ul style="margin-top:6px;">
+          <li>A red warning under the picker: <em>"Need $X but only $459.85 in your balance. Top up at Balance or switch to USDC."</em></li>
+          <li>The Submit Request button is greyed out</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 3.13</div>
+      <div class="step-title">Regression check: USDC still works</div>
+      <p>Click the <strong>USDC on Solana</strong> tile.</p>
+      <div class="pass"><strong>Pass:</strong> the "Transaction Hash (Solana)" paste field reappears. Submit button is no longer disabled.</div>
+    </div>
+  </div>
+
+  <!-- SECTION 4 -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-num">4</div>
+      <div class="section-meta">
+        <h2>New L40S GPU type</h2>
+        <div class="section-time">3 minutes</div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+
+    <p>The platform just added a new GPU type called <strong>L40S</strong>. It should appear everywhere GPU options are listed.</p>
+
+    <div class="step">
+      <div class="step-label">Step 4.1</div>
+      <div class="step-title">Request Compute page</div>
+      <p>Go to <strong>Request Compute</strong> in the sidebar. The GPU tier grid should now include an <strong>L40S</strong> card with a price tag of around <strong>$0.88/hr</strong> (about $21/day). Color accent is cyan/teal.</p>
+      <div class="pass"><strong>Pass:</strong> L40S card is present.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 4.2</div>
+      <div class="step-title">Workload-type compatibility</div>
+      <p>Click the L40S card to select it. Try each of the three Workload Type options (Inference / Training / Mixed) in turn.</p>
+      <div class="pass"><strong>Pass:</strong> L40S stays selectable for all three workload types. The three "consumer" cards at the bottom (RTX 4090 / RTX 3090 / Consumer) correctly grey out for Training and Mixed.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 4.3</div>
+      <div class="step-title">Deploy a Node page</div>
+      <p>If the test account has node-runner access, look for a "Deploy" link in the sidebar. The GPU tier picker there should also include an L40S option.</p>
+      <div class="pass"><strong>Pass:</strong> L40S appears there too.</div>
+    </div>
+  </div>
+
+  <!-- SECTION 5 -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-num">5</div>
+      <div class="section-meta">
+        <h2>Dashboard polish</h2>
+        <div class="section-time">3 minutes · may be empty for fresh accounts</div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+
+    <div class="step">
+      <div class="step-label">Step 5.1</div>
+      <div class="step-title">Operator dashboard polish</div>
+      <p>If the test account is a node-runner, navigate to the main dashboard.</p>
+      <p>Look for the <strong>Earnings Forecast</strong> card. It should be visually polished with:</p>
+      <ul>
+        <li>A headline projection (like "$X projected next 30 days")</li>
+        <li>A small sparkline (mini chart showing trend)</li>
+        <li>A trend indicator chip (up/down arrow with percentage)</li>
+        <li>A range bar showing low–high estimate</li>
+      </ul>
+      <p>Look for the <strong>Earnings, last 30 days</strong> chart. If the account has earnings history, you should see gradient bars. If brand new, this will be empty — that is fine, skip.</p>
+      <div class="pass"><strong>Pass:</strong> forecast card looks polished, chart renders correctly (or is empty for new accounts).</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 5.2</div>
+      <div class="step-title">Deploy a Node header (node-runner side)</div>
+      <p>Go to the <strong>Deploy</strong> page. The header at the top should be a properly padded card with:</p>
+      <ul>
+        <li>A green rocket icon</li>
+        <li>"Deploy a Node" title</li>
+        <li>A subtitle about selecting GPU tier</li>
+        <li>A subtle green-tinted border around the whole card with breathing room on all sides</li>
+      </ul>
+      <p>The green tint should NOT hug the text tightly. There should be visible padding inside the card.</p>
+      <div class="pass"><strong>Pass:</strong> header card has visible padding and breathing room.</div>
+    </div>
+  </div>
+
+  <!-- SECTION 6 -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-num">6</div>
+      <div class="section-meta">
+        <h2>Mobile sidebar auto-collapse</h2>
+        <div class="section-time">3 minutes · phone required</div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+
+    <p>On your phone, open <span class="url-pill">https://user.tokenos.ai/</span> and sign in (if not already).</p>
+
+    <div class="step">
+      <div class="step-label">Step 6.1</div>
+      <div class="step-title">Buyer sidebar collapse-on-click (mobile only)</div>
+      <p>You are testing the BUYER side specifically. Make sure you are on a buyer page (e.g., <code>/buyer/dashboard</code>).</p>
+      <p>Tap the <strong>menu icon (☰)</strong> at the top-left to open the sidebar. The sidebar slides out.</p>
+      <p>Now tap any menu item, for example <strong>"Request Compute"</strong>.</p>
+      <div class="pass"><strong>Pass:</strong> the page navigates AND the sidebar closes automatically. You should not have to tap elsewhere to close it.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 6.2</div>
+      <div class="step-title">Desktop regression check</div>
+      <p>On your laptop, do the same: click any sidebar menu item.</p>
+      <div class="pass"><strong>Pass:</strong> on desktop, the sidebar does NOT auto-close. This behavior is mobile-only.</div>
+    </div>
+  </div>
+
+  <!-- SECTION 7 -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-num">7</div>
+      <div class="section-meta">
+        <h2>Install to Home Screen</h2>
+        <div class="section-time">5 minutes · phone required</div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+
+    <p>The portal can now be installed like a real app.</p>
+
+    <div class="step">
+      <div class="step-label">Step 7.1</div>
+      <div class="step-title">Android Chrome</div>
+      <p>On Android, open <span class="url-pill">https://user.tokenos.ai/</span> in Chrome.</p>
+      <p>After a few seconds you should see an "Install app" prompt at the bottom of the screen, or in the three-dot menu under "Install app" / "Add to Home Screen".</p>
+      <p>Tap to install. A "TokenOS" icon appears on your home screen. Tap it.</p>
+      <div class="pass"><strong>Pass:</strong> the portal opens WITHOUT the Chrome address bar — it looks like a standalone app.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 7.2</div>
+      <div class="step-title">iOS Safari</div>
+      <p>On iPhone, open <span class="url-pill">https://user.tokenos.ai/</span> in Safari.</p>
+      <p>Tap the <strong>Share</strong> button (square with arrow up) at the bottom. Scroll down the share sheet and tap <strong>"Add to Home Screen"</strong>.</p>
+      <p>A "TokenOS" icon appears on your home screen. Tap it.</p>
+      <div class="pass"><strong>Pass:</strong> opens in standalone mode (no Safari address bar). May need to sign in again the first time — that is normal for iOS.</div>
+    </div>
+  </div>
+
+  <!-- SECTION 8 -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-num">8</div>
+      <div class="section-meta">
+        <h2>Real-time connection indicator</h2>
+        <div class="section-time">5 minutes · WiFi toggle required</div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+
+    <p>Back to laptop/desktop. Open <span class="url-pill">https://user.tokenos.ai/</span>.</p>
+
+    <div class="step">
+      <div class="step-label">Step 8.1</div>
+      <div class="step-title">Normal state</div>
+      <p>When you first load the page, look at the top-right header area, just left of the bell icon. You should briefly see a small icon (likely green WiFi or a spinner) that fades away after about 5 seconds.</p>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 8.2</div>
+      <div class="step-title">Disconnect WiFi</div>
+      <p>While the page is open, turn off your laptop's WiFi.</p>
+      <p>Within a few seconds, an icon should appear in that same header spot:</p>
+      <ul>
+        <li>First: a <strong>yellow spinning</strong> icon (the platform is trying to reconnect)</li>
+        <li>After a few more seconds: a <strong>red WiFi-off</strong> icon (the platform gave up, you are offline)</li>
+      </ul>
+      <p>Hover your mouse over the icon. A tooltip should explain what is happening.</p>
+      <div class="pass"><strong>Pass:</strong> icon appears, color transitions from yellow to red, tooltip is informative.</div>
+    </div>
+
+    <div class="step">
+      <div class="step-label">Step 8.3</div>
+      <div class="step-title">Reconnect</div>
+      <p>Turn WiFi back on.</p>
+      <p>Within a few seconds the icon should switch to:</p>
+      <ul>
+        <li>Briefly <strong>yellow spinning</strong> (trying to reconnect)</li>
+        <li>Then <strong>green pulsing WiFi</strong> (connected)</li>
+        <li>Then fades away after 5 seconds</li>
+      </ul>
+      <div class="pass"><strong>Pass:</strong> full cycle works automatically without needing to refresh the page.</div>
+    </div>
+  </div>
+
+  <!-- SECTION 9 -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-num">9</div>
+      <div class="section-meta">
+        <h2>Email branding spot-check</h2>
+        <div class="section-time">2 minutes · optional</div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+
+    <p>If you received any email during section 2 (verification), confirm:</p>
+    <ul>
+      <li>The subject line ends with <strong>"— TokenOS_DeAI"</strong></li>
+      <li>The header inside shows the two-tone wordmark (white "TokenOS" + green "_DeAI")</li>
+      <li>Nothing in the email says "A²E" or "A2E"</li>
+    </ul>
+    <div class="pass"><strong>Pass:</strong> all branding shows TokenOS_DeAI.</div>
+  </div>
+
+  <!-- Wrap up -->
+  <div class="section">
+    <h2>🎉 Wrap-up</h2>
+
+    <h3>What to screenshot and send back</h3>
+    <ol>
+      <li>The bento trust strip on the marketplace homepage (showing the NVIDIA hero tile and the 9 satellite brands)</li>
+      <li>The cost calculator showing a comparison (e.g., H100 with 8 GPUs)</li>
+      <li>The Balance page with 3 transactions visible (2 green, 1 red)</li>
+      <li>The Top up modal (just the open state)</li>
+      <li>Any failures, with the exact step number where they happened</li>
+    </ol>
+
+    <h3>If anything failed</h3>
+    <p>A screenshot + the section/step number is all I need to debug. One message back with everything is perfect.</p>
+
+    <div class="note"><strong>Thanks for the thorough test.</strong> Every section you completed catches a different class of regression: the homepage tests cover marketing-surface polish, the Balance test covers the new payment infrastructure, the mobile tests cover responsive behavior, the connection test covers real-time resilience, and the email test covers brand consistency.</div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-mark"><span style="color:var(--ink);">TokenOS</span><span class="deai">_DeAI</span></div>
+    <div>Internal QA · Confidential</div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -74,7 +74,13 @@ export default function EarningsPage() {
     {
       label: `Earnings - ${PERIOD_LABELS[period]}`,
       value: `$${total.toFixed(2)}`,
-      detail: withdrawalBalance !== null ? `Available to withdraw: $${withdrawalBalance.toFixed(2)}` : 'GPU compute earnings',
+      // Period-scoped sum (different from the total available balance
+      // on /payouts — that one nets prior-period earnings still
+      // sitting on the platform). Surface the relationship inline so
+      // operators do not see two different numbers and worry.
+      detail: withdrawalBalance !== null
+        ? `Platform balance available: $${withdrawalBalance.toFixed(2)} (lifetime, withdrawable on /payouts)`
+        : `Sum of ${PERIOD_LABELS[period].toLowerCase()} only`,
       icon: TrendingUp,
       tone: 'green',
     },
@@ -223,7 +229,7 @@ export default function EarningsPage() {
         <div className="flex items-center justify-between flex-wrap gap-3">
           {periodSelector}
           <div className="flex items-center gap-2">
-            <Link href="/withdrawals">
+            <Link href="/payouts">
               <Button size="sm">
                 <ArrowDownToLine size={14} className="mr-1.5" />
                 Withdraw
