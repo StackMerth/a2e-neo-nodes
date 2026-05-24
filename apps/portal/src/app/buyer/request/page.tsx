@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Server, CircleCheck, Hash, Layers, Calendar, FileText, Wallet, Receipt, Globe, KeyRound, PiggyBank, CreditCard, Cpu, Workflow, Sparkles } from 'lucide-react'
+import { Server, CircleCheck, Hash, Layers, Calendar, FileText, Wallet, Receipt, Globe, KeyRound, PiggyBank, CreditCard, Cpu, Workflow, Sparkles, Zap } from 'lucide-react'
+import { useWallet } from '@solana/wallet-adapter-react'
+import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { buyer } from '@/lib/api'
+import { useUsdcPayment } from '@/hooks/useUsdcPayment'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useToast } from '@/components/ui/Toast'
@@ -256,6 +259,22 @@ export default function RequestComputePage() {
   const [purpose, setPurpose] = useState('')
   const [sshPubKey, setSshPubKey] = useState('')
   const [txHash, setTxHash] = useState('')
+  // Wallet sign-to-pay support. When a wallet is connected and the
+  // buyer picks USDC, the Submit Request button signs a USDC transfer
+  // in the wallet first, then submits the rental with the resulting
+  // on-chain signature as the txHash. Existing paste flow remains
+  // available via the "Send from another wallet (manual paste)" toggle.
+  const { publicKey, wallet } = useWallet()
+  const { setVisible: openWalletModal } = useWalletModal()
+  const { pay: walletPay } = useUsdcPayment()
+  const [topupDestination, setTopupDestination] = useState<{ wallet: string | null; configured: boolean; network: string } | null>(null)
+  const [showManualPaste, setShowManualPaste] = useState(false)
+  const [walletPhase, setWalletPhase] = useState<'idle' | 'signing' | 'submitting'>('idle')
+  useEffect(() => {
+    buyer.balance.topupDestination()
+      .then((r) => setTopupDestination({ wallet: r.wallet, configured: r.configured, network: r.network }))
+      .catch(() => { /* fail silently; the paste fallback still works */ })
+  }, [])
   const [submitting, setSubmitting] = useState(false)
   // C2 wave 2: workload type — MIXED is the API default and matches
   // pre-migration semantics (data-center only). If the buyer picks a
@@ -308,14 +327,32 @@ export default function RequestComputePage() {
   const effectiveDuration = rentalTier === 'RESERVED' ? commitmentDays : duration
   const totalCost = dailyRate * gpuCount * effectiveDuration
 
+  // True iff the buyer is going to pay USDC by signing in their wallet
+  // rather than pasting a hash. Drives the Submit button label and
+  // makes handleSubmit do the wallet sign-and-pay before posting the
+  // rental creation.
+  const walletConnected = !!publicKey
+  const walletPaySelected =
+    paymentSource === 'USDC' && walletConnected && !showManualPaste
+
   async function handleSubmit() {
     if (!selectedTier) {
       toast('error', 'Please select a GPU tier')
       return
     }
-    if (paymentSource === 'USDC' && !txHash.trim()) {
-      toast('error', 'Enter your Solana transaction hash, or switch to a balance payment method')
-      return
+    // USDC validation: paste-mode requires a typed hash; wallet-pay
+    // mode requires the destination + connected wallet + that the
+    // user has clicked through the wallet prompt.
+    if (paymentSource === 'USDC') {
+      if (walletPaySelected) {
+        if (!topupDestination?.configured || !topupDestination.wallet) {
+          toast('error', 'Topup destination not configured. Use manual paste or contact support.')
+          return
+        }
+      } else if (!txHash.trim()) {
+        toast('error', 'Enter your Solana transaction hash, or connect a wallet to sign automatically')
+        return
+      }
     }
     if (paymentSource === 'INTERNAL_BALANCE' && internalAvailable < totalCost) {
       toast('error', `Insufficient operator balance: need $${totalCost.toFixed(2)}, have $${internalAvailable.toFixed(2)}`)
@@ -336,6 +373,35 @@ export default function RequestComputePage() {
     }
 
     setSubmitting(true)
+
+    // Wallet sign-and-pay path: sign a USDC transfer in the wallet
+    // first, take the signature as the txHash, then submit the rental.
+    // Any throw (user rejection, insufficient balance, RPC fail) bails
+    // before we touch the rental endpoint so a failed pay never leaves
+    // an orphan PENDING request behind.
+    let resolvedTxHash = paymentSource === 'USDC' ? txHash.trim() : undefined
+    if (walletPaySelected) {
+      try {
+        setWalletPhase('signing')
+        const { signature } = await walletPay({
+          recipient: topupDestination!.wallet!,
+          amountUsd: totalCost,
+        })
+        resolvedTxHash = signature
+        setWalletPhase('submitting')
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Wallet payment failed'
+        if (msg.toLowerCase().includes('user rejected')) {
+          toast('error', 'Cancelled in your wallet.')
+        } else {
+          toast('error', msg)
+        }
+        setWalletPhase('idle')
+        setSubmitting(false)
+        return
+      }
+    }
+
     try {
       const result = await buyer.requestCompute({
         gpuTier: selectedTier,
@@ -343,10 +409,10 @@ export default function RequestComputePage() {
         durationDays: effectiveDuration,
         purpose: purpose.trim() || undefined,
         paymentSource,
-        // Only attach txHash when paying with USDC. INTERNAL_BALANCE
-        // omits it so the server-side schema's conditional validation
-        // does not 400.
-        txHash: paymentSource === 'USDC' ? txHash.trim() : undefined,
+        // Only attach txHash when paying with USDC. INTERNAL_BALANCE /
+        // BUYER_BALANCE omit it so the server-side schema's
+        // conditional validation does not 400.
+        txHash: paymentSource === 'USDC' ? resolvedTxHash : undefined,
         tier: rentalTier,
         commitmentDays: rentalTier === 'RESERVED' ? commitmentDays : undefined,
         requiredRegion: requiredRegion || null,
@@ -360,6 +426,7 @@ export default function RequestComputePage() {
       toast('error', e instanceof Error ? e.message : 'Failed to submit compute request')
     } finally {
       setSubmitting(false)
+      setWalletPhase('idle')
     }
   }
 
@@ -1034,16 +1101,23 @@ export default function RequestComputePage() {
           </FormCard>
         )}
 
-        {/* Payment confirmation. For USDC the buyer pastes the Solana
-            tx hash. For the two balance paths the section degrades
-            to a confirm panel showing the debit math — no hash needed. */}
+        {/* Payment confirmation. USDC has two sub-states: wallet
+            sign-and-pay (preferred when a wallet is connected) and
+            manual paste (collapsible fallback for hardware wallets,
+            multisigs, exchange withdrawals, etc.). The two balance
+            paths degrade to a confirm panel showing the debit math —
+            no hash needed in any case. */}
         <FormCard
           title="Payment"
-          description={paymentSource === 'USDC'
-            ? 'Paste your Solana transaction hash after sending the payment.'
-            : paymentSource === 'BUYER_BALANCE'
-              ? 'Confirm the debit from your pre-loaded balance.'
-              : 'Confirm the debit from your operator balance.'}
+          description={
+            paymentSource === 'USDC'
+              ? walletPaySelected
+                ? `Sign a USDC transfer in ${wallet?.adapter.name ?? 'your wallet'}. Funds confirm on Solana in a few seconds.`
+                : 'Paste your Solana transaction hash after sending payment, or connect a wallet to sign automatically.'
+              : paymentSource === 'BUYER_BALANCE'
+                ? 'Confirm the debit from your pre-loaded balance.'
+                : 'Confirm the debit from your operator balance.'
+          }
           icon={Wallet}
           footer={
             <Button
@@ -1052,25 +1126,90 @@ export default function RequestComputePage() {
               loading={submitting}
               disabled={
                 !selectedTier ||
-                (paymentSource === 'USDC' && !txHash.trim()) ||
+                (paymentSource === 'USDC' && !walletPaySelected && !txHash.trim()) ||
                 internalShort ||
                 buyerBalanceShort
               }
               className="px-8"
             >
-              <Hash size={16} className="mr-2" />
-              Submit Request
+              {walletPaySelected ? (
+                <>
+                  <Zap size={16} className="mr-2" />
+                  {walletPhase === 'signing'
+                    ? 'Awaiting wallet…'
+                    : walletPhase === 'submitting'
+                      ? 'Submitting…'
+                      : `Pay $${totalCost.toFixed(2)} & Submit`}
+                </>
+              ) : (
+                <>
+                  <Hash size={16} className="mr-2" />
+                  Submit Request
+                </>
+              )}
             </Button>
           }
         >
           <FormSection>
             {paymentSource === 'USDC' ? (
-              <Input
-                label="Transaction Hash (Solana)"
-                placeholder="Enter your Solana transaction hash..."
-                value={txHash}
-                onChange={e => setTxHash(e.target.value)}
-              />
+              walletPaySelected ? (
+                // Wallet sign-and-pay primary block
+                <div className="space-y-3">
+                  <div
+                    className="rounded-md p-4 flex items-center gap-3"
+                    style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)' }}
+                  >
+                    <Zap size={18} style={{ color: 'var(--primary)' }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                        Pay with {wallet?.adapter.name ?? 'connected wallet'}
+                      </p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        Submitting will prompt {wallet?.adapter.name ?? 'your wallet'} to sign a USDC transfer of <span className="font-mono">${totalCost.toFixed(2)}</span>.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowManualPaste(true)}
+                    className="text-xs font-mono uppercase tracking-[0.16em] hover:opacity-80 transition-opacity"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    + Send from another wallet (manual paste)
+                  </button>
+                </div>
+              ) : (
+                // Paste fallback (and "Connect Wallet" CTA when no wallet)
+                <div className="space-y-3">
+                  {!walletConnected && (
+                    <button
+                      type="button"
+                      onClick={() => openWalletModal(true)}
+                      className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-lg text-sm font-semibold transition-all hover:opacity-90"
+                      style={{ background: 'var(--primary)', color: '#fff' }}
+                    >
+                      <Wallet size={16} />
+                      Connect wallet to pay automatically
+                    </button>
+                  )}
+                  <Input
+                    label="Transaction Hash (Solana)"
+                    placeholder="Enter your Solana transaction hash..."
+                    value={txHash}
+                    onChange={e => setTxHash(e.target.value)}
+                  />
+                  {walletConnected && showManualPaste && (
+                    <button
+                      type="button"
+                      onClick={() => setShowManualPaste(false)}
+                      className="text-xs font-mono uppercase tracking-[0.16em] hover:opacity-80 transition-opacity"
+                      style={{ color: 'var(--primary)' }}
+                    >
+                      ← Pay with connected wallet instead
+                    </button>
+                  )}
+                </div>
+              )
             ) : (() => {
               const before = paymentSource === 'BUYER_BALANCE' ? buyerBalanceUsd : internalAvailable
               const short = paymentSource === 'BUYER_BALANCE' ? buyerBalanceShort : internalShort
