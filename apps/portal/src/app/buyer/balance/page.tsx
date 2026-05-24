@@ -1,7 +1,21 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Wallet, Plus, ArrowDownLeft, ArrowUpRight, RefreshCw, AlertCircle, Copy, Check } from 'lucide-react'
+import {
+  Wallet,
+  Plus,
+  ArrowDownLeft,
+  ArrowUpRight,
+  RefreshCw,
+  AlertCircle,
+  Copy,
+  Check,
+  X,
+  ShieldCheck,
+  Zap,
+  ExternalLink,
+  ArrowRight,
+} from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { useToast } from '@/components/ui/Toast'
 
@@ -210,6 +224,8 @@ function SummaryStat({ label, amount, tone }: { label: string; amount: number; t
   )
 }
 
+const PRESET_AMOUNTS = [100, 500, 1000, 5000]
+
 function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (balance: Balance) => void }) {
   const { toast } = useToast()
   const [destination, setDestination] = useState<TopupDestination | null>(null)
@@ -235,8 +251,12 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
 
   async function handleSubmit() {
     const amountNumber = Number(amount)
-    if (!txHash.trim() || !Number.isFinite(amountNumber) || amountNumber <= 0) {
-      toast('error', 'Enter a transaction hash and the USD amount you sent.')
+    if (!txHash.trim()) {
+      toast('error', 'Paste the Solana transaction signature first.')
+      return
+    }
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+      toast('error', 'Enter the USD amount you sent.')
       return
     }
     setSubmitting(true)
@@ -259,114 +279,335 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
     }
   }
 
+  const networkLabel = destination?.network === 'mainnet' ? 'Solana mainnet' : 'Solana devnet'
+  const networkAccent = destination?.network === 'mainnet'
+    ? { bg: 'rgba(34,197,94,0.12)', color: 'var(--success)', dot: 'var(--success)' }
+    : { bg: 'rgba(245,158,11,0.12)', color: 'var(--warning)', dot: 'var(--warning)' }
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
+      style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-2xl p-6 sm:p-7 max-h-[90vh] overflow-y-auto"
-        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
+        className="w-full max-w-xl rounded-3xl max-h-[92vh] overflow-y-auto relative"
+        style={{
+          background: 'linear-gradient(180deg, rgba(34,197,94,0.04) 0%, var(--bg-card) 35%, var(--bg-card) 100%)',
+          border: '1px solid rgba(255,255,255,0.06)',
+          boxShadow: '0 24px 64px -16px rgba(0,0,0,0.6), 0 0 0 1px rgba(34,197,94,0.08), inset 0 1px 0 rgba(255,255,255,0.04)',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
-          Top up balance
-        </h2>
-        <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>
-          Send USDC to the destination below, then paste the transaction hash.
-        </p>
-
-        {destination?.configured && destination.wallet ? (
-          <div className="rounded-xl p-4 mb-5" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
-            <div className="text-[10px] uppercase tracking-[0.18em] font-mono mb-2" style={{ color: 'var(--text-muted)' }}>
-              Send {destination.currency} on Solana {destination.network} to
-            </div>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 text-xs break-all" style={{ color: 'var(--text-primary)' }}>{destination.wallet}</code>
-              <button
-                onClick={copyAddress}
-                className="shrink-0 p-2 rounded-lg transition-colors"
-                style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}
-                title="Copy address"
-              >
-                {copied ? <Check size={14} style={{ color: 'var(--success)' }} /> : <Copy size={14} style={{ color: 'var(--text-secondary)' }} />}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div
-            className="rounded-xl p-4 mb-5 flex gap-3"
-            style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}
-          >
-            <AlertCircle size={18} className="shrink-0 mt-0.5" style={{ color: 'var(--warning)' }} />
-            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-              {destination?.message ?? 'Topup wallet not configured yet. Contact support before sending funds.'}
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-mono uppercase tracking-[0.16em] mb-1.5" style={{ color: 'var(--text-muted)' }}>
-              Transaction hash
-            </label>
-            <input
-              type="text"
-              value={txHash}
-              onChange={(e) => setTxHash(e.target.value)}
-              placeholder="Paste the Solana signature"
-              className="w-full rounded-lg px-3 py-2.5 text-sm"
-              style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-mono uppercase tracking-[0.16em] mb-1.5" style={{ color: 'var(--text-muted)' }}>
-              USD amount sent
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="100.00"
-              className="w-full rounded-lg px-3 py-2.5 text-sm"
-              style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-mono uppercase tracking-[0.16em] mb-1.5" style={{ color: 'var(--text-muted)' }}>
-              Note (optional)
-            </label>
-            <input
-              type="text"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="What this topup is for"
-              className="w-full rounded-lg px-3 py-2.5 text-sm"
-              style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-            />
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-2 mt-6">
+        {/* Header — large brand icon, eyebrow, title. Close button top-right. */}
+        <div className="relative px-6 sm:px-8 pt-7 pb-5">
           <button
             onClick={onClose}
             disabled={submitting}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
+            className="absolute top-5 right-5 w-9 h-9 rounded-full flex items-center justify-center transition-colors disabled:opacity-50 hover:bg-white/5"
+            style={{ color: 'var(--text-muted)' }}
+            aria-label="Close"
           >
-            Cancel
+            <X size={18} />
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || !destination?.configured}
-            className="px-5 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
-            style={{ background: 'var(--primary)', color: '#fff' }}
-          >
-            {submitting ? 'Verifying...' : 'Credit balance'}
-          </button>
+
+          <div className="flex items-center gap-3 mb-4">
+            <div
+              className="w-11 h-11 rounded-2xl flex items-center justify-center"
+              style={{
+                background: 'linear-gradient(135deg, rgba(34,197,94,0.18), rgba(34,197,94,0.06))',
+                border: '1px solid rgba(34,197,94,0.25)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 0 24px rgba(34,197,94,0.18)',
+              }}
+            >
+              <Wallet size={20} style={{ color: 'var(--primary)' }} />
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.18em] font-mono" style={{ color: 'var(--text-muted)' }}>
+                Add credit
+              </div>
+              <h2 className="text-2xl font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>
+                Top up balance
+              </h2>
+            </div>
+          </div>
+
+          {/* Two-step indicator */}
+          <div className="flex items-center gap-3">
+            <StepDot index={1} label="Send USDC" />
+            <div className="flex-1 h-px" style={{ background: 'linear-gradient(to right, rgba(34,197,94,0.4), rgba(255,255,255,0.06))' }} />
+            <StepDot index={2} label="Confirm hash" />
+          </div>
+        </div>
+
+        <div className="px-6 sm:px-8 pb-7 space-y-5">
+          {/* Destination address block */}
+          {destination?.configured && destination.wallet ? (
+            <div
+              className="rounded-2xl p-5"
+              style={{
+                background: 'rgba(255,255,255,0.02)',
+                border: '1px solid rgba(255,255,255,0.06)',
+              }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-[0.18em] font-mono" style={{ color: 'var(--text-muted)' }}>
+                    Destination
+                  </span>
+                </div>
+                <span
+                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] uppercase tracking-[0.14em] font-mono"
+                  style={{ background: networkAccent.bg, color: networkAccent.color }}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full animate-pulse"
+                    style={{ background: networkAccent.dot }}
+                  />
+                  {networkLabel}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <code
+                  className="flex-1 text-xs sm:text-sm break-all font-mono leading-relaxed"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  {destination.wallet}
+                </code>
+                <button
+                  onClick={copyAddress}
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-medium transition-all hover:bg-white/5"
+                  style={{
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    background: 'rgba(255,255,255,0.02)',
+                    color: copied ? 'var(--success)' : 'var(--text-secondary)',
+                  }}
+                  title="Copy address"
+                >
+                  {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
+                </button>
+              </div>
+              <p className="mt-3 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                Send <span style={{ color: 'var(--text-secondary)' }}>USDC</span> (SPL Token) to this address from any Solana wallet. Funds usually confirm in {destination.network === 'mainnet' ? '10-30 seconds' : '5-10 seconds'}.
+              </p>
+            </div>
+          ) : (
+            <div
+              className="rounded-2xl p-5 flex gap-3"
+              style={{
+                background: 'rgba(245,158,11,0.06)',
+                border: '1px solid rgba(245,158,11,0.2)',
+              }}
+            >
+              <AlertCircle size={18} className="shrink-0 mt-0.5" style={{ color: 'var(--warning)' }} />
+              <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                {destination?.message ?? 'Topup wallet not configured yet. Contact support before sending funds.'}
+              </div>
+            </div>
+          )}
+
+          {/* Form */}
+          <div className="space-y-4">
+            <FieldBlock label="Amount sent" hint="Match the USD value of the USDC you transferred">
+              <div className="relative">
+                <span
+                  className="absolute left-4 top-1/2 -translate-y-1/2 font-display text-xl pointer-events-none"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  $
+                </span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full rounded-xl pl-10 pr-4 h-14 text-xl font-display tabular-nums outline-none focus:ring-2 focus:ring-offset-0 transition-all"
+                  style={{
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    color: 'var(--text-primary)',
+                  }}
+                />
+              </div>
+              <div className="flex flex-wrap gap-2 mt-2.5">
+                {PRESET_AMOUNTS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setAmount(String(preset))}
+                    className="px-3 py-1.5 rounded-full text-xs font-mono transition-colors"
+                    style={
+                      Number(amount) === preset
+                        ? { background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)', color: 'var(--primary)' }
+                        : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', color: 'var(--text-muted)' }
+                    }
+                  >
+                    ${preset.toLocaleString()}
+                  </button>
+                ))}
+              </div>
+            </FieldBlock>
+
+            <FieldBlock label="Transaction signature" hint="Paste the signature returned by your wallet after sending">
+              <input
+                type="text"
+                value={txHash}
+                onChange={(e) => setTxHash(e.target.value)}
+                placeholder="e.g. 5VfYx3...8sDe"
+                spellCheck={false}
+                className="w-full rounded-xl px-4 h-12 text-sm font-mono outline-none transition-all"
+                style={{
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  color: 'var(--text-primary)',
+                }}
+              />
+              {txHash.trim().length > 0 && !txHash.startsWith('DEV_') && (
+                <a
+                  href={`https://solscan.io/tx/${txHash.trim()}${destination?.network === 'devnet' ? '?cluster=devnet' : ''}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 mt-2 text-[11px] font-mono transition-colors hover:underline"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <ExternalLink size={11} /> View on Solscan
+                </a>
+              )}
+            </FieldBlock>
+
+            <FieldBlock label="Note" hint="Helps you find this credit later in the ledger" optional>
+              <input
+                type="text"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="What this topup is for"
+                className="w-full rounded-xl px-4 h-12 text-sm outline-none transition-all"
+                style={{
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  color: 'var(--text-primary)',
+                }}
+              />
+            </FieldBlock>
+          </div>
+
+          {/* Reassurance row */}
+          <div className="grid grid-cols-3 gap-2 pt-1">
+            <Reassurance icon={Zap} label="Instant" sub="Credits on confirm" />
+            <Reassurance icon={ShieldCheck} label="Idempotent" sub="Resend-safe" />
+            <Reassurance icon={Wallet} label="USDC" sub="Solana SPL" />
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={onClose}
+              disabled={submitting}
+              className="px-5 h-12 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.06)',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || !destination?.configured}
+              className="flex-1 group inline-flex items-center justify-center gap-2 h-12 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                background: submitting
+                  ? 'var(--primary)'
+                  : 'linear-gradient(180deg, #2dd271 0%, #1aa055 100%)',
+                color: '#0a0a0f',
+                boxShadow: '0 1px 0 rgba(255,255,255,0.18) inset, 0 8px 24px -8px rgba(34,197,94,0.55)',
+              }}
+            >
+              {submitting ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Verifying…
+                </>
+              ) : (
+                <>
+                  Credit balance
+                  <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StepDot({ index, label }: { index: number; label: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div
+        className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-mono font-semibold"
+        style={{
+          background: 'rgba(34,197,94,0.12)',
+          border: '1px solid rgba(34,197,94,0.35)',
+          color: 'var(--primary)',
+        }}
+      >
+        {index}
+      </div>
+      <span className="text-[11px] uppercase tracking-[0.16em] font-mono" style={{ color: 'var(--text-muted)' }}>
+        {label}
+      </span>
+    </div>
+  )
+}
+
+function FieldBlock({
+  label,
+  hint,
+  optional,
+  children,
+}: {
+  label: string
+  hint?: string
+  optional?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-2">
+        <label className="text-[11px] uppercase tracking-[0.16em] font-mono" style={{ color: 'var(--text-secondary)' }}>
+          {label}
+          {optional && <span className="ml-2 normal-case tracking-normal" style={{ color: 'var(--text-muted)' }}>· optional</span>}
+        </label>
+        {hint && (
+          <span className="text-[10px] font-mono hidden sm:inline" style={{ color: 'var(--text-muted)' }}>
+            {hint}
+          </span>
+        )}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function Reassurance({ icon: Icon, label, sub }: { icon: typeof Wallet; label: string; sub: string }) {
+  return (
+    <div
+      className="rounded-xl px-3 py-2.5 flex items-center gap-2.5"
+      style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}
+    >
+      <Icon size={14} style={{ color: 'var(--primary)' }} />
+      <div className="min-w-0">
+        <div className="text-[11px] font-semibold leading-tight truncate" style={{ color: 'var(--text-primary)' }}>
+          {label}
+        </div>
+        <div className="text-[10px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>
+          {sub}
         </div>
       </div>
     </div>
