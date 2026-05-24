@@ -2,6 +2,7 @@ import { Navigation } from '@/components/landing/navigation'
 import { HeroSection } from '@/components/landing/hero-section'
 import { BuiltOnSection } from '@/components/landing/built-on-section'
 import { FeaturesSection } from '@/components/landing/features-section'
+import { PersonasSection } from '@/components/landing/personas-section'
 import { HowItWorksSection } from '@/components/landing/how-it-works-section'
 import { InfrastructureSection } from '@/components/landing/infrastructure-section'
 import { MetricsSection } from '@/components/landing/metrics-section'
@@ -21,6 +22,7 @@ export default function HomePage() {
       <HeroSection />
       <BuiltOnSection />
       <FeaturesSection />
+      <PersonasSection />
       <HowItWorksSection />
       <InfrastructureSection />
       <MetricsSection />
