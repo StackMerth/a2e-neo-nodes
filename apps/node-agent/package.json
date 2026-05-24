@@ -47,7 +47,7 @@
     "yaml": "^2.4.1",
     "zod": "^3.22.4",
     "dotenv": "^16.4.5",
-    "ws": "^8.16.0"
+    "ws": "^8.20.1"
   },
   "devDependencies": {
     "@types/dockerode": "^3.3.26",
