@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 import { portalUrls } from "@/lib/portal-urls";
@@ -15,7 +16,19 @@ const navLinks: Array<{ name: string; href: string; external?: boolean }> = [
   { name: "Pricing", href: "/#pricing" },
 ];
 
+// Decide if a nav link is "active" for the current route. Exact-match
+// for everything except the home-anchor link (/#pricing) where we
+// only care that we are on / and the user has the pricing hash open.
+function isLinkActive(linkHref: string, pathname: string | null): boolean {
+  if (!pathname) return false;
+  if (linkHref.startsWith("/#")) return false; // anchor-only; never permanently active
+  // Exact match for the root, prefix-match for nested routes
+  if (linkHref === "/") return pathname === "/";
+  return pathname === linkHref || pathname.startsWith(linkHref + "/");
+}
+
 export function Navigation() {
+  const pathname = usePathname();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   // Defer the mobile menu icon to client-only. Lucide's Menu/X icons
@@ -68,18 +81,32 @@ export function Navigation() {
               so 5 items fit comfortably. external links get
               target=_blank so docs open in a new tab. */}
           <div className="hidden md:flex items-center gap-8 lg:gap-10">
-            {navLinks.map((link) => (
-              <a
-                key={link.name}
-                href={link.href}
-                target={link.external ? "_blank" : undefined}
-                rel={link.external ? "noreferrer" : undefined}
-                className="text-sm text-foreground/70 hover:text-foreground transition-colors duration-300 relative group"
-              >
-                {link.name}
-                <span className="absolute -bottom-1 left-0 w-0 h-px bg-foreground transition-all duration-300 group-hover:w-full" />
-              </a>
-            ))}
+            {navLinks.map((link) => {
+              const active = isLinkActive(link.href, pathname);
+              return (
+                <a
+                  key={link.name}
+                  href={link.href}
+                  target={link.external ? "_blank" : undefined}
+                  rel={link.external ? "noreferrer" : undefined}
+                  // Active links get full-opacity text; inactive get
+                  // the muted /70 treatment and brighten on hover.
+                  className={`text-sm transition-colors duration-300 relative group ${
+                    active ? "text-foreground" : "text-foreground/70 hover:text-foreground"
+                  }`}
+                  aria-current={active ? "page" : undefined}
+                >
+                  {link.name}
+                  {/* Underline: full-width + persistent when active,
+                      grows from 0 -> 100% on hover when inactive. */}
+                  <span
+                    className={`absolute -bottom-1 left-0 h-px bg-foreground transition-all duration-300 ${
+                      active ? "w-full" : "w-0 group-hover:w-full"
+                    }`}
+                  />
+                </a>
+              );
+            })}
           </div>
 
           {/* Desktop CTA */}
