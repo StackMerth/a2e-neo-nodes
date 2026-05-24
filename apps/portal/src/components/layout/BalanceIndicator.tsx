@@ -75,7 +75,11 @@ export function BalanceIndicator() {
 
   if (!mode || loading || amount === null) return null
 
-  const href = mode === 'buyer' ? '/buyer/balance' : '/earnings'
+  // Node-runner pill routes to /payouts (not /earnings) so a single
+  // click takes the operator straight to the Withdraw flow on the
+  // Platform Balance card. /earnings is a reporting view, not the
+  // place to act on the balance shown here.
+  const href = mode === 'buyer' ? '/buyer/balance' : '/payouts'
   const label = mode === 'buyer' ? 'Balance' : 'Earnings'
   const formatted = amount.toLocaleString(undefined, {
     minimumFractionDigits: amount < 1000 ? 2 : 0,
