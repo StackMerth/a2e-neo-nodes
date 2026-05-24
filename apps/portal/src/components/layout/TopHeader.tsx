@@ -20,6 +20,7 @@ import { UserMenu } from './UserMenu'
 import { GlobalSearch } from './GlobalSearch'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { BalanceIndicator } from './BalanceIndicator'
+import { ConnectWalletButton } from '@/components/wallet/ConnectWalletButton'
 
 export function TopHeader() {
   const { user } = useAuth()
@@ -76,6 +77,11 @@ export function TopHeader() {
           read as distinct controls, not glued together. ml-auto pushes
           to the right edge when the search is hidden at sm widths. */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
+        {/* Connect Wallet — opens wallet-adapter modal when no wallet
+            is connected, otherwise renders a compact pill with the
+            address + disconnect menu. Sign-to-pay flows on topup,
+            rental, and deploy all read from the connected wallet. */}
+        <ConnectWalletButton />
         {/* Balance pill — context-aware: buyer balance on /buyer/*
             routes, operator earnings everywhere else. Click to land
             on the corresponding detail page. Hidden on the smallest
