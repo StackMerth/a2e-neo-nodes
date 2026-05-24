@@ -66,7 +66,11 @@ async function resolveTopupDestination(
 }
 
 const topupSchema = z.object({
-  txHash: z.string().trim().min(20).max(200),
+  // Real Solana signatures are 87-88 chars base58. The 10-char floor
+  // is intentionally low so dev mocks like `DEV_test_topup_001` pass
+  // validation (verifyTransaction auto-verifies anything starting
+  // with DEV_ when PAYMENT_MODE != live).
+  txHash: z.string().trim().min(10).max(200),
   amountUsd: z.number().positive().max(100000),
   note: z.string().trim().max(500).optional(),
 })
