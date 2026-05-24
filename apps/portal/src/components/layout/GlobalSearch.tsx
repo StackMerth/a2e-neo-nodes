@@ -80,7 +80,6 @@ const NAV_ITEMS: NavItem[] = [
   { type: 'nav', label: 'Earnings history',  hint: 'Trailing earnings log',    href: '/earnings/history', icon: DollarSign },
   { type: 'nav', label: 'Payouts',           hint: 'Settled payouts',          href: '/payouts',      icon: WalletIcon },
   { type: 'nav', label: 'Payout settings',   hint: 'Frequency + threshold',    href: '/payouts/settings', icon: WalletIcon },
-  { type: 'nav', label: 'Withdrawals',       hint: 'Withdraw to wallet',       href: '/withdrawals',  icon: ArrowDownToLine },
   { type: 'nav', label: 'Jobs',              hint: 'Per-job log',              href: '/jobs',         icon: Zap },
   { type: 'nav', label: 'Referrals',         hint: 'Invite operators',         href: '/referral',     icon: Users },
   { type: 'nav', label: 'Settings',          hint: 'Profile + identity',       href: '/settings',     icon: Settings },

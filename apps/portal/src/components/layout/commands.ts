@@ -71,10 +71,10 @@ export const PORTAL_ACTIONS: PortalActionCommand[] = [
   {
     id: 'act-withdraw',
     label: 'Withdraw earnings',
-    hint: 'Open the withdrawal queue',
+    hint: 'Open Platform Balance on the Payouts page',
     icon: ArrowDownToLine,
     exec({ push }) {
-      push('/withdrawals')
+      push('/payouts')
     },
   },
   {
