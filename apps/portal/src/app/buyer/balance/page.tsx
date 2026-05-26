@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Wallet, Plus, ArrowDownLeft, ArrowUpRight, RefreshCw, AlertCircle, Copy, Check, Zap, ExternalLink, Loader2 } from 'lucide-react'
+import { Wallet, Plus, ArrowDownLeft, ArrowUpRight, RefreshCw, AlertCircle, Copy, Check, Zap, ExternalLink, Loader2, CreditCard } from 'lucide-react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { buyer } from '@/lib/api'
@@ -338,6 +338,35 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
     }
   }
 
+  // Fiat onramp: hand the buyer off to Stripe Hosted Checkout. The
+  // balance credit happens later via the /v1/webhooks/stripe handler
+  // when Stripe confirms payment, so no UI work needed here beyond
+  // the redirect — the balance page re-fetches state on mount when
+  // Stripe sends the buyer back to ?topup=success.
+  const [cardSubmitting, setCardSubmitting] = useState(false)
+  async function handlePayWithCard() {
+    const amountNumber = Number(amount)
+    if (!Number.isFinite(amountNumber) || amountNumber < 1) {
+      toast('error', 'Enter at least $1 to top up with a card.')
+      return
+    }
+    setCardSubmitting(true)
+    try {
+      const { url } = await buyer.balance.topupStripeCheckout({ amountUsd: amountNumber })
+      window.location.href = url
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Could not start card checkout'
+      // 503 from the API means STRIPE_SECRET_KEY isn't set on Render.
+      // Surface a clean message rather than the raw error string.
+      if (msg.includes('not_configured') || msg.toLowerCase().includes('not enabled')) {
+        toast('error', 'Card topup is not enabled on this deploy yet.')
+      } else {
+        toast('error', msg)
+      }
+      setCardSubmitting(false)
+    }
+  }
+
   const phaseLabel = (() => {
     switch (phase) {
       case 'awaiting-signature':
@@ -490,6 +519,34 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
             Connect wallet to pay
           </button>
         )}
+
+        {/* Pay-with-card option — Stripe Hosted Checkout. Sits as a
+            secondary CTA below the wallet/connect primary so the
+            crypto path stays the default for users who have a wallet
+            connected, while still giving non-crypto buyers a clear
+            on-ramp. */}
+        <button
+          onClick={handlePayWithCard}
+          disabled={cardSubmitting || Number(amount || 0) < 1}
+          className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-medium transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed mt-3"
+          style={{
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-primary)',
+          }}
+        >
+          {cardSubmitting ? (
+            <>
+              <Loader2 size={14} className="animate-spin" />
+              Opening Stripe…
+            </>
+          ) : (
+            <>
+              <CreditCard size={14} />
+              Pay ${Number(amount || 0).toFixed(2)} with card (Stripe)
+            </>
+          )}
+        </button>
 
         {/* Manual paste fallback — collapsible */}
         <div className="mt-5 pt-4" style={{ borderTop: '1px solid var(--border-color)' }}>

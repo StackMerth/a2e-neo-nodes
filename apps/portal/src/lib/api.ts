@@ -450,6 +450,16 @@ export const buyer = {
         }
         devMode: boolean
       }>('/v1/buyer/balance/topup-solana', { method: 'POST', body: data }),
+
+    // Fiat onramp: Stripe Hosted Checkout. Returns a session URL;
+    // the caller redirects the browser to it. The actual balance
+    // credit happens server-side via the /v1/webhooks/stripe handler
+    // after Stripe confirms payment.
+    topupStripeCheckout: (data: { amountUsd: number }) =>
+      apiFetch<{ id: string; url: string }>(
+        '/v1/buyer/balance/topup-stripe/checkout',
+        { method: 'POST', body: data },
+      ),
   },
   // Invoice route returns HTML. Bearer-token auth means we can't use a
   // plain <a href> — browsers don't attach the token to new-tab opens.

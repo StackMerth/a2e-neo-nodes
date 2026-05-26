@@ -22,6 +22,9 @@ import {
   DuplicateTransactionError,
 } from '../services/balance/balance-service'
 import { getSolanaConfig, verifyTransaction } from '../services/payment/solana'
+import { createTopupCheckoutSession, isStripeConfigured } from '../services/payment/stripe'
+
+const PORTAL_URL = process.env.PORTAL_URL ?? 'https://user.tokenos.ai'
 
 /**
  * Derive the topup destination wallet. Preference order:
@@ -203,6 +206,55 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
         return
       }
       throw err
+    }
+  })
+
+  /**
+   * POST /v1/buyer/balance/topup-stripe/checkout — create a Stripe
+   * Hosted Checkout Session for a card-funded topup. Returns the
+   * session URL; the frontend redirects the buyer to it. The actual
+   * balance credit happens via the /v1/webhooks/stripe handler once
+   * Stripe confirms payment server-side.
+   */
+  fastify.post('/v1/buyer/balance/topup-stripe/checkout', async (request, reply) => {
+    if (!isStripeConfigured()) {
+      reply.status(503).send({ error: 'stripe_not_configured', message: 'Card topup is not enabled on this deploy.' })
+      return
+    }
+
+    const schema = z.object({
+      amountUsd: z.number().positive().min(1).max(10000),
+    })
+    const parse = schema.safeParse(request.body)
+    if (!parse.success) {
+      reply.status(400).send({ error: 'invalid_body', detail: parse.error.format() })
+      return
+    }
+
+    const userId = request.user!.userId
+    const user = await fastify.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    })
+
+    try {
+      const session = await createTopupCheckoutSession({
+        userId,
+        email: user?.email ?? null,
+        amountUsd: parse.data.amountUsd,
+        // Stripe redirects the buyer back to /buyer/balance regardless
+        // of outcome. The balance page re-fetches state on mount, so
+        // a successful topup will be visible once the webhook lands
+        // (typically within a second of payment).
+        successUrl: `${PORTAL_URL}/buyer/balance?topup=success`,
+        cancelUrl: `${PORTAL_URL}/buyer/balance?topup=cancelled`,
+      })
+      reply.send({ id: session.id, url: session.url })
+    } catch (e) {
+      reply.status(500).send({
+        error: 'checkout_failed',
+        message: e instanceof Error ? e.message : 'Failed to create checkout session',
+      })
     }
   })
 }
