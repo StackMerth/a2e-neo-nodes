@@ -615,6 +615,18 @@ model Node {
   // false to preserve all pre-migration nodes as non-residential.
   isResidential              Boolean   @default(false)
 
+  // #7 wave 3 (operator-set pricing): per-node operator-chosen rate
+  // overriding the YieldFloor-derived default. Constrained at the
+  // service layer to a band around the floor (currently ±25%, set in
+  // services/pricing/operator-rate.ts) so operators cannot underprice
+  // themselves into a loss OR list at a rate that puts them outside
+  // the allocator's candidate window. NULL means "use YieldFloor"
+  // (the pre-#7 default behavior every existing node keeps until the
+  // operator opts in via the per-node Pricing card).
+  operatorRatePerHour        Float?
+  operatorRatePerDay         Float?
+  operatorRateUpdatedAt      DateTime?
+
   // Timestamps
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt

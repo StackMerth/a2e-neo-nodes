@@ -168,6 +168,29 @@ export const nodeRunner = {
   node: (id: string) => apiFetch(`/v1/portal/node-runner/nodes/${id}`),
   updateNode: (id: string, data: unknown) => apiFetch(`/v1/portal/node-runner/nodes/${id}`, { method: 'PATCH', body: data }),
   deleteNode: (id: string) => apiFetch(`/v1/portal/node-runner/nodes/${id}`, { method: 'DELETE' }),
+  // #7 operator-set pricing: per-node rate read + write. getNodeRate
+  // returns the effective rate + allowed band; setNodeRate writes
+  // the operator's chosen rate (null clears the override).
+  getNodeRate: (id: string) =>
+    apiFetch<{
+      gpuTier: string
+      effective: { ratePerHour: number; ratePerDay: number; source: 'operator' | 'custom' | 'floor' | 'none' }
+      band: {
+        minPerHour: number; minPerDay: number
+        maxPerHour: number; maxPerDay: number
+        floorPerHour: number; floorPerDay: number
+      } | null
+      operatorRatePerHour: number | null
+      operatorRatePerDay: number | null
+      operatorRateUpdatedAt: string | null
+    }>(`/v1/portal/node-runner/nodes/${id}/rate`),
+  setNodeRate: (id: string, ratePerHour: number | null) =>
+    apiFetch<{
+      success: boolean
+      ratePerHour: number | null
+      ratePerDay: number | null
+      source: 'operator' | 'floor'
+    }>(`/v1/portal/node-runner/nodes/${id}/rate`, { method: 'PATCH', body: { ratePerHour } }),
   pauseAll: () => apiFetch<{ success: boolean; count: number; message: string }>('/v1/portal/node-runner/nodes/pause-all', { method: 'POST' }),
   resumeAll: () => apiFetch<{ success: boolean; count: number; message: string }>('/v1/portal/node-runner/nodes/resume-all', { method: 'POST' }),
   earnings: (period?: string) => apiFetch(`/v1/portal/node-runner/earnings${period ? `?period=${period}` : ''}`),
