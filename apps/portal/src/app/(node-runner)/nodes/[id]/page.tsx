@@ -705,79 +705,145 @@ function PricingCard({ nodeId, gpuTier }: { nodeId: string; gpuTier: string }) {
     floor: 'Market baseline',
     none: 'Unset',
   }
-  const sourceColor: Record<typeof effective.source, string> = {
-    operator: 'var(--primary)',
-    custom: 'var(--info)',
-    floor: 'var(--text-muted)',
-    none: 'var(--warning)',
+  const sourceStyle: Record<typeof effective.source, { color: string; bg: string }> = {
+    operator: { color: 'var(--primary)', bg: 'rgba(34,197,94,0.12)' },
+    custom: { color: 'var(--info)', bg: 'rgba(59,130,246,0.12)' },
+    floor: { color: 'var(--text-secondary)', bg: 'var(--bg-elevated)' },
+    none: { color: 'var(--warning)', bg: 'rgba(245,158,11,0.12)' },
   }
 
   const parsedInput = parseFloat(input)
   const inputValid = Number.isFinite(parsedInput) && parsedInput >= band.minPerHour && parsedInput <= band.maxPerHour
   const inputChanged = Number.isFinite(parsedInput) && Math.abs(parsedInput - effective.ratePerHour) > 0.001
 
+  // Position of the effective rate on the band track (0-100%) for the
+  // mini-slider visualization. Clamp because operator rates set before
+  // a band change could fall slightly outside; we still want a sane dot.
+  const bandWidth = band.maxPerHour - band.minPerHour
+  const ratePos = bandWidth > 0
+    ? Math.min(100, Math.max(0, ((effective.ratePerHour - band.minPerHour) / bandWidth) * 100))
+    : 50
+  const baselinePos = bandWidth > 0
+    ? ((band.floorPerHour - band.minPerHour) / bandWidth) * 100
+    : 50
+  // Preview position for the in-progress input value, only shown while typing
+  // a valid in-band number that differs from the saved rate.
+  const previewPos = inputValid && inputChanged && bandWidth > 0
+    ? Math.min(100, Math.max(0, ((parsedInput - band.minPerHour) / bandWidth) * 100))
+    : null
+
   return (
     <SectionCard title="Pricing" icon={DollarSign}>
-      <div className="space-y-4">
-        <div className="flex items-baseline justify-between">
-          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Effective rate</span>
-          <div className="text-right">
-            <span className="font-display text-2xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+      <div className="space-y-5">
+        {/* Hero: effective rate + source pill */}
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: 'var(--text-muted)' }}>
+              Effective rate
+            </p>
+            <p className="font-display font-bold tracking-tight tabular-nums mt-1.5 leading-none" style={{ color: 'var(--text-primary)', fontSize: '2.5rem' }}>
               ${effective.ratePerHour.toFixed(2)}
-            </span>
-            <span className="text-sm ml-1" style={{ color: 'var(--text-muted)' }}>/hr</span>
-            <p className="text-xs mt-0.5" style={{ color: sourceColor[effective.source] }}>
-              {sourceLabel[effective.source]}
+              <span className="font-sans font-normal ml-1.5" style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>/hr</span>
+            </p>
+            <p className="text-xs mt-1.5 font-mono" style={{ color: 'var(--text-muted)' }}>
+              ≈ ${effective.ratePerDay.toFixed(2)} / day
             </p>
           </div>
+          <span
+            className="font-mono text-[10px] uppercase tracking-[0.16em] px-2.5 py-1 rounded-full font-semibold whitespace-nowrap"
+            style={{ background: sourceStyle[effective.source].bg, color: sourceStyle[effective.source].color }}
+          >
+            {sourceLabel[effective.source]}
+          </span>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 text-xs">
-          <div className="rounded-md p-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
-            <p className="font-mono uppercase tracking-[0.14em] mb-0.5" style={{ color: 'var(--text-muted)' }}>Min</p>
-            <p className="font-mono" style={{ color: 'var(--text-primary)' }}>${band.minPerHour.toFixed(2)}</p>
-          </div>
-          <div className="rounded-md p-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--primary)' }}>
-            <p className="font-mono uppercase tracking-[0.14em] mb-0.5" style={{ color: 'var(--text-muted)' }}>Baseline</p>
-            <p className="font-mono" style={{ color: 'var(--primary)' }}>${band.floorPerHour.toFixed(2)}</p>
-          </div>
-          <div className="rounded-md p-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
-            <p className="font-mono uppercase tracking-[0.14em] mb-0.5" style={{ color: 'var(--text-muted)' }}>Max</p>
-            <p className="font-mono" style={{ color: 'var(--text-primary)' }}>${band.maxPerHour.toFixed(2)}</p>
-          </div>
-        </div>
-
+        {/* Mini-slider band */}
         <div>
-          <label className="text-xs font-mono uppercase tracking-[0.14em] mb-1.5 block" style={{ color: 'var(--text-muted)' }}>
-            Your rate ($/hr)
+          <div className="relative h-2 rounded-full" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
+            {/* baseline tick */}
+            <div
+              className="absolute w-0.5 h-3 -top-0.5"
+              style={{ left: `${baselinePos}%`, background: 'var(--text-muted)', opacity: 0.5, transform: 'translateX(-50%)' }}
+              title="Market baseline"
+            />
+            {/* preview ghost dot while typing */}
+            {previewPos !== null && (
+              <div
+                className="absolute w-3 h-3 rounded-full -top-0.5 transition-all"
+                style={{
+                  left: `${previewPos}%`,
+                  background: 'transparent',
+                  border: '2px dashed var(--primary)',
+                  transform: 'translateX(-50%)',
+                }}
+              />
+            )}
+            {/* saved-rate dot */}
+            <div
+              className="absolute w-3.5 h-3.5 rounded-full -top-1 shadow-md transition-all"
+              style={{
+                left: `${ratePos}%`,
+                background: sourceStyle[effective.source].color,
+                transform: 'translateX(-50%)',
+                boxShadow: `0 0 0 3px ${sourceStyle[effective.source].bg}`,
+              }}
+            />
+          </div>
+          <div className="flex justify-between mt-2.5 font-mono text-[11px]">
+            <span style={{ color: 'var(--text-muted)' }}>${band.minPerHour.toFixed(2)} min</span>
+            <span style={{ color: 'var(--primary)' }} className="font-semibold">${band.floorPerHour.toFixed(2)} baseline</span>
+            <span style={{ color: 'var(--text-muted)' }}>${band.maxPerHour.toFixed(2)} max</span>
+          </div>
+        </div>
+
+        {/* Input */}
+        <div>
+          <label className="font-mono text-[10px] uppercase tracking-[0.2em] mb-2 block" style={{ color: 'var(--text-muted)' }}>
+            Your rate
           </label>
-          <input
-            type="number"
-            step="0.01"
-            min={band.minPerHour}
-            max={band.maxPerHour}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            disabled={saving}
-            className="w-full rounded-md px-3 py-2 text-sm font-mono outline-none focus:ring-2"
-            style={{
-              background: 'var(--bg-elevated)',
-              border: `1px solid ${inputValid || !input ? 'var(--border-color)' : 'var(--danger)'}`,
-              color: 'var(--text-primary)',
-            }}
-          />
+          <div className="relative">
+            <span
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 font-display font-bold pointer-events-none"
+              style={{ color: 'var(--text-muted)', fontSize: '1.25rem' }}
+            >
+              $
+            </span>
+            <input
+              type="number"
+              step="0.01"
+              min={band.minPerHour}
+              max={band.maxPerHour}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              disabled={saving}
+              className="w-full rounded-lg pl-9 pr-14 py-3 font-display font-bold tabular-nums outline-none transition-all focus:ring-2"
+              style={{
+                background: 'var(--bg-elevated)',
+                border: `1.5px solid ${inputValid || !input ? 'var(--border-color)' : 'var(--danger)'}`,
+                color: 'var(--text-primary)',
+                fontSize: '1.5rem',
+              }}
+            />
+            <span
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 font-mono text-sm pointer-events-none"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              /hr
+            </span>
+          </div>
           {input && !inputValid && (
-            <p className="text-xs mt-1" style={{ color: 'var(--danger)' }}>
+            <p className="text-xs mt-2 font-medium" style={{ color: 'var(--danger)' }}>
               Must be between ${band.minPerHour.toFixed(2)} and ${band.maxPerHour.toFixed(2)}
             </p>
           )}
-          {inputValid && (
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-              ≈ ${(parsedInput * 24).toFixed(2)}/day
+          {inputValid && inputChanged && (
+            <p className="text-xs mt-2 font-mono" style={{ color: 'var(--text-muted)' }}>
+              ≈ ${(parsedInput * 24).toFixed(2)} per day
             </p>
           )}
         </div>
 
+        {/* Actions */}
         <div className="flex gap-2">
           <Button
             size="sm"
@@ -802,7 +868,7 @@ function PricingCard({ nodeId, gpuTier }: { nodeId: string; gpuTier: string }) {
         </div>
 
         {operatorRateUpdatedAt && (
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          <p className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>
             Last changed {new Date(operatorRateUpdatedAt).toLocaleString()}
           </p>
         )}
