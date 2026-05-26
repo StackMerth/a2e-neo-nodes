@@ -6,6 +6,7 @@ import {
   getDailyUptimeBreakdown,
 } from '../services/earnings/uptime-calculator.js'
 import { calculateForecast } from '../services/earnings/forecast.js'
+import * as pricing from '../services/pricing/operator-rate.js'
 import { createNotification } from '../services/notification/service.js'
 import { generateTaxYearCsv } from '../services/reports/tax-csv.js'
 
@@ -531,6 +532,77 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     })
 
     reply.send({ node: updated })
+  })
+
+  /**
+   * GET /v1/portal/node-runner/nodes/:id/rate
+   *
+   * #7 operator-set pricing: return the current effective rate for
+   * the node + the allowed band so the per-node Pricing card can
+   * render slider min/max + a "market baseline" anchor.
+   */
+  fastify.get('/v1/portal/node-runner/nodes/:id/rate', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+    const node = await verifyNodeOwnership(fastify, id, nr.id)
+    if (!node) return reply.code(404).send({ error: 'Node not found' })
+
+    const [effective, band] = await Promise.all([
+      pricing.getEffectiveRate(fastify.prisma, node),
+      pricing.getRateBand(fastify.prisma, node.gpuTier).catch(() => null),
+    ])
+
+    reply.send({
+      gpuTier: node.gpuTier,
+      effective,
+      band,
+      operatorRatePerHour: node.operatorRatePerHour,
+      operatorRatePerDay: node.operatorRatePerDay,
+      operatorRateUpdatedAt: node.operatorRateUpdatedAt,
+    })
+  })
+
+  /**
+   * PATCH /v1/portal/node-runner/nodes/:id/rate
+   *
+   * #7 operator-set pricing: write the operator-chosen rate after
+   * validating it sits inside the YieldFloor-derived band. Pass
+   * `ratePerHour: null` to clear the override and revert to the
+   * YieldFloor default.
+   */
+  const setRateSchema = z.object({
+    ratePerHour: z.number().positive().nullable(),
+  })
+  fastify.patch('/v1/portal/node-runner/nodes/:id/rate', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+    const node = await verifyNodeOwnership(fastify, id, nr.id)
+    if (!node) return reply.code(404).send({ error: 'Node not found' })
+
+    const parsed = setRateSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
+    }
+
+    try {
+      const result = await pricing.validateAndSetOperatorRate(
+        fastify.prisma,
+        id,
+        parsed.data.ratePerHour,
+      )
+      reply.send({ success: true, ...result })
+    } catch (e) {
+      if (e instanceof pricing.RateOutOfBandError) {
+        return reply.code(400).send({
+          error: 'out_of_band',
+          message: e.message,
+          band: e.band,
+        })
+      }
+      reply.code(500).send({ error: 'set_rate_failed', message: e instanceof Error ? e.message : 'unknown' })
+    }
   })
 
   /**
