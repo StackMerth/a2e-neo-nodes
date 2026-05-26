@@ -58,6 +58,7 @@ import {
   adminSmtpRoutes,
   externalRoutes,
   webhooksSolanaRoutes,
+  webhooksStripeRoutes,
   templateRoutes,
   adminRatingsRoutes,
   publicOperatorsRoutes,
@@ -225,6 +226,10 @@ async function start() {
     await server.register(adminSmtpRoutes)
     await server.register(externalRoutes)
     await server.register(webhooksSolanaRoutes)
+    // Stripe webhook registers with an encapsulated raw-body parser
+    // (needed for signature verification). Encapsulation keeps the
+    // override from leaking to other JSON routes.
+    await server.register(webhooksStripeRoutes)
     await server.register(templateRoutes)
     await server.register(adminRatingsRoutes)
     await server.register(publicOperatorsRoutes)
