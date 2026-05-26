@@ -34,7 +34,8 @@
     "c3:test-send-digest": "tsx scripts/c3-test-send-digest.ts",
     "c3:set-smtp": "tsx scripts/c3-set-smtp.ts",
     "auth:force-verify": "tsx scripts/auth-force-verify-email.ts",
-    "c2c3:cleanup": "tsx scripts/c2c3-test-cleanup.ts"
+    "c2c3:cleanup": "tsx scripts/c2c3-test-cleanup.ts",
+    "push:test": "tsx scripts/push-test.ts"
   },
   "dependencies": {
     "@a2e/core": "workspace:*",
