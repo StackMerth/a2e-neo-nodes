@@ -22,6 +22,8 @@ import {
   Gauge,
   Zap,
   Sparkles,
+  DollarSign,
+  RotateCcw,
 } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
@@ -340,6 +342,12 @@ export default function NodeDetailPage() {
           </div>
         </SectionCard>
 
+        {/* #7 operator-set pricing: per-node Pricing card. Operators
+            choose a rate within a ±25% band around the YieldFloor for
+            their tier. Hidden / inert for OTHER tier (no YieldFloor
+            anchor — operators set customRatePerHour instead). */}
+        <PricingCard nodeId={node.id} gpuTier={node.gpuTier} />
+
         <SectionCard title="GPU Metrics" icon={Activity}>
           {lastHb ? (
             <div className="space-y-3 text-sm">
@@ -582,6 +590,223 @@ function BenchmarkCard({
           </p>
         </div>
       )}
+    </SectionCard>
+  )
+}
+
+/**
+ * #7 operator-set pricing card.
+ *
+ * Loads the effective rate + allowed band for the node, lets the
+ * operator type a $/hour value inside that band, and writes it
+ * back. The band is YieldFloor ± 25% by default (tunable server-side
+ * via OPERATOR_RATE_FLOOR_PCT / OPERATOR_RATE_CEILING_PCT).
+ *
+ * OTHER-tier nodes have no YieldFloor anchor — they use
+ * customRatePerHour on the node directly, so we render an explainer
+ * instead of the editor.
+ */
+function PricingCard({ nodeId, gpuTier }: { nodeId: string; gpuTier: string }) {
+  const { toast } = useToast()
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [data, setData] = useState<{
+    effective: { ratePerHour: number; ratePerDay: number; source: 'operator' | 'custom' | 'floor' | 'none' }
+    band: {
+      minPerHour: number; minPerDay: number
+      maxPerHour: number; maxPerDay: number
+      floorPerHour: number; floorPerDay: number
+    } | null
+    operatorRatePerHour: number | null
+    operatorRateUpdatedAt: string | null
+  } | null>(null)
+  const [input, setInput] = useState('')
+
+  const load = useCallback(async () => {
+    try {
+      const r = await nodeRunner.getNodeRate(nodeId)
+      setData(r)
+      setInput((r.operatorRatePerHour ?? r.effective.ratePerHour).toFixed(2))
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Failed to load pricing')
+    } finally {
+      setLoading(false)
+    }
+  }, [nodeId, toast])
+
+  useEffect(() => { load() }, [load])
+
+  async function handleSave() {
+    const value = parseFloat(input)
+    if (!Number.isFinite(value) || value <= 0) {
+      toast('error', 'Enter a valid rate per hour')
+      return
+    }
+    setSaving(true)
+    try {
+      await nodeRunner.setNodeRate(nodeId, value)
+      toast('success', 'Pricing updated')
+      await load()
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleReset() {
+    setSaving(true)
+    try {
+      await nodeRunner.setNodeRate(nodeId, null)
+      toast('success', 'Reverted to market baseline')
+      await load()
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Failed to reset')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <SectionCard title="Pricing" icon={DollarSign}>
+        <div className="flex items-center justify-center py-6">
+          <Loader2 size={18} className="animate-spin" style={{ color: 'var(--text-muted)' }} />
+        </div>
+      </SectionCard>
+    )
+  }
+
+  if (!data) return null
+
+  // OTHER tier: no YieldFloor band exists, so operator-set pricing
+  // doesn't apply. Surface the alternate path (customRatePerHour) so
+  // the operator isn't left wondering why the input is missing.
+  if (gpuTier === 'OTHER' || !data.band) {
+    return (
+      <SectionCard title="Pricing" icon={DollarSign}>
+        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          This tier sets rates directly. Current rate:{' '}
+          <span className="font-mono font-medium" style={{ color: 'var(--text-primary)' }}>
+            ${data.effective.ratePerHour.toFixed(2)}/hr
+          </span>
+        </p>
+        <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+          Operator-set bands are available for named GPU tiers only.
+        </p>
+      </SectionCard>
+    )
+  }
+
+  const { effective, band, operatorRatePerHour, operatorRateUpdatedAt } = data
+  const sourceLabel: Record<typeof effective.source, string> = {
+    operator: 'Operator-set',
+    custom: 'Custom',
+    floor: 'Market baseline',
+    none: 'Unset',
+  }
+  const sourceColor: Record<typeof effective.source, string> = {
+    operator: 'var(--primary)',
+    custom: 'var(--info)',
+    floor: 'var(--text-muted)',
+    none: 'var(--warning)',
+  }
+
+  const parsedInput = parseFloat(input)
+  const inputValid = Number.isFinite(parsedInput) && parsedInput >= band.minPerHour && parsedInput <= band.maxPerHour
+  const inputChanged = Number.isFinite(parsedInput) && Math.abs(parsedInput - effective.ratePerHour) > 0.001
+
+  return (
+    <SectionCard title="Pricing" icon={DollarSign}>
+      <div className="space-y-4">
+        <div className="flex items-baseline justify-between">
+          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Effective rate</span>
+          <div className="text-right">
+            <span className="font-display text-2xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+              ${effective.ratePerHour.toFixed(2)}
+            </span>
+            <span className="text-sm ml-1" style={{ color: 'var(--text-muted)' }}>/hr</span>
+            <p className="text-xs mt-0.5" style={{ color: sourceColor[effective.source] }}>
+              {sourceLabel[effective.source]}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <div className="rounded-md p-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
+            <p className="font-mono uppercase tracking-[0.14em] mb-0.5" style={{ color: 'var(--text-muted)' }}>Min</p>
+            <p className="font-mono" style={{ color: 'var(--text-primary)' }}>${band.minPerHour.toFixed(2)}</p>
+          </div>
+          <div className="rounded-md p-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--primary)' }}>
+            <p className="font-mono uppercase tracking-[0.14em] mb-0.5" style={{ color: 'var(--text-muted)' }}>Baseline</p>
+            <p className="font-mono" style={{ color: 'var(--primary)' }}>${band.floorPerHour.toFixed(2)}</p>
+          </div>
+          <div className="rounded-md p-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
+            <p className="font-mono uppercase tracking-[0.14em] mb-0.5" style={{ color: 'var(--text-muted)' }}>Max</p>
+            <p className="font-mono" style={{ color: 'var(--text-primary)' }}>${band.maxPerHour.toFixed(2)}</p>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-mono uppercase tracking-[0.14em] mb-1.5 block" style={{ color: 'var(--text-muted)' }}>
+            Your rate ($/hr)
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min={band.minPerHour}
+            max={band.maxPerHour}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            disabled={saving}
+            className="w-full rounded-md px-3 py-2 text-sm font-mono outline-none focus:ring-2"
+            style={{
+              background: 'var(--bg-elevated)',
+              border: `1px solid ${inputValid || !input ? 'var(--border-color)' : 'var(--danger)'}`,
+              color: 'var(--text-primary)',
+            }}
+          />
+          {input && !inputValid && (
+            <p className="text-xs mt-1" style={{ color: 'var(--danger)' }}>
+              Must be between ${band.minPerHour.toFixed(2)} and ${band.maxPerHour.toFixed(2)}
+            </p>
+          )}
+          {inputValid && (
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              ≈ ${(parsedInput * 24).toFixed(2)}/day
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={saving || !inputValid || !inputChanged}
+            loading={saving}
+            className="flex-1"
+          >
+            Save rate
+          </Button>
+          {operatorRatePerHour != null && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleReset}
+              disabled={saving}
+              title="Revert to market baseline"
+            >
+              <RotateCcw size={14} />
+            </Button>
+          )}
+        </div>
+
+        {operatorRateUpdatedAt && (
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Last changed {new Date(operatorRateUpdatedAt).toLocaleString()}
+          </p>
+        )}
+      </div>
     </SectionCard>
   )
 }
