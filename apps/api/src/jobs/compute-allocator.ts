@@ -212,6 +212,18 @@ async function processRequest(
     ? {}
     : { gpuTier: { notIn: CONSUMER_TIER_LIST } }
 
+  // #7 operator-set pricing: fetch the tier's YieldFloor once so we can
+  // compute each candidate's effective rate inline. Operators who set
+  // a rate below the baseline win price tiebreaks; unpriced nodes fall
+  // back to floor and tie with each other. OTHER tier (no YieldFloor)
+  // returns null — those nodes sort on customRatePerHour alone, which
+  // is the canonical price for that tier.
+  const yieldFloor = await prisma.yieldFloor.findUnique({
+    where: { gpuTier: cr.gpuTier },
+    select: { ratePerHour: true },
+  })
+  const fallbackRatePerHour = yieldFloor?.ratePerHour ?? Number.POSITIVE_INFINITY
+
   // C2 wave 2 test exemption: seed nodes (id prefix test-c2-) have no
   // real agent and so cannot keep their own heartbeat fresh; exempting
   // them from the 2-minute freshness window lets the allocator continue
@@ -238,6 +250,8 @@ async function processRequest(
       id: true,
       walletAddress: true,
       lastHeartbeat: true,
+      operatorRatePerHour: true,
+      customRatePerHour: true,
       nodeRunner: { select: { id: true, reputationTier: true, reputationScore: true } },
     },
   })
@@ -249,8 +263,12 @@ async function processRequest(
   // just push their nodes to the front of the sort.
   const preferredOperatorId = (cr as { preferredOperatorId?: string | null }).preferredOperatorId ?? null
 
-  // M3 + M5.10c sort: preferredOperator match -> reputation desc
-  // (nulls last) -> heartbeat desc
+  // M3 + M5.10c + #7 sort chain:
+  //   1. preferredOperator match wins (buyer explicitly asked for them)
+  //   2. reputation desc, nulls last (quality is the primary signal)
+  //   3. effective rate asc (cheapest first — operators who priced
+  //      below market win matches over same-reputation peers)
+  //   4. most recent heartbeat
   const idleNodes = candidates
     .sort((a, b) => {
       // Tier-1: preferred operator wins.
@@ -261,7 +279,13 @@ async function processRequest(
       const aScore = a.nodeRunner?.reputationScore ?? -Infinity
       const bScore = b.nodeRunner?.reputationScore ?? -Infinity
       if (aScore !== bScore) return bScore - aScore
-      // Tier-3: most recent heartbeat
+      // Tier-3: cheapest effective rate wins. Unpriced nodes fall back
+      // to the YieldFloor for the tier, so they tie with each other
+      // and lose to anyone who priced under floor.
+      const aRate = a.operatorRatePerHour ?? a.customRatePerHour ?? fallbackRatePerHour
+      const bRate = b.operatorRatePerHour ?? b.customRatePerHour ?? fallbackRatePerHour
+      if (aRate !== bRate) return aRate - bRate
+      // Tier-4: most recent heartbeat
       return b.lastHeartbeat.getTime() - a.lastHeartbeat.getTime()
     })
     .slice(0, cr.gpuCount)
