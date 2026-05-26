@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, useParams } from 'next/navigation'
 import {
@@ -716,21 +716,66 @@ function PricingCard({ nodeId, gpuTier }: { nodeId: string; gpuTier: string }) {
   const inputValid = Number.isFinite(parsedInput) && parsedInput >= band.minPerHour && parsedInput <= band.maxPerHour
   const inputChanged = Number.isFinite(parsedInput) && Math.abs(parsedInput - effective.ratePerHour) > 0.001
 
-  // Position of the effective rate on the band track (0-100%) for the
-  // mini-slider visualization. Clamp because operator rates set before
-  // a band change could fall slightly outside; we still want a sane dot.
+  // Position math for the interactive mini-slider. The main thumb
+  // follows the in-progress input value; a smaller hollow marker
+  // shows where the saved rate sits when the two differ, so the
+  // operator always knows what they're moving away from. Clamp
+  // because operator rates set before a band change could fall
+  // slightly outside the current band.
   const bandWidth = band.maxPerHour - band.minPerHour
-  const ratePos = bandWidth > 0
+  const savedPos = bandWidth > 0
     ? Math.min(100, Math.max(0, ((effective.ratePerHour - band.minPerHour) / bandWidth) * 100))
     : 50
   const baselinePos = bandWidth > 0
     ? ((band.floorPerHour - band.minPerHour) / bandWidth) * 100
     : 50
-  // Preview position for the in-progress input value, only shown while typing
-  // a valid in-band number that differs from the saved rate.
-  const previewPos = inputValid && inputChanged && bandWidth > 0
-    ? Math.min(100, Math.max(0, ((parsedInput - band.minPerHour) / bandWidth) * 100))
-    : null
+  const thumbValue = Number.isFinite(parsedInput) ? parsedInput : effective.ratePerHour
+  const thumbPos = bandWidth > 0
+    ? Math.min(100, Math.max(0, ((thumbValue - band.minPerHour) / bandWidth) * 100))
+    : 50
+
+  // Drag-to-set + click-to-jump on the slider track. Single pointer-
+  // capture handler covers mouse, touch, pen with one code path; touch-
+  // action: none on the track stops the gesture from scrolling the page
+  // on mobile.
+  const trackRef = useRef<HTMLDivElement>(null)
+  function setRateFromClientX(clientX: number) {
+    const track = trackRef.current
+    if (!track || bandWidth <= 0) return
+    const rect = track.getBoundingClientRect()
+    const pct = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+    const rate = band.minPerHour + pct * bandWidth
+    setInput((Math.round(rate * 100) / 100).toFixed(2))
+  }
+  function onTrackPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (saving) return
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    setRateFromClientX(e.clientX)
+  }
+  function onTrackPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+    setRateFromClientX(e.clientX)
+  }
+  function onTrackPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+  }
+  function onThumbKeyDown(e: React.KeyboardEvent) {
+    if (saving) return
+    const current = Number.isFinite(parsedInput) ? parsedInput : effective.ratePerHour
+    const step = e.shiftKey ? 0.1 : 0.01
+    let next: number | null = null
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = Math.max(band.minPerHour, current - step)
+    else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = Math.min(band.maxPerHour, current + step)
+    else if (e.key === 'Home') next = band.minPerHour
+    else if (e.key === 'End') next = band.maxPerHour
+    if (next !== null) {
+      e.preventDefault()
+      setInput((Math.round(next * 100) / 100).toFixed(2))
+    }
+  }
 
   return (
     <SectionCard title="Pricing" icon={DollarSign}>
@@ -757,35 +802,65 @@ function PricingCard({ nodeId, gpuTier }: { nodeId: string; gpuTier: string }) {
           </span>
         </div>
 
-        {/* Mini-slider band */}
+        {/* Interactive band-slider — click track to jump, drag thumb
+            to fine-tune, arrow keys for ±$0.01 (±$0.10 with shift) */}
         <div>
-          <div className="relative h-2 rounded-full" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
+          <div
+            ref={trackRef}
+            onPointerDown={onTrackPointerDown}
+            onPointerMove={onTrackPointerMove}
+            onPointerUp={onTrackPointerUp}
+            onPointerCancel={onTrackPointerUp}
+            className="relative h-6 flex items-center select-none"
+            style={{ touchAction: 'none', cursor: saving ? 'not-allowed' : 'pointer' }}
+          >
+            {/* track */}
+            <div
+              className="absolute left-0 right-0 h-2 rounded-full"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
+            />
             {/* baseline tick */}
             <div
-              className="absolute w-0.5 h-3 -top-0.5"
-              style={{ left: `${baselinePos}%`, background: 'var(--text-muted)', opacity: 0.5, transform: 'translateX(-50%)' }}
-              title="Market baseline"
+              className="absolute w-0.5 h-3.5 rounded-full pointer-events-none"
+              style={{
+                left: `${baselinePos}%`,
+                background: 'var(--primary)',
+                opacity: 0.7,
+                transform: 'translateX(-50%)',
+              }}
+              title={`Market baseline $${band.floorPerHour.toFixed(2)}/hr`}
             />
-            {/* preview ghost dot while typing */}
-            {previewPos !== null && (
+            {/* saved-rate reference marker — only when input has moved */}
+            {inputChanged && (
               <div
-                className="absolute w-3 h-3 rounded-full -top-0.5 transition-all"
+                className="absolute w-2.5 h-2.5 rounded-full pointer-events-none"
                 style={{
-                  left: `${previewPos}%`,
+                  left: `${savedPos}%`,
                   background: 'transparent',
-                  border: '2px dashed var(--primary)',
+                  border: '2px solid var(--text-muted)',
                   transform: 'translateX(-50%)',
+                  opacity: 0.7,
                 }}
+                title={`Saved rate $${effective.ratePerHour.toFixed(2)}/hr`}
               />
             )}
-            {/* saved-rate dot */}
+            {/* draggable thumb */}
             <div
-              className="absolute w-3.5 h-3.5 rounded-full -top-1 shadow-md transition-all"
+              role="slider"
+              tabIndex={saving ? -1 : 0}
+              aria-valuemin={band.minPerHour}
+              aria-valuemax={band.maxPerHour}
+              aria-valuenow={thumbValue}
+              aria-label="Hourly rate"
+              onKeyDown={onThumbKeyDown}
+              className="absolute w-5 h-5 rounded-full transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
               style={{
-                left: `${ratePos}%`,
-                background: sourceStyle[effective.source].color,
+                left: `${thumbPos}%`,
+                background: inputChanged ? 'var(--primary)' : sourceStyle[effective.source].color,
                 transform: 'translateX(-50%)',
-                boxShadow: `0 0 0 3px ${sourceStyle[effective.source].bg}`,
+                boxShadow: `0 0 0 4px ${inputChanged ? 'rgba(34,197,94,0.18)' : sourceStyle[effective.source].bg}, 0 2px 10px rgba(0,0,0,0.45)`,
+                cursor: saving ? 'not-allowed' : 'grab',
+                touchAction: 'none',
               }}
             />
           </div>
@@ -794,6 +869,9 @@ function PricingCard({ nodeId, gpuTier }: { nodeId: string; gpuTier: string }) {
             <span style={{ color: 'var(--primary)' }} className="font-semibold">${band.floorPerHour.toFixed(2)} baseline</span>
             <span style={{ color: 'var(--text-muted)' }}>${band.maxPerHour.toFixed(2)} max</span>
           </div>
+          <p className="text-[10px] mt-1.5 font-mono uppercase tracking-[0.16em]" style={{ color: 'var(--text-muted)' }}>
+            Drag to adjust · arrows for fine-tune
+          </p>
         </div>
 
         {/* Input */}
