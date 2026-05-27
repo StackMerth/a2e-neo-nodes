@@ -621,6 +621,10 @@ function PricingCard({ nodeId, gpuTier }: { nodeId: string; gpuTier: string }) {
     operatorRateUpdatedAt: string | null
   } | null>(null)
   const [input, setInput] = useState('')
+  // Hook order: trackRef MUST be declared here (before any conditional
+  // returns) so the hook count stays stable across renders. Calling
+  // useRef after the early-return branches below triggers React #310.
+  const trackRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
     try {
@@ -737,8 +741,8 @@ function PricingCard({ nodeId, gpuTier }: { nodeId: string; gpuTier: string }) {
   // Drag-to-set + click-to-jump on the slider track. Single pointer-
   // capture handler covers mouse, touch, pen with one code path; touch-
   // action: none on the track stops the gesture from scrolling the page
-  // on mobile.
-  const trackRef = useRef<HTMLDivElement>(null)
+  // on mobile. (trackRef is declared at the top of the component to keep
+  // hook order stable across renders — see React #310.)
   function setRateFromClientX(clientX: number) {
     const track = trackRef.current
     if (!track || bandWidth <= 0) return
