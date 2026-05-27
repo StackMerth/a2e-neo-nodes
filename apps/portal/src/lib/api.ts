@@ -285,6 +285,11 @@ export const nodeRunner = {
   investments: () => apiFetch('/v1/portal/node-runner/investments'),
   deploy: (data: { gpuTier: string; nodeCount: number; txHash: string; cryptoAmount?: number; cryptoCurrency?: string; deploymentNote?: string }) =>
     apiFetch('/v1/portal/node-runner/deploy', { method: 'POST', body: data }),
+  // Card-payment alternative to deploy(). Returns a Stripe Hosted
+  // Checkout URL; redirect the operator there, and the Stripe webhook
+  // creates the Investment row once payment confirms server-side.
+  deployStripeCheckout: (data: { gpuTier: string; nodeCount: number; deploymentNote?: string }) =>
+    apiFetch<{ id: string; url: string }>('/v1/portal/node-runner/deploy/stripe/checkout', { method: 'POST', body: data }),
   deployments: () => apiFetch('/v1/portal/node-runner/deployments'),
   deployment: (id: string) => apiFetch(`/v1/portal/node-runner/deployments/${id}`),
   referral: () => apiFetch('/v1/portal/referral'),

@@ -9,6 +9,9 @@ import { calculateForecast } from '../services/earnings/forecast.js'
 import * as pricing from '../services/pricing/operator-rate.js'
 import { createNotification } from '../services/notification/service.js'
 import { generateTaxYearCsv } from '../services/reports/tax-csv.js'
+import { createOperatorDeployCheckoutSession, isStripeConfigured } from '../services/payment/stripe.js'
+
+const PORTAL_URL = process.env.PORTAL_URL?.trim() || 'https://user.tokenos.ai'
 
 /**
  * Helper: get the NodeRunner profile for the authenticated user, or 404
@@ -1339,6 +1342,79 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       txHash: investment.txHash,
       createdAt: investment.createdAt.toISOString(),
     })
+  })
+
+  /**
+   * POST /v1/portal/node-runner/deploy/stripe/checkout
+   *
+   * Card-payment alternative to the on-chain deploy path. Computes the
+   * same per-node price (GPU_PRICING * nodeCount) and creates a Stripe
+   * Hosted Checkout session. The webhooks-stripe handler creates the
+   * Investment row after Stripe confirms payment server-side; we don't
+   * pre-create one here, so a cancelled checkout leaves nothing to
+   * clean up.
+   */
+  const deployStripeSchema = z.object({
+    gpuTier: z.enum(['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
+    nodeCount: z.number().int().min(1).max(5).default(1),
+    deploymentNote: z.string().max(500).optional(),
+  })
+
+  fastify.post('/v1/portal/node-runner/deploy/stripe/checkout', async (request, reply) => {
+    if (!isStripeConfigured()) {
+      return reply.code(503).send({
+        error: 'stripe_not_configured',
+        message: 'Card payments are not available. Use the on-chain payment option instead.',
+      })
+    }
+
+    let nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) {
+      const user = await fastify.prisma.user.findUnique({ where: { id: request.user!.userId } })
+      if (!user) return reply.code(404).send({ error: 'User not found' })
+      nr = await fastify.prisma.nodeRunner.create({
+        data: {
+          name: user.email?.split('@')[0] ?? 'Node Runner',
+          email: user.email,
+          walletAddress: user.walletAddress ?? `pending-${user.id}`,
+          userId: user.id,
+        },
+      })
+    }
+
+    const parsed = deployStripeSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
+    }
+
+    const { gpuTier, nodeCount, deploymentNote } = parsed.data
+    const unitPrice = GPU_PRICING[gpuTier] ?? 2500
+    const totalAmount = unitPrice * nodeCount
+
+    const user = await fastify.prisma.user.findUnique({
+      where: { id: request.user!.userId },
+      select: { email: true },
+    })
+
+    try {
+      const session = await createOperatorDeployCheckoutSession({
+        userId: request.user!.userId,
+        nodeRunnerId: nr.id,
+        email: user?.email ?? null,
+        amountUsd: totalAmount,
+        gpuTier,
+        nodeCount,
+        deploymentNote: deploymentNote ?? null,
+        successUrl: `${PORTAL_URL}/deploy?stripe=success`,
+        cancelUrl: `${PORTAL_URL}/deploy?stripe=cancelled`,
+      })
+      reply.send({ id: session.id, url: session.url })
+    } catch (e) {
+      reply.code(500).send({
+        error: 'stripe_session_failed',
+        message: e instanceof Error ? e.message : 'Failed to create Stripe session',
+      })
+    }
   })
 
   /**
