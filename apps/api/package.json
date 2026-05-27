@@ -29,6 +29,7 @@
     "c2:refresh-node": "tsx scripts/c2-refresh-test-node.ts",
     "c2:inspect-nodes": "tsx scripts/c2-inspect-nodes.ts",
     "nodes:mark-online": "tsx scripts/nodes-mark-online.ts",
+    "nodes:diagnose": "tsx scripts/nodes-diagnose.ts",
     "c3:seed-forecast": "tsx scripts/c3-seed-forecast-earnings.ts",
     "c3:diagnose-digest": "tsx scripts/c3-diagnose-digest.ts",
     "c3:backfill-first-heartbeat": "tsx scripts/c3-backfill-first-heartbeat.ts",
