@@ -402,6 +402,9 @@ export const buyer = {
     // eligibility in the allocator. Defaults to MIXED on the server,
     // so omitting it preserves pre-migration semantics.
     workloadType?: 'INFERENCE' | 'TRAINING' | 'MIXED'
+    // Checkpoint Workspace restore: optional id of a prior rental's
+    // READY checkpoint. Agent downloads + unpacks at provision time.
+    restoreCheckpointId?: string | null
   }) =>
     apiFetch('/v1/buyer/compute/request', { method: 'POST', body: data }),
   requests: (params?: Record<string, string>) => {

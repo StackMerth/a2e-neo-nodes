@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Server, CircleCheck, Hash, Layers, Calendar, FileText, Wallet, Receipt, Globe, KeyRound, PiggyBank, CreditCard, Cpu, Workflow, Sparkles, Zap } from 'lucide-react'
+import { Server, CircleCheck, Hash, Layers, Calendar, FileText, Wallet, Receipt, Globe, KeyRound, PiggyBank, CreditCard, Cpu, Workflow, Sparkles, Zap, Save } from 'lucide-react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { buyer } from '@/lib/api'
@@ -318,6 +318,49 @@ export default function RequestComputePage() {
   // which the API normalizes to null so the allocator skips the filter.
   const [requiredRegion, setRequiredRegion] = useState<string>('')
 
+  // Checkpoint Workspace restore: list of the buyer's past rentals that
+  // have a READY checkpoint, plus the buyer's current pick. Empty string
+  // = "Start fresh" (default). Fetched once on mount; rare enough that
+  // we don't refetch on tier/duration changes.
+  type RestoreOption = {
+    checkpointId: string
+    sourceRequestId: string
+    gpuTier: string
+    checkpointReadyAt: string | null
+    requestedAt: string
+  }
+  const [restoreOptions, setRestoreOptions] = useState<RestoreOption[]>([])
+  const [restoreCheckpointId, setRestoreCheckpointId] = useState<string>('')
+  useEffect(() => {
+    let cancelled = false
+    buyer.requests({ limit: '50' })
+      .then((r) => {
+        if (cancelled) return
+        // Narrow the response shape locally — the underlying endpoint
+        // returns full ComputeRequest rows.
+        const rows = (r as { requests?: Array<{
+          id: string
+          gpuTier: string
+          lastCheckpointId: string | null
+          checkpointStatus: string
+          checkpointReadyAt: string | null
+          requestedAt: string
+        }> }).requests ?? []
+        const ready = rows
+          .filter(row => row.checkpointStatus === 'READY' && row.lastCheckpointId)
+          .map(row => ({
+            checkpointId: row.lastCheckpointId as string,
+            sourceRequestId: row.id,
+            gpuTier: row.gpuTier,
+            checkpointReadyAt: row.checkpointReadyAt,
+            requestedAt: row.requestedAt,
+          }))
+        setRestoreOptions(ready)
+      })
+      .catch(() => { /* if list fails, restore picker just stays empty */ })
+    return () => { cancelled = true }
+  }, [])
+
   const hourlyRate = selectedTier ? HOURLY_RATES[selectedTier] ?? 0 : 0
   const tierMultiplier = TIER_OPTIONS.find(t => t.id === rentalTier)?.multiplier ?? 1
   const dailyRate = hourlyRate * 24 * tierMultiplier
@@ -419,6 +462,8 @@ export default function RequestComputePage() {
         preferredOperatorSlug: preferredOperatorSlug || null,
         sshPubKey: trimmedPubKey,
         workloadType,
+        // Checkpoint Workspace restore: empty string = "Start fresh".
+        restoreCheckpointId: restoreCheckpointId || null,
       }) as { id: string }
       toast('success', 'Compute request submitted successfully')
       router.push(`/buyer/requests/${result.id}`)
@@ -884,6 +929,52 @@ export default function RequestComputePage() {
             />
           </FormSection>
         </FormCard>
+
+        {/* Checkpoint Workspace restore. Optional. Lists every prior
+            rental that has a READY checkpoint; picking one tells the
+            agent to download the tarball from S3 and unpack it into
+            the new rental's home dir before SSH opens. Hidden entirely
+            when the buyer has no READY checkpoints yet so first-timers
+            don't see an empty picker. */}
+        {restoreOptions.length > 0 && (
+          <FormCard
+            title="Restore from a previous workspace"
+            description="Optional. Pick a snapshot from a prior rental to drop into this new one before SSH opens."
+            icon={Save}
+          >
+            <FormSection>
+              <select
+                className="w-full rounded-lg px-3 py-2.5 transition-colors"
+                style={{
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-primary)',
+                }}
+                value={restoreCheckpointId}
+                onChange={e => setRestoreCheckpointId(e.target.value)}
+              >
+                <option value="">Start with a fresh workspace</option>
+                {restoreOptions.map(opt => {
+                  const readyAt = opt.checkpointReadyAt
+                    ? new Date(opt.checkpointReadyAt).toLocaleString()
+                    : new Date(opt.requestedAt).toLocaleDateString()
+                  return (
+                    <option key={opt.checkpointId} value={opt.checkpointId}>
+                      {opt.gpuTier} rental · checkpointed {readyAt}
+                    </option>
+                  )
+                })}
+              </select>
+              {restoreCheckpointId && (
+                <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+                  Heads up: the snapshot was taken on a {restoreOptions.find(o => o.checkpointId === restoreCheckpointId)?.gpuTier} rental.
+                  Restoring across different GPU tiers usually works, but framework caches
+                  (CUDA toolkits, model weights) may need a refresh if they reference the old hardware.
+                </p>
+              )}
+            </FormSection>
+          </FormCard>
+        )}
 
         {/* M6: SSH public key. Required because the agent on the
             operator's machine installs this into the rental user's
