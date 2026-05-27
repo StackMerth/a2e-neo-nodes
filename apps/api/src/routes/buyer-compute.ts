@@ -85,6 +85,14 @@ const requestSchema = z.object({
       'sshPubKey must be a canonical openssh public key'
     )
     .optional(),
+
+  // Checkpoint Workspace restore: the buyer can optionally point a new
+  // rental at a prior checkpoint they own. At provision time the agent
+  // downloads the tarball from S3 and unpacks it into the new rental's
+  // home dir before SSH is opened, so the buyer lands in their old
+  // workspace. Server validates ownership + READY status against the
+  // ComputeRequest carrying this lastCheckpointId.
+  restoreCheckpointId: z.string().optional().nullable(),
 }).refine(
   data => data.tier !== 'RESERVED' || data.commitmentDays !== undefined,
   { message: 'commitmentDays required for RESERVED tier', path: ['commitmentDays'] },
@@ -233,7 +241,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
     }
 
-    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion, preferredOperatorSlug, sshPubKey, paymentSource, workloadType } = parsed.data
+    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion, preferredOperatorSlug, sshPubKey, paymentSource, workloadType, restoreCheckpointId } = parsed.data
 
     // M5.10c: resolve preferred operator slug to NodeRunner.id. Silently
     // ignore unknown slugs (don't fail the request - the allocator just
@@ -246,6 +254,27 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         select: { id: true },
       })
       preferredOperatorId = match?.id ?? null
+    }
+
+    // Checkpoint Workspace restore: verify the requested checkpoint
+    // belongs to this buyer AND is in READY state before we let the
+    // request reference it. Failing loud here (400) instead of silently
+    // dropping the value so the buyer notices when their pick is stale.
+    if (restoreCheckpointId) {
+      const sourceRental = await fastify.prisma.computeRequest.findFirst({
+        where: {
+          userId: request.user!.userId,
+          lastCheckpointId: restoreCheckpointId,
+          checkpointStatus: 'READY',
+        },
+        select: { id: true },
+      })
+      if (!sourceRental) {
+        return reply.code(400).send({
+          error: 'invalid_checkpoint',
+          message: 'Checkpoint not found, not yours, or not in READY state.',
+        })
+      }
     }
     const baseRatePerDay = GPU_DAILY_RATES[gpuTier] ?? 140.15
     // M3: tier discount applied to ratePerDay so all downstream
@@ -399,6 +428,10 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       // the row; the heartbeat-response surfaces it to the agent at
       // provision time. Required for real (non-test-mode) rentals.
       sshPubKey: sshPubKey?.trim() || null,
+      // Checkpoint Workspace restore: ownership + READY status already
+      // verified above. Agent picks this up at provision time and pulls
+      // the tarball from S3 into the rental's home dir before SSH opens.
+      restoreCheckpointId: restoreCheckpointId || null,
     }
 
     let computeRequest
