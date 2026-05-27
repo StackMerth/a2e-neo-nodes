@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Rocket, CircleCheck, Hash, Wallet as WalletIcon, Zap, CreditCard } from 'lucide-react'
+import { Rocket, CircleCheck, Hash, Wallet as WalletIcon, Zap, CreditCard, Copy } from 'lucide-react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { buyer, nodeRunner } from '@/lib/api'
@@ -361,14 +361,14 @@ export default function DeployPage() {
             <button
               type="button"
               onClick={() => setShowManualPaste(true)}
-              className="text-xs font-mono uppercase tracking-[0.16em] hover:opacity-80 transition-opacity"
-              style={{ color: 'var(--text-muted)' }}
+              className="text-sm font-medium hover:opacity-80 transition-opacity underline underline-offset-4"
+              style={{ color: 'var(--text-secondary)' }}
             >
-              + Send from another wallet (manual paste)
+              Send from another wallet instead
             </button>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {!walletConnected && (
               <button
                 type="button"
@@ -380,9 +380,61 @@ export default function DeployPage() {
                 Connect wallet to pay automatically
               </button>
             )}
+            {topupDestination?.configured && topupDestination.wallet ? (
+              <div
+                className="rounded-lg p-4 space-y-3"
+                style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.25)' }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-mono uppercase tracking-[0.16em] font-semibold" style={{ color: 'var(--primary)' }}>
+                    Send USDC to this address
+                  </p>
+                  <span
+                    className="text-[10px] font-mono uppercase tracking-[0.16em] px-2 py-0.5 rounded-full whitespace-nowrap"
+                    style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}
+                  >
+                    Solana {topupDestination.network}
+                  </span>
+                </div>
+                <div className="flex items-stretch gap-2">
+                  <code
+                    className="flex-1 min-w-0 text-xs font-mono break-all px-3 py-2.5 rounded-md"
+                    style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}
+                  >
+                    {topupDestination.wallet}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(topupDestination.wallet!)
+                      toast('success', 'Address copied')
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 rounded-md text-xs font-semibold hover:opacity-90 transition-opacity"
+                    style={{ background: 'var(--primary)', color: '#fff' }}
+                  >
+                    <Copy size={14} />
+                    Copy
+                  </button>
+                </div>
+                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                  Send exactly{' '}
+                  <span className="font-mono font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    ${totalCost.toFixed(2)} USDC
+                  </span>{' '}
+                  to the address above, then paste the resulting transaction signature below. The wrong amount or address will fail to credit your deployment.
+                </p>
+              </div>
+            ) : (
+              <div
+                className="rounded-lg p-3 text-xs"
+                style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: 'var(--warning)' }}
+              >
+                Topup destination is not configured. Contact support before paying.
+              </div>
+            )}
             <Input
               label="Transaction Hash (Solana)"
-              placeholder="Enter your Solana transaction hash..."
+              placeholder="Paste the Solana transaction signature..."
               value={txHash}
               onChange={e => setTxHash(e.target.value)}
             />
@@ -390,7 +442,7 @@ export default function DeployPage() {
               <button
                 type="button"
                 onClick={() => setShowManualPaste(false)}
-                className="text-xs font-mono uppercase tracking-[0.16em] hover:opacity-80 transition-opacity"
+                className="text-sm font-medium hover:opacity-80 transition-opacity underline underline-offset-4"
                 style={{ color: 'var(--primary)' }}
               >
                 ← Pay with connected wallet instead
