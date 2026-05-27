@@ -125,6 +125,90 @@ export async function createTopupCheckoutSession(args: CreateCheckoutArgs): Prom
   return { id: session.id, url: session.url }
 }
 
+export interface CreateOperatorDeployCheckoutArgs {
+  userId: string
+  nodeRunnerId: string
+  email: string | null
+  amountUsd: number
+  gpuTier: string
+  nodeCount: number
+  // Up to 500 chars (Stripe per-value limit). Surfaced on the
+  // Investment row the webhook creates, not visible to Stripe's UI.
+  deploymentNote?: string | null
+  successUrl: string
+  cancelUrl: string
+}
+
+/**
+ * Create a Stripe Checkout Session for an operator-side node
+ * deployment payment. Same Hosted Checkout flow as the buyer topup,
+ * but the metadata flags it as kind=operator_deploy so the webhook
+ * branches to the Investment-creation path instead of crediting a
+ * BuyerBalance. nodeRunnerId / gpuTier / nodeCount travel along so
+ * the webhook can reproduce the same Investment row the
+ * /v1/portal/node-runner/deploy endpoint would have created.
+ */
+export async function createOperatorDeployCheckoutSession(
+  args: CreateOperatorDeployCheckoutArgs,
+): Promise<{ id: string; url: string }> {
+  const stripe = getStripeClient()
+  if (!stripe) throw new Error('Stripe not configured')
+
+  const amountCents = Math.round(args.amountUsd * 100)
+  if (amountCents < 100) {
+    throw new Error('Minimum deploy charge is $1.00')
+  }
+  if (amountCents > 1_000_000) {
+    throw new Error('Maximum single card payment is $10,000.00')
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    payment_method_types: ['card'],
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: 'usd',
+          unit_amount: amountCents,
+          product_data: {
+            name: `TokenOS_DeAI node deployment (${args.gpuTier} × ${args.nodeCount})`,
+            description: `Operator deployment of ${args.nodeCount} ${args.gpuTier} node(s) on TokenOS_DeAI.`,
+          },
+        },
+      },
+    ],
+    metadata: {
+      userId: args.userId,
+      nodeRunnerId: args.nodeRunnerId,
+      amountUsd: args.amountUsd.toString(),
+      gpuTier: args.gpuTier,
+      nodeCount: args.nodeCount.toString(),
+      kind: 'operator_deploy',
+      ...(args.deploymentNote ? { deploymentNote: args.deploymentNote.slice(0, 500) } : {}),
+    },
+    payment_intent_data: {
+      metadata: {
+        userId: args.userId,
+        nodeRunnerId: args.nodeRunnerId,
+        amountUsd: args.amountUsd.toString(),
+        gpuTier: args.gpuTier,
+        nodeCount: args.nodeCount.toString(),
+        kind: 'operator_deploy',
+      },
+    },
+    customer_email: args.email ?? undefined,
+    success_url: args.successUrl,
+    cancel_url: args.cancelUrl,
+  })
+
+  if (!session.url) {
+    throw new Error('Stripe did not return a checkout URL')
+  }
+
+  return { id: session.id, url: session.url }
+}
+
 /**
  * Verify a webhook payload against the configured signing secret.
  * Returns the parsed event; throws on signature mismatch so the

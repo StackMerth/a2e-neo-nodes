@@ -26,8 +26,10 @@
  */
 
 import type { FastifyInstance, FastifyRequest } from 'fastify'
+import type { GpuTier } from '@a2e/database'
 import { constructWebhookEvent, isStripeConfigured, type StripeWebhookEvent } from '../services/payment/stripe.js'
 import { creditBalance, DuplicateTransactionError } from '../services/balance/balance-service.js'
+import { createNotification } from '../services/notification/service.js'
 
 // Subset of the Stripe Checkout Session shape we read in this file.
 // Full typing lives on the Stripe SDK but isn't directly importable
@@ -106,36 +108,48 @@ async function handleCheckoutCompleted(
   fastify: FastifyInstance,
   session: CheckoutSessionLike,
 ): Promise<void> {
-  // Only handle our buyer-balance topup sessions. Other future
-  // checkout types (subscriptions, marketplace fees, etc.) get
-  // a different kind tag and are skipped here.
   const meta = session.metadata ?? {}
-  if (meta.kind !== 'buyer_balance_topup') {
+
+  // Defensive: only act when the session actually paid. Stripe sends
+  // checkout.session.completed for both `paid` and `unpaid` (e.g.
+  // bank-transfer pending) sessions; we want the former only.
+  if (session.payment_status !== 'paid') {
     // eslint-disable-next-line no-console
-    console.log(`[stripe-webhook] checkout.session.completed with unknown kind=${meta.kind ?? '(none)'} — ignored.`)
+    console.log(`[stripe-webhook] session ${session.id} status=${session.payment_status} — skip.`)
     return
   }
 
+  // Route by metadata.kind so each session type goes to its own
+  // handler. Unknown kinds get logged + ACKed so Stripe stops retrying.
+  if (meta.kind === 'buyer_balance_topup') {
+    await handleBuyerBalanceTopup(fastify, session, meta)
+    return
+  }
+  if (meta.kind === 'operator_deploy') {
+    await handleOperatorDeploy(fastify, session, meta)
+    return
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(`[stripe-webhook] checkout.session.completed unknown kind=${meta.kind ?? '(none)'} — ignored.`)
+}
+
+async function handleBuyerBalanceTopup(
+  fastify: FastifyInstance,
+  session: CheckoutSessionLike,
+  meta: Record<string, string>,
+): Promise<void> {
   const userId = meta.userId
   const amountUsdStr = meta.amountUsd
   if (!userId || !amountUsdStr) {
     // eslint-disable-next-line no-console
-    console.warn(`[stripe-webhook] missing userId or amountUsd in session metadata. session=${session.id}`)
+    console.warn(`[stripe-webhook] topup missing userId or amountUsd. session=${session.id}`)
     return
   }
   const amountUsd = Number(amountUsdStr)
   if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
     // eslint-disable-next-line no-console
-    console.warn(`[stripe-webhook] bad amountUsd in session metadata: ${amountUsdStr}`)
-    return
-  }
-
-  // Defensive: only credit if the session actually paid. Stripe sends
-  // checkout.session.completed for both `paid` and `unpaid` (e.g.
-  // bank-transfer pending) sessions; we want the former only.
-  if (session.payment_status !== 'paid') {
-    // eslint-disable-next-line no-console
-    console.log(`[stripe-webhook] session ${session.id} status=${session.payment_status} — skipping credit until paid.`)
+    console.warn(`[stripe-webhook] topup bad amountUsd: ${amountUsdStr}`)
     return
   }
 
@@ -152,9 +166,80 @@ async function handleCheckoutCompleted(
   } catch (err) {
     if (err instanceof DuplicateTransactionError) {
       // eslint-disable-next-line no-console
-      console.log(`[stripe-webhook] session ${session.id} was already credited — no-op (idempotent retry).`)
+      console.log(`[stripe-webhook] session ${session.id} was already credited — no-op.`)
       return
     }
     throw err
   }
+}
+
+async function handleOperatorDeploy(
+  fastify: FastifyInstance,
+  session: CheckoutSessionLike,
+  meta: Record<string, string>,
+): Promise<void> {
+  const nodeRunnerId = meta.nodeRunnerId
+  const amountUsd = Number(meta.amountUsd)
+  const nodeCount = parseInt(meta.nodeCount ?? '0', 10)
+  const gpuTier = meta.gpuTier as GpuTier | undefined
+  const deploymentNote = meta.deploymentNote
+
+  if (!nodeRunnerId || !gpuTier || !Number.isFinite(amountUsd) || amountUsd <= 0 || nodeCount < 1) {
+    // eslint-disable-next-line no-console
+    console.warn(`[stripe-webhook] operator_deploy missing/bad metadata. session=${session.id}`, meta)
+    return
+  }
+
+  // Idempotency: txHash 'STRIPE:<sessionId>' is unique per Stripe
+  // session, so a retry that lands here a second time finds the row
+  // and no-ops. There's no DB unique constraint on Investment.txHash,
+  // hence the explicit pre-check.
+  const txHash = `STRIPE:${session.id}`
+  const existing = await fastify.prisma.investment.findFirst({
+    where: { txHash },
+    select: { id: true },
+  })
+  if (existing) {
+    // eslint-disable-next-line no-console
+    console.log(`[stripe-webhook] operator_deploy already recorded as Investment=${existing.id} — no-op.`)
+    return
+  }
+
+  const investment = await fastify.prisma.investment.create({
+    data: {
+      nodeRunnerId,
+      amount: amountUsd,
+      currency: 'USD',
+      nodeCount,
+      gpuTier,
+      txHash,
+      txConfirmed: true,
+      deploymentNote: deploymentNote ?? null,
+      status: 'DEPLOYMENT_REQUESTED',
+      confirmedAt: new Date(),
+      deploymentRequestedAt: new Date(),
+    },
+  })
+
+  // Mirror the on-chain deploy path: notify all admins so they pick
+  // it up in the same Needs Review queue.
+  const adminUsers = await fastify.prisma.user.findMany({
+    where: { role: 'ADMIN' },
+    select: { id: true },
+  })
+  const nr = await fastify.prisma.nodeRunner.findUnique({
+    where: { id: nodeRunnerId },
+    select: { name: true },
+  })
+  for (const admin of adminUsers) {
+    void createNotification(
+      admin.id,
+      'DEPLOYMENT_REQUESTED',
+      'New Deployment Request',
+      `${nr?.name ?? 'Operator'} requested ${nodeCount}x ${gpuTier} node deployment ($${amountUsd}, paid via card).`,
+    )
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(`[stripe-webhook] created Investment=${investment.id} for nodeRunner=${nodeRunnerId} via session=${session.id}`)
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Rocket, CircleCheck, Hash, Wallet as WalletIcon, Zap } from 'lucide-react'
+import { Rocket, CircleCheck, Hash, Wallet as WalletIcon, Zap, CreditCard } from 'lucide-react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { buyer, nodeRunner } from '@/lib/api'
@@ -111,6 +111,30 @@ export default function DeployPage() {
 
   const walletConnected = !!publicKey
   const walletPaySelected = walletConnected && !showManualPaste
+
+  // Stripe card-payment path: redirect to Hosted Checkout. The
+  // webhook creates the Investment row server-side once Stripe confirms
+  // payment, so a cancelled checkout leaves nothing to clean up.
+  const [cardSubmitting, setCardSubmitting] = useState(false)
+  async function handlePayWithCard() {
+    if (!selectedTier) {
+      toast('error', 'Please select a GPU tier')
+      return
+    }
+    setCardSubmitting(true)
+    try {
+      const { url } = await nodeRunner.deployStripeCheckout({
+        gpuTier: selectedTier,
+        nodeCount,
+        deploymentNote: note.trim() || undefined,
+      })
+      window.location.href = url
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to start card payment'
+      toast('error', msg)
+      setCardSubmitting(false)
+    }
+  }
 
   async function handleSubmit() {
     if (!selectedTier) {
@@ -391,13 +415,27 @@ export default function DeployPage() {
         </div>
       </motion.div>
 
-      {/* Submit */}
-      <motion.div variants={item} className="flex justify-end pt-2">
+      {/* Submit. Two options stacked side-by-side: the primary
+          on-chain / wallet path on the right (existing), and a card-
+          payment alternative on the left that redirects to Stripe
+          Hosted Checkout. */}
+      <motion.div variants={item} className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
+        <Button
+          size="lg"
+          variant="secondary"
+          onClick={handlePayWithCard}
+          loading={cardSubmitting}
+          disabled={!selectedTier || submitting || cardSubmitting}
+          className="px-8"
+        >
+          <CreditCard size={16} className="mr-2" />
+          Pay ${totalCost.toFixed(2)} with card
+        </Button>
         <Button
           size="lg"
           onClick={handleSubmit}
           loading={submitting}
-          disabled={!selectedTier || (!walletPaySelected && !txHash.trim())}
+          disabled={!selectedTier || (!walletPaySelected && !txHash.trim()) || cardSubmitting}
           className="px-8"
         >
           {walletPaySelected ? (
