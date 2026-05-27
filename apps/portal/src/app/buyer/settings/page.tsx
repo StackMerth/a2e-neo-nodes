@@ -11,6 +11,7 @@ import {
   FormCard,
   FormSection,
 } from '@/components/dashboard/FuturisticShell'
+import { PushNotificationsCard } from '@/components/dashboard/PushNotificationsCard'
 
 // Loose Solana address validation: base58 alphabet, 32-44 chars.
 // Stricter on-chain validity is enforced by the API route + Solana SDK.
@@ -138,6 +139,12 @@ export default function BuyerSettingsPage() {
             </p>
           </FormSection>
         </FormCard>
+
+        {/* Browser web push (VAPID). Same component the operator
+            Settings page uses so both audiences get a consistent
+            opt-in control. Per-device — installed PWA needs its own
+            opt-in separate from the browser tab. */}
+        <PushNotificationsCard />
 
         {/* Notifications */}
         <FormCard
