@@ -9,12 +9,16 @@
  * to keep them online for the duration of a test session.
  *
  * Side-effects:
- *   - lastHeartbeat = now()
- *   - status        = 'ONLINE'
- *   - agentVersion  = '0.0.0-test'  (only when previously null;
- *                                    the allocator's
- *                                    agentVersion: {not: null} filter
- *                                    would otherwise skip the node)
+ *   - lastHeartbeat   = now()
+ *   - status          = 'ONLINE'
+ *   - pendingDeletion = false   (test-only: an earlier "Remove" click
+ *                                in the operator portal sets this and
+ *                                excludes the node from the allocator
+ *                                even after re-onlining; clear it so
+ *                                "re-arm for testing" actually re-arms)
+ *   - agentVersion    = '0.0.0-test'  (only when previously null;
+ *                                      allocator's agentVersion filter
+ *                                      would otherwise skip the node)
  *
  * Usage (Render API service Shell):
  *
@@ -55,7 +59,11 @@ async function pingOnce(where: Record<string, unknown>, verbose: boolean): Promi
 
   const result = await prisma.node.updateMany({
     where,
-    data: { lastHeartbeat: now, status: 'ONLINE' as const },
+    data: {
+      lastHeartbeat: now,
+      status: 'ONLINE' as const,
+      pendingDeletion: false,
+    },
   })
 
   return result.count
