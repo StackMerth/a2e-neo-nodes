@@ -18,6 +18,7 @@ import {
   PanelLeftOpen,
   PanelLeftClose,
   Users,
+  PiggyBank,
 } from 'lucide-react'
 
 const navItems = [
@@ -26,6 +27,10 @@ const navItems = [
   { path: '/nodes', icon: Server, label: 'Nodes' },
   { path: '/deployments', icon: Package, label: 'Deployments' },
   { path: '/earnings', icon: DollarSign, label: 'Earnings' },
+  // Pre-loaded credit, same wallet as the buyer portal. Operators top
+  // up via Stripe / USDC here, then spend on deployments without a
+  // fresh transaction each time.
+  { path: '/balance', icon: PiggyBank, label: 'Balance' },
   { path: '/payouts', icon: Wallet, label: 'Payouts' },
   { path: '/jobs', icon: Zap, label: 'Jobs' },
   { path: '/referral', icon: Users, label: 'Referrals' },

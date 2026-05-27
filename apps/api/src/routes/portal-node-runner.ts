@@ -10,6 +10,7 @@ import * as pricing from '../services/pricing/operator-rate.js'
 import { createNotification } from '../services/notification/service.js'
 import { generateTaxYearCsv } from '../services/reports/tax-csv.js'
 import { createOperatorDeployCheckoutSession, isStripeConfigured } from '../services/payment/stripe.js'
+import { debitBalance, InsufficientBalanceError } from '../services/balance/balance-service.js'
 
 const PORTAL_URL = process.env.PORTAL_URL?.trim() || 'https://user.tokenos.ai'
 
@@ -1262,11 +1263,22 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
   const deploySchema = z.object({
     gpuTier: z.enum(['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
     nodeCount: z.number().int().min(1).max(5).default(1),
-    txHash: z.string().min(1, 'Transaction hash is required'),
+    // Payment source. USDC default keeps existing on-chain path working.
+    // BUYER_BALANCE debits the operator's pre-loaded credit (same wallet
+    // the buyer side uses for rentals — unified balance) and generates
+    // a synthetic BAL:<investmentId> txHash so the Investment row stays
+    // identifiable in audits.
+    paymentSource: z.enum(['USDC', 'BUYER_BALANCE']).default('USDC'),
+    // txHash only required for USDC payments. BUYER_BALANCE rentals
+    // omit it; server generates BAL:<id> post-insert.
+    txHash: z.string().min(1).optional(),
     cryptoAmount: z.number().positive().optional(),
     cryptoCurrency: z.string().default('SOL'),
     deploymentNote: z.string().max(500).optional(),
-  })
+  }).refine(
+    d => d.paymentSource !== 'USDC' || (d.txHash && d.txHash.length > 0),
+    { message: 'txHash is required for USDC payments', path: ['txHash'] },
+  )
 
   /**
    * POST /v1/portal/node-runner/deploy — Request a new node deployment
@@ -1294,30 +1306,81 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
     }
 
-    const { gpuTier, nodeCount, txHash, cryptoAmount, cryptoCurrency, deploymentNote } = parsed.data
+    const { gpuTier, nodeCount, txHash, cryptoAmount, cryptoCurrency, deploymentNote, paymentSource } = parsed.data
     const unitPrice = GPU_PRICING[gpuTier] ?? 2500
     const totalAmount = unitPrice * nodeCount
+    const userId = request.user!.userId
 
-    // Test mode: any txHash starting with 'test_' bypasses payment verification
-    const isTestTx = txHash.startsWith('test_')
-
-    const investment = await fastify.prisma.investment.create({
-      data: {
-        nodeRunnerId: nr.id,
-        amount: totalAmount,
-        currency: 'USD',
-        nodeCount,
-        gpuTier: gpuTier as import('@a2e/database').GpuTier,
-        txHash: isTestTx ? `TEST:${txHash}` : txHash,
-        txConfirmed: true,
-        cryptoAmount,
-        cryptoCurrency,
-        deploymentNote,
-        status: 'DEPLOYMENT_REQUESTED',
-        confirmedAt: new Date(),
-        deploymentRequestedAt: new Date(),
-      },
-    })
+    let investment
+    if (paymentSource === 'BUYER_BALANCE') {
+      // Mirror the buyer-compute BUYER_BALANCE path: create placeholder
+      // Investment, debit the balance (which writes the SPEND_DEPLOYMENT
+      // ledger entry), then flip the txHash to BAL:<id>. The debit is
+      // transactional inside the service; on InsufficientBalanceError
+      // we delete the orphan Investment so state stays clean.
+      const placeholder = await fastify.prisma.investment.create({
+        data: {
+          nodeRunnerId: nr.id,
+          amount: totalAmount,
+          currency: 'USD',
+          nodeCount,
+          gpuTier: gpuTier as import('@a2e/database').GpuTier,
+          txHash: 'BAL:PENDING',
+          txConfirmed: true,
+          deploymentNote,
+          status: 'DEPLOYMENT_REQUESTED',
+          confirmedAt: new Date(),
+          deploymentRequestedAt: new Date(),
+        },
+      })
+      try {
+        await debitBalance(fastify.prisma, {
+          userId,
+          amountUsd: totalAmount,
+          type: 'SPEND_DEPLOYMENT',
+          description: `Deploy ${nodeCount}x ${gpuTier} node`,
+          referenceId: placeholder.id,
+        })
+      } catch (err) {
+        await fastify.prisma.investment.delete({ where: { id: placeholder.id } })
+        if (err instanceof InsufficientBalanceError) {
+          return reply.code(402).send({
+            error: 'Payment Required',
+            message: err.message,
+            required: err.requestedAmount,
+            available: err.currentBalance,
+            topupHint: 'Top up at /balance.',
+          })
+        }
+        throw err
+      }
+      investment = await fastify.prisma.investment.update({
+        where: { id: placeholder.id },
+        data: { txHash: `BAL:${placeholder.id}` },
+      })
+    } else {
+      // USDC path. Test mode: any txHash starting with 'test_' bypasses
+      // payment verification (signed by the refine() above to ensure
+      // txHash is present whenever paymentSource=USDC).
+      const isTestTx = txHash!.startsWith('test_')
+      investment = await fastify.prisma.investment.create({
+        data: {
+          nodeRunnerId: nr.id,
+          amount: totalAmount,
+          currency: 'USD',
+          nodeCount,
+          gpuTier: gpuTier as import('@a2e/database').GpuTier,
+          txHash: isTestTx ? `TEST:${txHash}` : txHash!,
+          txConfirmed: true,
+          cryptoAmount,
+          cryptoCurrency,
+          deploymentNote,
+          status: 'DEPLOYMENT_REQUESTED',
+          confirmedAt: new Date(),
+          deploymentRequestedAt: new Date(),
+        },
+      })
+    }
 
     // Notify all admin users about the new deployment request
     const adminUsers = await fastify.prisma.user.findMany({

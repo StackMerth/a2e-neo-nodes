@@ -91,7 +91,7 @@ export default function BalancePage() {
             Balance
           </h1>
           <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-            Pre-load credit, spend it on rentals, no fresh transaction per request.
+            Pre-load credit, spend it on rentals or node deployments, no fresh transaction per request.
           </p>
         </div>
         <div className="flex items-center gap-2">

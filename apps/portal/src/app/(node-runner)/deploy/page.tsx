@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Rocket, CircleCheck, Hash, Wallet as WalletIcon, Zap, CreditCard, Copy } from 'lucide-react'
+import { Rocket, CircleCheck, Hash, Wallet as WalletIcon, Zap, CreditCard, Copy, PiggyBank } from 'lucide-react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { buyer, nodeRunner } from '@/lib/api'
@@ -111,6 +111,42 @@ export default function DeployPage() {
 
   const walletConnected = !!publicKey
   const walletPaySelected = walletConnected && !showManualPaste
+
+  // Pay-from-balance path. Loads the operator's current credit balance
+  // so we can show the picker only when it's usable (>0) and gate
+  // submission on sufficient balance for the selected total cost.
+  const [buyerBalanceUsd, setBuyerBalanceUsd] = useState<number>(0)
+  useEffect(() => {
+    let cancelled = false
+    buyer.balance.get()
+      .then((r) => { if (!cancelled) setBuyerBalanceUsd(r.balanceUsd) })
+      .catch(() => { /* hide the picker silently on error */ })
+    return () => { cancelled = true }
+  }, [])
+  const balanceShort = buyerBalanceUsd < totalCost
+  const [balanceSubmitting, setBalanceSubmitting] = useState(false)
+  async function handlePayFromBalance() {
+    if (!selectedTier) { toast('error', 'Please select a GPU tier'); return }
+    if (balanceShort) {
+      toast('error', `Need $${totalCost.toFixed(2)}, have $${buyerBalanceUsd.toFixed(2)}. Top up first.`)
+      return
+    }
+    setBalanceSubmitting(true)
+    try {
+      await nodeRunner.deploy({
+        gpuTier: selectedTier,
+        nodeCount,
+        paymentSource: 'BUYER_BALANCE',
+        deploymentNote: note.trim() || undefined,
+      })
+      toast('success', 'Deployment requested and paid from balance')
+      router.push('/deployments')
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Failed to submit')
+    } finally {
+      setBalanceSubmitting(false)
+    }
+  }
 
   // Stripe card-payment path: redirect to Hosted Checkout. The
   // webhook creates the Investment row server-side once Stripe confirms
@@ -467,17 +503,33 @@ export default function DeployPage() {
         </div>
       </motion.div>
 
-      {/* Submit. Two options stacked side-by-side: the primary
-          on-chain / wallet path on the right (existing), and a card-
-          payment alternative on the left that redirects to Stripe
-          Hosted Checkout. */}
-      <motion.div variants={item} className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
+      {/* Submit. Three payment options ordered cheapest-first for the
+          operator (no fresh card auth, no on-chain signing): balance,
+          card, then wallet/paste. Balance only renders when the
+          operator has a usable credit on file. */}
+      <motion.div variants={item} className="flex flex-col sm:flex-row justify-end gap-3 pt-2 flex-wrap">
+        {buyerBalanceUsd > 0 && (
+          <Button
+            size="lg"
+            variant="secondary"
+            onClick={handlePayFromBalance}
+            loading={balanceSubmitting}
+            disabled={!selectedTier || submitting || cardSubmitting || balanceShort}
+            className="px-8"
+            title={balanceShort ? `Balance $${buyerBalanceUsd.toFixed(2)} is below total $${totalCost.toFixed(2)}` : undefined}
+          >
+            <PiggyBank size={16} className="mr-2" />
+            {balanceShort
+              ? `Need $${(totalCost - buyerBalanceUsd).toFixed(2)} more`
+              : `Pay $${totalCost.toFixed(2)} from balance`}
+          </Button>
+        )}
         <Button
           size="lg"
           variant="secondary"
           onClick={handlePayWithCard}
           loading={cardSubmitting}
-          disabled={!selectedTier || submitting || cardSubmitting}
+          disabled={!selectedTier || submitting || cardSubmitting || balanceSubmitting}
           className="px-8"
         >
           <CreditCard size={16} className="mr-2" />
@@ -487,7 +539,7 @@ export default function DeployPage() {
           size="lg"
           onClick={handleSubmit}
           loading={submitting}
-          disabled={!selectedTier || (!walletPaySelected && !txHash.trim()) || cardSubmitting}
+          disabled={!selectedTier || (!walletPaySelected && !txHash.trim()) || cardSubmitting || balanceSubmitting}
           className="px-8"
         >
           {walletPaySelected ? (
