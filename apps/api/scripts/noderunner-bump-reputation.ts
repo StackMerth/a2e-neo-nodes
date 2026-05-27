@@ -37,7 +37,13 @@ async function main() {
   const args = process.argv.slice(2).filter(a => a !== '--')
   const scoreIdx = args.indexOf('--score')
   const score = scoreIdx >= 0 ? parseFloat(args[scoreIdx + 1] ?? '95') : 95
-  const target = args.find((a, i) => !a.startsWith('--') && i !== scoreIdx + 1)
+  // Bug fix: when --score is absent, scoreIdx is -1 and (scoreIdx + 1)
+  // is 0 — which then accidentally excluded args[0] as "the score
+  // value". Only treat scoreIdx + 1 as a value slot when --score was
+  // actually passed.
+  const target = args.find((a, i) =>
+    !a.startsWith('--') && (scoreIdx < 0 || i !== scoreIdx + 1),
+  )
 
   if (!target) {
     console.error('Usage:')
