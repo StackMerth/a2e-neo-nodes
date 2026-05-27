@@ -283,7 +283,17 @@ export const nodeRunner = {
     apiFetch('/v1/portal/node-runner/withdrawals/request', { method: 'POST', body: data }),
   withdrawal: (id: string) => apiFetch(`/v1/portal/node-runner/withdrawals/${id}`),
   investments: () => apiFetch('/v1/portal/node-runner/investments'),
-  deploy: (data: { gpuTier: string; nodeCount: number; txHash: string; cryptoAmount?: number; cryptoCurrency?: string; deploymentNote?: string }) =>
+  deploy: (data: {
+    gpuTier: string
+    nodeCount: number
+    // USDC payments require txHash. BUYER_BALANCE omits it (server
+    // generates BAL:<id>).
+    txHash?: string
+    paymentSource?: 'USDC' | 'BUYER_BALANCE'
+    cryptoAmount?: number
+    cryptoCurrency?: string
+    deploymentNote?: string
+  }) =>
     apiFetch('/v1/portal/node-runner/deploy', { method: 'POST', body: data }),
   // Card-payment alternative to deploy(). Returns a Stripe Hosted
   // Checkout URL; redirect the operator there, and the Stripe webhook

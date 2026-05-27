@@ -1621,12 +1621,14 @@ model BalanceTransaction {
 }
 
 enum BalanceTxType {
-  TOPUP_SOLANA   // user paid SOL/USDC to admin wallet, credited
-  TOPUP_STRIPE   // reserved for fiat onramp (not wired yet)
-  TOPUP_ADMIN    // manual admin credit (promo, support refund)
-  SPEND_RENTAL   // rental cost deducted at request time
-  REFUND_RENTAL  // partial refund from early-stop or unused minutes
-  REFUND_FAILED  // allocator couldn't match — full credit back
+  TOPUP_SOLANA       // user paid SOL/USDC to admin wallet, credited
+  TOPUP_STRIPE       // fiat onramp via Stripe Hosted Checkout
+  TOPUP_ADMIN        // manual admin credit (promo, support refund)
+  SPEND_RENTAL       // rental cost deducted at request time
+  SPEND_DEPLOYMENT   // operator paid for a node deployment from balance
+  REFUND_RENTAL      // partial refund from early-stop or unused minutes
+  REFUND_DEPLOYMENT  // deployment cancelled or rejected — full credit back
+  REFUND_FAILED      // allocator couldn't match — full credit back
 }
 
 // ============================================================================
