@@ -531,6 +531,12 @@ model Investment {
   deploymentRequestedAt DateTime? // When node runner requested deployment
   provisionedAt DateTime?        // When node was provisioned
 
+  // Auto-minted BYOG install token. Created at payment-confirm time so
+  // the operator gets the curl one-liner immediately on the deployment
+  // detail page, no admin gate. Nullable for legacy rows + cases where
+  // the auto-mint failed silently (e.g. orphan partial transaction).
+  installToken  String?
+
   @@index([nodeRunnerId])
   @@index([status])
   @@index([txHash])

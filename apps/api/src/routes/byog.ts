@@ -87,6 +87,33 @@ function apiUrl(): string {
   return process.env.A2E_API_URL || API_URL_DEFAULT
 }
 
+/**
+ * Reusable token-mint. Used by the manual `/v1/byog/issue-token`
+ * endpoint AND by the operator deploy flow (USDC + BUYER_BALANCE +
+ * Stripe), which auto-mints a token at payment-confirm so the
+ * operator gets the curl one-liner without an admin gate.
+ *
+ * Returns the token + the ready-to-run install command + expiry.
+ * Caller is responsible for surfacing those to the operator.
+ */
+export async function mintInstallTokenForRunner(
+  prisma: import('@a2e/database').PrismaClient,
+  args: { nodeRunnerId: string; region?: string },
+): Promise<{ token: string; installCommand: string; expiresAt: Date }> {
+  const token = makeToken()
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000)
+  await prisma.installToken.create({
+    data: {
+      token,
+      nodeRunnerId: args.nodeRunnerId,
+      region: args.region,
+      expiresAt,
+    },
+  })
+  const installCommand = `curl -fsSL ${apiUrl()}/v1/byog/install?token=${token} | bash`
+  return { token, installCommand, expiresAt }
+}
+
 export async function byogRoutes(fastify: FastifyInstance) {
   // -------------------------------------------------------------------
   // 1. Operator mints a one-shot install token from the portal.
@@ -116,24 +143,15 @@ export async function byogRoutes(fastify: FastifyInstance) {
         })
       }
 
-      const token = makeToken()
-      const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000)
-
-      await fastify.prisma.installToken.create({
-        data: {
-          token,
-          nodeRunnerId: nodeRunner.id,
-          region: parsed.data.region,
-          expiresAt,
-        },
+      const result = await mintInstallTokenForRunner(fastify.prisma, {
+        nodeRunnerId: nodeRunner.id,
+        region: parsed.data.region,
       })
 
-      const installCommand = `curl -fsSL ${apiUrl()}/v1/byog/install?token=${token} | bash`
-
       reply.code(201).send({
-        token,
-        installCommand,
-        expiresAt: expiresAt.toISOString(),
+        token: result.token,
+        installCommand: result.installCommand,
+        expiresAt: result.expiresAt.toISOString(),
       })
     }
   )

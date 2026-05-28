@@ -30,6 +30,7 @@ import type { GpuTier } from '@a2e/database'
 import { constructWebhookEvent, isStripeConfigured, type StripeWebhookEvent } from '../services/payment/stripe.js'
 import { creditBalance, DuplicateTransactionError } from '../services/balance/balance-service.js'
 import { createNotification } from '../services/notification/service.js'
+import { mintInstallTokenForRunner } from './byog.js'
 
 // Subset of the Stripe Checkout Session shape we read in this file.
 // Full typing lives on the Stripe SDK but isn't directly importable
@@ -220,6 +221,20 @@ async function handleOperatorDeploy(
       deploymentRequestedAt: new Date(),
     },
   })
+
+  // Auto-mint BYOG install token + persist on the Investment so the
+  // operator sees the curl one-liner on their deployment detail page.
+  // Best-effort: failure here doesn't roll back the payment.
+  try {
+    const minted = await mintInstallTokenForRunner(fastify.prisma, { nodeRunnerId })
+    await fastify.prisma.investment.update({
+      where: { id: investment.id },
+      data: { installToken: minted.token },
+    })
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[stripe-webhook] auto-mint install token failed for investment', investment.id, err)
+  }
 
   // Mirror the on-chain deploy path: notify all admins so they pick
   // it up in the same Needs Review queue.
