@@ -77,7 +77,7 @@ export function CtaSection() {
                     asChild
                     size="lg"
                     variant="outline"
-                    className="h-12 sm:h-14 px-6 sm:px-8 text-sm sm:text-base rounded-full border-foreground/40 hover:bg-foreground/5 hover:border-foreground/60 group"
+                    className="h-12 sm:h-14 px-6 sm:px-8 text-sm sm:text-base rounded-full border-foreground/25 hover:bg-foreground/5 hover:border-foreground/45 group"
                   >
                     <a href={portalUrls.spec} target="_blank" rel="noreferrer">
                       Read the spec
