@@ -58,8 +58,7 @@ const navGroups: NavGroup[] = [
     title: 'INVESTORS',
     items: [
       { path: '/node-runners', icon: Users, label: 'Node Runners' },
-      { path: '/investments', icon: Wallet, label: 'Investments' },
-      { path: '/deployments', icon: Rocket, label: 'Deployments', badgeKey: 'deployments' },
+      { path: '/investments', icon: Wallet, label: 'Investments', badgeKey: 'deployments' },
     ],
   },
   {

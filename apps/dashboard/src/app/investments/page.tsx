@@ -6,7 +6,7 @@ import { motion } from 'framer-motion'
 import {
   Wallet, CircleCheck, Link as LinkIcon, XCircle, Plus,
   Clock as ClockLucide, Server as ServerLucide, AlertTriangle,
-  DollarSign, Terminal, Copy, RotateCcw,
+  DollarSign, Terminal, Copy, RotateCcw, KeyRound,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
@@ -61,6 +61,52 @@ export default function InvestmentsPage() {
   const [installModalOpen, setInstallModalOpen] = useState(false)
   const [installModalInv, setInstallModalInv] = useState<Investment | null>(null)
   const [regenerating, setRegenerating] = useState(false)
+
+  // Add SSH & Deploy modal — collects SSH credentials and the
+  // platform's provision-job worker SSHes in remotely + runs the
+  // install on the operator's behalf. Ported from the now-removed
+  // /deployments page as part of the consolidation.
+  const [sshModalOpen, setSshModalOpen] = useState(false)
+  const [sshModalInv, setSshModalInv] = useState<Investment | null>(null)
+  const [sshData, setSshData] = useState({
+    host: '',
+    port: 22,
+    username: 'root',
+    authMethod: 'password' as 'password' | 'privateKey',
+    password: '',
+    privateKey: '',
+    testMode: false,
+  })
+  const [submittingSsh, setSubmittingSsh] = useState(false)
+
+  function openSshModal(inv: Investment) {
+    setSshModalInv(inv)
+    setSshData({ host: '', port: 22, username: 'root', authMethod: 'password', password: '', privateKey: '', testMode: false })
+    setSshModalOpen(true)
+  }
+
+  async function handleSubmitSsh(e: React.FormEvent) {
+    e.preventDefault()
+    if (!sshModalInv) return
+    try {
+      setSubmittingSsh(true)
+      await api.deployments.submitSsh(sshModalInv.id, {
+        host: sshData.host,
+        port: sshData.port,
+        username: sshData.username,
+        authMethod: sshData.authMethod,
+        password: sshData.authMethod === 'password' ? sshData.password : undefined,
+        privateKey: sshData.authMethod === 'privateKey' ? sshData.privateKey : undefined,
+        testMode: sshData.testMode,
+      })
+      setSshModalOpen(false)
+      await loadInvestments()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to submit SSH details')
+    } finally {
+      setSubmittingSsh(false)
+    }
+  }
 
   // Create investment modal
   const [createModalOpen, setCreateModalOpen] = useState(false)
@@ -414,18 +460,31 @@ export default function InvestmentsPage() {
                           Provision Node
                         </Link>
                       )}
-                      {/* Install Command — visible while the deployment
-                          is still pending provisioning. Opens a modal
-                          with the copy-able curl one-liner so admin can
-                          paste it onto the procured server. */}
+                      {/* Two provisioning paths offered for the same
+                          row, side-by-side. Install = admin pastes the
+                          curl one-liner themselves over their own SSH.
+                          Add SSH & Deploy = platform's provision-job
+                          worker SSHes in remotely + installs on the
+                          admin's behalf using the credentials below. */}
                       {(inv.status === 'DEPLOYMENT_REQUESTED' || inv.status === 'PAID' || inv.status === 'DEPLOYING') && (
-                        <button
-                          onClick={() => { setInstallModalInv(inv); setInstallModalOpen(true) }}
-                          className="px-3 py-1.5 text-sm inline-flex items-center gap-1.5 bg-accent/10 text-accent hover:bg-accent/20 rounded-lg transition-colors"
-                        >
-                          <Terminal size={14} />
-                          Install
-                        </button>
+                        <>
+                          <button
+                            onClick={() => { setInstallModalInv(inv); setInstallModalOpen(true) }}
+                            className="px-3 py-1.5 text-sm inline-flex items-center gap-1.5 bg-accent/10 text-accent hover:bg-accent/20 rounded-lg transition-colors"
+                            title="Show the curl command for you to run via your own SSH session"
+                          >
+                            <Terminal size={14} />
+                            Install
+                          </button>
+                          <button
+                            onClick={() => openSshModal(inv)}
+                            className="px-3 py-1.5 text-sm inline-flex items-center gap-1.5 bg-accent text-white hover:bg-accent-hover rounded-lg transition-colors"
+                            title="Provide SSH credentials and the platform will install remotely on your behalf"
+                          >
+                            <KeyRound size={14} />
+                            Add SSH & Deploy
+                          </button>
+                        </>
                       )}
                       {inv.status === 'PROVISIONED' && inv.nodeId && (
                         <Link
@@ -729,6 +788,150 @@ export default function InvestmentsPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Add SSH & Deploy Modal — collects credentials and the
+          backend provision-job worker SSHes in remotely and runs the
+          install on the admin's behalf. Alternative to the Install
+          modal where admin handles the SSH themselves. */}
+      <Modal
+        isOpen={sshModalOpen}
+        onClose={() => setSshModalOpen(false)}
+        title="Add SSH Credentials & Deploy"
+      >
+        <form onSubmit={handleSubmitSsh} className="space-y-4">
+          <p className="text-sm text-text-muted">
+            The platform will SSH into your server using these credentials and run the install for you. Use the Install button instead if you&rsquo;d rather paste the curl command in your own terminal.
+          </p>
+          {sshModalInv && (
+            <p className="text-sm">
+              Provisioning for{' '}
+              <span className="text-text-primary font-medium">{sshModalInv.nodeRunnerName}</span>{' '}&mdash;{' '}
+              <span className="text-accent font-medium">{sshModalInv.gpuTier}</span>
+            </p>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-1">Host *</label>
+              <input
+                type="text"
+                value={sshData.host}
+                onChange={(e) => setSshData({ ...sshData, host: e.target.value })}
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                placeholder="192.168.1.100 or hostname"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-1">Port</label>
+              <input
+                type="number"
+                value={sshData.port}
+                onChange={(e) => setSshData({ ...sshData, port: parseInt(e.target.value) || 22 })}
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
+                placeholder="22"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Username *</label>
+            <input
+              type="text"
+              value={sshData.username}
+              onChange={(e) => setSshData({ ...sshData, username: e.target.value })}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+              placeholder="root"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-2">Authentication Method</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setSshData({ ...sshData, authMethod: 'password' })}
+                className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                  sshData.authMethod === 'password'
+                    ? 'bg-accent text-white border-accent'
+                    : 'bg-surface border-border text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+                }`}
+              >
+                Password
+              </button>
+              <button
+                type="button"
+                onClick={() => setSshData({ ...sshData, authMethod: 'privateKey' })}
+                className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                  sshData.authMethod === 'privateKey'
+                    ? 'bg-accent text-white border-accent'
+                    : 'bg-surface border-border text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+                }`}
+              >
+                Private Key
+              </button>
+            </div>
+          </div>
+
+          {sshData.authMethod === 'password' ? (
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-1">Password *</label>
+              <input
+                type="password"
+                value={sshData.password}
+                onChange={(e) => setSshData({ ...sshData, password: e.target.value })}
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
+                placeholder="SSH password"
+                required
+              />
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-1">Private Key *</label>
+              <textarea
+                value={sshData.privateKey}
+                onChange={(e) => setSshData({ ...sshData, privateKey: e.target.value })}
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary font-mono text-xs focus:outline-none focus:ring-2 focus:ring-accent"
+                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;..."
+                rows={5}
+                required
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 p-3 bg-background border border-border rounded-lg">
+            <input
+              type="checkbox"
+              id="ssh-testMode"
+              checked={sshData.testMode}
+              onChange={(e) => setSshData({ ...sshData, testMode: e.target.checked })}
+              className="w-4 h-4 text-accent bg-background border-border rounded focus:ring-accent"
+            />
+            <label htmlFor="ssh-testMode" className="text-sm">
+              <span className="text-text-primary font-medium">Test mode</span>
+              <span className="text-text-muted block text-xs">Simulate provisioning without touching the server</span>
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setSshModalOpen(false)}
+              className="px-4 py-2 text-text-secondary hover:text-text-primary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submittingSsh}
+              className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+            >
+              {submittingSsh ? 'Starting…' : 'Start Provisioning'}
+            </button>
+          </div>
+        </form>
       </Modal>
     </motion.div>
   )
