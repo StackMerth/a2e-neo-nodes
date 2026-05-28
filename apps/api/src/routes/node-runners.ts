@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { GpuTier, InvestmentStatus } from '@a2e/database'
 import { calculateUptimeEarnings, getDailyUptimeBreakdown, getGpuTierRate } from '../services/earnings/uptime-calculator'
 import { notifyInvestmentConfirmed, notifyInvestmentProvisioned } from '../services/notification/service.js'
+import { mintInstallTokenForRunner } from './byog.js'
 
 // Schemas
 const createNodeRunnerSchema = z.object({
@@ -674,6 +675,54 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
     }
   )
 
+  // POST /v1/investments/:id/regenerate-install-token - Admin: mint a
+  // fresh BYOG install token for this deployment. Used when the
+  // auto-minted token was consumed by the wrong machine, expired, or
+  // never created (legacy rows pre-auto-mint). Returns the new
+  // installCommand the admin can copy-and-run.
+  fastify.post(
+    '/v1/investments/:id/regenerate-install-token',
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+
+      const investment = await fastify.prisma.investment.findUnique({
+        where: { id },
+        select: { id: true, nodeRunnerId: true, status: true },
+      })
+      if (!investment) {
+        return reply.code(404).send({ error: 'Investment not found' })
+      }
+      // Only mint for deployments still waiting on hardware. Past
+      // PROVISIONED / CANCELLED there's no use case.
+      if (
+        investment.status !== 'DEPLOYMENT_REQUESTED' &&
+        investment.status !== 'PAID' &&
+        investment.status !== 'DEPLOYING'
+      ) {
+        return reply.code(400).send({
+          error: 'Invalid Status',
+          message: `Cannot regenerate install token for status ${investment.status}.`,
+        })
+      }
+
+      const minted = await mintInstallTokenForRunner(fastify.prisma, {
+        nodeRunnerId: investment.nodeRunnerId,
+      })
+      await fastify.prisma.investment.update({
+        where: { id },
+        data: { installToken: minted.token },
+      })
+
+      reply.send({
+        id,
+        installToken: minted.token,
+        installCommand: minted.installCommand,
+        expiresAt: minted.expiresAt.toISOString(),
+      })
+    }
+  )
+
   // GET /v1/investments - List all investments
   fastify.get(
     '/v1/investments',
@@ -698,6 +747,7 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
         orderBy: { createdAt: 'desc' },
       })
 
+      const installApiBase = process.env.A2E_API_URL || 'https://a2e-api.onrender.com'
       reply.send({
         investments: investments.map((inv) => ({
           id: inv.id,
@@ -714,6 +764,14 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
           createdAt: inv.createdAt.toISOString(),
           confirmedAt: inv.confirmedAt?.toISOString() ?? null,
           provisionedAt: inv.provisionedAt?.toISOString() ?? null,
+          // Auto-minted BYOG install token + ready-to-run curl command
+          // so the admin can copy it from the dashboard when provisioning
+          // a procured server. Rebuilt server-side so install-script
+          // delivery can swap without touching the admin client.
+          installToken: inv.installToken,
+          installCommand: inv.installToken
+            ? `curl -fsSL ${installApiBase}/v1/byog/install?token=${inv.installToken} | bash`
+            : null,
         })),
         total: investments.length,
       })
