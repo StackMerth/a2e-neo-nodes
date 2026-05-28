@@ -6,7 +6,7 @@ import { motion } from 'framer-motion'
 import {
   Wallet, CircleCheck, Link as LinkIcon, XCircle, Plus,
   Clock as ClockLucide, Server as ServerLucide, AlertTriangle,
-  DollarSign,
+  DollarSign, Terminal, Copy, RotateCcw,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Modal } from '@/components/ui/Modal'
@@ -35,6 +35,8 @@ interface Investment {
   createdAt: string
   confirmedAt: string | null
   provisionedAt: string | null
+  installToken: string | null
+  installCommand: string | null
 }
 
 export default function InvestmentsPage() {
@@ -53,6 +55,12 @@ export default function InvestmentsPage() {
   const [linkModalOpen, setLinkModalOpen] = useState(false)
   const [nodeId, setNodeId] = useState('')
   const [linking, setLinking] = useState(false)
+
+  // Install command modal (admin view of the BYOG one-liner so they
+  // don't have to query the DB to grab the token).
+  const [installModalOpen, setInstallModalOpen] = useState(false)
+  const [installModalInv, setInstallModalInv] = useState<Investment | null>(null)
+  const [regenerating, setRegenerating] = useState(false)
 
   // Create investment modal
   const [createModalOpen, setCreateModalOpen] = useState(false)
@@ -406,6 +414,19 @@ export default function InvestmentsPage() {
                           Provision Node
                         </Link>
                       )}
+                      {/* Install Command — visible while the deployment
+                          is still pending provisioning. Opens a modal
+                          with the copy-able curl one-liner so admin can
+                          paste it onto the procured server. */}
+                      {(inv.status === 'DEPLOYMENT_REQUESTED' || inv.status === 'PAID' || inv.status === 'DEPLOYING') && (
+                        <button
+                          onClick={() => { setInstallModalInv(inv); setInstallModalOpen(true) }}
+                          className="px-3 py-1.5 text-sm inline-flex items-center gap-1.5 bg-accent/10 text-accent hover:bg-accent/20 rounded-lg transition-colors"
+                        >
+                          <Terminal size={14} />
+                          Install
+                        </button>
+                      )}
                       {inv.status === 'PROVISIONED' && inv.nodeId && (
                         <Link
                           href={`/nodes/${inv.nodeId}`}
@@ -634,6 +655,80 @@ export default function InvestmentsPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Install Command Modal — surfaces the auto-minted BYOG curl
+          one-liner so admin can copy it onto the procured server,
+          without dropping to a SQL query. Regenerate handles the
+          edge cases (token consumed, expired, never minted). */}
+      <Modal
+        isOpen={installModalOpen}
+        onClose={() => setInstallModalOpen(false)}
+        title={`Install Command — ${installModalInv?.gpuTier ?? ''}`}
+      >
+        {installModalInv && (
+          <div className="space-y-4">
+            <p className="text-sm text-text-secondary">
+              Run this one-line command on the Linux GPU box you&rsquo;re provisioning for{' '}
+              <strong className="text-text-primary">{installModalInv.nodeRunnerName}</strong>.
+              The installer self-detects hardware and registers the node against this Investment.
+            </p>
+
+            {installModalInv.installCommand ? (
+              <div className="space-y-2">
+                <div className="rounded-lg p-3 font-mono text-xs flex items-start gap-2 break-all bg-background border border-border text-text-primary">
+                  <code className="flex-1">{installModalInv.installCommand}</code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(installModalInv.installCommand!)
+                    }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold shrink-0 bg-accent text-white hover:bg-accent-hover transition-colors"
+                  >
+                    <Copy size={12} />
+                    Copy
+                  </button>
+                </div>
+                <p className="text-xs text-text-muted">
+                  Token is one-shot. After a successful install the deployment advances to{' '}
+                  <strong className="text-text-primary">Deploying</strong>.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-lg p-3 text-sm bg-warning/10 border border-warning/30 text-warning">
+                No install token on this Investment yet. Click Regenerate to mint one.
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-border">
+              <p className="text-xs text-text-muted">
+                Token was consumed or expired? Regenerate mints a fresh one.
+              </p>
+              <button
+                type="button"
+                disabled={regenerating}
+                onClick={async () => {
+                  if (!installModalInv) return
+                  setRegenerating(true)
+                  try {
+                    const res = await api.investments.regenerateInstallToken(installModalInv.id)
+                    setInstallModalInv({ ...installModalInv, installToken: res.installToken, installCommand: res.installCommand })
+                    // also refresh the row in the table so the next open shows the new token
+                    setInvestments(prev => prev.map(i => i.id === installModalInv.id ? { ...i, installToken: res.installToken, installCommand: res.installCommand } : i))
+                  } catch {
+                    /* ignore — user will see no change */
+                  } finally {
+                    setRegenerating(false)
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-warning/10 text-warning hover:bg-warning/20 transition-colors disabled:opacity-60"
+              >
+                <RotateCcw size={14} />
+                {regenerating ? 'Regenerating…' : 'Regenerate'}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </motion.div>
   )

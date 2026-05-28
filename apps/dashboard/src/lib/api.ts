@@ -1081,6 +1081,8 @@ export const api = {
           createdAt: string
           confirmedAt: string | null
           provisionedAt: string | null
+          installToken: string | null
+          installCommand: string | null
         }>
         total: number
       }>('/v1/investments', { params }),
@@ -1135,6 +1137,19 @@ export const api = {
         status: string
         message: string
       }>(`/v1/investments/${id}/cancel`, {
+        method: 'POST',
+      }),
+
+    // Admin: mint a fresh BYOG install token for this Investment. Used
+    // when the auto-minted one was consumed by the wrong machine,
+    // expired, or never created (legacy rows pre-auto-mint).
+    regenerateInstallToken: (id: string) =>
+      apiFetch<{
+        id: string
+        installToken: string
+        installCommand: string
+        expiresAt: string
+      }>(`/v1/investments/${id}/regenerate-install-token`, {
         method: 'POST',
       }),
   },

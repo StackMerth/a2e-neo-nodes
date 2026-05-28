@@ -216,20 +216,14 @@ export default function DeploymentDetailPage() {
         {data.status === 'DEPLOYMENT_REQUESTED' && (
           <SectionCard title="Awaiting hardware allocation" icon={Terminal}>
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Your payment is confirmed and the deployment is queued. The platform
-              is sourcing a {data.gpuTier} server for you now. You don&rsquo;t need
-              to do anything &mdash; this page will advance to{' '}
-              <strong style={{ color: 'var(--text-primary)' }}>Deploying</strong>{' '}
-              once provisioning starts, and to{' '}
-              <strong style={{ color: 'var(--text-primary)' }}>Node Live</strong>{' '}
-              when the agent comes online. You&rsquo;ll get a notification.
+              Payment confirmed. Sourcing your {data.gpuTier} server now &mdash; you&rsquo;ll be notified when it&rsquo;s live.
             </p>
             <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-              Bringing your own GPU instead? Use{' '}
+              Bringing your own GPU? Use{' '}
               <Link href="/nodes" className="underline" style={{ color: 'var(--primary)' }}>
                 + Add Node
               </Link>{' '}
-              on the Nodes page to register your hardware directly &mdash; no payment, no queue.
+              instead &mdash; no payment, no queue.
             </p>
           </SectionCard>
         )}
