@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, Info } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/components/ui/Toast'
 import { Button } from '@/components/ui/Button'
@@ -40,6 +40,20 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // iOS sandboxes a home-screen PWA's storage separately from Safari,
+  // so a user who was signed in via Safari and then "Add to Home
+  // Screen" lands here logged out on first launch. Surface a small
+  // notice in that exact case so they don't think it's a bug.
+  const [iosPwaFirstLaunch, setIosPwaFirstLaunch] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const ua = window.navigator.userAgent
+    const isIos = /iPhone|iPad|iPod/.test(ua)
+    const isStandalone =
+      (window.navigator as { standalone?: boolean }).standalone === true ||
+      window.matchMedia('(display-mode: standalone)').matches
+    setIosPwaFirstLaunch(isIos && isStandalone)
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -74,6 +88,19 @@ export default function LoginPage() {
     <Card className="p-8">
       <h1 className="text-2xl font-bold text-text-primary mb-2">Welcome Back</h1>
       <p className="text-text-secondary text-sm mb-6">Sign in to your TokenOS DeAI account</p>
+
+      {iosPwaFirstLaunch && (
+        <div
+          role="note"
+          className="mb-4 flex items-start gap-2 rounded-lg px-3 py-2.5"
+          style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)' }}
+        >
+          <Info className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--info, #3b82f6)' }} />
+          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+            iOS stores home-screen apps separately from Safari. Sign in once here and you&rsquo;ll stay logged in for future launches.
+          </p>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         {error && (
