@@ -65,7 +65,7 @@ const metrics = [
   },
   {
     value: 9,
-    suffix: "",
+    suffix: "+",
     prefix: "",
     label: "GPU tiers (datacenter + consumer)",
   },
