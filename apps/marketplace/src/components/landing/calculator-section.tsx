@@ -30,12 +30,18 @@ interface TierComparison {
 const TIERS: TierComparison[] = [
   // Hyperscaler prices: AWS p5/g6e (us-east-1), Azure ND-H100/ND-H200/NCads (East US),
   // GCP a3-highgpu / g2-standard (us-central1), normalized to single-GPU $/hr.
+  // Consumer / RTX tiers have null hyperscaler columns — AWS/Azure/GCP
+  // don't sell consumer GPUs, the comparison only makes sense against
+  // datacenter inventory.
   { id: "H100", label: "NVIDIA H100", tokenosHourly: 140.15 / 24, awsHourly: 12.29, azureHourly: 12.25, gcpHourly: 11.06 },
   { id: "H200", label: "NVIDIA H200", tokenosHourly: 179.85 / 24, awsHourly: 13.5, azureHourly: 13.75, gcpHourly: 12.5 },
   { id: "L40S", label: "NVIDIA L40S", tokenosHourly: 21 / 24, awsHourly: 1.86, azureHourly: 1.05, gcpHourly: 0.95 },
   { id: "B200", label: "NVIDIA B200", tokenosHourly: 321.1 / 24, awsHourly: null, azureHourly: null, gcpHourly: null },
   { id: "B300", label: "NVIDIA B300", tokenosHourly: 431.75 / 24, awsHourly: null, azureHourly: null, gcpHourly: null },
   { id: "GB300", label: "NVIDIA GB300", tokenosHourly: 499.35 / 24, awsHourly: null, azureHourly: null, gcpHourly: null },
+  { id: "RTX_4090", label: "NVIDIA RTX 4090", tokenosHourly: 0.58, awsHourly: null, azureHourly: null, gcpHourly: null },
+  { id: "RTX_3090", label: "NVIDIA RTX 3090", tokenosHourly: 0.37, awsHourly: null, azureHourly: null, gcpHourly: null },
+  { id: "CONSUMER", label: "Consumer GPU", tokenosHourly: 0.29, awsHourly: null, azureHourly: null, gcpHourly: null },
 ];
 
 const HOURS_PRESETS = [

@@ -61,7 +61,7 @@ export function InfrastructureSection() {
             {/* Stats */}
             <div className="grid grid-cols-3 gap-8">
               <div>
-                <div className="text-4xl lg:text-5xl font-display mb-2">8+</div>
+                <div className="text-4xl lg:text-5xl font-display mb-2">9</div>
                 <div className="text-sm text-muted-foreground">GPU tiers supported</div>
               </div>
               <div>

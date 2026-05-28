@@ -64,10 +64,10 @@ const metrics = [
     label: "Spot preemption grace window",
   },
   {
-    value: 5,
+    value: 9,
     suffix: "",
     prefix: "",
-    label: "GPU tiers (H100 to GB300)",
+    label: "GPU tiers (datacenter + consumer)",
   },
 ];
 
