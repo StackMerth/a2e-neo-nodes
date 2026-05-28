@@ -28,13 +28,11 @@ const BRANDS: Brand[] = [
     name: "NVIDIA",
     tag: "Every GPU we deploy",
     accent: "#76b900",
-    // 8 first-class tiers per packages/database/prisma/schema.prisma
-    // (excluding OTHER + CONSUMER catchalls). RTX 3090/4090 are
-    // first-class consumer tiers; L40S is mid-datacenter; H100/H200
-    // are the standard datacenter pair; B200/B300/GB300 cover the
-    // Blackwell family.
+    // 9 first-class tiers per packages/database/prisma/schema.prisma
+    // (excluding the OTHER catchall): RTX 3090, RTX 4090, generic
+    // CONSUMER, L40S, H100, H200, B200, B300, GB300.
     featured:
-      "Every GPU we deploy. RTX 3090, RTX 4090, L40S, H100, H200, B200, B300, GB300 — eight tiers, one rate sheet, every chip carrying the green badge.",
+      "Every GPU we deploy. RTX 3090, RTX 4090, consumer CUDA cards, L40S, H100, H200, B200, B300, GB300, nine tiers, one rate sheet, every chip carrying the green badge.",
   },
   {
     name: "CUDA",
