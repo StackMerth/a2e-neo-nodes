@@ -325,10 +325,25 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void handleShutdown('SIGTERM'));
   process.on('SIGINT', () => void handleShutdown('SIGINT'));
 
-  // Handle SIGHUP for config reload (optional)
+  // Handle SIGHUP for config reload. Implementation strategy:
+  // gracefully shut down, then exit(0). The systemd unit installed by
+  // install.sh has `Restart=always` (see scripts/install.sh:272), which
+  // means systemd auto-restarts the agent process on any exit, including
+  // exit 0. The fresh process re-reads agent.yaml from disk and picks
+  // up whatever the operator edited.
+  //
+  // This is the canonical Unix daemon pattern and avoids the complexity
+  // of in-process config rebinding (every subsystem currently caches its
+  // slice of config at constructor time; a true in-process reload would
+  // need each subsystem to expose a re-config hook).
+  //
+  // Trigger from the operator's machine with:
+  //   sudo systemctl reload a2e-agent
+  // (which sends SIGHUP per the unit's ExecReload, or fallback to
+  // `sudo kill -SIGHUP <pid>`).
   process.on('SIGHUP', () => {
-    logger.info('Received SIGHUP, reloading configuration');
-    // TODO: Implement config reload
+    logger.info('Received SIGHUP, exiting gracefully for systemd-driven config reload');
+    void handleShutdown('SIGHUP-reload');
   });
 
   // Handle uncaught errors

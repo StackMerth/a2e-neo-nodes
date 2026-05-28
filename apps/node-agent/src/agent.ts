@@ -3,7 +3,7 @@ import type { Config } from './config.js';
 import { setNodeId } from './config.js';
 import { agentLogger } from './utils/logger.js';
 import { getApiClient } from './api/client.js';
-import type { NodeSpecs, GpuMetrics, SystemMetrics } from './api/types.js';
+import type { NodeSpecs, GpuMetrics, SystemMetrics, GpuTier } from './api/types.js';
 import { GpuDetector } from './gpu/detector.js';
 import { GpuMetricsCollector } from './gpu/metrics.js';
 import { GpuHealthMonitor } from './gpu/health.js';
@@ -32,6 +32,8 @@ export type AgentState =
   | 'ONLINE'
   | 'BUSY'
   | 'MAINTENANCE'
+  | 'PAUSED'      // operator paused: heartbeats continue, no new jobs accepted
+  | 'DRAINING'    // graceful decommission: current job runs to completion, no new jobs
   | 'OFFLINE'
   | 'STOPPING'
   | 'ERROR';
@@ -78,6 +80,11 @@ export class Agent extends EventEmitter {
   private currentJobId: string | null = null;
   private startTime: number = 0;
   private imagePrewarm: ImagePrewarmService | null = null;
+  // Cached args from the last successful jobPoller.start() so resume()
+  // can re-arm the poller with the same GPU profile after a pause.
+  // Populated once during initial start() and again any time we restart
+  // with fresh detection.
+  private jobPollerStartArgs: { gpuTier: GpuTier; gpuCount: number; availableVram: number } | null = null;
 
   constructor(config: Config) {
     super();
@@ -426,11 +433,12 @@ export class Agent extends EventEmitter {
           pollIntervalMs: this.config.agent.jobPollInterval * 1000,
           agentVersion: AGENT_VERSION,
         });
-        this.jobPoller.start(this.nodeId, {
+        this.jobPollerStartArgs = {
           gpuTier: gpuInfo?.tier ?? 'OTHER',
           gpuCount: gpuInfo?.count ?? 1,
           availableVram: gpuInfo?.vram ?? 0,
-        });
+        };
+        this.jobPoller.start(this.nodeId, this.jobPollerStartArgs);
         log.info('Job poller started');
       }
 
@@ -580,6 +588,65 @@ export class Agent extends EventEmitter {
     log.info('Restarting agent');
     await this.stop();
     await this.start();
+  }
+
+  /**
+   * Pause job acceptance without stopping heartbeats. Operator can
+   * resume later via the RESUME command. Idempotent: re-issuing PAUSE
+   * on an already-paused agent just logs and no-ops.
+   */
+  async pause(): Promise<void> {
+    if (this.state === 'PAUSED') {
+      log.info('Agent already paused, no-op');
+      return;
+    }
+    log.info('Pausing agent (stopping job poller, heartbeats continue)');
+    if (this.jobPoller) {
+      this.jobPoller.stop();
+      log.info('Job poller stopped');
+    }
+    this.setState('PAUSED');
+  }
+
+  /**
+   * Resume job acceptance after a PAUSE. Re-arms the job poller with
+   * the same args captured at original start time. No-op if the agent
+   * wasn't paused.
+   */
+  async resume(): Promise<void> {
+    if (this.state !== 'PAUSED' && this.state !== 'DRAINING') {
+      log.info({ state: this.state }, 'Agent not paused/draining, RESUME ignored');
+      return;
+    }
+    log.info('Resuming agent (restarting job poller)');
+    if (this.jobPoller && this.nodeId && this.jobPollerStartArgs) {
+      this.jobPoller.start(this.nodeId, this.jobPollerStartArgs);
+      log.info('Job poller restarted');
+    } else {
+      log.warn('Resume requested but job poller, nodeId, or start args unavailable; agent will rejoin pool on next state transition');
+    }
+    this.setState('ONLINE');
+  }
+
+  /**
+   * Begin a graceful drain: stop accepting new jobs, let any in-flight
+   * job run to completion, keep heartbeating so the server sees the
+   * node as alive-but-not-bidding. Differs from PAUSE in that DRAIN is
+   * intended as a "preparing to decommission" signal; the server's
+   * allocator should treat both identically (no new work) but UI may
+   * display them differently.
+   */
+  async drain(): Promise<void> {
+    if (this.state === 'DRAINING') {
+      log.info('Agent already draining, no-op');
+      return;
+    }
+    log.info({ currentJob: this.currentJobId }, 'Draining agent (no new jobs, current job will finish)');
+    if (this.jobPoller) {
+      this.jobPoller.stop();
+      log.info('Job poller stopped');
+    }
+    this.setState('DRAINING');
   }
 
   /**
