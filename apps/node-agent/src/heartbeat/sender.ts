@@ -295,17 +295,17 @@ export class HeartbeatService {
 
       case 'PAUSE':
         log.info('Received PAUSE command');
-        // TODO: Implement pause logic
+        await this.agent.pause();
         break;
 
       case 'RESUME':
         log.info('Received RESUME command');
-        // TODO: Implement resume logic
+        await this.agent.resume();
         break;
 
       case 'DRAIN':
         log.info('Received DRAIN command');
-        // TODO: Implement drain logic (stop accepting new jobs)
+        await this.agent.drain();
         break;
 
       case 'UPDATE':
