@@ -32,6 +32,7 @@
     "nodes:diagnose": "tsx scripts/nodes-diagnose.ts",
     "noderunner:bump-reputation": "tsx scripts/noderunner-bump-reputation.ts",
     "checkpoint:fake-ready": "tsx scripts/checkpoint-fake-ready.ts",
+    "users:lowercase-emails": "tsx scripts/users-lowercase-emails.ts",
     "c3:seed-forecast": "tsx scripts/c3-seed-forecast-earnings.ts",
     "c3:diagnose-digest": "tsx scripts/c3-diagnose-digest.ts",
     "c3:backfill-first-heartbeat": "tsx scripts/c3-backfill-first-heartbeat.ts",
