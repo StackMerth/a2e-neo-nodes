@@ -37,6 +37,11 @@ interface AuthContextType {
     role?: 'NODE_RUNNER' | 'COMPUTE_BUYER'
   ) => Promise<User>
   logout: () => Promise<void>
+  // Re-fetch the canonical user from /me. Call this after any
+  // action that mutates server-side user state (add-role, link
+  // wallet, verify email, etc.) so the cached user picks up the
+  // change without a page reload.
+  refresh: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -110,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, walletLogin, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, walletLogin, logout, refresh: loadUser }}>
       {children}
     </AuthContext.Provider>
   )
