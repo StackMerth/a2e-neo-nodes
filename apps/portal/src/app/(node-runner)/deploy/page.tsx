@@ -112,6 +112,12 @@ export default function DeployPage() {
   const walletConnected = !!publicKey
   const walletPaySelected = walletConnected && !showManualPaste
 
+  // Payment method picker. Three mutually-exclusive choices replace the
+  // old "three same-sized buttons" cluster. The submit button at the
+  // bottom routes to the matching handler.
+  type PaymentMethod = 'wallet' | 'card' | 'balance'
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wallet')
+
   // Pay-from-balance path. Loads the operator's current credit balance
   // so we can show the picker only when it's usable (>0) and gate
   // submission on sufficient balance for the selected total cost.
@@ -376,12 +382,139 @@ export default function DeployPage() {
         </motion.div>
       )}
 
-      {/* Payment — wallet sign-to-pay preferred when a wallet is
-          connected, paste form as fallback for hardware/exchange paths. */}
+      {/* Payment — three mutually-exclusive method cards at the top
+          control the picker; the inline form below adapts to the
+          selected method, and a single submit button at the bottom
+          fires the matching handler. Replaces a stacked three-equal-
+          buttons cluster that read as ambiguous. */}
       <motion.div variants={item} className="space-y-4">
-        <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Payment</h2>
+        <div>
+          <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Payment method</h2>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>Pick how you&rsquo;d like to pay. You can switch any time before submitting.</p>
+        </div>
 
-        {walletPaySelected ? (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Wallet card */}
+          <button
+            type="button"
+            onClick={() => setPaymentMethod('wallet')}
+            className="text-left rounded-xl p-4 transition-all duration-200 relative"
+            style={paymentMethod === 'wallet'
+              ? { background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.5)', boxShadow: '0 0 18px rgba(34,197,94,0.18)' }
+              : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
+            }
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Wallet</span>
+              <Zap size={16} style={{ color: 'var(--primary)' }} />
+            </div>
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              {walletConnected ? `Sign with ${wallet?.adapter.name ?? 'connected wallet'}` : 'Phantom / Solflare USDC'}
+            </p>
+            <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>Instant, on-chain</p>
+            {paymentMethod === 'wallet' && (
+              <div className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full" style={{ background: 'var(--primary)' }} />
+            )}
+          </button>
+
+          {/* Card card */}
+          <button
+            type="button"
+            onClick={() => setPaymentMethod('card')}
+            className="text-left rounded-xl p-4 transition-all duration-200 relative"
+            style={paymentMethod === 'card'
+              ? { background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.5)', boxShadow: '0 0 18px rgba(59,130,246,0.18)' }
+              : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
+            }
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Card</span>
+              <CreditCard size={16} style={{ color: 'var(--info)' }} />
+            </div>
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Pay with any debit or credit card</p>
+            <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>Via Stripe Hosted Checkout</p>
+            {paymentMethod === 'card' && (
+              <div className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full" style={{ background: 'var(--info)' }} />
+            )}
+          </button>
+
+          {/* Balance card */}
+          {(() => {
+            const balanceDisabled = buyerBalanceUsd === 0 || balanceShort
+            return (
+              <button
+                type="button"
+                onClick={() => { if (!balanceDisabled) setPaymentMethod('balance') }}
+                disabled={balanceDisabled}
+                className="text-left rounded-xl p-4 transition-all duration-200 relative disabled:cursor-not-allowed"
+                style={paymentMethod === 'balance'
+                  ? { background: 'rgba(168,85,247,0.10)', border: '1px solid rgba(168,85,247,0.5)', boxShadow: '0 0 18px rgba(168,85,247,0.18)' }
+                  : balanceDisabled
+                    ? { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', opacity: 0.55 }
+                    : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
+                }
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Balance</span>
+                  <PiggyBank size={16} style={{ color: '#a855f7' }} />
+                </div>
+                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  {buyerBalanceUsd === 0
+                    ? 'Top up first to enable'
+                    : balanceShort
+                      ? `Short by $${(totalCost - buyerBalanceUsd).toFixed(2)}`
+                      : `$${buyerBalanceUsd.toFixed(2)} available`}
+                </p>
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                  {balanceDisabled ? ' ' : 'No transaction'}
+                </p>
+                {paymentMethod === 'balance' && (
+                  <div className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full" style={{ background: '#a855f7' }} />
+                )}
+              </button>
+            )
+          })()}
+        </div>
+
+        {paymentMethod === 'card' && (
+          <div
+            className="rounded-lg p-4 flex items-start gap-3"
+            style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.20)' }}
+          >
+            <CreditCard size={18} style={{ color: 'var(--info)', marginTop: 2 }} />
+            <div>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                You&rsquo;ll be redirected to Stripe to pay <span className="font-mono">${totalCost.toFixed(2)}</span>.
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                Card details never touch our servers. After payment confirms you&rsquo;ll be brought back to your deployment page.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {paymentMethod === 'balance' && !balanceShort && buyerBalanceUsd > 0 && (
+          <div
+            className="rounded-lg p-4 space-y-2 text-sm"
+            style={{ background: 'rgba(168,85,247,0.06)', border: '1px solid rgba(168,85,247,0.20)' }}
+          >
+            <div className="flex justify-between">
+              <span style={{ color: 'var(--text-muted)' }}>Balance before</span>
+              <span className="font-mono" style={{ color: 'var(--text-primary)' }}>${buyerBalanceUsd.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span style={{ color: 'var(--text-muted)' }}>This deployment</span>
+              <span className="font-mono" style={{ color: '#ef4444' }}>&minus;${totalCost.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between pt-2" style={{ borderTop: '1px solid var(--border-color)' }}>
+              <span className="font-semibold" style={{ color: 'var(--text-secondary)' }}>Balance after</span>
+              <span className="font-mono font-semibold" style={{ color: '#a855f7' }}>${(buyerBalanceUsd - totalCost).toFixed(2)}</span>
+            </div>
+          </div>
+        )}
+
+        {paymentMethod === 'wallet' && (
+          walletPaySelected ? (
           <div className="space-y-2">
             <div
               className="rounded-lg p-4 flex items-center gap-3"
@@ -488,7 +621,7 @@ export default function DeployPage() {
               </button>
             )}
           </div>
-        )}
+        ))}
 
         <div className="space-y-1.5">
           <label className="block text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Deployment Note (optional)</label>
@@ -506,21 +639,37 @@ export default function DeployPage() {
         </div>
       </motion.div>
 
-      {/* Submit row — clear primary/secondary hierarchy.
-          Primary: the wallet/paste path the buyer most likely came here
-          for (large green button, full-width on mobile, right-aligned
-          on desktop). Secondary: card + balance shown as smaller
-          inline alternatives so they're visible but de-emphasized.
-          This replaces a 3-equal-button cluster that read as ambiguous. */}
-      <motion.div variants={item} className="flex flex-col items-stretch gap-4 pt-2">
+      {/* Single submit button — routes to the handler matching the
+          selected payment method. Label + icon + disabled state all
+          adapt so the operator sees exactly what will happen. Replaces
+          a stacked three-equal-button cluster. */}
+      <motion.div variants={item} className="flex justify-end pt-2">
         <Button
           size="lg"
-          onClick={handleSubmit}
-          loading={submitting}
-          disabled={!selectedTier || (!walletPaySelected && !txHash.trim()) || cardSubmitting || balanceSubmitting}
-          className="w-full sm:w-auto sm:self-end px-10 h-14 text-base"
+          onClick={() => {
+            if (paymentMethod === 'card') handlePayWithCard()
+            else if (paymentMethod === 'balance') handlePayFromBalance()
+            else handleSubmit()
+          }}
+          loading={submitting || cardSubmitting || balanceSubmitting}
+          disabled={
+            !selectedTier ||
+            (paymentMethod === 'wallet' && !walletPaySelected && !txHash.trim()) ||
+            (paymentMethod === 'balance' && (buyerBalanceUsd === 0 || balanceShort))
+          }
+          className="w-full sm:w-auto px-10 h-14 text-base"
         >
-          {walletPaySelected ? (
+          {paymentMethod === 'card' ? (
+            <>
+              <CreditCard size={18} className="mr-2" />
+              {cardSubmitting ? 'Redirecting to Stripe…' : `Pay $${totalCost.toFixed(2)} with card`}
+            </>
+          ) : paymentMethod === 'balance' ? (
+            <>
+              <PiggyBank size={18} className="mr-2" />
+              {balanceSubmitting ? 'Charging balance…' : `Pay $${totalCost.toFixed(2)} from balance`}
+            </>
+          ) : walletPaySelected ? (
             <>
               <Zap size={18} className="mr-2" />
               {walletPhase === 'signing'
@@ -533,47 +682,6 @@ export default function DeployPage() {
             'Request Deployment'
           )}
         </Button>
-        {/* Alternative payment methods. Renders only when at least
-            one alternative is meaningfully available; pure-wallet
-            flows on test mode without balance simply see the primary
-            button alone. */}
-        {(selectedTier && (buyerBalanceUsd > 0 || true)) && (
-          <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-            <span>Or pay with</span>
-            <button
-              type="button"
-              onClick={handlePayWithCard}
-              disabled={!selectedTier || submitting || cardSubmitting || balanceSubmitting}
-              className="inline-flex items-center gap-1.5 underline underline-offset-4 hover:opacity-80 transition-opacity disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              <CreditCard size={14} />
-              {cardSubmitting ? 'Redirecting…' : 'card'}
-            </button>
-            {buyerBalanceUsd > 0 && !balanceShort && (
-              <button
-                type="button"
-                onClick={handlePayFromBalance}
-                disabled={!selectedTier || submitting || cardSubmitting || balanceSubmitting}
-                className="inline-flex items-center gap-1.5 underline underline-offset-4 hover:opacity-80 transition-opacity disabled:opacity-40"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                <PiggyBank size={14} />
-                {balanceSubmitting ? 'Paying…' : `balance ($${buyerBalanceUsd.toFixed(2)})`}
-              </button>
-            )}
-            {buyerBalanceUsd > 0 && balanceShort && (
-              <span
-                className="inline-flex items-center gap-1.5"
-                style={{ color: 'var(--text-muted)', opacity: 0.7 }}
-                title={`Balance $${buyerBalanceUsd.toFixed(2)} is below total $${totalCost.toFixed(2)}`}
-              >
-                <PiggyBank size={14} />
-                balance short by ${(totalCost - buyerBalanceUsd).toFixed(2)}
-              </span>
-            )}
-          </div>
-        )}
       </motion.div>
     </motion.div>
   )
