@@ -57,7 +57,7 @@ export function DashboardShell({
             {title}
           </h1>
           {subtitle && (
-            <p className="font-mono text-xs uppercase mt-1" style={{ color: 'var(--text-muted)', letterSpacing: '0.18em' }}>
+            <p className="font-mono text-[13px] uppercase mt-1.5" style={{ color: 'var(--text-muted)', letterSpacing: '0.16em' }}>
               {subtitle}
             </p>
           )}
@@ -66,7 +66,7 @@ export function DashboardShell({
           {liveLabel && (
             <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-accent/40 bg-accent/10">
               <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-              <span className="font-mono text-[11px] tracking-[0.18em]" style={{ color: 'var(--primary)' }}>
+              <span className="font-mono text-[12px] tracking-[0.16em]" style={{ color: 'var(--primary)' }}>
                 {liveLabel}
               </span>
             </span>

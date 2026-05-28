@@ -506,48 +506,23 @@ export default function DeployPage() {
         </div>
       </motion.div>
 
-      {/* Submit. Three payment options ordered cheapest-first for the
-          operator (no fresh card auth, no on-chain signing): balance,
-          card, then wallet/paste. Balance only renders when the
-          operator has a usable credit on file. */}
-      <motion.div variants={item} className="flex flex-col sm:flex-row justify-end gap-3 pt-2 flex-wrap">
-        {buyerBalanceUsd > 0 && (
-          <Button
-            size="lg"
-            variant="secondary"
-            onClick={handlePayFromBalance}
-            loading={balanceSubmitting}
-            disabled={!selectedTier || submitting || cardSubmitting || balanceShort}
-            className="px-8"
-            title={balanceShort ? `Balance $${buyerBalanceUsd.toFixed(2)} is below total $${totalCost.toFixed(2)}` : undefined}
-          >
-            <PiggyBank size={16} className="mr-2" />
-            {balanceShort
-              ? `Need $${(totalCost - buyerBalanceUsd).toFixed(2)} more`
-              : `Pay $${totalCost.toFixed(2)} from balance`}
-          </Button>
-        )}
-        <Button
-          size="lg"
-          variant="secondary"
-          onClick={handlePayWithCard}
-          loading={cardSubmitting}
-          disabled={!selectedTier || submitting || cardSubmitting || balanceSubmitting}
-          className="px-8"
-        >
-          <CreditCard size={16} className="mr-2" />
-          Pay ${totalCost.toFixed(2)} with card
-        </Button>
+      {/* Submit row — clear primary/secondary hierarchy.
+          Primary: the wallet/paste path the buyer most likely came here
+          for (large green button, full-width on mobile, right-aligned
+          on desktop). Secondary: card + balance shown as smaller
+          inline alternatives so they're visible but de-emphasized.
+          This replaces a 3-equal-button cluster that read as ambiguous. */}
+      <motion.div variants={item} className="flex flex-col items-stretch gap-4 pt-2">
         <Button
           size="lg"
           onClick={handleSubmit}
           loading={submitting}
           disabled={!selectedTier || (!walletPaySelected && !txHash.trim()) || cardSubmitting || balanceSubmitting}
-          className="px-8"
+          className="w-full sm:w-auto sm:self-end px-10 h-14 text-base"
         >
           {walletPaySelected ? (
             <>
-              <Zap size={16} className="mr-2" />
+              <Zap size={18} className="mr-2" />
               {walletPhase === 'signing'
                 ? 'Awaiting wallet…'
                 : walletPhase === 'submitting'
@@ -558,6 +533,47 @@ export default function DeployPage() {
             'Request Deployment'
           )}
         </Button>
+        {/* Alternative payment methods. Renders only when at least
+            one alternative is meaningfully available; pure-wallet
+            flows on test mode without balance simply see the primary
+            button alone. */}
+        {(selectedTier && (buyerBalanceUsd > 0 || true)) && (
+          <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+            <span>Or pay with</span>
+            <button
+              type="button"
+              onClick={handlePayWithCard}
+              disabled={!selectedTier || submitting || cardSubmitting || balanceSubmitting}
+              className="inline-flex items-center gap-1.5 underline underline-offset-4 hover:opacity-80 transition-opacity disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              <CreditCard size={14} />
+              {cardSubmitting ? 'Redirecting…' : 'card'}
+            </button>
+            {buyerBalanceUsd > 0 && !balanceShort && (
+              <button
+                type="button"
+                onClick={handlePayFromBalance}
+                disabled={!selectedTier || submitting || cardSubmitting || balanceSubmitting}
+                className="inline-flex items-center gap-1.5 underline underline-offset-4 hover:opacity-80 transition-opacity disabled:opacity-40"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                <PiggyBank size={14} />
+                {balanceSubmitting ? 'Paying…' : `balance ($${buyerBalanceUsd.toFixed(2)})`}
+              </button>
+            )}
+            {buyerBalanceUsd > 0 && balanceShort && (
+              <span
+                className="inline-flex items-center gap-1.5"
+                style={{ color: 'var(--text-muted)', opacity: 0.7 }}
+                title={`Balance $${buyerBalanceUsd.toFixed(2)} is below total $${totalCost.toFixed(2)}`}
+              >
+                <PiggyBank size={14} />
+                balance short by ${(totalCost - buyerBalanceUsd).toFixed(2)}
+              </span>
+            )}
+          </div>
+        )}
       </motion.div>
     </motion.div>
   )
