@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ExternalLink } from "lucide-react";
 import { AnimatedTetrahedron } from "./animated-tetrahedron";
 import { portalUrls } from "@/lib/portal-urls";
 
@@ -77,9 +77,12 @@ export function CtaSection() {
                     asChild
                     size="lg"
                     variant="outline"
-                    className="h-12 sm:h-14 px-6 sm:px-8 text-sm sm:text-base rounded-full border-foreground/20 hover:bg-foreground/5"
+                    className="h-12 sm:h-14 px-6 sm:px-8 text-sm sm:text-base rounded-full border-foreground/40 hover:bg-foreground/5 hover:border-foreground/60 group"
                   >
-                    <a href={portalUrls.spec} target="_blank" rel="noreferrer">Read the spec</a>
+                    <a href={portalUrls.spec} target="_blank" rel="noreferrer">
+                      Read the spec
+                      <ExternalLink className="w-4 h-4 ml-2 opacity-70 transition-opacity group-hover:opacity-100" />
+                    </a>
                   </Button>
                 </div>
 

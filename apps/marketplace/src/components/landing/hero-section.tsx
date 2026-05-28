@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { AnimatedSphere } from "./animated-sphere";
 import { portalUrls } from "@/lib/portal-urls";
 
@@ -135,9 +135,12 @@ export function HeroSection() {
               asChild
               size="lg"
               variant="outline"
-              className="h-12 sm:h-14 px-6 sm:px-8 text-sm sm:text-base rounded-full border-foreground/20 hover:bg-foreground/5"
+              className="h-12 sm:h-14 px-6 sm:px-8 text-sm sm:text-base rounded-full border-foreground/40 hover:bg-foreground/5 hover:border-foreground/60 group"
             >
-              <a href="/marketplace">View marketplace</a>
+              <a href="/marketplace">
+                View marketplace
+                <ArrowUpRight className="w-4 h-4 ml-2 opacity-70 transition-opacity group-hover:opacity-100" />
+              </a>
             </Button>
           </div>
         </div>
