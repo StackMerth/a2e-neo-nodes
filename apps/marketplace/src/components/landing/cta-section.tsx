@@ -84,7 +84,7 @@ export function CtaSection() {
                 </div>
 
                 <p className="text-sm text-muted-foreground mt-8 font-mono">
-                  USDC on Solana, no card on file required
+                  Pay with USDC on Solana or card. No subscription, no minimum.
                 </p>
               </div>
 

@@ -6,7 +6,7 @@ const steps = [
   {
     number: "I",
     title: "Pay",
-    description: "Pick a GPU tier and a duration. Pay with USDC on Solana. A webhook confirms the payment in seconds, no manual approvals for typical rentals.",
+    description: "Pick a GPU tier and a duration. Pay with USDC on Solana, a card, or your pre-loaded balance. Payment confirms in seconds, no manual approvals for typical rentals.",
     code: `// You pay
 POST /v1/buyer/compute/requests
 {
