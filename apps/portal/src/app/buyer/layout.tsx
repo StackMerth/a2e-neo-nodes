@@ -10,6 +10,7 @@ import { Footer } from '@/components/layout/Footer'
 import { RoleIntroCallout } from '@/components/layout/RoleIntroCallout'
 import { TopHeader } from '@/components/layout/TopHeader'
 import { VerifyEmailBanner } from '@/components/layout/VerifyEmailBanner'
+import { OfflineBanner } from '@/components/layout/OfflineBanner'
 
 const mainEase: [number, number, number, number] = [0.4, 0, 0.2, 1]
 
@@ -64,6 +65,9 @@ export default function BuyerLayout({ children }: { children: React.ReactNode })
         transition={{ duration: 0.3, ease: mainEase }}
       >
         <div className="page-container">
+          {/* Offline / cache-fallback banner. Shows when the browser
+              is offline or apiFetch just served a cached GET response. */}
+          <OfflineBanner />
           {/* Soft-gate verification reminder. Same banner as the node-
               runner layout — buyers also need verified email to receive
               transactional notifications (rental allocated, refund

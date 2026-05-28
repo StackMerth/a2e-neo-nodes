@@ -1,9 +1,19 @@
+import { putCache, getCache, clearCache as clearOfflineCache } from './offlineCache'
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
 interface RequestOptions {
   method?: string
   body?: unknown
   headers?: Record<string, string>
+}
+
+// Fired from apiFetch when a GET request was served from IndexedDB
+// rather than the live network. OfflineBanner listens for this and
+// shows a "Showing cached data" message.
+function emitCacheFallback(cachedAt: number) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent('a2e:cache-fallback', { detail: { cachedAt } }))
 }
 
 function getToken(): string | null {
@@ -24,6 +34,9 @@ export function setTokens(accessToken: string, refreshToken: string) {
 export function clearTokens() {
   localStorage.removeItem('a2e_access_token')
   localStorage.removeItem('a2e_refresh_token')
+  // Wipe the offline cache too so the next account that signs in on
+  // this device never sees the previous account's leftover data.
+  void clearOfflineCache()
 }
 
 async function refreshAccessToken(): Promise<boolean> {
@@ -49,6 +62,20 @@ async function refreshAccessToken(): Promise<boolean> {
 
 export async function apiFetch<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, headers = {} } = options
+  const isGet = method.toUpperCase() === 'GET'
+
+  // Offline-first short-circuit: if the browser knows it's offline,
+  // skip the network call entirely and try the cache. Snappier UX +
+  // saves a guaranteed-to-fail fetch + lets the user keep navigating.
+  if (isGet && typeof navigator !== 'undefined' && navigator.onLine === false) {
+    const cached = await getCache<T>(path)
+    if (cached) {
+      emitCacheFallback(cached.cachedAt)
+      return cached.data
+    }
+    // No cache either — let the fetch run and produce a real network
+    // error so the caller's catch surface stays consistent.
+  }
 
   const token = getToken()
   const fetchHeaders: Record<string, string> = {
@@ -59,22 +86,48 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
     fetchHeaders['Authorization'] = `Bearer ${token}`
   }
 
-  let res = await fetch(`${API_URL}${path}`, {
-    method,
-    headers: fetchHeaders,
-    body: body ? JSON.stringify(body) : undefined,
-  })
+  let res: Response
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method,
+      headers: fetchHeaders,
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  } catch (netErr) {
+    // Pure network failure (DNS, offline, CORS, server down). For GETs,
+    // fall back to the cache so the UI keeps rendering. For mutations
+    // we still throw — those need to retry against a live server.
+    if (isGet) {
+      const cached = await getCache<T>(path)
+      if (cached) {
+        emitCacheFallback(cached.cachedAt)
+        return cached.data
+      }
+    }
+    throw netErr
+  }
 
   // If 401, try token refresh
   if (res.status === 401 && token) {
     const refreshed = await refreshAccessToken()
     if (refreshed) {
       fetchHeaders['Authorization'] = `Bearer ${getToken()}`
-      res = await fetch(`${API_URL}${path}`, {
-        method,
-        headers: fetchHeaders,
-        body: body ? JSON.stringify(body) : undefined,
-      })
+      try {
+        res = await fetch(`${API_URL}${path}`, {
+          method,
+          headers: fetchHeaders,
+          body: body ? JSON.stringify(body) : undefined,
+        })
+      } catch (netErr) {
+        if (isGet) {
+          const cached = await getCache<T>(path)
+          if (cached) {
+            emitCacheFallback(cached.cachedAt)
+            return cached.data
+          }
+        }
+        throw netErr
+      }
     }
   }
 
@@ -83,7 +136,13 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
     throw new Error(error.message || error.error || `HTTP ${res.status}`)
   }
 
-  return res.json()
+  const data = (await res.json()) as T
+  // Cache successful GETs in the background. Best-effort; never blocks
+  // the live response.
+  if (isGet) {
+    void putCache(path, data)
+  }
+  return data
 }
 
 // Auth API
