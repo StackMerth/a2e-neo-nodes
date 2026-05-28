@@ -125,6 +125,23 @@ const requestSchema = z.object({
 const SPOT_DISCOUNT_PCT = parseFloat(process.env.SPOT_DISCOUNT_PCT ?? '0.4')         // 40% off
 const RESERVED_DISCOUNT_PCT = parseFloat(process.env.RESERVED_DISCOUNT_PCT ?? '0.1') // 10% off
 
+// Workload-type discount: INFERENCE workloads on datacenter tiers run
+// shorter, hit less VRAM, and use less power than TRAINING / MIXED on
+// the same hardware. Offer a buyer-side discount to reflect that.
+// Consumer tiers (CONSUMER / RTX_4090 / RTX_3090) are already priced
+// for inference and are excluded so we don't double-discount.
+const INFERENCE_DISCOUNT_PCT = parseFloat(process.env.INFERENCE_DISCOUNT_PCT ?? '0.2') // 20% off
+const CONSUMER_TIER_SET = new Set(['CONSUMER', 'RTX_4090', 'RTX_3090'])
+
+function workloadPricingMultiplier(
+  workloadType: 'INFERENCE' | 'TRAINING' | 'MIXED',
+  gpuTier: string,
+): number {
+  if (workloadType !== 'INFERENCE') return 1
+  if (CONSUMER_TIER_SET.has(gpuTier)) return 1
+  return 1 - INFERENCE_DISCOUNT_PCT
+}
+
 function tierPricingMultiplier(tier: 'ON_DEMAND' | 'SPOT' | 'RESERVED'): number {
   if (tier === 'SPOT') return 1 - SPOT_DISCOUNT_PCT
   if (tier === 'RESERVED') return 1 - RESERVED_DISCOUNT_PCT
@@ -277,10 +294,13 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       }
     }
     const baseRatePerDay = GPU_DAILY_RATES[gpuTier] ?? 140.15
-    // M3: tier discount applied to ratePerDay so all downstream
-    // calculations (totalCost, ratePerMinute set by allocator, refund
-    // math) automatically inherit the tier pricing.
-    const ratePerDay = baseRatePerDay * tierPricingMultiplier(tier)
+    // M3 tier discount (SPOT / RESERVED) + workload-type discount
+    // (INFERENCE on datacenter tiers) compose multiplicatively. Both
+    // ride on ratePerDay so totalCost, allocator-set ratePerMinute,
+    // and refund math all inherit the final rate automatically.
+    const ratePerDay = baseRatePerDay
+      * tierPricingMultiplier(tier)
+      * workloadPricingMultiplier(workloadType, gpuTier)
     // For RESERVED, the rental's effective duration is the commitment
     // period (always >= durationDays). Buyer locks in commitmentDays;
     // we overwrite durationDays so ACTIVE rentals' expiresAt is set
