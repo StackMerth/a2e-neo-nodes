@@ -363,7 +363,16 @@ export default function RequestComputePage() {
 
   const hourlyRate = selectedTier ? HOURLY_RATES[selectedTier] ?? 0 : 0
   const tierMultiplier = TIER_OPTIONS.find(t => t.id === rentalTier)?.multiplier ?? 1
-  const dailyRate = hourlyRate * 24 * tierMultiplier
+  // Workload-type discount: 20% off when buyer picks INFERENCE on a
+  // datacenter tier (matches INFERENCE_DISCOUNT_PCT on the server).
+  // Consumer tiers (CONSUMER/RTX_4090/RTX_3090) are already priced for
+  // inference, so the discount only applies on H100, H200, B200, etc.
+  const INFERENCE_DISCOUNT_PCT = 0.2
+  const isConsumerTier = selectedTier === 'CONSUMER' || selectedTier === 'RTX_4090' || selectedTier === 'RTX_3090'
+  const workloadMultiplier = workloadType === 'INFERENCE' && !isConsumerTier
+    ? 1 - INFERENCE_DISCOUNT_PCT
+    : 1
+  const dailyRate = hourlyRate * 24 * tierMultiplier * workloadMultiplier
   // RESERVED rentals always lock in commitmentDays as the duration,
   // the API enforces this server-side, the UI just mirrors it for the
   // cost preview.
@@ -529,10 +538,12 @@ export default function RequestComputePage() {
         )}
 
         {/* C2 wave 2: Workload Type picker. Comes before GPU Tier
-            because it gates which tiers are clickable below. */}
+            because it gates which tiers are clickable below.
+            Inference also unlocks a 20% buyer-side discount on
+            datacenter tiers (server INFERENCE_DISCOUNT_PCT). */}
         <FormCard
           title="Workload Type"
-          description="What are you running? This decides which GPU classes are eligible."
+          description="What are you running? Inference unlocks a 20% discount on datacenter tiers."
           icon={Workflow}
         >
           <FormSection>
@@ -1077,6 +1088,14 @@ export default function RequestComputePage() {
                   <span style={{ color: 'var(--text-muted)' }}>Duration</span>
                   <span className="font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{effectiveDuration} days</span>
                 </div>
+                {workloadMultiplier < 1 && (
+                  <div className="flex justify-between text-sm">
+                    <span style={{ color: 'var(--primary)' }}>Inference discount</span>
+                    <span className="font-mono text-xs font-semibold" style={{ color: 'var(--primary)' }}>
+                      &minus;{Math.round(INFERENCE_DISCOUNT_PCT * 100)}%
+                    </span>
+                  </div>
+                )}
                 <div className="pt-3 flex justify-between" style={{ borderTop: '1px solid var(--border-color)' }}>
                   <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Total</span>
                   <span className="text-2xl font-bold font-mono" style={{ color: 'var(--primary)' }}>${totalCost.toFixed(2)}</span>
