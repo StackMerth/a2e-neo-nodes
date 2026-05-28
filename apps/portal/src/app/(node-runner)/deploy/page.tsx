@@ -139,7 +139,7 @@ export default function DeployPage() {
         paymentSource: 'BUYER_BALANCE',
         deploymentNote: note.trim() || undefined,
       }) as { id: string }
-      toast('success', 'Paid from balance. Install command is on the deployment page.')
+      toast('success', 'Paid from balance. Tracking your deployment now.')
       router.push(`/deployments/${result.id}`)
     } catch (e) {
       toast('error', e instanceof Error ? e.message : 'Failed to submit')
@@ -222,7 +222,7 @@ export default function DeployPage() {
         txHash: resolvedTxHash,
         deploymentNote: note.trim() || undefined,
       }) as { id: string }
-      toast('success', 'Payment confirmed. Install command is on the deployment page.')
+      toast('success', 'Payment confirmed. Tracking your deployment now.')
       // Jump directly to the deployment detail page so the operator
       // sees the auto-minted curl one-liner without having to find
       // it in the deployments list.
