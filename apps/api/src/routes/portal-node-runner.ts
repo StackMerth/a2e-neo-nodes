@@ -11,6 +11,7 @@ import { createNotification } from '../services/notification/service.js'
 import { generateTaxYearCsv } from '../services/reports/tax-csv.js'
 import { createOperatorDeployCheckoutSession, isStripeConfigured } from '../services/payment/stripe.js'
 import { debitBalance, InsufficientBalanceError } from '../services/balance/balance-service.js'
+import { mintInstallTokenForRunner } from './byog.js'
 
 const PORTAL_URL = process.env.PORTAL_URL?.trim() || 'https://user.tokenos.ai'
 
@@ -1396,6 +1397,27 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       )
     }
 
+    // Auto-mint a BYOG install token + persist it on the Investment.
+    // Self-serve fast path: operator immediately sees the curl one-liner
+    // on the deployment detail page, no admin gate. Best-effort: if the
+    // mint fails (e.g. transient DB issue), the Investment row still
+    // exists and admin can fall back to the manual /v1/byog/issue-token
+    // endpoint to recover.
+    let installCommand: string | null = null
+    try {
+      const minted = await mintInstallTokenForRunner(fastify.prisma, {
+        nodeRunnerId: nr.id,
+      })
+      await fastify.prisma.investment.update({
+        where: { id: investment.id },
+        data: { installToken: minted.token },
+      })
+      installCommand = minted.installCommand
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[deploy] auto-mint install token failed for investment', investment.id, err)
+    }
+
     reply.code(201).send({
       id: investment.id,
       gpuTier: investment.gpuTier,
@@ -1403,6 +1425,7 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       amount: investment.amount,
       status: investment.status,
       txHash: investment.txHash,
+      installCommand,
       createdAt: investment.createdAt.toISOString(),
     })
   })
@@ -1529,7 +1552,16 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       })
     }
 
-    reply.send({ deployment, provisionStatus, node })
+    // If the auto-mint at payment time captured a BYOG token, rebuild
+    // the curl one-liner from it so the frontend can show it directly.
+    // Rebuilt server-side so we can swap install-script delivery in
+    // future (CDN, mirror, etc.) without touching the client.
+    const installApiBase = process.env.A2E_API_URL || 'https://a2e-api.onrender.com'
+    const installCommand = deployment.installToken
+      ? `curl -fsSL ${installApiBase}/v1/byog/install?token=${deployment.installToken} | bash`
+      : null
+
+    reply.send({ deployment, provisionStatus, node, installCommand })
   })
 
   // ===================================================================

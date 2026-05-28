@@ -133,14 +133,14 @@ export default function DeployPage() {
     }
     setBalanceSubmitting(true)
     try {
-      await nodeRunner.deploy({
+      const result = await nodeRunner.deploy({
         gpuTier: selectedTier,
         nodeCount,
         paymentSource: 'BUYER_BALANCE',
         deploymentNote: note.trim() || undefined,
-      })
-      toast('success', 'Deployment requested and paid from balance')
-      router.push('/deployments')
+      }) as { id: string }
+      toast('success', 'Paid from balance. Install command is on the deployment page.')
+      router.push(`/deployments/${result.id}`)
     } catch (e) {
       toast('error', e instanceof Error ? e.message : 'Failed to submit')
     } finally {
@@ -216,14 +216,17 @@ export default function DeployPage() {
     }
 
     try {
-      await nodeRunner.deploy({
+      const result = await nodeRunner.deploy({
         gpuTier: selectedTier,
         nodeCount,
         txHash: resolvedTxHash,
         deploymentNote: note.trim() || undefined,
-      })
-      toast('success', 'Deployment request submitted successfully')
-      router.push('/deployments')
+      }) as { id: string }
+      toast('success', 'Payment confirmed. Install command is on the deployment page.')
+      // Jump directly to the deployment detail page so the operator
+      // sees the auto-minted curl one-liner without having to find
+      // it in the deployments list.
+      router.push(`/deployments/${result.id}`)
     } catch (e) {
       toast('error', e instanceof Error ? e.message : 'Failed to submit deployment request')
     } finally {

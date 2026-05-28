@@ -12,6 +12,8 @@ import {
   Package,
   Info,
   Rocket,
+  Terminal,
+  Copy,
 } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { useToast } from '@/components/ui/Toast'
@@ -66,11 +68,14 @@ export default function DeploymentDetailPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
+  const [installCommand, setInstallCommand] = useState<string | null>(null)
+
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
     try {
-      const d = await nodeRunner.deployment(id) as { deployment: DeploymentDetail }
+      const d = await nodeRunner.deployment(id) as { deployment: DeploymentDetail; installCommand: string | null }
       setData(d.deployment)
+      setInstallCommand(d.installCommand ?? null)
     } catch {
       toast('error', 'Failed to load deployment details')
     } finally {
@@ -203,6 +208,46 @@ export default function DeploymentDetailPage() {
                 )
               })}
             </div>
+          </SectionCard>
+        )}
+
+        {/* Self-serve install path. Surface the curl one-liner the
+            moment a deployment lands so the operator can install
+            the agent on their GPU machine without waiting for an
+            admin to mint a token. The card stays visible while the
+            install is pending; once the node is provisioned, the
+            install command is irrelevant and the progress card
+            advances. */}
+        {installCommand && data.status === 'DEPLOYMENT_REQUESTED' && (
+          <SectionCard title="Install on your machine" icon={Terminal}>
+            <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
+              Run this one-line command on the Linux box with the GPU you&rsquo;re
+              attaching. The installer self-detects hardware, registers the
+              node with this deployment, and starts the agent.
+            </p>
+            <div
+              className="rounded-md p-3 font-mono text-xs flex items-start gap-2 break-all"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+            >
+              <code className="flex-1">{installCommand}</code>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(installCommand)
+                  toast('success', 'Install command copied')
+                }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold shrink-0 hover:opacity-90 transition-opacity"
+                style={{ background: 'var(--primary)', color: '#fff' }}
+              >
+                <Copy size={12} />
+                Copy
+              </button>
+            </div>
+            <ul className="mt-3 text-xs space-y-1.5" style={{ color: 'var(--text-muted)' }}>
+              <li>• Requires root (the installer uses <code>sudo</code> for systemd + Docker setup).</li>
+              <li>• Token is one-shot. After install completes, this page advances to <strong>Deploying</strong>.</li>
+              <li>• Stuck? Check your machine has Docker + nvidia-docker installed and the GPU is visible to <code>nvidia-smi</code>.</li>
+            </ul>
           </SectionCard>
         )}
 
