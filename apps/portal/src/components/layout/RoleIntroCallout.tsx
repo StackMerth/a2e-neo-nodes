@@ -35,7 +35,7 @@ function dismissKey(surface: Surface) {
 }
 
 export function RoleIntroCallout() {
-  const { user } = useAuth()
+  const { user, refresh } = useAuth()
   const pathname = usePathname()
   const [enabling, setEnabling] = useState(false)
   const [dismissed, setDismissed] = useState<Surface>(null)
@@ -78,8 +78,10 @@ export function RoleIntroCallout() {
           body: { role: surface === 'buyer' ? 'COMPUTE_BUYER' : 'NODE_RUNNER' },
         },
       )
-      // Reflect locally so the callout disappears immediately. The
-      // canonical state is now on the server; next /me hit refreshes.
+      // Refetch the user from /me so the new isBuyer/isNodeRunner flag
+      // reaches the React tree. Without this the callout would reappear
+      // on the next portal switch because useAuth.user was still stale.
+      await refresh()
       setDismissed(surface)
     } catch (err) {
       console.warn('add-role failed', err)
