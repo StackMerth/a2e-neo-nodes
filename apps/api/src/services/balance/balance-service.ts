@@ -23,6 +23,17 @@ export type BalanceTxType =
   | 'REFUND_DEPLOYMENT'
   | 'REFUND_INFERENCE'
   | 'REFUND_FAILED'
+  // Track 5 / M0.2: 3-way revenue split destinations. STAKING_POOL_SHARE
+  // and TREASURY_SHARE credit the virtual system users (UserRole values
+  // SYSTEM_STAKING_POOL / SYSTEM_TREASURY) created by seed-system-accounts.
+  // COST_REIMBURSEMENT + ROYALTY_PAYOUT are reserved for later milestones
+  // (M0.3 reimburses the operator's cost when their earnings flow moves
+  // to BalanceTransaction, and M3.3 pays trainer-operator royalties for
+  // E4 fine-tuned models).
+  | 'STAKING_POOL_SHARE'
+  | 'TREASURY_SHARE'
+  | 'COST_REIMBURSEMENT'
+  | 'ROYALTY_PAYOUT'
 
 export interface BalanceSnapshot {
   balanceUsd: number
@@ -56,7 +67,20 @@ export async function getOrCreateBalance(
 interface CreditArgs {
   userId: string
   amountUsd: number
-  type: Extract<BalanceTxType, 'TOPUP_SOLANA' | 'TOPUP_STRIPE' | 'TOPUP_ADMIN' | 'REFUND_RENTAL' | 'REFUND_DEPLOYMENT' | 'REFUND_INFERENCE' | 'REFUND_FAILED'>
+  type: Extract<
+    BalanceTxType,
+    | 'TOPUP_SOLANA'
+    | 'TOPUP_STRIPE'
+    | 'TOPUP_ADMIN'
+    | 'REFUND_RENTAL'
+    | 'REFUND_DEPLOYMENT'
+    | 'REFUND_INFERENCE'
+    | 'REFUND_FAILED'
+    | 'STAKING_POOL_SHARE'
+    | 'TREASURY_SHARE'
+    | 'COST_REIMBURSEMENT'
+    | 'ROYALTY_PAYOUT'
+  >
   description: string
   referenceId: string | null
 }

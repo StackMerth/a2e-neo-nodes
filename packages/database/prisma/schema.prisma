@@ -1912,3 +1912,64 @@ model PowerRate {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
+
+// ============================================================================
+// REVENUE SHARE AUDIT  (Track 5 / M0.2)
+// ============================================================================
+// Every call to splitRevenue() writes one row here AND credits two
+// BalanceTransaction entries (STAKING_POOL_SHARE + TREASURY_SHARE) to
+// the virtual system users. The caller (M0.3 rental meter retrofit,
+// M0.4 deployment retrofit, M1.1 inference meter retrofit) uses the
+// returned operatorTotalUsd to write into the Earning table (or
+// equivalent operator-credit path) so the operator's existing earnings
+// flow stays intact, just with a smaller number.
+//
+// The reconciliation script (M0.5) reads this table to verify, for any
+// rental / deployment / inference call, that:
+//   operatorTotalUsd + stakingShareUsd + treasuryShareUsd == grossUsd
+//   (operatorTotalUsd - costUsd) == 0.5 * netUsd
+// A mismatch indicates a non-3-way path was missed during the retrofit.
+//
+// One row per referenceId is enforced by @@unique so a retry of a
+// splitRevenue call is a no-op — the existing row is returned and no
+// double-credit can land in staking/treasury.
+
+model RevenueShareEntry {
+  id              String   @id @default(cuid())
+  // Tags which revenue path produced this split. Must match the
+  // BalanceTxType value the buyer was debited with so reconciliation
+  // can join the two ledgers.
+  sourceTxType    String
+  // Stable identifier the buyer's debit also carries. ComputeRequest.id
+  // for rentals, deployment id for deployments, inference request id
+  // for SPEND_INFERENCE.
+  referenceId     String
+  // Gross revenue collected from the buyer (= buyer's SPEND_* debit).
+  grossUsd        Float
+  // Cost-of-service reimbursed to operator first (cost-of-service.ts
+  // output at split time).
+  costUsd         Float
+  // Net = max(0, gross - cost). Stored for the audit even though
+  // derivable, since cost-of-service may change retroactively if a
+  // GpuCostBaseline row is edited.
+  netUsd          Float
+  // What the operator actually received (cost + 0.5 * net at the time
+  // of this split). The retrofit caller uses this to credit the
+  // operator's Earning row.
+  operatorTotalUsd Float
+  stakingShareUsd Float
+  treasuryShareUsd Float
+  // The operator's User id, for cross-checking with the Earning table.
+  operatorUserId  String
+  // Snapshot of the kill switch state at split time. Lets the audit
+  // distinguish "OFF — operator got full gross via legacy path" from
+  // "ON — operator got cost + 0.5 * net via the new path". When OFF,
+  // stakingShareUsd and treasuryShareUsd will be 0 and operatorTotalUsd
+  // will equal grossUsd.
+  splitEnabled    Boolean
+  createdAt       DateTime @default(now())
+
+  @@unique([referenceId])
+  @@index([sourceTxType, createdAt])
+  @@index([operatorUserId, createdAt])
+}

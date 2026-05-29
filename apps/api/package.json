@@ -15,6 +15,8 @@
     "seed:templates": "tsx scripts/seed-templates.ts",
     "seed:cost-baselines": "tsx scripts/seed-cost-baselines.ts",
     "cost:inspect": "tsx scripts/cost-of-service-inspect.ts",
+    "seed:system-accounts": "tsx scripts/seed-system-accounts.ts",
+    "test:revenue-split": "tsx scripts/test-revenue-split.ts",
     "reputation:recompute": "tsx scripts/reputation-recompute.ts",
     "backfill:co2": "tsx scripts/backfill-co2.ts",
     "referrals:recompute": "tsx scripts/referrals-recompute.ts",
