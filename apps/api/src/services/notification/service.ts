@@ -28,6 +28,10 @@ const EMAIL_NOTIFICATION_TYPES: NotificationType[] = [
   // C4: benchmark anomaly — operator should hear about a sudden score
   // drop even if they're not watching the dashboard.
   'NODE_DEGRADED',
+  // T2.1: balance top-up landed. Same logic as PAYOUT_SENT — money
+  // movement events ship a receipt-style email so the user gets
+  // confirmation even when offline.
+  'BALANCE_TOPUP',
 ]
 
 /**

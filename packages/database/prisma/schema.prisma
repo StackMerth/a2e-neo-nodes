@@ -146,6 +146,12 @@ enum NotificationType {
   EMAIL_VERIFIED           // Fires once when User.emailVerified flips from false -> true
   // Track 5 / 3.A — token-billing alerts
   BURN_RATE_ALERT          // Buyer's hourly inference spend > 2x their 7-day average
+  // T2.1: top-up landed notifications. Fired from all three credit
+  // paths (Solana mainnet topup, Stripe checkout, admin TOPUP_ADMIN)
+  // so the buyer sees a bell + web push the moment money lands.
+  // Eligible for email per the existing high-priority list so
+  // receipts ship even when the user isn't online.
+  BALANCE_TOPUP
 }
 
 model User {
