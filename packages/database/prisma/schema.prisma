@@ -128,6 +128,8 @@ enum NotificationType {
   NODE_DEGRADED            // C4: fires when benchmark score drops >20% from prior score
   // Post-wave-2: email verification confirmation
   EMAIL_VERIFIED           // Fires once when User.emailVerified flips from false -> true
+  // Track 5 / 3.A — token-billing alerts
+  BURN_RATE_ALERT          // Buyer's hourly inference spend > 2x their 7-day average
 }
 
 model User {
@@ -1632,9 +1634,122 @@ enum BalanceTxType {
   TOPUP_ADMIN        // manual admin credit (promo, support refund)
   SPEND_RENTAL       // rental cost deducted at request time
   SPEND_DEPLOYMENT   // operator paid for a node deployment from balance
+  SPEND_INFERENCE    // per-call inference debit (Track 5 / E1 metering)
   REFUND_RENTAL      // partial refund from early-stop or unused minutes
   REFUND_DEPLOYMENT  // deployment cancelled or rejected — full credit back
+  REFUND_INFERENCE   // failed mid-stream / disputed inference call refund
   REFUND_FAILED      // allocator couldn't match — full credit back
+}
+
+// ============================================================================
+// TOKEN BILLING  (Track 5 / E1 — per-token inference metering)
+// ============================================================================
+// Track 5 sub-phase 3.A ships per-token billing for the upcoming managed
+// inference API. Three tables here drive it:
+//
+//   ModelPricing  — per-model input/output rates the meter charges against
+//   TokenUsage    — one row per inference call recording tokens + cost
+//   Invoice       — monthly aggregation rolled by the usage-aggregator job
+//
+// Buyers are debited via balance-service.debitBalance() with type
+// SPEND_INFERENCE at the moment the response stream closes; TokenUsage
+// rows accumulate as the raw record, and the daily aggregator rolls
+// them into Invoice line items so the buyer has an auditable monthly
+// statement. Operator revenue share (default 80% per the kickoff
+// decision) is paid via the existing Earning pipeline once E2 ships
+// the inference router — until then, only the buyer-side debit is
+// active.
+
+model ModelPricing {
+  // Stable identifier the inference router + meter agree on, e.g.
+  // "llama-3.1-70b-instruct" or "stable-diffusion-xl". When E4 (Model
+  // Marketplace) ships, this either stays as the canonical pricing
+  // source or is folded into Model.pricingId — leaving open both
+  // paths for now.
+  modelId                    String   @id
+  // Both prices stored as USD per ONE MILLION tokens to match
+  // industry-standard pricing units (matches OpenAI's published
+  // pricing format). The meter divides by 1e6 when computing per-call
+  // cost so floating-point error stays well below a cent.
+  inputPricePerMillionTokens  Float
+  outputPricePerMillionTokens Float
+  // Active flag flips off when a model is retired / deprecated.
+  // Meter rejects calls against inactive models so we never bill at
+  // an old rate.
+  isActive                   Boolean  @default(true)
+  // Free-form metadata — provider, baseModel, vendor link, etc. JSON
+  // so the schema doesn't churn each time we add a new field.
+  metadata                   Json?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+}
+
+model TokenUsage {
+  id              String   @id @default(cuid())
+  // Foreign key to ApiKey is logical only (Prisma relation omitted
+  // to keep the inference hot path schema-light); join via raw ID
+  // when needed.
+  apiKeyId        String
+  // Denormalized for fast user-scoped queries (dashboard, invoice
+  // aggregator) without a join.
+  userId          String
+  // Optional trace id from the inference router so a single call
+  // can be correlated across logs + ledger + invoice. In 3.A test
+  // mode this is null; in 3.B it's the InferenceRequest.id.
+  requestId       String?
+  // The modelId from ModelPricing the meter charged against.
+  model           String
+  // Raw token counts emitted by the tokenizer for this call.
+  inputTokens     Int
+  outputTokens   Int
+  // Total cost charged to the buyer in USD. Computed by the meter
+  // as (inputTokens * inputPrice + outputTokens * outputPrice) / 1e6.
+  // Stored even though it's derivable so per-day rollups don't have
+  // to re-multiply.
+  costUsd         Float
+  // Operator who served the call (the inference worker's nodeRunner).
+  // Null in 3.A test mode — only populated once E2 ships the router.
+  operatorId      String?
+  // Optional latency in ms (request start to last token) for
+  // observability + future SLO tracking. Null when not measured.
+  latencyMs       Int?
+  createdAt       DateTime @default(now())
+
+  // Hot path indexes for the aggregator + dashboards.
+  @@index([apiKeyId, createdAt])
+  @@index([userId, createdAt])
+  @@index([model, createdAt])
+}
+
+model Invoice {
+  id          String        @id @default(cuid())
+  userId      String
+  // YYYY-MM period the invoice covers. One invoice per user per
+  // month — enforced by the unique below.
+  period      String
+  // JSON breakdown of line items: [{ model, inputTokens, outputTokens, costUsd }, ...]
+  // Built by the usage-aggregator from TokenUsage rows for the period.
+  lineItems   Json
+  totalUsd    Float
+  status      InvoiceStatus @default(DRAFT)
+  // Used by the aggregator to set a sensible "statement due" date
+  // for accounting; payment is already debited live via debitBalance,
+  // so this is informational rather than a hard deadline.
+  dueAt       DateTime?
+  // Set when the SENT email goes out (or the buyer marks acknowledged).
+  sentAt      DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([userId, period])
+  @@index([status, dueAt])
+}
+
+enum InvoiceStatus {
+  DRAFT      // current open period, aggregator still adding line items
+  FINALIZED  // period closed, statement ready, not yet delivered
+  SENT       // statement email delivered to the buyer
+  VOID       // admin reversal (refund, dispute, fraud)
 }
 
 // ============================================================================
