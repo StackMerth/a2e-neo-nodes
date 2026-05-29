@@ -97,6 +97,14 @@ enum UserRole {
   COMPUTE_BUYER
   CUSTOMER       // Legacy — use COMPUTE_BUYER for new buyers
   ADMIN
+  // Track 5 / M0.2: virtual system accounts that hold the 3-way
+  // revenue split's non-operator slices. One STAKING_POOL row and one
+  // TREASURY row are seeded at deploy time; splitRevenue credits them
+  // through the regular creditBalance path so the ledger stays uniform.
+  // They never authenticate, never appear in user-facing lists, and
+  // are filtered out by the standard role-based queries.
+  SYSTEM_STAKING_POOL
+  SYSTEM_TREASURY
 }
 
 enum NotificationType {
@@ -634,6 +642,25 @@ model Node {
   operatorRatePerHour        Float?
   operatorRatePerDay         Float?
   operatorRateUpdatedAt      DateTime?
+
+  // Track 5 / M0.1: cost-of-service inputs.
+  //
+  // declaredGpuSku — normalized SKU key matching GpuCostBaseline.gpuSku.
+  // The cost-of-service service reads this to compute kWh draw +
+  // amortized hardware per hour. Populated by:
+  //   1) one-shot backfill at deploy from (gpuTier, customGpuModel)
+  //   2) BYOG install handshake (agent reports lspci / nvidia-smi data)
+  //   3) datacenter API provisioning response (SKU is known at order)
+  // NULL means "fall back to the gpuTier-derived default baseline" —
+  // splitRevenue handles this transparently so existing nodes don't
+  // need a backfill before the kill switch flips.
+  //
+  // powerRegion — coarse region bucket matching PowerRate.region
+  // ("US","EU","ASIA","OTHER"). Determines kWh price. NULL falls back
+  // to PowerRate.region="GLOBAL" (a single median rate used until
+  // regional inference is wired in).
+  declaredGpuSku             String?
+  powerRegion                String?
 
   // Timestamps
   createdAt     DateTime   @default(now())
@@ -1639,6 +1666,22 @@ enum BalanceTxType {
   REFUND_DEPLOYMENT  // deployment cancelled or rejected — full credit back
   REFUND_INFERENCE   // failed mid-stream / disputed inference call refund
   REFUND_FAILED      // allocator couldn't match — full credit back
+  // Track 5 / M0.2: 3-way revenue split destinations. Every SPEND_*
+  // debit produces three credit entries: COST_REIMBURSEMENT to the
+  // operator (their cost-of-service slice — kept distinct from their
+  // profit cut so reconciliation can audit cost vs profit independently),
+  // STAKING_POOL_SHARE (25% of net), and TREASURY_SHARE (25% of net).
+  // The operator's 50% profit cut continues to use the legacy
+  // SPEND_* type for the credit side so existing earnings analytics
+  // queries (which sum SPEND_RENTAL credits to compute operator
+  // earnings) keep working without a query rewrite.
+  COST_REIMBURSEMENT
+  STAKING_POOL_SHARE
+  TREASURY_SHARE
+  // Track 5 / E4: royalty paid to the operator who TRAINED a fine-tuned
+  // model when another operator HOSTS inference on it. Funded from the
+  // hosting operator's profit slice per the M3.3 split rules.
+  ROYALTY_PAYOUT
 }
 
 // ============================================================================
@@ -1787,4 +1830,85 @@ model PushSubscription {
   lastSentAt DateTime?
 
   @@index([userId])
+}
+
+// ============================================================================
+// COST OF SERVICE  (Track 5 / 3.0 — Model C revenue split foundation)
+// ============================================================================
+// Under Model C every revenue debit (rental, deployment, inference) splits
+// 50/25/25 of NET profit between operator, staking pool, and treasury. Net
+// profit = gross revenue − operator's cost-of-service. Cost-of-service is
+// computed deterministically from the operator's declared hardware, not
+// self-declared by the operator (gaming-resistant by design).
+//
+//   GpuCostBaseline  — per-SKU constants (kWh draw, hardware amortization,
+//                      bandwidth + overhead per hour). Seeded from public
+//                      specs.
+//   PowerRate        — per-region kWh price. Seeded with a single GLOBAL
+//                      row at $0.12/kWh; regional rows added when regional
+//                      inference at install ships.
+//
+// Cost-of-service formula (services/revenue/cost-of-service.ts):
+//   hourlyCost = (gpu.kwhDraw * region.usdPerKwh)
+//              + gpu.hardwareAmortHourly
+//              + gpu.bandwidthCostHourly
+//              + gpu.overheadHourly
+//   periodCost = hourlyCost * (durationSeconds / 3600)
+
+model GpuCostBaseline {
+  // Normalized SKU key (e.g. "H100_80GB", "RTX_4090", "A100_40GB").
+  // Matched against Node.declaredGpuSku at split time. When no row
+  // matches, the cost-of-service service falls back to a tier-default
+  // (one row per GpuTier value also seeded under names like
+  // "TIER_DEFAULT_H100", "TIER_DEFAULT_CONSUMER").
+  gpuSku                String  @id
+  // Free-form family label for grouping in admin UIs ("Hopper", "Ada",
+  // "Ampere", "Blackwell", "Consumer"). Not used by the cost formula.
+  gpuFamily             String
+  // Sustained power draw at typical inference/training load, in kWh
+  // (kilowatt-hours per hour, i.e. kW). 4090 ~0.45, A100-80 ~0.4,
+  // H100 ~0.7, B200 ~1.0. Multiplied by PowerRate.usdPerKwh to get
+  // electricity cost per hour.
+  kwhDraw               Float
+  // Hardware amortization per hour. Computed as (purchase price /
+  // expected service life in hours). Seeded from public retail prices
+  // and a 3-year / 24x7 amortization schedule (~26280 hours). Admin
+  // can override per SKU as market prices shift.
+  hardwareAmortHourly   Float
+  // Bandwidth + colo overhead per hour, in USD. Covers network egress
+  // share, cooling, rack space, etc. Lower for residential operators
+  // (~$0.02), higher for datacenter (~$0.30+).
+  bandwidthCostHourly   Float
+  // Catch-all platform overhead per hour (monitoring, support, SLA
+  // reserve). Default $0.05/hour. Lets us nudge cost-of-service up or
+  // down without re-fitting individual components.
+  overheadHourly        Float   @default(0.05)
+  // Pre-computed sum of the above at GLOBAL power rate, for fast
+  // admin / dashboard display. Recomputed by the seed/update path;
+  // the cost-of-service service does NOT read this — it always
+  // recomputes against the live PowerRate row so a power-rate change
+  // takes effect immediately.
+  totalCostHourlyGlobal Float
+  // Free-form note (datasheet link, sourcing decision, etc.) for the
+  // admin UI.
+  notes                 String?
+  isActive              Boolean @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model PowerRate {
+  // Region bucket. Initial seed has one row: "GLOBAL" at $0.12/kWh.
+  // Per-region rows ("US", "EU", "ASIA", "OTHER") added when M0.1+
+  // backfills detect operator regions from BYOG install IPs.
+  region     String   @id
+  // USD per kWh charged at this region's residential/datacenter
+  // average. Used by the cost-of-service service to multiply against
+  // GpuCostBaseline.kwhDraw.
+  usdPerKwh  Float
+  // Free-form note (data source, last-checked date, etc.).
+  notes      String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
