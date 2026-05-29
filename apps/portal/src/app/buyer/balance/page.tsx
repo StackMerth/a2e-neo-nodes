@@ -33,6 +33,24 @@ interface TopupDestination {
   message?: string
 }
 
+/**
+ * Normalize a user-pasted Solana transaction reference into the bare
+ * base58 signature the RPC expects. Handles:
+ *   - Solscan URLs: https://solscan.io/tx/<sig>?...
+ *   - Solana Explorer: https://explorer.solana.com/tx/<sig>?cluster=...
+ *   - SolanaFM: https://solana.fm/tx/<sig>
+ *   - XRAY: https://xray.helius.xyz/tx/<sig>
+ *   - bare signature: <sig>
+ * Strips trailing slashes, query strings, and fragments.
+ */
+function extractTxSignature(input: string): string {
+  const trimmed = input.trim()
+  if (!trimmed) return ''
+  const txMatch = trimmed.match(/\/(?:tx|transaction)\/([1-9A-HJ-NP-Za-km-z]+)/)
+  if (txMatch) return txMatch[1]!
+  return trimmed.split(/[?#]/)[0]!.replace(/\/+$/, '')
+}
+
 const TX_TYPE_META: Record<string, { label: string; tone: 'credit' | 'debit'; icon: typeof ArrowDownLeft }> = {
   TOPUP_SOLANA: { label: 'Solana topup', tone: 'credit', icon: ArrowDownLeft },
   TOPUP_STRIPE: { label: 'Card topup', tone: 'credit', icon: ArrowDownLeft },
@@ -318,10 +336,17 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
       toast('error', 'Enter a transaction hash and the USD amount you sent.')
       return
     }
+    // Buyers often copy from Solscan / Solana Explorer / SolanaFM and the
+    // full URL comes along ("https://solscan.io/tx/<sig>"). The RPC needs
+    // just the base58 signature or it returns "Invalid param: WrongSize".
+    // Extract the path segment after /tx/ or /transaction/, then strip
+    // any query string / fragment / trailing slash. Bare-hash paste also
+    // passes through unchanged.
+    const normalizedTxHash = extractTxSignature(manualTxHash)
     setManualSubmitting(true)
     try {
       const result = await buyer.balance.topupSolana({
-        txHash: manualTxHash.trim(),
+        txHash: normalizedTxHash,
         amountUsd: amountNumber,
         note: note.trim() || undefined,
       })
@@ -597,7 +622,7 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
                   type="text"
                   value={manualTxHash}
                   onChange={(e) => setManualTxHash(e.target.value)}
-                  placeholder="Paste the Solana signature"
+                  placeholder="Paste the signature or the Solscan / Explorer URL"
                   className="w-full rounded-lg px-3 py-2.5 text-sm font-mono"
                   style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                 />
