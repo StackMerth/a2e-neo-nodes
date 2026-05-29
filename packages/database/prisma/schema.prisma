@@ -68,6 +68,14 @@ enum Market {
   AKASH      // Akash Network (external)
   IONET      // IO.net (external)
   VASTAI     // Vast.ai (external)
+  // Track 5 / M0.3: per-rental revenue under Model C 3-way split.
+  // When REVENUE_SPLIT_ENABLED=true, completed rentals write an
+  // Earning row with market=RENTAL containing the operator's
+  // (cost + 50% net) slice. The uptime-stipend path (market=INTERNAL)
+  // is suppressed when the kill switch is ON so operators don't
+  // double-earn. When OFF, INTERNAL behaves exactly as before and
+  // RENTAL rows are never created.
+  RENTAL
 }
 
 enum JobSource {

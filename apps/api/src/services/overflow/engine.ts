@@ -300,11 +300,14 @@ export async function shouldDelistExternally(
     return { shouldDelist: true, reason: 'internal demand high', mode: 'SAFE' }
   }
 
-  if (deployment.market === 'INTERNAL') {
-    // Defensive — should never happen. Treat as corrupted state.
+  if (deployment.market === 'INTERNAL' || deployment.market === 'RENTAL') {
+    // Defensive — should never happen for external deployments. INTERNAL
+    // is the uptime stipend market, RENTAL is the Track 5 / M0.3 per-rental
+    // revenue market. Neither belongs on an ExternalDeployment row; treat
+    // as corrupted state and delist.
     return {
       shouldDelist: true,
-      reason: 'deployment market is INTERNAL (invalid)',
+      reason: `deployment market is ${deployment.market} (invalid for external)`,
       mode: 'FORCE',
     }
   }
