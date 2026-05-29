@@ -1465,6 +1465,50 @@ export const api = {
       apiFetch<any>(`/v1/admin/withdrawals/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
   },
 
+  // T1 — admin credit balance (TOPUP_ADMIN) for early testers,
+  // promo grants, support refunds. See routes/admin-balance.ts.
+  adminBalance: {
+    searchUsers: (q?: string) =>
+      apiFetch<{
+        users: Array<{
+          id: string
+          email: string | null
+          walletAddress: string | null
+          role: string
+          isBuyer: boolean
+          createdAt: string
+          balanceUsd: number
+        }>
+      }>(`/v1/admin/balance/users${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+
+    get: (userId: string) =>
+      apiFetch<{
+        user: { id: string; email: string | null; walletAddress: string | null; role: string }
+        balance: { balanceUsd: number; totalToppedUp: number; totalSpent: number; totalRefunded: number }
+        transactions: Array<{
+          id: string
+          type: string
+          amountUsd: number
+          description: string
+          referenceId: string | null
+          balanceAfter: number
+          createdAt: string
+        }>
+      }>(`/v1/admin/balance/${userId}`),
+
+    credit: (body: { userId: string; amountUsd: number; description: string; referenceId?: string }) =>
+      apiFetch<{
+        ok: boolean
+        userId: string
+        amountUsd: number
+        newBalanceUsd: number
+        referenceId: string
+        transactionId: string | null
+        createdAt: string | null
+        duplicate: boolean
+      }>(`/v1/admin/balance/credit`, { method: 'POST', body: JSON.stringify(body) }),
+  },
+
   // External Markets (M7)
   external: {
     status: () =>
