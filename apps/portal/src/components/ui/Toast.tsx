@@ -1,6 +1,30 @@
 'use client'
 
-import { useState, useEffect, createContext, useContext, useCallback, type ReactNode } from 'react'
+/**
+ * T2.1 toast redesign.
+ *
+ * Old behavior: bottom-right corner, narrow card, easily missed and
+ * sometimes obscured by the cancel/action buttons of an open modal
+ * (caught the WrongSize error in the Solana topup modal). New
+ * behavior: top-center, wider with clear icon + title + body, left
+ * accent strip color-coded by type, dedicated close button, click
+ * anywhere on the body to dismiss. Slide-down animation from above.
+ *
+ * Shared component — every page that uses useToast gets the new UI
+ * automatically. Both portal and dashboard have their own copies of
+ * this file with the same shape so notifications feel uniform across
+ * buyer + node-runner surfaces.
+ */
+
+import {
+  useState,
+  useEffect,
+  createContext,
+  useContext,
+  useCallback,
+  type ReactNode,
+} from 'react'
+import { CheckCircle2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react'
 
 type ToastType = 'success' | 'error' | 'info' | 'warning'
 
@@ -16,23 +40,25 @@ interface ToastContextType {
 
 const ToastContext = createContext<ToastContextType | null>(null)
 
+const AUTO_DISMISS_MS = 5000
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
 
   const addToast = useCallback((type: ToastType, message: string) => {
     const id = Math.random().toString(36).slice(2)
-    setToasts(prev => [...prev, { id, type, message }])
+    setToasts((prev) => [...prev, { id, type, message }])
   }, [])
 
   const removeToast = useCallback((id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id))
+    setToasts((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
   return (
     <ToastContext.Provider value={{ toast: addToast }}>
       {children}
-      <div className="fixed bottom-4 right-4 z-50 space-y-2">
-        {toasts.map(t => (
+      <div className="fixed top-4 inset-x-0 z-[9999] flex flex-col items-center gap-2 pointer-events-none px-4">
+        {toasts.map((t) => (
           <ToastItem key={t.id} toast={t} onDismiss={() => removeToast(t.id)} />
         ))}
       </div>
@@ -40,22 +66,92 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   )
 }
 
+const TONE = {
+  success: {
+    accent: 'rgb(34, 197, 94)',
+    icon: CheckCircle2,
+    label: 'Success',
+  },
+  error: {
+    accent: 'rgb(239, 68, 68)',
+    icon: AlertCircle,
+    label: 'Error',
+  },
+  info: {
+    accent: 'rgb(59, 130, 246)',
+    icon: Info,
+    label: 'Notice',
+  },
+  warning: {
+    accent: 'rgb(234, 179, 8)',
+    icon: AlertTriangle,
+    label: 'Heads up',
+  },
+} as const
+
 function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
+  const [mounted, setMounted] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+
   useEffect(() => {
-    const timer = setTimeout(onDismiss, 4000)
+    requestAnimationFrame(() => setMounted(true))
+    const timer = setTimeout(() => {
+      setLeaving(true)
+      setTimeout(onDismiss, 200)
+    }, AUTO_DISMISS_MS)
     return () => clearTimeout(timer)
   }, [onDismiss])
 
-  const colors = {
-    success: 'border-accent/50 bg-accent/10 text-accent',
-    error: 'border-error/50 bg-error/10 text-error',
-    info: 'border-info/50 bg-info/10 text-info',
-    warning: 'border-warning/50 bg-warning/10 text-warning',
+  const meta = TONE[toast.type]
+  const Icon = meta.icon
+
+  const dismiss = () => {
+    setLeaving(true)
+    setTimeout(onDismiss, 200)
   }
 
   return (
-    <div className={`animate-slideIn border rounded-lg px-4 py-3 text-sm max-w-sm ${colors[toast.type]}`}>
-      {toast.message}
+    <div
+      role="alert"
+      aria-live="polite"
+      onClick={dismiss}
+      className="pointer-events-auto cursor-pointer w-full max-w-md rounded-xl shadow-2xl overflow-hidden flex items-stretch"
+      style={{
+        background: 'rgba(15, 17, 22, 0.96)',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        backdropFilter: 'blur(20px)',
+        transform: leaving ? 'translateY(-12px)' : mounted ? 'translateY(0)' : 'translateY(-32px)',
+        opacity: leaving ? 0 : mounted ? 1 : 0,
+        transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), opacity 220ms ease-out',
+      }}
+    >
+      <div className="shrink-0 w-1" style={{ background: meta.accent }} />
+      <div className="flex items-start gap-3 flex-1 px-4 py-3.5">
+        <div
+          className="shrink-0 mt-0.5 rounded-full p-1.5"
+          style={{ background: `${meta.accent}1a`, color: meta.accent }}
+        >
+          <Icon size={16} strokeWidth={2.4} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[11px] uppercase tracking-[0.14em] font-mono opacity-70" style={{ color: meta.accent }}>
+            {meta.label}
+          </div>
+          <div className="text-sm leading-snug mt-0.5 text-white">
+            {toast.message}
+          </div>
+        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            dismiss()
+          }}
+          aria-label="Dismiss"
+          className="shrink-0 -mr-1 -mt-1 p-1 rounded hover:bg-white/5 text-white/40 hover:text-white/80 transition-colors"
+        >
+          <X size={14} />
+        </button>
+      </div>
     </div>
   )
 }

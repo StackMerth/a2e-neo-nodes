@@ -31,6 +31,7 @@ import {
   DuplicateTransactionError,
   getOrCreateBalance,
 } from '../services/balance/balance-service.js'
+import { createNotification } from '../services/notification/service.js'
 
 export async function adminBalanceRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate)
@@ -86,6 +87,16 @@ export async function adminBalanceRoutes(fastify: FastifyInstance) {
         where: { type: 'TOPUP_ADMIN', referenceId },
         select: { id: true, createdAt: true },
       })
+      // T2.1: notify the recipient buyer. Description is admin-supplied,
+      // so we put it in the body so the user knows the context
+      // (\"Pre-credit for closed beta\" etc.).
+      void createNotification(
+        userId,
+        'BALANCE_TOPUP',
+        `+$${amountUsd.toFixed(2)} admin credit`,
+        `${description} — balance now $${snap.balanceUsd.toFixed(2)}.`,
+        '/buyer/balance',
+      )
       return reply.send({
         ok: true,
         userId,

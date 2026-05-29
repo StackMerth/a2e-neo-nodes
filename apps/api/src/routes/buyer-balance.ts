@@ -23,6 +23,7 @@ import {
 } from '../services/balance/balance-service'
 import { getSolanaConfig, verifyTransaction } from '../services/payment/solana'
 import { createTopupCheckoutSession, isStripeConfigured } from '../services/payment/stripe'
+import { createNotification } from '../services/notification/service.js'
 
 const PORTAL_URL = process.env.PORTAL_URL ?? 'https://user.tokenos.ai'
 
@@ -188,6 +189,18 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
         description,
         referenceId: txHash,
       })
+      // T2.1: fire BALANCE_TOPUP notification + web push + email so the
+      // buyer sees the credit land in real time. Non-blocking — failure
+      // here never breaks the topup response.
+      void createNotification(
+        userId,
+        'BALANCE_TOPUP',
+        `+$${amountUsd.toFixed(2)} USDC credited`,
+        verification.isDevMode
+          ? `Dev-mode topup of $${amountUsd.toFixed(2)} confirmed. Balance: $${snapshot.balanceUsd.toFixed(2)}.`
+          : `Solana mainnet topup of $${amountUsd.toFixed(2)} confirmed. Balance: $${snapshot.balanceUsd.toFixed(2)}.`,
+        '/buyer/balance',
+      )
       reply.send({
         success: true,
         creditedUsd: amountUsd,

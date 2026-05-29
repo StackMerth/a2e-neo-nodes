@@ -155,7 +155,7 @@ async function handleBuyerBalanceTopup(
   }
 
   try {
-    await creditBalance(fastify.prisma, {
+    const snap = await creditBalance(fastify.prisma, {
       userId,
       amountUsd,
       type: 'TOPUP_STRIPE',
@@ -164,6 +164,14 @@ async function handleBuyerBalanceTopup(
     })
     // eslint-disable-next-line no-console
     console.log(`[stripe-webhook] credited $${amountUsd} to user=${userId} via session=${session.id}`)
+    // T2.1: BALANCE_TOPUP receipt notification (bell + web push + email).
+    void createNotification(
+      userId,
+      'BALANCE_TOPUP',
+      `+$${amountUsd.toFixed(2)} card topup`,
+      `Card topup of $${amountUsd.toFixed(2)} via Stripe confirmed. Balance: $${snap.balanceUsd.toFixed(2)}.`,
+      '/buyer/balance',
+    )
   } catch (err) {
     if (err instanceof DuplicateTransactionError) {
       // eslint-disable-next-line no-console
