@@ -29,6 +29,7 @@ import {
   Globe,
   Star,
   KeyRound,
+  PlusCircle,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -84,6 +85,7 @@ const navGroups: NavGroup[] = [
       { path: '/costs', icon: Receipt, label: 'Costs' },
       { path: '/reports', icon: FileText, label: 'Reports' },
       { path: '/withdrawals', icon: Wallet, label: 'Withdrawals', badgeKey: 'withdrawals' },
+      { path: '/balance-credit', icon: PlusCircle, label: 'Credit Balance' },
     ],
   },
   {
