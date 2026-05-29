@@ -161,6 +161,16 @@ import {
   createEarningsConsolidatorWorker,
   scheduleEarningsConsolidator,
 } from './jobs/earnings-consolidator'
+import {
+  createUsageAggregatorQueue,
+  createUsageAggregatorWorker,
+  scheduleUsageAggregator,
+} from './jobs/usage-aggregator'
+import {
+  createBurnRateAlertsQueue,
+  createBurnRateAlertsWorker,
+  scheduleBurnRateAlerts,
+} from './jobs/burn-rate-alerts'
 
 const server = Fastify({
   logger: {
@@ -381,6 +391,21 @@ async function start() {
     createEarningsConsolidatorWorker({ redis: redisConnection, prisma: server.prisma })
     await scheduleEarningsConsolidator(earningsConsolidatorQueue)
     server.log.info('Earnings consolidator worker initialized (24h tick)')
+
+    // Track 5 / 3.A — token billing infrastructure. Aggregator rolls
+    // TokenUsage into monthly Invoice rows; burn-rate alerts watch
+    // for runaway spend. Both are independent of the rest of the
+    // system and no-op when no inference activity is happening, so
+    // they're safe to register here alongside the other daily jobs.
+    const usageAggregatorQueue = createUsageAggregatorQueue(redisConnection)
+    createUsageAggregatorWorker({ redis: redisConnection, prisma: server.prisma })
+    await scheduleUsageAggregator(usageAggregatorQueue)
+    server.log.info('Usage aggregator worker initialized (24h tick) — Track 5 E1')
+
+    const burnRateAlertsQueue = createBurnRateAlertsQueue(redisConnection)
+    createBurnRateAlertsWorker({ redis: redisConnection, prisma: server.prisma })
+    await scheduleBurnRateAlerts(burnRateAlertsQueue)
+    server.log.info('Burn-rate alerts worker initialized (30m tick) — Track 5 E1')
 
     await scheduleRateFetcher(rateFetcherQueue)
     await scheduleReconciliation(reconciliationQueue, 5)

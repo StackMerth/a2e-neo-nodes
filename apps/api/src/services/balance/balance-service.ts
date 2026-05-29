@@ -18,8 +18,10 @@ export type BalanceTxType =
   | 'TOPUP_ADMIN'
   | 'SPEND_RENTAL'
   | 'SPEND_DEPLOYMENT'
+  | 'SPEND_INFERENCE'
   | 'REFUND_RENTAL'
   | 'REFUND_DEPLOYMENT'
+  | 'REFUND_INFERENCE'
   | 'REFUND_FAILED'
 
 export interface BalanceSnapshot {
@@ -54,7 +56,7 @@ export async function getOrCreateBalance(
 interface CreditArgs {
   userId: string
   amountUsd: number
-  type: Extract<BalanceTxType, 'TOPUP_SOLANA' | 'TOPUP_STRIPE' | 'TOPUP_ADMIN' | 'REFUND_RENTAL' | 'REFUND_DEPLOYMENT' | 'REFUND_FAILED'>
+  type: Extract<BalanceTxType, 'TOPUP_SOLANA' | 'TOPUP_STRIPE' | 'TOPUP_ADMIN' | 'REFUND_RENTAL' | 'REFUND_DEPLOYMENT' | 'REFUND_INFERENCE' | 'REFUND_FAILED'>
   description: string
   referenceId: string | null
 }
@@ -62,7 +64,7 @@ interface CreditArgs {
 interface DebitArgs {
   userId: string
   amountUsd: number
-  type: Extract<BalanceTxType, 'SPEND_RENTAL' | 'SPEND_DEPLOYMENT'>
+  type: Extract<BalanceTxType, 'SPEND_RENTAL' | 'SPEND_DEPLOYMENT' | 'SPEND_INFERENCE'>
   description: string
   referenceId: string
 }
