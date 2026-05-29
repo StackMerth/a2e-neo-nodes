@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { createNotification } from '../services/notification/service.js'
+import { creditCompletedRental } from '../services/revenue/rental-credit.js'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import { checkIdempotencyKey, storeIdempotencyResponse } from '../services/idempotency/keys.js'
 import { getSolanaConfig, processPayment } from '../services/payment/solana.js'
@@ -787,6 +788,22 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         data: { successfulRentalCount: { increment: 1 }, lastRentalAt: completedAt },
       }),
     ])
+
+    // Track 5 / M0.3: split the actually-billed revenue 3 ways
+    // (operator cost+50% net, staking 25%, treasury 25%) when
+    // REVENUE_SPLIT_ENABLED is true. Uses the post-refund amount
+    // (finalAccrued) as gross — operators only get a cut of what
+    // the buyer actually paid for. No-op when the kill switch is
+    // OFF. Logs but doesn't throw on failure so the buyer's
+    // terminate response is never blocked by the split.
+    try {
+      await creditCompletedRental(fastify.prisma, {
+        computeRequestId: id,
+        grossOverrideUsd: finalAccrued,
+      })
+    } catch (err) {
+      fastify.log.error({ err, requestId: id }, 'creditCompletedRental failed during terminate')
+    }
 
     void createNotification(
       userId,

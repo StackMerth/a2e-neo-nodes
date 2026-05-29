@@ -2,6 +2,7 @@ import { Queue, Worker, type ConnectionOptions } from 'bullmq'
 import type { PrismaClient } from '@a2e/database'
 import { calculateUptimeEarnings } from '../services/earnings/uptime-calculator'
 import { notifyFirstEarning } from '../services/notification/service.js'
+import { isRevenueSplitEnabled } from '../services/revenue/split.js'
 
 const QUEUE_NAME = 'earnings-rollup'
 
@@ -24,6 +25,15 @@ export function createEarningsRollupWorker(options: {
   const worker = new Worker(
     QUEUE_NAME,
     async () => {
+      // Track 5 / M0.3: when REVENUE_SPLIT_ENABLED is true, operators
+      // earn per-rental via creditCompletedRental on rental completion
+      // (Model C). The uptime stipend would double-pay them, so we
+      // short-circuit here and skip the rollup tick entirely. When OFF
+      // (default), the stipend continues exactly as before.
+      if (isRevenueSplitEnabled()) {
+        return { calculated: 0, skipped: 'revenue-split-enabled' }
+      }
+
       const now = new Date()
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 

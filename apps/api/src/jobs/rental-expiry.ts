@@ -26,6 +26,7 @@ import type { ConnectionOptions } from 'bullmq'
 import type { PrismaClient } from '@a2e/database'
 import type { Server as SocketServer } from 'socket.io'
 import { createNotification } from '../services/notification/service.js'
+import { creditCompletedRental } from '../services/revenue/rental-credit.js'
 
 const QUEUE_NAME = 'rental-expiry'
 const TICK_INTERVAL_MS = parseInt(process.env.EXPIRY_TICK_MS ?? '60000', 10)
@@ -151,6 +152,22 @@ async function completeRental(
   })
 
   if (!result.processed) return
+
+  // Track 5 / M0.3: when REVENUE_SPLIT_ENABLED is true, split the
+  // rental's accrued revenue 3 ways (operator cost+50% net, staking
+  // 25%, treasury 25%) and write the operator's per-rental Earning
+  // row. Idempotent — safe to call again if the next tick re-fires.
+  // No-op when the kill switch is OFF (legacy uptime stipend path
+  // continues to handle operator earnings).
+  try {
+    await creditCompletedRental(prisma, { computeRequestId: cr.id })
+  } catch (err) {
+    // Don't poison the COMPLETED transition on a split failure —
+    // log loud and continue. The reconciliation script (M0.5) will
+    // catch the gap; we'd rather have the rental marked COMPLETED
+    // than stuck ACTIVE because the split throws.
+    console.error(`[rental-expiry] creditCompletedRental failed for ${cr.id}:`, err)
+  }
 
   void createNotification(
     cr.userId,
