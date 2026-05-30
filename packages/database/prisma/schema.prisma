@@ -287,6 +287,19 @@ model NodeRunner {
   userId        String?  @unique
   user          User?    @relation(fields: [userId], references: [id])
 
+  // T3.2: Stripe Connect account id (`acct_xxxxxx`) when this operator
+  // opted into USD payouts via bank instead of (or alongside) USDC to
+  // their Solana wallet. Created by the Connect onboarding flow; once
+  // set + onboarding completed on Stripe's side, the operator can
+  // pick payoutMethod=STRIPE_CONNECT on each WithdrawalRequest.
+  // Nullable: pre-T3.2 operators keep working with Solana-only.
+  stripeConnectAccountId   String?
+  // Stripe Connect onboarding state. CREATED = account exists but the
+  // operator hasn't finished the hosted onboarding (charges/payouts
+  // disabled). READY = capabilities active, operator can receive
+  // transfers. Refreshed on each call to the /status endpoint.
+  stripeConnectStatus      String?
+
   // Payout preferences
   payoutThreshold  Float    @default(10.0)   // Minimum USD to trigger payout
   payoutFrequency  String   @default("WEEKLY") // DAILY, WEEKLY, MONTHLY
@@ -1632,12 +1645,24 @@ model WithdrawalRequest {
   nodeRunner      NodeRunner         @relation(fields: [nodeRunnerId], references: [id])
 
   amount          Float              // Amount in USD to withdraw
-  walletAddress   String             // Solana wallet to send to
+  // For SOLANA payouts: Solana wallet to send USDC to.
+  // For STRIPE_CONNECT payouts: nullable (NodeRunner.stripeConnectAccountId
+  // is the destination; this field is left blank to avoid two sources of truth).
+  walletAddress   String
   status          WithdrawalStatus   @default(PENDING)
+
+  // T3.2: payout rail. Defaults to SOLANA so existing operators (who
+  // never set payoutMethod) keep their current behavior. New operators
+  // who connected Stripe can pick STRIPE_CONNECT at withdrawal time.
+  payoutMethod    WithdrawalPayoutMethod @default(SOLANA)
 
   // Admin processing
   adminNote       String?
-  txHash          String?            // Solana TX hash when transferred
+  txHash          String?            // Solana TX hash when transferred (SOLANA payouts)
+  // T3.2: Stripe transfer id when payoutMethod=STRIPE_CONNECT.
+  // Format: tr_xxxxxx. Settles to the operator's connected Stripe
+  // account, then routed to their bank on Stripe's payout cadence.
+  stripeTransferId String?
   processedBy     String?            // Admin user ID
 
   // Timestamps
@@ -1657,6 +1682,15 @@ enum WithdrawalStatus {
   PROCESSING     // Transfer in progress
   COMPLETED      // Funds transferred, TX hash recorded
   REJECTED       // Admin rejected
+}
+
+// T3.2: which rail processes the operator's payout. SOLANA = USDC
+// transfer to their on-chain wallet (the existing flow). STRIPE_CONNECT
+// = transfer to their connected Stripe Express account, which Stripe
+// then pays out to their bank on the account's normal payout schedule.
+enum WithdrawalPayoutMethod {
+  SOLANA
+  STRIPE_CONNECT
 }
 
 // ============================================================================

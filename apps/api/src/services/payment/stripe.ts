@@ -305,6 +305,138 @@ export async function createDirectRentalCheckoutSession(
   return { id: session.id, url: session.url }
 }
 
+// ============================================================================
+// T3.2 — Stripe Connect (operator USD payouts)
+// ============================================================================
+// Operators who want to receive earnings in USD (bank deposit) instead
+// of USDC (Solana wallet) onboard via Stripe Connect Express. The
+// platform creates a connected account, hands the operator a Stripe-
+// hosted onboarding link, and once Stripe activates capabilities the
+// platform can call stripe.transfers.create() to push USD from our
+// Stripe balance into the operator's connected account. Stripe pays
+// out the connected account to the operator's bank on its normal
+// payout schedule (daily by default).
+//
+// Express vs Standard vs Custom: Express is the right pick — Stripe
+// hosts the entire onboarding UI (no custom KYC flows for us to
+// build), the operator owns the account but our platform processes
+// transfers + handles support escalations. Standard would force the
+// operator to manage their own Stripe dashboard end-to-end (more
+// work for them); Custom would force us to handle KYC ourselves.
+
+export interface CreateConnectAccountArgs {
+  email: string | null
+  // Country must match Stripe-supported list. Default 'US' is the most
+  // common; international operators can pass their ISO code at the
+  // route layer.
+  country?: string
+}
+
+export async function createConnectAccount(args: CreateConnectAccountArgs): Promise<{ id: string }> {
+  const stripe = getStripeClient()
+  if (!stripe) throw new Error('Stripe not configured')
+
+  const account = await stripe.accounts.create({
+    type: 'express',
+    country: args.country ?? 'US',
+    email: args.email ?? undefined,
+    capabilities: {
+      // transfers = we can push money TO this account. card_payments is
+      // not requested because the operator is on the receiving side; we
+      // are not letting them charge cards through this account.
+      transfers: { requested: true },
+    },
+    business_type: 'individual',
+    metadata: {
+      kind: 'operator_payout',
+    },
+  })
+  return { id: account.id }
+}
+
+/**
+ * Generate a one-time onboarding URL Stripe hosts for the operator
+ * to complete identity verification, bank info, etc. Link expires
+ * after ~5 minutes; the operator returns to returnUrl when done
+ * (or to refreshUrl if the link is reused / expired).
+ */
+export async function createConnectOnboardingLink(args: {
+  accountId: string
+  returnUrl: string
+  refreshUrl: string
+}): Promise<{ url: string }> {
+  const stripe = getStripeClient()
+  if (!stripe) throw new Error('Stripe not configured')
+
+  const link = await stripe.accountLinks.create({
+    account: args.accountId,
+    refresh_url: args.refreshUrl,
+    return_url: args.returnUrl,
+    type: 'account_onboarding',
+  })
+  return { url: link.url }
+}
+
+/**
+ * Read the live Stripe-side status of a connected account. We use
+ * the `details_submitted` flag + the transfers capability to decide
+ * whether the operator is ready to receive payouts.
+ */
+export async function getConnectAccountStatus(accountId: string): Promise<{
+  detailsSubmitted: boolean
+  transfersActive: boolean
+  payoutsEnabled: boolean
+  requirementsCurrentlyDue: string[]
+}> {
+  const stripe = getStripeClient()
+  if (!stripe) throw new Error('Stripe not configured')
+
+  const account = await stripe.accounts.retrieve(accountId)
+  return {
+    detailsSubmitted: Boolean(account.details_submitted),
+    transfersActive: account.capabilities?.transfers === 'active',
+    payoutsEnabled: Boolean(account.payouts_enabled),
+    requirementsCurrentlyDue: account.requirements?.currently_due ?? [],
+  }
+}
+
+/**
+ * Push USD from the platform's Stripe balance into the operator's
+ * connected account. Returns the Transfer id (`tr_xxxxxx`) which we
+ * persist on WithdrawalRequest.stripeTransferId for audit + the
+ * operator's records. Stripe then pays out the connected account to
+ * the operator's bank on the account's normal cadence.
+ *
+ * idempotencyKey is the WithdrawalRequest id; Stripe enforces
+ * single-shot processing for that key so a route retry can't
+ * double-transfer.
+ */
+export async function createConnectTransfer(args: {
+  destinationAccountId: string
+  amountUsd: number
+  idempotencyKey: string
+  description?: string
+}): Promise<{ id: string }> {
+  const stripe = getStripeClient()
+  if (!stripe) throw new Error('Stripe not configured')
+
+  const amountCents = Math.round(args.amountUsd * 100)
+  if (amountCents <= 0) {
+    throw new Error('Transfer amount must be > $0.00')
+  }
+
+  const transfer = await stripe.transfers.create(
+    {
+      amount: amountCents,
+      currency: 'usd',
+      destination: args.destinationAccountId,
+      description: args.description ?? `TokenOS_DeAI operator payout`,
+    },
+    { idempotencyKey: args.idempotencyKey },
+  )
+  return { id: transfer.id }
+}
+
 /**
  * Verify a webhook payload against the configured signing secret.
  * Returns the parsed event; throws on signature mismatch so the

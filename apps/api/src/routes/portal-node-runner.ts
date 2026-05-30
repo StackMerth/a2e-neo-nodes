@@ -9,7 +9,13 @@ import { calculateForecast } from '../services/earnings/forecast.js'
 import * as pricing from '../services/pricing/operator-rate.js'
 import { createNotification } from '../services/notification/service.js'
 import { generateTaxYearCsv } from '../services/reports/tax-csv.js'
-import { createOperatorDeployCheckoutSession, isStripeConfigured } from '../services/payment/stripe.js'
+import {
+  createOperatorDeployCheckoutSession,
+  isStripeConfigured,
+  createConnectAccount,
+  createConnectOnboardingLink,
+  getConnectAccountStatus,
+} from '../services/payment/stripe.js'
 import { debitBalance, InsufficientBalanceError } from '../services/balance/balance-service.js'
 import { mintInstallTokenForRunner } from './byog.js'
 
@@ -1735,4 +1741,118 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
         .send(csv)
     },
   )
+
+  // ===================================================================
+  // T3.2: Stripe Connect — operator USD payouts to bank
+  // ===================================================================
+  // Three endpoints:
+  //   POST /v1/portal/node-runner/stripe/connect/onboard
+  //     Creates a Connect Express account if the operator doesn't have
+  //     one, then returns a one-time hosted onboarding URL. The
+  //     operator completes KYC + bank info on Stripe's side and
+  //     returns to the portal. Re-callable: if the operator's
+  //     onboarding lapsed, this regenerates a fresh link against the
+  //     same account.
+  //   GET /v1/portal/node-runner/stripe/connect/status
+  //     Polls Stripe for the current state of the operator's account.
+  //     Returns details_submitted + transfers capability + payouts
+  //     enabled, so the UI can show "Connect Stripe", "Finish
+  //     onboarding", or "Ready to receive USD".
+  //   POST /v1/portal/node-runner/stripe/connect/disconnect
+  //     Clears the operator's Connect account id from our row. Stripe-
+  //     side account is left in place (operator can keep it / use it
+  //     elsewhere); we just stop using it for payouts.
+
+  fastify.post('/v1/portal/node-runner/stripe/connect/onboard', async (request, reply) => {
+    if (!isStripeConfigured()) {
+      return reply.code(503).send({ error: 'stripe_not_configured', message: 'Card payouts are not enabled on this deploy.' })
+    }
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+    const user = await fastify.prisma.user.findUnique({
+      where: { id: nr.userId ?? '' },
+      select: { email: true },
+    })
+    const emailForStripe = user?.email ?? nr.email
+
+    let accountId = nr.stripeConnectAccountId
+    try {
+      if (!accountId) {
+        const { id } = await createConnectAccount({ email: emailForStripe })
+        accountId = id
+        await fastify.prisma.nodeRunner.update({
+          where: { id: nr.id },
+          data: { stripeConnectAccountId: accountId, stripeConnectStatus: 'CREATED' },
+        })
+      }
+
+      const PORTAL = process.env.PORTAL_URL ?? 'https://user.tokenos.ai'
+      const { url } = await createConnectOnboardingLink({
+        accountId,
+        returnUrl: `${PORTAL}/node-runner/payouts?stripe_connect=success`,
+        refreshUrl: `${PORTAL}/node-runner/payouts?stripe_connect=refresh`,
+      })
+      return reply.send({ accountId, onboardingUrl: url })
+    } catch (err) {
+      fastify.log.error({ err, nodeRunnerId: nr.id }, 'stripe connect onboard failed')
+      return reply.code(500).send({ error: 'stripe_connect_failed', message: (err as Error).message })
+    }
+  })
+
+  fastify.get('/v1/portal/node-runner/stripe/connect/status', async (request, reply) => {
+    if (!isStripeConfigured()) {
+      return reply.send({ configured: false })
+    }
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+    if (!nr.stripeConnectAccountId) {
+      return reply.send({
+        configured: true,
+        connected: false,
+      })
+    }
+
+    try {
+      const status = await getConnectAccountStatus(nr.stripeConnectAccountId)
+      const summary = status.transfersActive && status.payoutsEnabled
+        ? 'READY'
+        : status.detailsSubmitted
+          ? 'PENDING_REVIEW'
+          : 'CREATED'
+      // Keep our cached status field in sync with Stripe-side reality
+      // so admin dashboards + payout flows can branch without an extra
+      // round trip on every check.
+      if (summary !== nr.stripeConnectStatus) {
+        await fastify.prisma.nodeRunner.update({
+          where: { id: nr.id },
+          data: { stripeConnectStatus: summary },
+        })
+      }
+      return reply.send({
+        configured: true,
+        connected: true,
+        accountId: nr.stripeConnectAccountId,
+        summary,
+        detailsSubmitted: status.detailsSubmitted,
+        transfersActive: status.transfersActive,
+        payoutsEnabled: status.payoutsEnabled,
+        requirementsCurrentlyDue: status.requirementsCurrentlyDue,
+      })
+    } catch (err) {
+      fastify.log.error({ err, nodeRunnerId: nr.id }, 'stripe connect status failed')
+      return reply.code(500).send({ error: 'stripe_status_failed', message: (err as Error).message })
+    }
+  })
+
+  fastify.post('/v1/portal/node-runner/stripe/connect/disconnect', async (request, reply) => {
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+    await fastify.prisma.nodeRunner.update({
+      where: { id: nr.id },
+      data: { stripeConnectAccountId: null, stripeConnectStatus: null },
+    })
+    return reply.send({ ok: true })
+  })
 }

@@ -109,10 +109,28 @@ export async function portalWithdrawalRoutes(fastify: FastifyInstance) {
   // REQUEST WITHDRAWAL
   // ===================================================================
 
-  const requestSchema = z.object({
-    amount: z.number().positive('Amount must be positive'),
-    walletAddress: z.string().min(32, 'Invalid wallet address').max(64, 'Invalid wallet address'),
-  })
+  // T3.2: payoutMethod added. Defaults to SOLANA so existing clients
+  // keep working unchanged. STRIPE_CONNECT requires the operator to
+  // have completed Connect onboarding (stripeConnectAccountId set +
+  // status READY); the route enforces this below.
+  // walletAddress becomes optional when payoutMethod=STRIPE_CONNECT
+  // (the destination is the operator's connected Stripe account, not
+  // a Solana wallet).
+  const requestSchema = z
+    .object({
+      amount: z.number().positive('Amount must be positive'),
+      walletAddress: z.string().max(64).optional().nullable(),
+      payoutMethod: z.enum(['SOLANA', 'STRIPE_CONNECT']).default('SOLANA'),
+    })
+    .refine(
+      (data) => {
+        if (data.payoutMethod === 'SOLANA') {
+          return Boolean(data.walletAddress && data.walletAddress.length >= 32)
+        }
+        return true
+      },
+      { message: 'walletAddress is required for SOLANA payouts (>= 32 chars)', path: ['walletAddress'] },
+    )
 
   /**
    * POST /v1/portal/node-runner/withdrawals/request — submit withdrawal request
@@ -128,7 +146,21 @@ export async function portalWithdrawalRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
     }
 
-    const { amount, walletAddress } = parsed.data
+    const { amount, walletAddress, payoutMethod } = parsed.data
+
+    // T3.2: STRIPE_CONNECT payouts require the operator to have an
+    // active Connect account. Check our cached status (refreshed by
+    // the /connect/status endpoint). Reject early so the buyer doesn't
+    // submit a withdrawal that the admin then has to manually reject.
+    if (payoutMethod === 'STRIPE_CONNECT') {
+      if (!nr.stripeConnectAccountId || nr.stripeConnectStatus !== 'READY') {
+        return reply.code(400).send({
+          error: 'stripe_connect_not_ready',
+          message:
+            'Connect your bank via Stripe first. Visit Payouts → Connect Stripe to start onboarding.',
+        })
+      }
+    }
 
     // Calculate available balance to validate requested amount
     const nodeIds = (await fastify.prisma.node.findMany({
@@ -171,7 +203,12 @@ export async function portalWithdrawalRoutes(fastify: FastifyInstance) {
       data: {
         nodeRunnerId: nr.id,
         amount,
-        walletAddress,
+        // For SOLANA, the operator-supplied wallet is the destination.
+        // For STRIPE_CONNECT, we store empty string (the destination
+        // is NodeRunner.stripeConnectAccountId; nothing useful belongs
+        // in walletAddress for the Stripe path).
+        walletAddress: payoutMethod === 'SOLANA' ? (walletAddress ?? '') : '',
+        payoutMethod,
       },
     })
 
