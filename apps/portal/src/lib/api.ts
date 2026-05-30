@@ -489,6 +489,31 @@ export const buyer = {
   activeCompute: () => apiFetch('/v1/buyer/compute/active'),
   cancelRequest: (id: string) => apiFetch(`/v1/buyer/compute/requests/${id}/cancel`, { method: 'PATCH' }),
   terminateRequest: (id: string) => apiFetch(`/v1/buyer/compute/requests/${id}/terminate`, { method: 'POST' }),
+  // T3.1: pay for a rental directly with a card via Stripe Hosted
+  // Checkout. Same payload shape as the regular rental submit
+  // endpoint, plus optional successUrl / cancelUrl. Backend returns
+  // { sessionId, url, amountUsd, ratePerDay }; client redirects to
+  // url. Webhook creates the ComputeRequest after Stripe confirms.
+  requestStripeCheckout: (data: {
+    gpuTier: string
+    gpuCount: number
+    durationDays: number
+    tier?: 'ON_DEMAND' | 'SPOT' | 'RESERVED'
+    workloadType?: 'INFERENCE' | 'TRAINING' | 'MIXED'
+    commitmentDays?: number
+    requiredRegion?: string | null
+    preferredOperatorSlug?: string | null
+    purpose?: string
+    sshPubKey?: string
+    successUrl?: string
+    cancelUrl?: string
+  }) =>
+    apiFetch<{
+      sessionId: string
+      url: string
+      amountUsd: number
+      ratePerDay: number
+    }>(`/v1/buyer/compute/requests/stripe/checkout`, { method: 'POST', body: data }),
   // T5c: fetch the decrypted SSH credentials for a Lambda-provisioned
   // rental. 404 = not external (use legacy sshHost/sshPassword from the
   // request detail), 409 = still provisioning (poll again in a few s).

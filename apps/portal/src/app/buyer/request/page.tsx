@@ -286,9 +286,16 @@ export default function RequestComputePage() {
   //   USDC             — fresh on-chain Solana transfer (always available)
   //   INTERNAL_BALANCE — operator-earned credit (dual-role users only)
   //   BUYER_BALANCE    — pre-loaded buyer credit (any buyer who topped up)
+  //   STRIPE_DIRECT    — pay full rental directly with a card via Stripe
+  //                      Hosted Checkout (T3.1). Skips the balance
+  //                      top-up step entirely. Always available when
+  //                      Stripe is configured server-side.
   // Picker auto-hides when neither balance route is usable, defaulting
   // straight back to the legacy USDC-only flow.
-  const [paymentSource, setPaymentSource] = useState<'USDC' | 'INTERNAL_BALANCE' | 'BUYER_BALANCE'>('USDC')
+  const [paymentSource, setPaymentSource] = useState<'USDC' | 'INTERNAL_BALANCE' | 'BUYER_BALANCE' | 'STRIPE_DIRECT'>('USDC')
+  // T3.1: redirecting state for the Stripe path so the submit button
+  // shows "Redirecting to Stripe…" instead of the generic submit copy.
+  const [stripeRedirecting, setStripeRedirecting] = useState(false)
   const [internalEligible, setInternalEligible] = useState(false)
   const [internalAvailable, setInternalAvailable] = useState(0)
   const [buyerBalanceUsd, setBuyerBalanceUsd] = useState<number>(0)
@@ -426,6 +433,35 @@ export default function RequestComputePage() {
 
     setSubmitting(true)
 
+    // T3.1: Stripe direct-pay path. Send the rental payload to the
+    // checkout endpoint, get back a Stripe Hosted Checkout URL, and
+    // redirect the browser. The webhook creates the ComputeRequest
+    // on the way back; this page never waits for it.
+    if (paymentSource === 'STRIPE_DIRECT') {
+      setStripeRedirecting(true)
+      try {
+        const { url } = await buyer.requestStripeCheckout({
+          gpuTier: selectedTier,
+          gpuCount,
+          durationDays: effectiveDuration,
+          tier: rentalTier,
+          workloadType,
+          commitmentDays: rentalTier === 'RESERVED' ? commitmentDays : undefined,
+          requiredRegion: requiredRegion || null,
+          preferredOperatorSlug: preferredOperatorSlug || null,
+          purpose: purpose.trim() || undefined,
+          sshPubKey: trimmedPubKey,
+        })
+        window.location.assign(url)
+        return
+      } catch (e) {
+        toast('error', e instanceof Error ? e.message : 'Could not start Stripe checkout')
+        setStripeRedirecting(false)
+        setSubmitting(false)
+        return
+      }
+    }
+
     // Wallet sign-and-pay path: sign a USDC transfer in the wallet
     // first, take the signature as the txHash, then submit the rental.
     // Any throw (user rejection, insufficient balance, RPC fail) bails
@@ -492,7 +528,12 @@ export default function RequestComputePage() {
   // usable (either dual-role operator OR buyer with topped-up credit).
   // Pure first-time buyers with $0 balance fall through to the legacy
   // USDC-only flow and never see the picker.
-  const showPaymentPicker = internalEligible || buyerBalanceUsd > 0
+  // T3.1: Stripe direct-pay is always offered (no balance pre-load
+  // required), so the payment picker is now ALWAYS shown for buyers
+  // who have something other than just USDC to choose between. Falls
+  // back to USDC-only for older deploys where Stripe is unconfigured
+  // (the picker simply won't render the Stripe tile in that case).
+  const showPaymentPicker = true
 
   return (
     <DashboardShell
@@ -1117,7 +1158,17 @@ export default function RequestComputePage() {
           >
             <FormSection>
               <div
-                className={`grid grid-cols-1 ${internalEligible && buyerBalanceUsd > 0 ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-3`}
+                className={`grid grid-cols-1 ${
+                  // Tile count is: USDC (always) + STRIPE (always)
+                  // + BUYER_BALANCE (when funded) + INTERNAL_BALANCE
+                  // (when dual-role operator with earnings). Layout
+                  // promotes to 4-col when all four are showing.
+                  internalEligible && buyerBalanceUsd > 0
+                    ? 'md:grid-cols-2 xl:grid-cols-4'
+                    : buyerBalanceUsd > 0 || internalEligible
+                      ? 'md:grid-cols-3'
+                      : 'md:grid-cols-2'
+                } gap-3`}
               >
                 <button
                   type="button"
@@ -1181,6 +1232,31 @@ export default function RequestComputePage() {
                     </p>
                   </button>
                 )}
+
+                {/* T3.1: Stripe direct-pay tile. Always shown when the
+                    feature is enabled; the endpoint 503s with a clear
+                    message when Stripe isn't configured server-side,
+                    surfaced in the submit toast. */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentSource('STRIPE_DIRECT')}
+                  className="text-left rounded-xl p-4 transition-all duration-200"
+                  style={paymentSource === 'STRIPE_DIRECT'
+                    ? { background: 'rgba(139,92,246,0.10)', border: '1px solid rgba(139,92,246,0.45)', boxShadow: '0 0 12px rgba(139,92,246,0.18)' }
+                    : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
+                  }
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Pay with card</span>
+                    <CreditCard size={16} style={{ color: '#8b5cf6' }} />
+                  </div>
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    Charge a card for <span className="font-mono">${totalCost.toFixed(2)}</span>.
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Stripe Hosted Checkout. Skips the balance top-up step.
+                  </p>
+                </button>
               </div>
 
               {internalShort && (
@@ -1226,7 +1302,9 @@ export default function RequestComputePage() {
                 : 'Paste your Solana transaction hash after sending payment, or connect a wallet to sign automatically.'
               : paymentSource === 'BUYER_BALANCE'
                 ? 'Confirm the debit from your pre-loaded balance.'
-                : 'Confirm the debit from your operator balance.'
+                : paymentSource === 'STRIPE_DIRECT'
+                  ? `You'll be redirected to Stripe to pay $${totalCost.toFixed(2)}. Your rental is created the moment Stripe confirms the charge.`
+                  : 'Confirm the debit from your operator balance.'
           }
           icon={Wallet}
           footer={
@@ -1242,7 +1320,12 @@ export default function RequestComputePage() {
               }
               className="px-8"
             >
-              {walletPaySelected ? (
+              {paymentSource === 'STRIPE_DIRECT' ? (
+                <>
+                  <CreditCard size={16} className="mr-2" />
+                  {stripeRedirecting ? 'Redirecting to Stripe…' : `Pay $${totalCost.toFixed(2)} with card`}
+                </>
+              ) : walletPaySelected ? (
                 <>
                   <Zap size={16} className="mr-2" />
                   {walletPhase === 'signing'
@@ -1261,7 +1344,29 @@ export default function RequestComputePage() {
           }
         >
           <FormSection>
-            {paymentSource === 'USDC' ? (
+            {paymentSource === 'STRIPE_DIRECT' ? (
+              // T3.1: STRIPE_DIRECT shows a single explainer card.
+              // The actual payment happens after submit when we
+              // redirect to Stripe Hosted Checkout.
+              <div
+                className="rounded-md p-4 flex items-start gap-3"
+                style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.25)' }}
+              >
+                <CreditCard size={18} style={{ color: '#8b5cf6', marginTop: 2 }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                    Pay with card via Stripe
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Total: <span className="font-mono">${totalCost.toFixed(2)}</span>. Hosted Checkout opens in
+                    this tab. After paying, you'll return here and your rental will appear within seconds.
+                  </p>
+                  <p className="text-[11px] mt-2" style={{ color: 'var(--text-muted)' }}>
+                    Early-terminated card rentals refund as platform credit, not back to the card.
+                  </p>
+                </div>
+              </div>
+            ) : paymentSource === 'USDC' ? (
               walletPaySelected ? (
                 // Wallet sign-and-pay primary block
                 <div className="space-y-3">
