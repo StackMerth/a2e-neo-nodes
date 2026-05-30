@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { createNotification } from '../services/notification/service.js'
 import { creditCompletedRental } from '../services/revenue/rental-credit.js'
+import { terminateLambdaRental } from '../services/inbound/lambda-provision.js'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import { checkIdempotencyKey, storeIdempotencyResponse } from '../services/idempotency/keys.js'
 import { getSolanaConfig, processPayment } from '../services/payment/solana.js'
@@ -803,6 +804,21 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       })
     } catch (err) {
       fastify.log.error({ err, requestId: id }, 'creditCompletedRental failed during terminate')
+    }
+
+    // T5b: if this was a Lambda-provisioned rental, stop billing on
+    // the provider side. Wrapped so a termination failure can't
+    // block the response to the buyer.
+    try {
+      const externalRental = await fastify.prisma.externalRental.findUnique({
+        where: { computeRequestId: id },
+        select: { id: true, status: true },
+      })
+      if (externalRental && externalRental.status !== 'CLOSED') {
+        await terminateLambdaRental(fastify.prisma, externalRental.id, `buyer terminated rental (${refundStatus})`)
+      }
+    } catch (err) {
+      fastify.log.error({ err, requestId: id }, 'terminateLambdaRental failed during terminate')
     }
 
     void createNotification(

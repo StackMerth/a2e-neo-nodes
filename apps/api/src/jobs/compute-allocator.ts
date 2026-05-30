@@ -34,6 +34,13 @@ import { evaluateEligibility } from '../services/allocation/eligibility.js'
 import { mintSshSession } from '../services/allocation/ssh-session.js'
 import { createNotification } from '../services/notification/service.js'
 import { planClusterMesh } from '../services/provisioning/wireguard-mesh.js'
+import { isLambdaConfigured } from '../services/inbound/lambda-adapter.js'
+import { isKeyEncryptionConfigured } from '../services/inbound/key-encryption.js'
+import {
+  lambdaTypeForTier,
+  fitsSingleLambdaInstance,
+} from '../services/inbound/tier-mapping.js'
+import { provisionLambdaRental } from '../services/inbound/lambda-provision.js'
 
 type ComputeRequestWithUser = ComputeRequest & { user: User }
 
@@ -291,12 +298,25 @@ async function processRequest(
     .slice(0, cr.gpuCount)
 
   if (idleNodes.length < cr.gpuCount) {
-    // Insufficient supply — stay in PENDING, retry next tick. We don't
-    // mark anything; the request stays exactly where it was. We do
-    // record an eligibility flag so admin can see the request is paid
-    // and waiting on capacity. M4.4: distinguish region-bound from
-    // generic capacity shortage so admin's Needs Review queue can see
-    // when a buyer asked for an unstocked region.
+    // T5b: try Lambda fallback before giving up. Falls through to
+    // legacy PENDING + WAITING_ON_CAPACITY behavior when Lambda is
+    // not configured, the tier isn't mapped, the request needs more
+    // GPUs than a single Lambda instance provides, or Lambda is out
+    // of capacity for the type. Lambda fallback also no-ops when
+    // SSH_KEY_ENCRYPTION_KEY isn't set — the provisioning service
+    // would throw otherwise.
+    const lambdaTook = await tryLambdaFallback(prisma, io, cr)
+    if (lambdaTook) {
+      return
+    }
+
+    // Insufficient supply + no Lambda fallback — stay in PENDING,
+    // retry next tick. We don't mark anything; the request stays
+    // exactly where it was. We do record an eligibility flag so
+    // admin can see the request is paid and waiting on capacity.
+    // M4.4: distinguish region-bound from generic capacity shortage
+    // so admin's Needs Review queue can see when a buyer asked for
+    // an unstocked region.
     const capacityFlag = requiredRegion ? 'NO_REGION_CAPACITY' : 'WAITING_ON_CAPACITY'
     await prisma.computeRequest.updateMany({
       where: { id: cr.id, status: 'PENDING' },
@@ -479,4 +499,126 @@ async function processRequest(
   }
   io.emit('compute:allocated', payload)
   io.emit('compute:active', payload)
+}
+
+// ---------------------------------------------------------------------------
+// T5b: Lambda Labs fallback
+// ---------------------------------------------------------------------------
+
+/**
+ * Try to provision a Lambda instance for the request when internal
+ * supply is insufficient. Returns true when the request now belongs to
+ * the lambda-poll worker (status flipped to PROVISIONING_EXTERNAL),
+ * false when this allocator tick should continue to the legacy PENDING
+ * + WAITING_ON_CAPACITY path.
+ *
+ * No-op (returns false) when:
+ *   - Lambda is not configured (LAMBDA_API_KEY missing)
+ *   - SSH key encryption is not configured
+ *   - The tier isn't mapped (consumer tiers — Lambda doesn't sell)
+ *   - The request needs more GPUs than one Lambda instance provides
+ *     (multi-instance clusters land in a later milestone)
+ *   - Lambda has no current capacity for the type / region
+ *   - Lambda's API rejects the launch for any other reason
+ *
+ * On any failure mid-provision, the helper logs loudly but does not
+ * throw so the surrounding allocator batch keeps processing other
+ * requests.
+ */
+async function tryLambdaFallback(
+  prisma: PrismaClient,
+  io: SocketServer,
+  cr: ComputeRequestWithUser,
+): Promise<boolean> {
+  if (!isLambdaConfigured()) return false
+  if (!isKeyEncryptionConfigured()) return false
+  if (!lambdaTypeForTier(cr.gpuTier)) return false
+  if (!fitsSingleLambdaInstance(cr.gpuTier, cr.gpuCount)) return false
+
+  // Mint a session token + compute the meter rate before the
+  // provision call so we have everything ready for one atomic
+  // ComputeRequest update on success. Lambda-provisioned rentals
+  // surface SSH via ExternalRental (T5c) so the token here is only
+  // used by buyer-facing endpoints that gate on "session live".
+  const session = mintSshSession(cr.durationDays)
+  const ratePerMinute = (cr.ratePerDay * cr.gpuCount) / (24 * 60)
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + cr.durationDays * 86400000)
+
+  let provisionResult
+  try {
+    provisionResult = await provisionLambdaRental(prisma, cr.id)
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[compute-allocator] Lambda fallback failed for ${cr.id} (tier ${cr.gpuTier}):`,
+      (err as Error).message,
+    )
+    return false
+  }
+
+  // Atomic transition: status guard prevents racing the manual
+  // admin allocate path on the same request.
+  const transitioned = await prisma.computeRequest.updateMany({
+    where: { id: cr.id, status: 'PENDING' },
+    data: {
+      status: 'PROVISIONING_EXTERNAL',
+      ratePerMinute,
+      expiresAt,
+      sshSessionToken: session.token,
+      sshSessionTokenExpiresAt: session.expiresAt,
+      sshSessionStatus: 'PROVISIONING',
+      // allocatedNodeIds intentionally stays empty: Lambda is not in
+      // our Node table. The link to provider state lives on
+      // ExternalRental (queryable by computeRequestId, the unique).
+    },
+  })
+  if (transitioned.count === 0) {
+    // Lost the race with another path (e.g. admin manually allocated
+    // between our supply check and now). Roll back the Lambda
+    // provision so we don't leak billing.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[compute-allocator] race on ${cr.id} after Lambda provision; rolling back`,
+    )
+    // Late import keeps the allocator file dep graph stable when the
+    // termination service grows.
+    const { terminateLambdaRental } = await import('../services/inbound/lambda-provision.js')
+    await terminateLambdaRental(
+      prisma,
+      provisionResult.externalRentalId,
+      'allocator race: another path won the request',
+    ).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(`[compute-allocator] rollback failed for ${provisionResult.externalRentalId}:`, err)
+    })
+    return false
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[compute-allocator] Lambda fallback OK for ${cr.id}: provisioned ${provisionResult.providerInstanceType} in ${provisionResult.providerRegion} (externalRentalId=${provisionResult.externalRentalId})`,
+  )
+
+  // Notify the buyer that their rental is provisioning externally.
+  // The lambda-poll worker fires the COMPUTE_ACTIVE notification
+  // once Lambda reports the instance is booted.
+  void createNotification(
+    cr.userId,
+    'COMPUTE_REQUEST_APPROVED',
+    'Compute is Provisioning',
+    `Your ${cr.gpuCount}x ${cr.gpuTier} rental is being prepared on Lambda Labs (${provisionResult.providerRegion}). SSH credentials appear in your dashboard within ~60s.`,
+    `/buyer/requests/${cr.id}`,
+  )
+
+  io.emit('compute:provisioning-external', {
+    requestId: cr.id,
+    userId: cr.userId,
+    provider: 'LAMBDA',
+    instanceType: provisionResult.providerInstanceType,
+    region: provisionResult.providerRegion,
+    timestamp: now.toISOString(),
+  })
+
+  return true
 }
