@@ -148,17 +148,37 @@ export function HeroSection() {
       </div>
       
       {/* Stats marquee - pinned to viewport bottom with more breathing
-          room above so it doesn't crowd the hero copy. */}
+          room above so it doesn't crowd the hero copy.
+          Outer wrapper applies an edge fade mask so the wrap point at
+          -50% never reads as "the end" — items dissolve into the
+          background on the left and right edges. */}
       <div
         className={`absolute bottom-4 sm:bottom-8 left-0 right-0 mt-16 transition-all duration-700 delay-500 ${
           isVisible ? "opacity-100" : "opacity-0"
         }`}
+        style={{
+          maskImage:
+            "linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%)",
+          WebkitMaskImage:
+            "linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%)",
+        }}
       >
-        {/* Marquee: flat single flex with items rendered twice so the
-            -50% animation wraps pixel-perfectly. Outer flex must NOT
-            have justify-center or any extra gap, or the wrap point
+        {/* Marquee: flat single flex with items rendered four times so
+            ultra-wide displays never reveal the wrap point. The -50%
+            animation completes one full cycle of the doubled-set; the
+            extra duplication is purely visual padding so any viewport
+            up to ~3x the content width stays covered. Outer flex must
+            NOT have justify-center or any extra gap, or the wrap point
             shows a blank gap on every loop. */}
-        <div className="flex gap-8 sm:gap-16 marquee whitespace-nowrap w-max">
+        <div
+          className="flex gap-8 sm:gap-16 marquee whitespace-nowrap w-max"
+          style={{
+            // 4x content with the default 30s would scroll twice as
+            // fast as before. Override to 60s so the per-item speed
+            // stays at the original calm cadence.
+            animationDuration: "60s",
+          }}
+        >
           {(() => {
             const stats = [
               { value: "60s", label: "pay to ssh", company: "AUTO ALLOCATOR" },
@@ -166,7 +186,7 @@ export function HeroSection() {
               { value: "40%", label: "off retail", company: "SPOT TIER" },
               { value: "11s", label: "median settlement", company: "SOLANA RAILS" },
             ];
-            return [...stats, ...stats].map((stat, i) => (
+            return [...stats, ...stats, ...stats, ...stats].map((stat, i) => (
               <div key={`${stat.company}-${i}`} className="flex items-center gap-3 sm:gap-4 shrink-0">
                 <span className="text-3xl sm:text-4xl lg:text-5xl font-display text-brand leading-none">{stat.value}</span>
                 <span className="text-xs sm:text-sm text-muted-foreground leading-tight">
