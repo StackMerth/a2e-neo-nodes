@@ -17,6 +17,10 @@ import {
   Star,
   Shield,
   Zap,
+  Cloud,
+  Loader2,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 import { buyer } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
@@ -125,6 +129,9 @@ const STATUS_MESSAGES: Record<string, { title: string; desc: string; color: stri
   APPROVED: { title: 'Request Approved', desc: 'Your request has been approved and resources are being prepared.', color: '#3b82f6' },
   ALLOCATED: { title: 'Resources Allocated', desc: 'GPUs have been allocated and are being configured for you.', color: '#8b5cf6' },
   ACTIVE: { title: 'Active, Connect via SSH', desc: 'Your compute resources are ready. Use the SSH details below to connect.', color: '#22c55e' },
+  // T5b: external-provider intermediate state — Lambda is booting the
+  // image. Page polls every 5s for credentials while this is shown.
+  PROVISIONING_EXTERNAL: { title: 'Provisioning on Lambda', desc: 'Your compute is being prepared on Lambda Labs. SSH credentials appear within ~60s.', color: '#06b6d4' },
   COMPLETED: { title: 'Completed', desc: 'This compute allocation has ended.', color: '#71717a' },
   CANCELLED: { title: 'Cancelled', desc: 'This request was cancelled.', color: '#71717a' },
   REJECTED: { title: 'Rejected', desc: 'This request was not approved.', color: '#ef4444' },
@@ -263,6 +270,21 @@ export default function RequestDetailPage() {
   // because it's pushed via WS and may arrive before the next data
   // refresh. Cleared automatically when status flips to COMPLETED.
   const [preemption, setPreemption] = useState<PreemptionPayload | null>(null)
+  // T5c: Lambda-provisioned SSH credentials, fetched on-demand and
+  // shown in a dedicated section. Null when the rental is internal
+  // or still provisioning (the page polls every 5s for it while
+  // PROVISIONING_EXTERNAL).
+  const [externalCreds, setExternalCreds] = useState<{
+    provider: string
+    sshHost: string
+    sshPort: number
+    sshUsername: string
+    sshPrivateKey: string
+    instanceType: string
+    region: string
+  } | null>(null)
+  const [externalCredsError, setExternalCredsError] = useState<string | null>(null)
+  const [showPrivateKey, setShowPrivateKey] = useState(false)
 
   const loadData = useCallback(async () => {
     try {
@@ -282,6 +304,48 @@ export default function RequestDetailPage() {
     const interval = setInterval(loadData, 10_000)
     return () => clearInterval(interval)
   }, [loadData, data?.status])
+
+  // T5c: poll the external-credentials endpoint while the rental is
+  // PROVISIONING_EXTERNAL or ACTIVE (and we haven't fetched creds
+  // yet). 404 = internal rental, give up. 409 = still provisioning,
+  // try again next tick. 200 = decrypt happened, render the section.
+  useEffect(() => {
+    if (!data || externalCreds) return
+    if (data.status !== 'PROVISIONING_EXTERNAL' && data.status !== 'ACTIVE') return
+
+    let cancelled = false
+
+    const fetchCreds = async () => {
+      try {
+        const creds = await buyer.externalCredentials(id)
+        if (!cancelled) {
+          setExternalCreds(creds)
+          setExternalCredsError(null)
+        }
+      } catch (err) {
+        if (cancelled) return
+        const msg = err instanceof Error ? err.message : 'Failed to fetch external credentials'
+        if (msg.includes('404')) {
+          // Internal rental — never poll again.
+          setExternalCreds(null)
+          setExternalCredsError(null)
+          cancelled = true
+        } else if (msg.includes('409')) {
+          // Still provisioning; quiet retry on the next tick.
+          setExternalCredsError(null)
+        } else {
+          setExternalCredsError(msg)
+        }
+      }
+    }
+
+    fetchCreds()
+    const interval = setInterval(fetchCreds, 5_000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [id, data, externalCreds])
 
   // Real-time updates via WebSocket. compute:preemption-notice surfaces
   // the SPOT eviction grace window so the countdown banner can render
@@ -534,8 +598,150 @@ export default function RequestDetailPage() {
           </SectionCard>
         )}
 
+        {/* T5c: PROVISIONING_EXTERNAL placeholder — Lambda is booting,
+            credentials not yet available. The polling effect above is
+            already retrying every 5s. */}
+        {data.status === 'PROVISIONING_EXTERNAL' && !externalCreds && (
+          <SectionCard
+            title="Provisioning on Lambda Labs"
+            icon={Cloud}
+            badge={
+              <span
+                className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(6, 182, 212, 0.12)', color: '#06b6d4', border: '1px solid rgba(6, 182, 212, 0.35)' }}
+              >
+                External
+              </span>
+            }
+          >
+            <div className="flex items-center gap-3 py-4">
+              <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--info)' }} />
+              <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                Lambda is booting your instance. SSH credentials will appear here within ~60 seconds.
+                <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  This page refreshes automatically.
+                </div>
+              </div>
+            </div>
+            {externalCredsError && (
+              <div className="mt-2 text-xs" style={{ color: 'var(--error)' }}>
+                {externalCredsError}
+              </div>
+            )}
+          </SectionCard>
+        )}
+
+        {/* T5c: Lambda-provisioned SSH access. Shown alongside the
+            internal SSH section, with a key-based auth flow instead
+            of the password flow internal nodes use. */}
+        {externalCreds && (data.status === 'ACTIVE' || data.status === 'PROVISIONING_EXTERNAL') && (
+          <SectionCard
+            title="SSH Access (Lambda Labs)"
+            icon={Cloud}
+            badge={
+              <span
+                className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(6, 182, 212, 0.12)', color: '#06b6d4', border: '1px solid rgba(6, 182, 212, 0.35)' }}
+              >
+                {externalCreds.region}
+              </span>
+            }
+          >
+            <div className="space-y-3">
+              <div className="text-xs font-mono uppercase tracking-wider pb-2" style={{ color: 'var(--text-muted)' }}>
+                {externalCreds.instanceType}
+              </div>
+              <div className="flex items-center justify-between py-2 text-sm" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Host</span>
+                <div className="flex items-center">
+                  <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{externalCreds.sshHost}</span>
+                  <CopyButton text={externalCreds.sshHost} />
+                </div>
+              </div>
+              <div className="flex items-center justify-between py-2 text-sm" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Port</span>
+                <div className="flex items-center">
+                  <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{externalCreds.sshPort}</span>
+                  <CopyButton text={String(externalCreds.sshPort)} />
+                </div>
+              </div>
+              <div className="flex items-center justify-between py-2 text-sm" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Username</span>
+                <div className="flex items-center">
+                  <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{externalCreds.sshUsername}</span>
+                  <CopyButton text={externalCreds.sshUsername} />
+                </div>
+              </div>
+
+              {/* Private key block — collapsed by default, click to show,
+                  download as .pem when ready. */}
+              <div className="py-2">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                    Private key (PKCS#8 PEM)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowPrivateKey((v) => !v)}
+                      className="text-xs flex items-center gap-1 px-2 py-1 rounded hover:bg-white/5 transition-colors"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      {showPrivateKey ? <EyeOff size={12} /> : <Eye size={12} />}
+                      {showPrivateKey ? 'Hide' : 'Show'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        const blob = new Blob([externalCreds.sshPrivateKey], { type: 'application/x-pem-file' })
+                        const url = URL.createObjectURL(blob)
+                        const a = document.createElement('a')
+                        a.href = url
+                        a.download = `tokenos-rental-${id.slice(0, 12)}.pem`
+                        document.body.appendChild(a)
+                        a.click()
+                        document.body.removeChild(a)
+                        URL.revokeObjectURL(url)
+                      }}
+                      className="text-xs flex items-center gap-1 px-2 py-1 rounded hover:bg-white/5 transition-colors"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      <Download size={12} />
+                      Download .pem
+                    </button>
+                    <CopyButton text={externalCreds.sshPrivateKey} />
+                  </div>
+                </div>
+                <pre
+                  className="text-xs font-mono p-3 rounded-lg overflow-x-auto max-h-48 overflow-y-auto"
+                  style={{
+                    background: 'var(--bg-card)',
+                    color: showPrivateKey ? 'var(--text-primary)' : 'var(--text-muted)',
+                    filter: showPrivateKey ? undefined : 'blur(6px)',
+                    userSelect: showPrivateKey ? 'text' : 'none',
+                    transition: 'filter 200ms ease-out',
+                  }}
+                >
+                  {externalCreds.sshPrivateKey}
+                </pre>
+                <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+                  Save this file (chmod 600) — it's only shown here while the rental is live.
+                </p>
+              </div>
+            </div>
+
+            {/* Ready-to-run SSH command. -i points at the saved .pem. */}
+            <div className="mt-4 p-3 rounded-lg" style={{ background: 'var(--bg-card)' }}>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
+                  ssh -i tokenos-rental-{id.slice(0, 12)}.pem {externalCreds.sshUsername}@{externalCreds.sshHost} -p {externalCreds.sshPort}
+                </p>
+                <CopyButton text={`ssh -i tokenos-rental-${id.slice(0, 12)}.pem ${externalCreds.sshUsername}@${externalCreds.sshHost} -p ${externalCreds.sshPort}`} />
+              </div>
+            </div>
+          </SectionCard>
+        )}
+
         {/* SSH Access (only when ACTIVE) */}
-        {data.status === 'ACTIVE' && data.sshHost && (
+        {data.status === 'ACTIVE' && data.sshHost && !externalCreds && (
           <SectionCard title="SSH Access" icon={Terminal}>
             <div className="space-y-3">
               <div className="flex items-center justify-between py-2 text-sm" style={{ borderBottom: '1px solid var(--glass-border)' }}>

@@ -489,6 +489,21 @@ export const buyer = {
   activeCompute: () => apiFetch('/v1/buyer/compute/active'),
   cancelRequest: (id: string) => apiFetch(`/v1/buyer/compute/requests/${id}/cancel`, { method: 'PATCH' }),
   terminateRequest: (id: string) => apiFetch(`/v1/buyer/compute/requests/${id}/terminate`, { method: 'POST' }),
+  // T5c: fetch the decrypted SSH credentials for a Lambda-provisioned
+  // rental. 404 = not external (use legacy sshHost/sshPassword from the
+  // request detail), 409 = still provisioning (poll again in a few s).
+  externalCredentials: (id: string) =>
+    apiFetch<{
+      provider: string
+      status: string
+      sshHost: string
+      sshPort: number
+      sshUsername: string
+      sshPrivateKey: string
+      instanceType: string
+      region: string
+      launchedAt: string | null
+    }>(`/v1/buyer/compute/requests/${id}/external-credentials`),
   rate: (id: string, data: { score: number; comment?: string }) =>
     apiFetch(`/v1/buyer/compute/requests/${id}/rate`, { method: 'POST', body: data }),
   // M3: trigger a workspace checkpoint mid-rental
