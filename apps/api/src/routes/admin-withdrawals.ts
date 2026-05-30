@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { createNotification } from '../services/notification/service.js'
+import { createConnectTransfer, isStripeConfigured } from '../services/payment/stripe.js'
 
 export async function adminWithdrawalRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate)
@@ -195,6 +196,89 @@ export async function adminWithdrawalRoutes(fastify: FastifyInstance) {
     }
 
     reply.send({ id, status: 'COMPLETED', txHash: parsed.data.txHash })
+  })
+
+  // ===================================================================
+  // T3.2: PROCESS VIA STRIPE — for STRIPE_CONNECT payouts
+  // ===================================================================
+  // Unlike the Solana /complete route (admin pastes txHash AFTER they
+  // ran the Solana transfer manually), the Stripe path is end-to-end
+  // automated: this single route calls Stripe Transfers API directly,
+  // captures the returned tr_xxxxxx id, and flips the row to COMPLETED.
+  // Idempotency: stripe.transfers.create() uses the WithdrawalRequest
+  // id as the Stripe idempotency key, so a retry never double-transfers.
+
+  fastify.patch('/v1/admin/withdrawals/:id/process-stripe', async (request, reply) => {
+    if (!isStripeConfigured()) {
+      return reply.code(503).send({ error: 'stripe_not_configured' })
+    }
+    const { id } = request.params as { id: string }
+    const withdrawal = await fastify.prisma.withdrawalRequest.findUnique({
+      where: { id },
+      include: { nodeRunner: { select: { id: true, userId: true, stripeConnectAccountId: true, stripeConnectStatus: true } } },
+    })
+    if (!withdrawal) return reply.code(404).send({ error: 'Withdrawal request not found' })
+    if (withdrawal.payoutMethod !== 'STRIPE_CONNECT') {
+      return reply.code(400).send({ error: `Not a STRIPE_CONNECT withdrawal: payoutMethod=${withdrawal.payoutMethod}` })
+    }
+    if (!['APPROVED', 'PROCESSING'].includes(withdrawal.status)) {
+      return reply.code(400).send({ error: `Cannot process: status is ${withdrawal.status}` })
+    }
+    const dest = withdrawal.nodeRunner?.stripeConnectAccountId
+    if (!dest) {
+      return reply.code(400).send({ error: 'Operator has no Stripe Connect account on file' })
+    }
+    if (withdrawal.nodeRunner?.stripeConnectStatus !== 'READY') {
+      return reply.code(400).send({ error: `Operator's Stripe Connect status is ${withdrawal.nodeRunner?.stripeConnectStatus ?? 'unknown'}, expected READY` })
+    }
+
+    // Move to PROCESSING so a concurrent click can't double-fire.
+    await fastify.prisma.withdrawalRequest.update({
+      where: { id },
+      data: { status: 'PROCESSING' },
+    })
+
+    let transferId: string
+    try {
+      const { id: trId } = await createConnectTransfer({
+        destinationAccountId: dest,
+        amountUsd: withdrawal.amount,
+        idempotencyKey: `withdrawal_${withdrawal.id}`,
+        description: `TokenOS_DeAI operator payout (withdrawal ${withdrawal.id})`,
+      })
+      transferId = trId
+    } catch (err) {
+      // Roll the row back to APPROVED so admin can retry without
+      // resubmitting from scratch.
+      await fastify.prisma.withdrawalRequest.update({
+        where: { id },
+        data: { status: 'APPROVED', adminNote: `Stripe transfer failed: ${(err as Error).message}` },
+      })
+      fastify.log.error({ err, withdrawalId: id }, 'Stripe transfer failed')
+      return reply.code(500).send({ error: 'stripe_transfer_failed', message: (err as Error).message })
+    }
+
+    await fastify.prisma.withdrawalRequest.update({
+      where: { id },
+      data: {
+        status: 'COMPLETED',
+        stripeTransferId: transferId,
+        processedAt: new Date(),
+        processedBy: request.user?.userId ?? null,
+      },
+    })
+
+    if (withdrawal.nodeRunner?.userId) {
+      void createNotification(
+        withdrawal.nodeRunner.userId,
+        'WITHDRAWAL_COMPLETED',
+        'Withdrawal Sent to Bank',
+        `Your withdrawal of $${withdrawal.amount.toFixed(2)} was transferred to your connected bank via Stripe. Funds typically arrive on the next business day per Stripe's payout schedule.`,
+        '/withdrawals',
+      )
+    }
+
+    reply.send({ id, status: 'COMPLETED', stripeTransferId: transferId })
   })
 
   // ===================================================================

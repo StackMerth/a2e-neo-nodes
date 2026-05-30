@@ -338,8 +338,42 @@ export const nodeRunner = {
     return apiFetch(`/v1/portal/node-runner/withdrawals${qs}`)
   },
   withdrawalBalance: () => apiFetch('/v1/portal/node-runner/withdrawals/balance'),
-  requestWithdrawal: (data: { amount: number; walletAddress: string }) =>
+  // T3.2: walletAddress is optional when payoutMethod=STRIPE_CONNECT
+  // (destination is the operator's Stripe Connect account id, set
+  // by the onboarding flow below).
+  requestWithdrawal: (data: {
+    amount: number
+    walletAddress?: string
+    payoutMethod?: 'SOLANA' | 'STRIPE_CONNECT'
+  }) =>
     apiFetch('/v1/portal/node-runner/withdrawals/request', { method: 'POST', body: data }),
+
+  // T3.2: Stripe Connect endpoints for operator-side USD payouts.
+  stripeConnect: {
+    // Returns the onboarding URL the operator opens to complete KYC +
+    // bank info. Re-callable when status is not READY.
+    onboard: () =>
+      apiFetch<{ accountId: string; onboardingUrl: string }>(
+        '/v1/portal/node-runner/stripe/connect/onboard',
+        { method: 'POST' },
+      ),
+    status: () =>
+      apiFetch<{
+        configured: boolean
+        connected: boolean
+        accountId?: string
+        summary?: 'CREATED' | 'PENDING_REVIEW' | 'READY'
+        detailsSubmitted?: boolean
+        transfersActive?: boolean
+        payoutsEnabled?: boolean
+        requirementsCurrentlyDue?: string[]
+      }>('/v1/portal/node-runner/stripe/connect/status'),
+    disconnect: () =>
+      apiFetch<{ ok: boolean }>(
+        '/v1/portal/node-runner/stripe/connect/disconnect',
+        { method: 'POST' },
+      ),
+  },
   withdrawal: (id: string) => apiFetch(`/v1/portal/node-runner/withdrawals/${id}`),
   investments: () => apiFetch('/v1/portal/node-runner/investments'),
   deploy: (data: {

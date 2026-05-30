@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Wallet, ExternalLink, CircleCheck, Clock, Loader2, CircleX, PiggyBank, ArrowDownToLine, TrendingDown } from 'lucide-react'
+import { Wallet, ExternalLink, CircleCheck, Clock, Loader2, CircleX, PiggyBank, ArrowDownToLine, TrendingDown, Building2 } from 'lucide-react'
 import { nodeRunner } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
@@ -91,15 +91,28 @@ export default function PayoutsPage() {
   const [saveWallet, setSaveWallet] = useState(false)
   const [withdrawing, setWithdrawing] = useState(false)
 
+  // T3.2: Stripe Connect status for the operator. Loaded in parallel
+  // with the rest of the page so the Connect Bank section renders on
+  // first paint.
+  const [stripeConnect, setStripeConnect] = useState<{
+    configured: boolean
+    connected: boolean
+    summary?: 'CREATED' | 'PENDING_REVIEW' | 'READY'
+    payoutsEnabled?: boolean
+    requirementsCurrentlyDue?: string[]
+  } | null>(null)
+  const [stripeOnboarding, setStripeOnboarding] = useState(false)
+
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
     else setLoading(true)
     try {
-      const [p, s, modeInfo, profile] = await Promise.all([
+      const [p, s, modeInfo, profile, connect] = await Promise.all([
         nodeRunner.payouts({ page: String(page), limit: '20' }) as Promise<PayoutData>,
         nodeRunner.internalSpends().catch(() => ({ spends: [], total: 0 })),
         nodeRunner.payoutMode().catch(() => null),
         nodeRunner.profile().catch(() => null),
+        nodeRunner.stripeConnect.status().catch(() => null),
       ])
       setData(p)
       setSpends(s.spends)
@@ -113,6 +126,7 @@ export default function PayoutsPage() {
       if (profile) {
         setSavedWallet((profile as { walletAddress?: string }).walletAddress ?? '')
       }
+      setStripeConnect(connect)
     } catch { /* ignore */ }
     finally {
       setLoading(false)
@@ -441,6 +455,119 @@ export default function PayoutsPage() {
             loading={loading}
             empty={null}
           />
+        )}
+
+        {/* T3.2: Stripe Connect — opt into USD payouts to bank. Hidden
+            when Stripe isn't configured server-side. Once connected, the
+            operator can pick "Bank via Stripe" as their payout method on
+            withdrawal requests (admin-mediated path; the instant
+            withdraw-now button stays Solana-only for v1). */}
+        {stripeConnect?.configured && (
+          <FormCard
+            title="Bank payouts via Stripe"
+            description={
+              !stripeConnect.connected
+                ? 'Receive earnings in USD directly to your bank instead of (or alongside) USDC on Solana.'
+                : stripeConnect.summary === 'READY'
+                  ? 'Your bank is connected and ready to receive USD payouts.'
+                  : stripeConnect.summary === 'PENDING_REVIEW'
+                    ? 'Stripe is reviewing your details. Payouts unlock once verification clears.'
+                    : 'Finish Stripe onboarding to enable USD payouts.'
+            }
+            icon={Building2}
+          >
+            <FormSection>
+              {!stripeConnect.connected ? (
+                <div className="flex flex-col gap-4">
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    Stripe-hosted onboarding takes 5-10 minutes. After verification, requesting
+                    a withdrawal with "Bank via Stripe" routes USD to your account; Stripe pays
+                    out to your bank on its normal cadence (usually next business day).
+                  </p>
+                  <Button
+                    onClick={async () => {
+                      setStripeOnboarding(true)
+                      try {
+                        const { onboardingUrl } = await nodeRunner.stripeConnect.onboard()
+                        window.location.assign(onboardingUrl)
+                      } catch (err) {
+                        toast('error', err instanceof Error ? err.message : 'Could not start Stripe onboarding')
+                        setStripeOnboarding(false)
+                      }
+                    }}
+                    loading={stripeOnboarding}
+                    className="self-start"
+                  >
+                    <Building2 size={16} className="mr-2" />
+                    Connect Stripe
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span style={{ color: 'var(--text-muted)' }}>Status</span>
+                    <span
+                      className="font-mono text-xs px-2 py-0.5 rounded"
+                      style={
+                        stripeConnect.summary === 'READY'
+                          ? { background: 'rgba(34,197,94,0.1)', color: 'var(--success)' }
+                          : { background: 'rgba(245,158,11,0.1)', color: 'var(--warning)' }
+                      }
+                    >
+                      {stripeConnect.summary ?? 'UNKNOWN'}
+                    </span>
+                  </div>
+                  {stripeConnect.requirementsCurrentlyDue && stripeConnect.requirementsCurrentlyDue.length > 0 && (
+                    <div
+                      className="text-xs rounded px-3 py-2"
+                      style={{
+                        background: 'rgba(245,158,11,0.08)',
+                        border: '1px solid rgba(245,158,11,0.25)',
+                        color: 'var(--warning)',
+                      }}
+                    >
+                      Stripe needs: {stripeConnect.requirementsCurrentlyDue.join(', ')}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    {stripeConnect.summary !== 'READY' && (
+                      <Button
+                        onClick={async () => {
+                          setStripeOnboarding(true)
+                          try {
+                            const { onboardingUrl } = await nodeRunner.stripeConnect.onboard()
+                            window.location.assign(onboardingUrl)
+                          } catch (err) {
+                            toast('error', err instanceof Error ? err.message : 'Could not resume onboarding')
+                            setStripeOnboarding(false)
+                          }
+                        }}
+                        loading={stripeOnboarding}
+                        variant="secondary"
+                      >
+                        Finish onboarding
+                      </Button>
+                    )}
+                    <Button
+                      onClick={async () => {
+                        if (!confirm('Disconnect Stripe? You can reconnect later but will need to redo onboarding.')) return
+                        try {
+                          await nodeRunner.stripeConnect.disconnect()
+                          toast('success', 'Stripe disconnected')
+                          await loadData(true)
+                        } catch (err) {
+                          toast('error', err instanceof Error ? err.message : 'Disconnect failed')
+                        }
+                      }}
+                      variant="ghost"
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </FormSection>
+          </FormCard>
         )}
 
         <DataTableCard<PayoutRow>
