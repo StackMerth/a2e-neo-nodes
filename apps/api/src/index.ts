@@ -130,6 +130,11 @@ import {
   createRentalExpiryWorker,
   scheduleRentalExpiry,
 } from './jobs/rental-expiry'
+import {
+  createLambdaPollQueue,
+  createLambdaPollWorker,
+  scheduleLambdaPoll,
+} from './jobs/lambda-poll'
 import { createSshSessionReaperWorker } from './jobs/ssh-session-reaper'
 import {
   createSeedKeepAliveQueue,
@@ -334,6 +339,16 @@ async function start() {
     createRentalExpiryWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleRentalExpiry(rentalExpiryQueue)
     server.log.info('Rental expiry worker initialized (60s tick)')
+
+    // T5b: Lambda status poller. Watches ExternalRental rows the
+    // allocator created via the inbound-supply fallback and flips the
+    // linked ComputeRequest to ACTIVE once Lambda reports the
+    // instance is booted. Cancels + refunds on failed provision.
+    // No-op when LAMBDA_API_KEY isn't set.
+    const lambdaPollQueue = createLambdaPollQueue(redisConnection)
+    createLambdaPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
+    await scheduleLambdaPoll(lambdaPollQueue)
+    server.log.info('Lambda poll worker initialized (10s tick)')
 
     // Launch-blocker #2: SSH session reaper. Failsafe for agent-confirmed
     // teardown — force-releases nodes stuck on TERMINATING rentals after

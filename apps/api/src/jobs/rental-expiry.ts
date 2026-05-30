@@ -27,6 +27,7 @@ import type { PrismaClient } from '@a2e/database'
 import type { Server as SocketServer } from 'socket.io'
 import { createNotification } from '../services/notification/service.js'
 import { creditCompletedRental } from '../services/revenue/rental-credit.js'
+import { terminateLambdaRental } from '../services/inbound/lambda-provision.js'
 
 const QUEUE_NAME = 'rental-expiry'
 const TICK_INTERVAL_MS = parseInt(process.env.EXPIRY_TICK_MS ?? '60000', 10)
@@ -167,6 +168,22 @@ async function completeRental(
     // catch the gap; we'd rather have the rental marked COMPLETED
     // than stuck ACTIVE because the split throws.
     console.error(`[rental-expiry] creditCompletedRental failed for ${cr.id}:`, err)
+  }
+
+  // T5b: if this rental was Lambda-provisioned, terminate the
+  // provider instance so we stop burning Lambda billing dollars.
+  // Wrapped to never block the COMPLETED notification + websocket
+  // emit below.
+  try {
+    const externalRental = await prisma.externalRental.findUnique({
+      where: { computeRequestId: cr.id },
+      select: { id: true, status: true },
+    })
+    if (externalRental && externalRental.status !== 'CLOSED') {
+      await terminateLambdaRental(prisma, externalRental.id, 'rental term reached (auto-expiry)')
+    }
+  } catch (err) {
+    console.error(`[rental-expiry] terminateLambdaRental failed for ${cr.id}:`, err)
   }
 
   void createNotification(
