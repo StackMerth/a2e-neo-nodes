@@ -7,6 +7,7 @@ import { decryptPrivateKey } from '../services/inbound/key-encryption.js'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import { checkIdempotencyKey, storeIdempotencyResponse } from '../services/idempotency/keys.js'
 import { getSolanaConfig, processPayment } from '../services/payment/solana.js'
+import { createDirectRentalCheckoutSession, isStripeConfigured } from '../services/payment/stripe.js'
 import { getOperatorBalanceBreakdown } from '../services/settlement/engine.js'
 import {
   getOrCreateBalance,
@@ -653,6 +654,149 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     })
 
     reply.send({ id, status: 'CANCELLED' })
+  })
+
+  /**
+   * POST /v1/buyer/compute/requests/stripe/checkout
+   *
+   * T3.1: direct-pay rental flow. Buyer skips the balance top-up step
+   * by paying for the rental in one click. We compute totalCost from
+   * the same pricing logic the regular submit endpoint uses, create
+   * a Stripe Checkout Session with the full payload in metadata, and
+   * return the hosted-checkout URL. The webhook handler creates the
+   * ComputeRequest with paymentSource=STRIPE_DIRECT once Stripe
+   * confirms payment server-side.
+   *
+   * NOT a substitute for the regular flow: USDC / BUYER_BALANCE /
+   * INTERNAL_BALANCE still work. This is just a one-click card path
+   * for buyers who don't want to manage a balance.
+   *
+   * Refund nuance: if the buyer terminates early, the existing
+   * terminate route refunds via Solana / balance crediting. For
+   * STRIPE_DIRECT rentals, that path needs the Stripe Refunds API
+   * instead (refund the original PaymentIntent prorated to the
+   * unused portion). That stitch lands in a follow-up; for v1 of
+   * T3.1, early-terminated STRIPE_DIRECT rentals fall back to a
+   * BuyerBalance credit (the buyer gets compute credit, not a card
+   * refund). Flagged for the user during onboarding.
+   */
+  // requestSchema is wrapped in refines (ZodEffects), which Zod 3
+  // doesn't let us .pick() from. Define the Stripe-checkout shape
+  // standalone with just the fields we need to build the rental.
+  const stripeCheckoutSchema = z.object({
+    gpuTier: z.enum(['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
+    gpuCount: z.number().int().min(1).max(64).default(1),
+    durationDays: z.number().int().min(1).max(365).default(7),
+    tier: z.enum(['ON_DEMAND', 'SPOT', 'RESERVED']).default('ON_DEMAND'),
+    workloadType: z.enum(['INFERENCE', 'TRAINING', 'MIXED']).default('MIXED'),
+    commitmentDays: z.number().int().refine(d => [7, 30, 90].includes(d)).optional(),
+    requiredRegion: z.string().max(64).optional().nullable(),
+    preferredOperatorSlug: z.string().max(120).optional().nullable(),
+    purpose: z.string().max(500).optional(),
+    sshPubKey: z.string().min(20).max(8192).optional(),
+    successUrl: z.string().url().optional(),
+    cancelUrl: z.string().url().optional(),
+  })
+
+  fastify.post('/v1/buyer/compute/requests/stripe/checkout', async (request, reply) => {
+    if (!isStripeConfigured()) {
+      return reply.code(503).send({
+        error: 'stripe_not_configured',
+        message: 'Card payments are not enabled on this deploy.',
+      })
+    }
+
+    const parsed = stripeCheckoutSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid_body', detail: parsed.error.format() })
+    }
+    const body = parsed.data
+    const userId = request.user!.userId
+
+    // Compute totalCost the same way the regular submit path does:
+    // GPU_TIER_CONFIG.retailRate is per-day per-GPU. SPOT discount and
+    // RESERVED discount apply post-base. (commitmentDays is informational
+    // for now; the discount is rolled into the rate the buyer sees.)
+    const config = GPU_TIER_CONFIG[body.gpuTier as keyof typeof GPU_TIER_CONFIG]
+    if (!config) {
+      return reply.code(400).send({ error: 'unsupported_tier' })
+    }
+    const baseRatePerDay = config.retailRate
+    let ratePerDay = baseRatePerDay
+    if (body.tier === 'SPOT') {
+      const discount = parseFloat(process.env.SPOT_DISCOUNT_PCT ?? '40') / 100
+      ratePerDay = baseRatePerDay * (1 - discount)
+    } else if (body.tier === 'RESERVED') {
+      ratePerDay = baseRatePerDay * 0.9
+    }
+    const totalCost = Number((ratePerDay * body.gpuCount * body.durationDays).toFixed(2))
+    if (totalCost < 1) {
+      return reply.code(400).send({ error: 'amount_too_small', message: 'Rental total must be at least $1.00.' })
+    }
+
+    // Resolve operator slug -> id BEFORE creating the session so an
+    // invalid slug fails fast at $0 instead of forcing the buyer to
+    // pay first and then discover the slug is bad.
+    let preferredOperatorId: string | null = null
+    if (body.preferredOperatorSlug) {
+      const op = await fastify.prisma.nodeRunner.findFirst({
+        where: { slug: body.preferredOperatorSlug },
+        select: { id: true },
+      })
+      if (!op) {
+        return reply.code(400).send({ error: 'unknown_operator', message: `No operator found with slug ${body.preferredOperatorSlug}` })
+      }
+      preferredOperatorId = op.id
+    }
+
+    const user = await fastify.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    })
+
+    const PORTAL = process.env.PORTAL_URL ?? 'https://user.tokenos.ai'
+    try {
+      const session = await createDirectRentalCheckoutSession({
+        userId,
+        email: user?.email ?? null,
+        amountUsd: totalCost,
+        gpuTier: body.gpuTier,
+        gpuCount: body.gpuCount,
+        durationDays: body.durationDays,
+        ratePerDay,
+        workloadType: body.workloadType,
+        tier: body.tier,
+        commitmentDays: body.commitmentDays ?? null,
+        requiredRegion: body.requiredRegion ?? null,
+        preferredOperatorId,
+        purpose: body.purpose ?? null,
+        successUrl: body.successUrl ?? `${PORTAL}/buyer/requests?stripe=success`,
+        cancelUrl: body.cancelUrl ?? `${PORTAL}/buyer/request?stripe=cancelled`,
+      })
+      // sshPubKey can exceed Stripe's 500-char metadata cap (RSA keys
+      // routinely do). Stash on a dedicated scratch table keyed by
+      // the Stripe Session id; the webhook reads + deletes it after
+      // creating the ComputeRequest. A cleanup job prunes any
+      // abandoned rows after 24h.
+      if (body.sshPubKey) {
+        await fastify.prisma.stripeCheckoutContext.create({
+          data: {
+            sessionId: session.id,
+            userId,
+            payload: { sshPubKey: body.sshPubKey } as unknown as object,
+          },
+        })
+      }
+      reply.send({
+        sessionId: session.id,
+        url: session.url,
+        amountUsd: totalCost,
+        ratePerDay,
+      })
+    } catch (err) {
+      fastify.log.error({ err, userId }, 'createDirectRentalCheckoutSession failed')
+      return reply.code(500).send({ error: 'stripe_checkout_failed', message: (err as Error).message })
+    }
   })
 
   /**

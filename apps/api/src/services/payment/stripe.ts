@@ -209,6 +209,102 @@ export async function createOperatorDeployCheckoutSession(
   return { id: session.id, url: session.url }
 }
 
+export interface CreateDirectRentalCheckoutArgs {
+  userId: string
+  email: string | null
+  amountUsd: number
+  // The full rental payload we'll reproduce on the webhook side
+  // to create the ComputeRequest. Kept as strings (Stripe metadata
+  // values must be strings) and re-parsed on the way out.
+  gpuTier: string
+  gpuCount: number
+  durationDays: number
+  ratePerDay: number
+  // Optional shaping. Mirrors the regular rental endpoint's payload.
+  workloadType?: 'INFERENCE' | 'TRAINING' | 'MIXED'
+  tier?: 'ON_DEMAND' | 'SPOT' | 'RESERVED'
+  commitmentDays?: number | null
+  requiredRegion?: string | null
+  preferredOperatorId?: string | null
+  purpose?: string | null
+  successUrl: string
+  cancelUrl: string
+}
+
+/**
+ * T3.1: create a Stripe Checkout Session for a buyer who wants to
+ * pay for a single rental directly with a card (no balance top-up
+ * step). The webhook handler on checkout.session.completed reads
+ * metadata.kind === 'rental_direct' and creates the ComputeRequest
+ * with paymentSource=STRIPE_DIRECT + txHash=session.id, at which
+ * point the allocator picks it up on the next 10s tick.
+ *
+ * Mirror of createTopupCheckoutSession / createOperatorDeployCheckoutSession;
+ * the only differences are the metadata.kind and the rental fields
+ * we carry through.
+ */
+export async function createDirectRentalCheckoutSession(
+  args: CreateDirectRentalCheckoutArgs,
+): Promise<{ id: string; url: string }> {
+  const stripe = getStripeClient()
+  if (!stripe) throw new Error('Stripe not configured')
+
+  const amountCents = Math.round(args.amountUsd * 100)
+  if (amountCents < 100) {
+    throw new Error('Minimum direct rental charge is $1.00')
+  }
+  if (amountCents > 1_000_000) {
+    throw new Error('Maximum single card payment is $10,000.00')
+  }
+
+  // Stripe metadata caps each value at 500 chars, max 50 keys. Keep
+  // values short + skip falsy ones. The webhook re-parses these on
+  // its side; the schema's downstream coercions handle stringy values.
+  const metadata: Record<string, string> = {
+    userId: args.userId,
+    kind: 'rental_direct',
+    amountUsd: args.amountUsd.toString(),
+    gpuTier: args.gpuTier,
+    gpuCount: args.gpuCount.toString(),
+    durationDays: args.durationDays.toString(),
+    ratePerDay: args.ratePerDay.toString(),
+  }
+  if (args.workloadType) metadata.workloadType = args.workloadType
+  if (args.tier) metadata.tier = args.tier
+  if (args.commitmentDays != null) metadata.commitmentDays = args.commitmentDays.toString()
+  if (args.requiredRegion) metadata.requiredRegion = args.requiredRegion.slice(0, 80)
+  if (args.preferredOperatorId) metadata.preferredOperatorId = args.preferredOperatorId
+  if (args.purpose) metadata.purpose = args.purpose.slice(0, 500)
+
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    payment_method_types: ['card'],
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: 'usd',
+          unit_amount: amountCents,
+          product_data: {
+            name: `TokenOS_DeAI ${args.gpuCount}× ${args.gpuTier} rental (${args.durationDays}d)`,
+            description: `Direct-pay GPU rental on TokenOS_DeAI.`,
+          },
+        },
+      },
+    ],
+    metadata,
+    payment_intent_data: { metadata },
+    customer_email: args.email ?? undefined,
+    success_url: args.successUrl,
+    cancel_url: args.cancelUrl,
+  })
+
+  if (!session.url) {
+    throw new Error('Stripe did not return a checkout URL')
+  }
+  return { id: session.id, url: session.url }
+}
+
 /**
  * Verify a webhook payload against the configured signing secret.
  * Returns the parsed event; throws on signature mismatch so the

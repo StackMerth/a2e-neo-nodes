@@ -130,6 +130,10 @@ async function handleCheckoutCompleted(
     await handleOperatorDeploy(fastify, session, meta)
     return
   }
+  if (meta.kind === 'rental_direct') {
+    await handleDirectRental(fastify, session, meta)
+    return
+  }
 
   // eslint-disable-next-line no-console
   console.log(`[stripe-webhook] checkout.session.completed unknown kind=${meta.kind ?? '(none)'} — ignored.`)
@@ -265,4 +269,121 @@ async function handleOperatorDeploy(
 
   // eslint-disable-next-line no-console
   console.log(`[stripe-webhook] created Investment=${investment.id} for nodeRunner=${nodeRunnerId} via session=${session.id}`)
+}
+
+/**
+ * T3.1: handler for rental_direct sessions. The buyer paid for the
+ * full rental upfront via Stripe Hosted Checkout; we create the
+ * ComputeRequest here with paymentSource=STRIPE_DIRECT and
+ * txConfirmed=true, at which point the allocator picks it up on the
+ * next tick exactly as it would for a USDC-confirmed request.
+ *
+ * Idempotency: ComputeRequest has no unique on txHash, so we guard
+ * with a findFirst-by-txHash check before creating. Stripe retries
+ * (up to 3 days) become a no-op when the row already exists.
+ *
+ * sshPubKey was stashed on StripeCheckoutContext keyed by session.id
+ * (since RSA keys exceed Stripe's 500-char metadata cap). We read,
+ * use, and delete it in the same transaction so a webhook retry
+ * doesn't try to read an already-consumed key.
+ */
+async function handleDirectRental(
+  fastify: FastifyInstance,
+  session: CheckoutSessionLike,
+  meta: Record<string, string>,
+): Promise<void> {
+  // Idempotency: have we already processed this session?
+  const existing = await fastify.prisma.computeRequest.findFirst({
+    where: { txHash: session.id },
+    select: { id: true },
+  })
+  if (existing) {
+    // eslint-disable-next-line no-console
+    console.log(`[stripe-webhook] rental_direct session ${session.id} already created request ${existing.id} — no-op.`)
+    return
+  }
+
+  const userId = meta.userId
+  const gpuTier = meta.gpuTier as GpuTier | undefined
+  const gpuCount = meta.gpuCount ? parseInt(meta.gpuCount, 10) : NaN
+  const durationDays = meta.durationDays ? parseInt(meta.durationDays, 10) : NaN
+  const ratePerDay = meta.ratePerDay ? parseFloat(meta.ratePerDay) : NaN
+  const totalCost = meta.amountUsd ? parseFloat(meta.amountUsd) : NaN
+
+  if (
+    !userId ||
+    !gpuTier ||
+    !Number.isFinite(gpuCount) ||
+    !Number.isFinite(durationDays) ||
+    !Number.isFinite(ratePerDay) ||
+    !Number.isFinite(totalCost)
+  ) {
+    // eslint-disable-next-line no-console
+    console.warn(`[stripe-webhook] rental_direct session ${session.id} missing required fields`, meta)
+    return
+  }
+
+  const tier = (meta.tier as 'ON_DEMAND' | 'SPOT' | 'RESERVED') ?? 'ON_DEMAND'
+  const workloadType = (meta.workloadType as 'INFERENCE' | 'TRAINING' | 'MIXED') ?? 'MIXED'
+  const commitmentDays = meta.commitmentDays ? parseInt(meta.commitmentDays, 10) : null
+  const requiredRegion = meta.requiredRegion || null
+  const preferredOperatorId = meta.preferredOperatorId || null
+  const purpose = meta.purpose || null
+  const ratePerMinute = (ratePerDay * gpuCount) / (24 * 60)
+
+  // Read + delete the sshPubKey scratch row (if any). Wrapped so the
+  // rental creation still succeeds even if the scratch row was
+  // already cleaned up (e.g. by a retry).
+  let sshPubKey: string | null = null
+  try {
+    const ctx = await fastify.prisma.stripeCheckoutContext.findUnique({
+      where: { sessionId: session.id },
+      select: { payload: true },
+    })
+    if (ctx?.payload && typeof ctx.payload === 'object' && 'sshPubKey' in ctx.payload) {
+      sshPubKey = String((ctx.payload as Record<string, unknown>).sshPubKey ?? '') || null
+    }
+    await fastify.prisma.stripeCheckoutContext.deleteMany({
+      where: { sessionId: session.id },
+    })
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(`[stripe-webhook] rental_direct sshPubKey lookup failed for ${session.id}:`, err)
+  }
+
+  const cr = await fastify.prisma.computeRequest.create({
+    data: {
+      userId,
+      gpuTier,
+      gpuCount,
+      durationDays,
+      ratePerDay,
+      ratePerMinute,
+      totalCost,
+      txHash: session.id,
+      txConfirmed: true,
+      status: 'PENDING',
+      paymentSource: 'STRIPE_DIRECT',
+      tier,
+      workloadType,
+      commitmentDays,
+      requiredRegion,
+      preferredOperatorId,
+      purpose,
+      sshPubKey,
+    },
+  })
+
+  // eslint-disable-next-line no-console
+  console.log(`[stripe-webhook] created ComputeRequest=${cr.id} for user=${userId} via session=${session.id}`)
+
+  // Receipt notification mirrors the BALANCE_TOPUP path; the buyer
+  // sees the rental land in their dashboard immediately.
+  void createNotification(
+    userId,
+    'COMPUTE_REQUEST_NEW',
+    'Rental Submitted',
+    `Your ${gpuCount}x ${gpuTier} rental was confirmed via card ($${totalCost.toFixed(2)}). Allocator picks it up within 10s.`,
+    `/buyer/requests/${cr.id}`,
+  )
 }

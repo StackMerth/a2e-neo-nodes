@@ -435,6 +435,31 @@ enum PaymentSource {
   USDC              // fresh on-chain Solana payment (txHash required)
   INTERNAL_BALANCE  // operator earnings used to fund a rental (dual-role accounts)
   BUYER_BALANCE     // pre-loaded buyer credit (see BuyerBalance + BalanceTransaction)
+  // T3.1: buyer paid for the rental directly with a card via Stripe
+  // Hosted Checkout. ComputeRequest.txHash holds the Stripe Session
+  // id (cs_live_...). Refund path on early-terminate must go through
+  // Stripe Refunds API (not the balance-credit path other sources use).
+  STRIPE_DIRECT
+}
+
+// T3.1: scratch table for Stripe checkout context too large for the
+// session's metadata field (capped at 500 chars per value). The
+// buyer's sshPubKey is the only such field today — ed25519 keys fit
+// but RSA keys regularly exceed the cap.
+//
+// Webhook reads + deletes the row after creating the ComputeRequest.
+// Rows older than 24h are pruned by a scheduled cleanup (failed
+// payments + abandoned checkouts).
+
+model StripeCheckoutContext {
+  // Stripe Session id (cs_test_... / cs_live_...). Unique by definition.
+  sessionId   String   @id
+  userId      String
+  // JSON blob of fields that don't fit in Stripe metadata. Today: sshPubKey.
+  payload     Json
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 // C7 (tax wave 1): IRS taxpayer-identification-number type. Drives
