@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createNotification } from '../services/notification/service.js'
 import { creditCompletedRental } from '../services/revenue/rental-credit.js'
 import { terminateLambdaRental } from '../services/inbound/lambda-provision.js'
+import { decryptPrivateKey } from '../services/inbound/key-encryption.js'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import { checkIdempotencyKey, storeIdempotencyResponse } from '../services/idempotency/keys.js'
 import { getSolanaConfig, processPayment } from '../services/payment/solana.js'
@@ -652,6 +653,83 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     })
 
     reply.send({ id, status: 'CANCELLED' })
+  })
+
+  /**
+   * GET /v1/buyer/compute/requests/:id/external-credentials
+   *
+   * T5c: surface the Lambda-provisioned SSH credentials to the buyer
+   * when the rental was served via the inbound supply fallback. The
+   * private key is decrypted on-demand here and returned over the
+   * caller's HTTPS session; it never goes to logs or persists to any
+   * other table.
+   *
+   * Returns 404 when the rental has no ExternalRental row (i.e. it
+   * was served from internal nodes — the existing SSH section in the
+   * page reads sshHost/sshPassword from ComputeRequest directly).
+   *
+   * Returns 409 when the rental is still PROVISIONING_EXTERNAL (no
+   * sshHost yet); the page polls again every 5s while the badge
+   * shows "Provisioning on Lambda".
+   *
+   * Auth: standard buyer JWT, ownership-checked via the request's
+   * userId.
+   */
+  fastify.get('/v1/buyer/compute/requests/:id/external-credentials', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const userId = request.user!.userId
+
+    const cr = await fastify.prisma.computeRequest.findFirst({
+      where: { id, userId },
+      select: { id: true, status: true },
+    })
+    if (!cr) return reply.code(404).send({ error: 'Request not found' })
+
+    const ext = await fastify.prisma.externalRental.findUnique({
+      where: { computeRequestId: id },
+      select: {
+        provider: true,
+        status: true,
+        sshHost: true,
+        sshPort: true,
+        sshUsername: true,
+        sshPrivateKeyEnc: true,
+        providerInstanceType: true,
+        providerRegion: true,
+        launchedAt: true,
+      },
+    })
+    if (!ext) return reply.code(404).send({ error: 'No external rental for this request' })
+
+    if (!ext.sshHost) {
+      return reply.code(409).send({
+        error: 'External rental is still provisioning',
+        status: ext.status,
+        provider: ext.provider,
+        instanceType: ext.providerInstanceType,
+        region: ext.providerRegion,
+      })
+    }
+
+    let sshPrivateKey: string
+    try {
+      sshPrivateKey = decryptPrivateKey(ext.sshPrivateKeyEnc)
+    } catch (err) {
+      fastify.log.error({ err, requestId: id }, 'decryptPrivateKey failed')
+      return reply.code(500).send({ error: 'Failed to decrypt SSH key (check SSH_KEY_ENCRYPTION_KEY env)' })
+    }
+
+    reply.send({
+      provider: ext.provider,
+      status: ext.status,
+      sshHost: ext.sshHost,
+      sshPort: ext.sshPort,
+      sshUsername: ext.sshUsername,
+      sshPrivateKey,
+      instanceType: ext.providerInstanceType,
+      region: ext.providerRegion,
+      launchedAt: ext.launchedAt,
+    })
   })
 
   /**
