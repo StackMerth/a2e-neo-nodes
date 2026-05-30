@@ -37,11 +37,12 @@ const GPU_META: Record<string, { architecture: string; vram: string; accent: str
   B200:  { architecture: 'Blackwell', vram: '192GB HBM3e', accent: '#8b5cf6', popular: true },
   B300:  { architecture: 'Blackwell Ultra', vram: '288GB HBM3e', accent: '#f59e0b' },
   GB300: { architecture: 'Grace Blackwell', vram: 'NVL72',  accent: '#ef4444' },
-  // C2 wave 2: consumer / prosumer entries. Not rendered as primary
-  // RentGrid tiles (those stay datacenter-only) but the RentModal
-  // looks them up by key when a buyer rents from a consumer-tier
-  // listing on /marketplace - without these entries the non-null
-  // assert on GPU_META[tier] would crash the modal.
+  // C2 wave 2: consumer / prosumer entries. Now rendered as primary
+  // RentGrid tiles alongside datacenter SKUs (post-pivot, surfacing
+  // consumer supply matters for inference workloads where the friend
+  // could prototype against a 4090 before scaling to H100s). RentModal
+  // still looks them up by key when a buyer rents from a consumer-tier
+  // listing.
   RTX_4090: { architecture: 'Ada Lovelace', vram: '24GB GDDR6X', accent: '#14b8a6' },
   RTX_3090: { architecture: 'Ampere',       vram: '24GB GDDR6X', accent: '#14b8a6' },
   CONSUMER: { architecture: 'Consumer NVIDIA', vram: 'varies',   accent: '#14b8a6' },
@@ -70,7 +71,10 @@ export function RentGrid({ stats, analytics }: { stats: StatsResponse; analytics
   // Render a tile for every tier that has metadata + appears in stats.
   // Tiers with zero idle nodes still render so buyers can see the
   // supply chip flip to Low/None.
-  const tiers = (['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300'] as const).filter(t => GPU_META[t])
+  //
+  // Datacenter tiers first (highest-value workloads), then consumer
+  // tiers grouped at the bottom (cheaper supply for inference / dev).
+  const tiers = (['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'RTX_4090', 'RTX_3090', 'CONSUMER'] as const).filter(t => GPU_META[t])
 
   return (
     <>
