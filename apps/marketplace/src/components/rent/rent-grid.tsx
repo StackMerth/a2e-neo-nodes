@@ -72,9 +72,12 @@ export function RentGrid({ stats, analytics }: { stats: StatsResponse; analytics
   // Tiers with zero idle nodes still render so buyers can see the
   // supply chip flip to Low/None.
   //
-  // Datacenter tiers first (highest-value workloads), then consumer
-  // tiers grouped at the bottom (cheaper supply for inference / dev).
-  const tiers = (['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'RTX_4090', 'RTX_3090', 'CONSUMER'] as const).filter(t => GPU_META[t])
+  // Order: headline datacenter SKUs first (Hopper + Blackwell — the
+  // tiers buyers come for), then mid-tier datacenter (L40S), then
+  // consumer/prosumer at the bottom. This puts the highest-margin
+  // inventory above the fold and groups the cheaper supply for
+  // inference / dev workloads beneath.
+  const tiers = (['H100', 'H200', 'B200', 'B300', 'GB300', 'L40S', 'RTX_4090', 'RTX_3090', 'CONSUMER'] as const).filter(t => GPU_META[t])
 
   return (
     <>
