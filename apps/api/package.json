@@ -47,7 +47,8 @@
     "c2c3:cleanup": "tsx scripts/c2c3-test-cleanup.ts",
     "push:test": "tsx scripts/push-test.ts",
     "push:diagnose": "tsx scripts/push-diagnose.ts",
-    "lambda:inspect": "tsx scripts/lambda-inspect.ts"
+    "lambda:inspect": "tsx scripts/lambda-inspect.ts",
+    "lambda-provision:test": "tsx scripts/lambda-provision-test.ts"
   },
   "dependencies": {
     "@a2e/core": "workspace:*",
