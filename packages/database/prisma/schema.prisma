@@ -1911,6 +1911,77 @@ model GpuCostBaseline {
   updatedAt             DateTime @updatedAt
 }
 
+// ============================================================================
+// INBOUND SUPPLY  (T5 — third-party provider rentals)
+// ============================================================================
+// When the allocator can't serve a ComputeRequest from internal nodes
+// (BYOG operators + managed deployments), it falls through to a
+// third-party provider (Lambda Labs in T5, RunPod / CoreWeave planned).
+// One ExternalRental row links the buyer's ComputeRequest to the
+// provider-side instance + ephemeral SSH credentials we generated for
+// that specific rental. T6 reads this row at termination to compute
+// cost-of-service (provider price * actual duration) for the 3-way
+// revenue split.
+//
+// The SSH private key is encrypted at rest with AES-256-GCM keyed by
+// SSH_KEY_ENCRYPTION_KEY env (rotated independently of DB backups).
+// Decryption happens lazily when the buyer opens the rental detail
+// page; the plaintext never lands in any log or audit trail.
+
+model ExternalRental {
+  id                     String   @id @default(cuid())
+  // 1:1 with ComputeRequest. Lookup either direction via this unique.
+  computeRequestId       String   @unique
+
+  // Provider identity. Free-form string so we can add RUNPOD /
+  // COREWEAVE / VAST / etc. without an enum migration. Today only
+  // "LAMBDA" is wired in.
+  provider               String
+  providerInstanceId     String
+  providerSshKeyId       String?
+  providerInstanceType   String
+  providerRegion         String
+
+  // PENDING -> ACTIVE -> CLOSING -> CLOSED is the happy path. FAILED
+  // means provisioning errored before the instance came up; the
+  // allocator refunds the buyer's debit and re-flags the request as
+  // capacity-short (next tick can try again).
+  status                 String
+
+  // SSH credentials we minted for this rental. Surfaced to the buyer
+  // on their rental detail page; never logged. sshHost populated when
+  // the provider reports the instance is ready.
+  sshHost                String?
+  sshPort                Int      @default(22)
+  sshUsername            String   @default("ubuntu")
+  sshPublicKey           String
+  sshPrivateKeyEnc       String
+
+  // Provider price at launch time. We pay this rate; the buyer pays
+  // our marked-up rate. T6 splits the buyer's gross 3 ways with this
+  // value as the cost-of-service reimbursement to the platform (which
+  // already paid the provider out-of-pocket).
+  providerPricePerHourUsd Float
+
+  // Reconciliation timestamps. launchedAt is set when status flips
+  // PENDING -> ACTIVE; terminationRequestedAt / terminatedAt close
+  // the loop on the way down.
+  launchRequestedAt      DateTime @default(now())
+  launchedAt             DateTime?
+  terminationRequestedAt DateTime?
+  terminatedAt           DateTime?
+
+  // Last provisioning / status / termination error, kept for the
+  // admin debug view. Cleared on the next successful poll.
+  lastError              String?
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([status])
+  @@index([provider, providerInstanceId])
+}
+
 model PowerRate {
   // Region bucket. Initial seed has one row: "GLOBAL" at $0.12/kWh.
   // Per-region rows ("US", "EU", "ASIA", "OTHER") added when M0.1+
