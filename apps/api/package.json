@@ -50,7 +50,8 @@
     "lambda:inspect": "tsx scripts/lambda-inspect.ts",
     "lambda-provision:test": "tsx scripts/lambda-provision-test.ts",
     "topup:diagnose": "tsx scripts/topup-diagnose.ts",
-    "tokenizer:inspect": "tsx scripts/tokenizer-inspect.ts"
+    "tokenizer:inspect": "tsx scripts/tokenizer-inspect.ts",
+    "inference-workers:inspect": "tsx scripts/inference-workers-inspect.ts"
   },
   "dependencies": {
     "@a2e/core": "workspace:*",
