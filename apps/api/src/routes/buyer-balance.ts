@@ -192,6 +192,8 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
       // T2.1: fire BALANCE_TOPUP notification + web push + email so the
       // buyer sees the credit land in real time. Non-blocking — failure
       // here never breaks the topup response.
+      // T8b: pass structured templateData so the receipt email
+      // renders the proper layout instead of the generic body.
       void createNotification(
         userId,
         'BALANCE_TOPUP',
@@ -200,6 +202,13 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
           ? `Dev-mode topup of $${amountUsd.toFixed(2)} confirmed. Balance: $${snapshot.balanceUsd.toFixed(2)}.`
           : `Solana mainnet topup of $${amountUsd.toFixed(2)} confirmed. Balance: $${snapshot.balanceUsd.toFixed(2)}.`,
         '/buyer/balance',
+        {
+          kind: 'BALANCE_TOPUP',
+          amountUsd,
+          source: verification.isDevMode ? 'Solana dev-mode' : 'Solana mainnet (USDC)',
+          newBalanceUsd: snapshot.balanceUsd,
+          referenceId: txHash,
+        },
       )
       reply.send({
         success: true,

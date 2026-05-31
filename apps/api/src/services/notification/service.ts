@@ -3,6 +3,21 @@ import type { NotificationType } from '@a2e/database'
 import type { Server as SocketServer } from 'socket.io'
 import { sendEmail, isEmailConfigured } from '../email/sender.js'
 import { sendPushToUser, isPushConfigured } from './push.js'
+import {
+  renderBalanceTopupReceipt,
+  renderGenericBody,
+  type BalanceTopupReceiptArgs,
+} from '../email/templates.js'
+
+/**
+ * T8b: optional structured data the email renderer uses for richer
+ * per-type templates. The notification row itself still stores the
+ * generic title + message + link (the in-app bell never sees this
+ * extra data); only the email body uses the structured fields.
+ */
+export type NotificationTemplateData =
+  | { kind: 'BALANCE_TOPUP'; amountUsd: number; source: string; newBalanceUsd: number; occurredAt?: string; referenceId?: string }
+  | { kind: 'generic' }
 
 const PORTAL_URL = process.env.PORTAL_URL ?? 'https://user.tokenos.ai'
 
@@ -44,6 +59,7 @@ export async function createNotification(
   title: string,
   message: string,
   link?: string,
+  templateData?: NotificationTemplateData,
 ) {
   const notification = await prisma.notification.create({
     data: { userId, type, title, message, link: link ?? null },
@@ -93,11 +109,15 @@ export async function createNotification(
         })
         if (!user?.email) return
 
+        // T8b: route to the type-specific HTML template when the
+        // caller provided structured data. Falls back to the generic
+        // title + message block when no template data is passed,
+        // preserving every pre-T8b call site's email shape.
+        const html = renderEmailBody(type, title, message, link, templateData)
         void sendEmail(
           user.email,
           `${title} — TokenOS_DeAI`,
-          `<h2 style="color: #ffffff; margin: 0 0 16px;">${title}</h2>
-           <p style="color: #a1a1aa; line-height: 1.6;">${message}</p>`,
+          html,
         )
       } catch {
         // Email delivery should never block notification creation
@@ -106,6 +126,36 @@ export async function createNotification(
   }
 
   return notification
+}
+
+/**
+ * T8b: pick the right HTML body renderer for a given notification
+ * type + templateData. Type-specific paths (BALANCE_TOPUP receipt
+ * etc.) only fire when the caller passed matching templateData;
+ * otherwise the generic title+message block is used so legacy call
+ * sites (no third arg) get the exact same email they always did.
+ */
+function renderEmailBody(
+  type: NotificationType,
+  title: string,
+  message: string,
+  link: string | undefined,
+  templateData: NotificationTemplateData | undefined,
+): string {
+  if (type === 'BALANCE_TOPUP' && templateData?.kind === 'BALANCE_TOPUP') {
+    const args: BalanceTopupReceiptArgs = {
+      title,
+      message,
+      link,
+      amountUsd: templateData.amountUsd,
+      source: templateData.source,
+      newBalanceUsd: templateData.newBalanceUsd,
+      occurredAt: templateData.occurredAt,
+      referenceId: templateData.referenceId,
+    }
+    return renderBalanceTopupReceipt(args)
+  }
+  return renderGenericBody({ title, message, link })
 }
 
 /**

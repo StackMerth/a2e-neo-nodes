@@ -89,13 +89,21 @@ export async function adminBalanceRoutes(fastify: FastifyInstance) {
       })
       // T2.1: notify the recipient buyer. Description is admin-supplied,
       // so we put it in the body so the user knows the context
-      // (\"Pre-credit for closed beta\" etc.).
+      // ("Pre-credit for closed beta" etc.).
+      // T8b: structured templateData renders the proper receipt body.
       void createNotification(
         userId,
         'BALANCE_TOPUP',
         `+$${amountUsd.toFixed(2)} admin credit`,
         `${description} — balance now $${snap.balanceUsd.toFixed(2)}.`,
         '/buyer/balance',
+        {
+          kind: 'BALANCE_TOPUP',
+          amountUsd,
+          source: 'Admin credit',
+          newBalanceUsd: snap.balanceUsd,
+          referenceId,
+        },
       )
       return reply.send({
         ok: true,

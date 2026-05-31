@@ -169,12 +169,20 @@ async function handleBuyerBalanceTopup(
     // eslint-disable-next-line no-console
     console.log(`[stripe-webhook] credited $${amountUsd} to user=${userId} via session=${session.id}`)
     // T2.1: BALANCE_TOPUP receipt notification (bell + web push + email).
+    // T8b: structured templateData renders the proper receipt body.
     void createNotification(
       userId,
       'BALANCE_TOPUP',
       `+$${amountUsd.toFixed(2)} card topup`,
       `Card topup of $${amountUsd.toFixed(2)} via Stripe confirmed. Balance: $${snap.balanceUsd.toFixed(2)}.`,
       '/buyer/balance',
+      {
+        kind: 'BALANCE_TOPUP',
+        amountUsd,
+        source: 'Card via Stripe',
+        newBalanceUsd: snap.balanceUsd,
+        referenceId: session.id,
+      },
     )
   } catch (err) {
     if (err instanceof DuplicateTransactionError) {

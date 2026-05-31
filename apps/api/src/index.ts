@@ -179,16 +179,40 @@ import {
   scheduleBurnRateAlerts,
 } from './jobs/burn-rate-alerts'
 
+/**
+ * T8a: Better Stack transport opts in when both env vars are set.
+ * Falls back to stdout (current behavior) otherwise so production
+ * deploys without Better Stack configured behave exactly as before.
+ *
+ * Transport path uses __dirname so it resolves from dist/index.js at
+ * runtime — Pino spawns a worker thread for the transport and
+ * requires an absolute, resolvable path.
+ */
+function buildLoggerTransport() {
+  if (process.env.NODE_ENV === 'development') {
+    return { target: 'pino-pretty', options: { colorize: true } }
+  }
+  const ingestUrl = process.env.BETTER_STACK_INGEST_URL?.trim()
+  const token = process.env.BETTER_STACK_TOKEN?.trim()
+  if (ingestUrl && token) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const path = require('path') as typeof import('path')
+    return {
+      target: path.join(__dirname, 'plugins', 'better-stack-transport.js'),
+      options: {
+        ingestUrl,
+        token,
+        sourceName: process.env.BETTER_STACK_SOURCE ?? 'tokenosdeai-api',
+      },
+    }
+  }
+  return undefined
+}
+
 const server = Fastify({
   logger: {
     level: process.env.LOG_LEVEL ?? 'info',
-    transport:
-      process.env.NODE_ENV === 'development'
-        ? {
-            target: 'pino-pretty',
-            options: { colorize: true },
-          }
-        : undefined,
+    transport: buildLoggerTransport(),
   },
 })
 
