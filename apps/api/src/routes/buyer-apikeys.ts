@@ -1,10 +1,18 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { generateApiKey, revokeApiKey, listApiKeys } from '../services/apikey/manager.js'
+import {
+  generateApiKey,
+  revokeApiKey,
+  listApiKeys,
+  DEFAULT_BUYER_KEY_PERMISSIONS,
+} from '../services/apikey/manager.js'
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
-  permissions: z.array(z.string()).default(['compute:read', 'compute:write']),
+  // E2.2: defaults now include 'inference:write' so a fresh key works
+  // against /v1/chat/completions out of the box. Buyers can pass their
+  // own permissions array to narrow scope.
+  permissions: z.array(z.string()).default(DEFAULT_BUYER_KEY_PERMISSIONS),
   expiresInDays: z.number().int().min(1).max(365).optional(),
 })
 

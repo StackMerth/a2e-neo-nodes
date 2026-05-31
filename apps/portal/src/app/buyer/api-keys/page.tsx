@@ -209,7 +209,7 @@ export default function ApiKeysPage() {
             <Input label="Expires In (days, optional)" type="number" placeholder="Leave empty for no expiry" value={newKeyExpiry} onChange={e => setNewKeyExpiry(e.target.value)} />
             <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
               <Shield size={12} />
-              Permissions: compute:read, compute:write
+              Permissions: compute:read, compute:write, inference:write
             </div>
             <div className="flex gap-3 justify-end">
               <Button variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>

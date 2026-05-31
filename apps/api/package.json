@@ -51,7 +51,8 @@
     "lambda-provision:test": "tsx scripts/lambda-provision-test.ts",
     "topup:diagnose": "tsx scripts/topup-diagnose.ts",
     "tokenizer:inspect": "tsx scripts/tokenizer-inspect.ts",
-    "inference-workers:inspect": "tsx scripts/inference-workers-inspect.ts"
+    "inference-workers:inspect": "tsx scripts/inference-workers-inspect.ts",
+    "apikey:grant-inference": "tsx scripts/apikey-grant-inference.ts"
   },
   "dependencies": {
     "@a2e/core": "workspace:*",
