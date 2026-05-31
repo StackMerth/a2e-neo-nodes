@@ -327,6 +327,17 @@ export const nodeRunner = {
         amount: number
       }>
     }>('/v1/portal/node-runner/payouts/withdraw-now', { method: 'POST', body: body ?? {} }),
+  // T3.2.1b: instant withdraw to bank via Stripe Connect. Same shape
+  // as withdrawNow but pays via Stripe Transfer. Returns the shared
+  // stripeTransferId (one Transfer for the whole batch; per-node
+  // Settlement rows attribute it).
+  withdrawNowStripe: () =>
+    apiFetch<{
+      totalPaid: number
+      stripeTransferId: string
+      modeResetToAuto: boolean
+      settlements: Array<{ id: string; nodeId: string; amount: number; success: boolean }>
+    }>('/v1/portal/node-runner/payouts/withdraw-now-stripe', { method: 'POST' }),
   settings: (data: unknown) => apiFetch('/v1/portal/node-runner/settings', { method: 'PATCH', body: data }),
   jobs: (params?: Record<string, string>) => {
     const qs = params ? '?' + new URLSearchParams(params).toString() : ''

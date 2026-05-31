@@ -1040,6 +1040,13 @@ model Settlement {
   txHash        String?
   txConfirmed   Boolean          @default(false)
   errorMessage  String?
+  // T3.2.1b: Stripe Transfer id when this settlement was paid via
+  // Stripe Connect instead of Solana. One Stripe Transfer can settle
+  // multiple Settlement rows in the same withdraw-now batch (per-node
+  // breakdown stays; the transfer is the total). Mutually exclusive
+  // with txHash (which is Solana-only); reconciliation can join
+  // either way.
+  stripeTransferId String?
 
   // Retry handling
   retryCount    Int              @default(0)
