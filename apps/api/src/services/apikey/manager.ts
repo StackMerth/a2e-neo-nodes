@@ -6,10 +6,20 @@ const KEY_PREFIX = 'a2e-buyer-'
 /**
  * Generate a new API key for a user
  */
+// Default permission set for a fresh buyer API key. Includes
+// inference:write per E2.2 so buyers can call /v1/chat/completions
+// out of the box without manually adding the scope. Buyers who want
+// a narrower key can still override via the create endpoint.
+export const DEFAULT_BUYER_KEY_PERMISSIONS = [
+  'compute:read',
+  'compute:write',
+  'inference:write',
+]
+
 export async function generateApiKey(
   userId: string,
   name: string,
-  permissions: string[] = ['compute:read', 'compute:write'],
+  permissions: string[] = DEFAULT_BUYER_KEY_PERMISSIONS,
   expiresAt?: Date,
 ) {
   const rawKey = crypto.randomBytes(32).toString('base64url')
