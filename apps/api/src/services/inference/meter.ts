@@ -32,6 +32,7 @@
 
 import type { PrismaClient } from '@a2e/database'
 import { debitBalance, InsufficientBalanceError } from '../balance/balance-service.js'
+import { creditInferenceCall } from '../revenue/inference-credit.js'
 
 export class UnknownModelError extends Error {
   constructor(public modelId: string) {
@@ -135,6 +136,25 @@ export async function meterInferenceCall(
       })
     }
   })
+
+  // Track 5 / M1.1: split the gross 3 ways (operator cost+50% net,
+  // staking 25%, treasury 25%) when REVENUE_SPLIT_ENABLED=true. Runs
+  // AFTER the main transaction commits, so a split failure never
+  // rolls back the buyer's legitimate debit or the TokenUsage row.
+  // No-op when the kill switch is OFF — meter behavior is unchanged.
+  if (!isNoCost) {
+    try {
+      await creditInferenceCall(prisma, {
+        referenceId: args.referenceId,
+        grossUsd: costUsd,
+        operatorNodeId: args.operatorId ?? null,
+        model: args.model,
+      })
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[meter] creditInferenceCall failed for ${args.referenceId}:`, err)
+    }
+  }
 
   return {
     costUsd,
