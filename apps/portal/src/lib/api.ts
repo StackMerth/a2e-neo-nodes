@@ -615,13 +615,20 @@ export const buyer = {
         `/v1/buyer/balance/transactions?limit=${limit}${cursor ? `&cursor=${cursor}` : ''}`,
       ),
     topupDestination: () =>
+      // Now hits the role-agnostic endpoint introduced after we
+      // discovered the legacy /buyer/balance/topup-destination
+      // gated on COMPUTE_BUYER role, which 403'd for pure
+      // node-runners trying to deploy with USDC and showed
+      // "Topup destination not configured" even when the wallet
+      // was fully set. The new endpoint only requires any
+      // authenticated user. Same response shape.
       apiFetch<{
         wallet: string | null
         currency: 'USDC'
         network: 'devnet' | 'mainnet'
         configured: boolean
         message?: string
-      }>('/v1/buyer/balance/topup-destination'),
+      }>('/v1/payment-config/topup-destination'),
     topupSolana: (data: { txHash: string; amountUsd: number; note?: string }) =>
       apiFetch<{
         success: true
