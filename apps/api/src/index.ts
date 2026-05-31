@@ -53,6 +53,7 @@ import {
   portalWithdrawalRoutes,
   adminWithdrawalRoutes,
   adminBalanceRoutes,
+  paymentConfigRoutes,
   buyerBillingRoutes,
   buyerBalanceRoutes,
   buyerApiKeyRoutes,
@@ -237,6 +238,7 @@ async function start() {
     await server.register(portalWithdrawalRoutes)
     await server.register(adminWithdrawalRoutes)
     await server.register(adminBalanceRoutes)
+    await server.register(paymentConfigRoutes)
     await server.register(buyerBillingRoutes)
     await server.register(buyerBalanceRoutes)
     await server.register(buyerApiKeyRoutes)
