@@ -1461,6 +1461,14 @@ export const api = {
       apiFetch<any>(`/v1/admin/withdrawals/${id}/process`, { method: 'PATCH' }),
     complete: (id: string, txHash: string) =>
       apiFetch<any>(`/v1/admin/withdrawals/${id}/complete`, { method: 'PATCH', body: JSON.stringify({ txHash }) }),
+    // T3.2.1a: one-click Stripe Transfer for STRIPE_CONNECT withdrawals.
+    // Backend calls stripe.transfers.create() end-to-end and marks
+    // the row COMPLETED + records the tr_xxxxxx id.
+    processStripe: (id: string) =>
+      apiFetch<{ id: string; status: string; stripeTransferId: string }>(
+        `/v1/admin/withdrawals/${id}/process-stripe`,
+        { method: 'PATCH' },
+      ),
     reject: (id: string, reason?: string) =>
       apiFetch<any>(`/v1/admin/withdrawals/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
   },

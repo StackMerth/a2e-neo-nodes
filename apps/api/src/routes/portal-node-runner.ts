@@ -15,6 +15,7 @@ import {
   createConnectAccount,
   createConnectOnboardingLink,
   getConnectAccountStatus,
+  createConnectTransfer,
 } from '../services/payment/stripe.js'
 import { debitBalance, InsufficientBalanceError } from '../services/balance/balance-service.js'
 import { mintInstallTokenForRunner } from './byog.js'
@@ -1170,6 +1171,163 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       totalPaid,
       settlements: results,
       destinationWallet,
+      modeResetToAuto: nr.payoutMode === 'SCHEDULED',
+    })
+  })
+
+  /**
+   * T3.2.1b — POST /v1/portal/node-runner/payouts/withdraw-now-stripe
+   *
+   * Stripe-rail equivalent of withdraw-now. Operator's full unpaid
+   * balance lands as ONE Stripe Transfer to their connected Express
+   * account; Stripe then pays out to their bank on its normal cadence
+   * (usually next business day). Per-node Settlement rows still get
+   * created so reporting / tax CSVs stay node-attributed; they share
+   * the same stripeTransferId.
+   *
+   * Requires:
+   *   - Email verified (same gate as Solana withdraw-now)
+   *   - No active admin payout lock
+   *   - NodeRunner.stripeConnectStatus === 'READY' (operator finished
+   *     Stripe Express onboarding)
+   *
+   * Idempotency: stripe.transfers.create uses a per-batch key so a
+   * page retry can't double-transfer.
+   */
+  fastify.post('/v1/portal/node-runner/payouts/withdraw-now-stripe', async (request, reply) => {
+    if (!isStripeConfigured()) {
+      return reply.code(503).send({ error: 'stripe_not_configured' })
+    }
+    const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
+    if (!nr) return reply.code(404).send({ error: 'No node runner profile found' })
+
+    // Mirror the Solana withdraw-now gates exactly so the two flows
+    // have parity.
+    const user = await fastify.prisma.user.findUnique({
+      where: { id: request.user!.userId },
+      select: { emailVerified: true, email: true },
+    })
+    if (!user?.emailVerified) {
+      return reply.code(403).send({
+        error: 'Email not verified',
+        message: user?.email
+          ? `Verify ${user.email} before withdrawing.`
+          : 'Verify your email before withdrawing.',
+        requiresEmailVerification: true,
+      })
+    }
+    if (nr.payoutLockUntil && nr.payoutLockUntil > new Date()) {
+      return reply.code(403).send({
+        error: 'Payouts locked',
+        message: nr.payoutLockReason ?? 'Payouts are administratively locked',
+        lockedUntil: nr.payoutLockUntil.toISOString(),
+      })
+    }
+
+    // Stripe Connect must be ready before we can transfer.
+    if (!nr.stripeConnectAccountId || nr.stripeConnectStatus !== 'READY') {
+      return reply.code(400).send({
+        error: 'stripe_connect_not_ready',
+        message:
+          'Finish Stripe onboarding before withdrawing to bank. Visit Payouts → Connect Stripe.',
+      })
+    }
+
+    const {
+      calculateOperatorSettlements,
+      createSettlement,
+      markSettlementProcessing,
+      markSettlementCompleted,
+      markSettlementFailed,
+      clearScheduledPayout,
+      getOperatorBalanceBreakdown,
+    } = await import('../services/settlement/engine.js')
+
+    const rawCalcs = await calculateOperatorSettlements(fastify.prisma, nr.id, new Date())
+    if (rawCalcs.length === 0) {
+      return reply.code(409).send({ error: 'No balance', message: 'No unpaid earnings available to withdraw' })
+    }
+
+    const breakdown = await getOperatorBalanceBreakdown(fastify.prisma, nr.id)
+    const rawTotal = rawCalcs.reduce((sum, c) => sum + c.amount, 0)
+    const calcs = rawTotal > breakdown.available && rawTotal > 0
+      ? rawCalcs.map((c) => ({
+          ...c,
+          amount: Number((c.amount * (breakdown.available / rawTotal)).toFixed(6)),
+        }))
+      : rawCalcs
+
+    const totalAmount = Number(calcs.reduce((sum, c) => sum + c.amount, 0).toFixed(2))
+    if (totalAmount <= 0) {
+      return reply.code(409).send({ error: 'No balance', message: 'Withdrawable amount is zero after spend-adjustment' })
+    }
+
+    // Create per-node Settlement rows in PROCESSING state so they
+    // appear in the operator's history immediately. We'll flip to
+    // COMPLETED + stamp the stripeTransferId after the Stripe Transfer
+    // succeeds. createSettlement returns the new row's id.
+    const settlements: Array<{ id: string; nodeId: string; amount: number }> = []
+    for (const calc of calcs) {
+      const settlementId = await createSettlement(fastify.prisma, {
+        nodeId: calc.nodeId,
+        walletAddress: '', // Stripe path; no Solana wallet involved
+        amount: calc.amount,
+        uptimeHours: calc.uptimeHours,
+        periodStart: calc.periodStart,
+        periodEnd: calc.periodEnd,
+      })
+      await markSettlementProcessing(fastify.prisma, settlementId)
+      settlements.push({ id: settlementId, nodeId: calc.nodeId, amount: calc.amount })
+    }
+
+    // One Stripe Transfer for the total. The idempotencyKey ties to
+    // a stable hash of the settlement ids so a page retry doesn't
+    // create a duplicate transfer.
+    const idempotencyKey = `withdraw_now_stripe_${nr.id}_${settlements.map((s) => s.id).sort().join('-').slice(0, 80)}`
+    let transferId: string
+    try {
+      const { id: tid } = await createConnectTransfer({
+        destinationAccountId: nr.stripeConnectAccountId,
+        amountUsd: totalAmount,
+        idempotencyKey,
+        description: `TokenOS_DeAI operator instant withdrawal (${settlements.length} node${settlements.length === 1 ? '' : 's'})`,
+      })
+      transferId = tid
+    } catch (err) {
+      // Roll all the Settlement rows we just created back to FAILED so
+      // the operator's balance becomes withdrawable again on retry.
+      for (const s of settlements) {
+        await markSettlementFailed(fastify.prisma, s.id, (err as Error).message).catch(() => undefined)
+      }
+      fastify.log.error({ err, nodeRunnerId: nr.id }, 'withdraw-now-stripe transfer failed')
+      return reply.code(500).send({ error: 'stripe_transfer_failed', message: (err as Error).message })
+    }
+
+    // Mark all settlements COMPLETED with the shared transfer id.
+    for (const s of settlements) {
+      await markSettlementCompleted(fastify.prisma, s.id, '')
+      await fastify.prisma.settlement.update({
+        where: { id: s.id },
+        data: { stripeTransferId: transferId },
+      })
+    }
+
+    if (nr.payoutMode === 'SCHEDULED') {
+      await clearScheduledPayout(fastify.prisma, nr.id)
+    }
+
+    void createNotification(
+      nr.userId ?? request.user!.userId,
+      'WITHDRAWAL_COMPLETED',
+      'Withdrawal Sent to Bank',
+      `$${totalAmount.toFixed(2)} on its way to your bank via Stripe. Funds typically arrive on the next business day per Stripe's payout schedule.`,
+      '/payouts',
+    )
+
+    reply.send({
+      totalPaid: totalAmount,
+      stripeTransferId: transferId,
+      settlements: settlements.map((s) => ({ id: s.id, nodeId: s.nodeId, amount: s.amount, success: true })),
       modeResetToAuto: nr.payoutMode === 'SCHEDULED',
     })
   })

@@ -35,6 +35,12 @@ interface Withdrawal {
   reason: string | null
   createdAt: string
   updatedAt: string
+  // T3.2: payout rail. SOLANA goes through the existing /complete
+  // flow (admin pastes Solana txHash after manual transfer).
+  // STRIPE_CONNECT goes through /process-stripe (one-click: backend
+  // calls Stripe Transfers API, captures tr_xxx, marks COMPLETED).
+  payoutMethod?: 'SOLANA' | 'STRIPE_CONNECT'
+  stripeTransferId?: string | null
 }
 
 interface Counts {
@@ -137,6 +143,24 @@ export default function WithdrawalsPage() {
       await loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to process withdrawal')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  // T3.2.1a: end-to-end Stripe Transfer for STRIPE_CONNECT withdrawals.
+  // Single click here = stripe.transfers.create() runs server-side,
+  // operator's connected account gets credited, Stripe pays out to
+  // their bank on its normal cadence (usually next business day).
+  async function handleProcessStripe(id: string) {
+    if (!confirm('Push this withdrawal to the operator\'s bank via Stripe? Stripe transfers are irreversible.')) return
+    try {
+      setActionLoading(id)
+      const result = await api.withdrawals.processStripe(id)
+      setToast(`Stripe transfer ${result.stripeTransferId.slice(0, 10)}… sent. Operator will receive USD on next bank business day.`)
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Stripe transfer failed')
     } finally {
       setActionLoading(null)
     }
@@ -431,12 +455,24 @@ export default function WithdrawalsPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <span
-                        className="font-mono text-sm text-text-secondary cursor-pointer hover:text-accent transition-colors"
-                        title={w.walletAddress}
-                      >
-                        {truncateAddress(w.walletAddress)}
-                      </span>
+                      {w.payoutMethod === 'STRIPE_CONNECT' ? (
+                        <span
+                          className="inline-flex items-center gap-1.5 font-mono text-sm text-purple-300"
+                          title="Routes to operator's connected Stripe account, then to their bank"
+                        >
+                          <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-purple-500/15 border border-purple-500/30">
+                            Bank
+                          </span>
+                          via Stripe
+                        </span>
+                      ) : (
+                        <span
+                          className="font-mono text-sm text-text-secondary cursor-pointer hover:text-accent transition-colors"
+                          title={w.walletAddress}
+                        >
+                          {truncateAddress(w.walletAddress)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       {getStatusBadge(w.status)}
@@ -472,7 +508,27 @@ export default function WithdrawalsPage() {
                             {actionLoading === w.id ? <Loader2 size={14} className="animate-spin" /> : 'Process'}
                           </button>
                         )}
-                        {w.status === 'PROCESSING' && (
+                        {/* T3.2.1a: STRIPE_CONNECT withdrawals get a
+                            one-click Process via Stripe button on
+                            APPROVED or PROCESSING. Replaces the manual
+                            Solana txHash-paste flow with an end-to-end
+                            stripe.transfers.create() call. */}
+                        {w.payoutMethod === 'STRIPE_CONNECT' &&
+                          (w.status === 'APPROVED' || w.status === 'PROCESSING') && (
+                            <button
+                              onClick={() => handleProcessStripe(w.id)}
+                              disabled={actionLoading === w.id}
+                              className="px-3 py-1.5 text-sm bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 rounded-lg transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
+                              title="One-click Stripe Transfer — funds land in operator's bank on next business day"
+                            >
+                              {actionLoading === w.id ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <>Process via Stripe</>
+                              )}
+                            </button>
+                          )}
+                        {w.payoutMethod !== 'STRIPE_CONNECT' && w.status === 'PROCESSING' && (
                           <button
                             onClick={() => openCompleteModal(w)}
                             className="px-3 py-1.5 text-sm bg-accent/10 text-accent hover:bg-accent/20 rounded-lg transition-colors"
@@ -480,7 +536,7 @@ export default function WithdrawalsPage() {
                             Complete
                           </button>
                         )}
-                        {w.status === 'COMPLETED' && w.txHash && (
+                        {w.status === 'COMPLETED' && w.txHash && w.payoutMethod !== 'STRIPE_CONNECT' && (
                           <a
                             href={`https://solscan.io/tx/${w.txHash}`}
                             target="_blank"
@@ -488,6 +544,21 @@ export default function WithdrawalsPage() {
                             className="px-3 py-1.5 text-sm bg-accent/10 text-accent hover:bg-accent/20 rounded-lg transition-colors inline-flex items-center gap-1.5"
                           >
                             View TX
+                            <ExternalLink size={12} />
+                          </a>
+                        )}
+                        {/* T3.2.1a: completed Stripe withdrawals show
+                            the transfer id (linkable to the Stripe
+                            dashboard). */}
+                        {w.status === 'COMPLETED' && w.payoutMethod === 'STRIPE_CONNECT' && w.stripeTransferId && (
+                          <a
+                            href={`https://dashboard.stripe.com/transfers/${w.stripeTransferId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 text-sm bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 rounded-lg transition-colors inline-flex items-center gap-1.5"
+                            title={w.stripeTransferId}
+                          >
+                            Stripe Transfer
                             <ExternalLink size={12} />
                           </a>
                         )}

@@ -102,6 +102,29 @@ export default function PayoutsPage() {
     requirementsCurrentlyDue?: string[]
   } | null>(null)
   const [stripeOnboarding, setStripeOnboarding] = useState(false)
+  const [stripeWithdrawing, setStripeWithdrawing] = useState(false)
+
+  // T3.2.1b: instant withdraw to bank via Stripe. One click, no
+  // address paste (destination is operator's connected account).
+  // Disabled until Stripe Connect onboarding shows READY.
+  async function handleWithdrawToBank() {
+    if (available <= 0) {
+      toast('error', pending > 0 ? `No unlocked balance yet. $${pending.toFixed(2)} is still in cool-down.` : 'No unpaid balance to withdraw')
+      return
+    }
+    if (!confirm(`Withdraw $${available.toFixed(2)} to your bank via Stripe? Funds land on next business day. Stripe transfers are irreversible.`)) return
+    setStripeWithdrawing(true)
+    try {
+      const result = await nodeRunner.withdrawNowStripe()
+      toast('success', `$${result.totalPaid.toFixed(2)} sent to bank via Stripe. Transfer id: ${result.stripeTransferId.slice(0, 12)}…`)
+      await loadData(true)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Stripe withdrawal failed'
+      toast('error', msg)
+    } finally {
+      setStripeWithdrawing(false)
+    }
+  }
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -361,10 +384,27 @@ export default function PayoutsPage() {
             </div>
 
             {!withdrawOpen ? (
-              <div className="flex justify-end mt-4">
+              <div className="flex justify-end mt-4 gap-2 flex-wrap">
+                {/* T3.2.1b: Stripe bank withdrawal sits next to the
+                    legacy Solana withdraw button. Shown only when the
+                    operator has finished Stripe Connect onboarding;
+                    otherwise the Connect card above prompts them to
+                    set it up first. */}
+                {stripeConnect?.summary === 'READY' && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleWithdrawToBank}
+                    loading={stripeWithdrawing}
+                    disabled={available <= 0}
+                  >
+                    <Building2 size={16} className="mr-2" />
+                    Withdraw ${available.toFixed(2)} to bank
+                  </Button>
+                )}
                 <Button type="button" onClick={openWithdrawDialog} disabled={available <= 0}>
                   <ArrowDownToLine size={16} className="mr-2" />
-                  Withdraw ${available.toFixed(2)}
+                  Withdraw ${available.toFixed(2)}{stripeConnect?.summary === 'READY' ? ' to wallet' : ''}
                 </Button>
               </div>
             ) : (
