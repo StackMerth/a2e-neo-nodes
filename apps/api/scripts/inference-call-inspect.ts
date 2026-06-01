@@ -71,7 +71,16 @@ async function main(): Promise<void> {
   if (usage) {
     console.log(`TokenUsage ${usage.id}`)
     console.log(`  cost charged:      $${usage.costUsd.toFixed(8)}`)
-    console.log(`  input tokens:      ${usage.inputTokens}`)
+    // inputTokens carries different units depending on the inference
+    // type: tokens for chat/embeddings, image count for images,
+    // audio-seconds for transcriptions. We can't tell from the row
+    // alone, so we hint based on the model id when it's a known
+    // image/audio family.
+    const lower = usage.model.toLowerCase()
+    const isImage = /dall-e|stable-diffusion|sdxl|flux|imagen/.test(lower)
+    const isAudio = /whisper|transcribe|gpt-4o.*-transcribe/.test(lower)
+    const unit = isImage ? ' (images)' : isAudio ? ' (audio seconds)' : ' (tokens)'
+    console.log(`  input ${isImage ? 'count' : isAudio ? 'duration' : 'tokens'}:${' '.repeat(Math.max(1, 13 - (isImage ? 5 : isAudio ? 8 : 6)))}${usage.inputTokens}${unit}`)
     console.log(`  output tokens:     ${usage.outputTokens}`)
     console.log(`  created:           ${usage.createdAt.toISOString()}`)
   } else if (ir.status === 'FAILED' || ir.status === 'CANCELLED') {
