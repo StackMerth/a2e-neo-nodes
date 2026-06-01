@@ -276,7 +276,11 @@ export async function inferenceRoutes(fastify: FastifyInstance) {
           // costUsd mirrors what the meter computed; recompute here
           // for the audit row so a meter race doesn't leave costUsd
           // null on an otherwise-successful row.
-          costUsd: round4(
+          // 8 decimal places — inference calls bill at fractions of a
+          // cent (a 100-token call to llama-3.3 is ~$0.00006). round4
+          // was crushing the audit cost to $0 even when the meter
+          // charged the correct amount.
+          costUsd: round8(
             (inputTokens * pricing.inputPricePerMillionTokens + outputTokens * pricing.outputPricePerMillionTokens) / 1_000_000,
           ),
           completedAt: new Date(),
@@ -405,4 +409,8 @@ async function callExternalProvider(
 
 function round4(n: number): number {
   return Math.round(n * 10000) / 10000
+}
+
+function round8(n: number): number {
+  return Math.round(n * 100000000) / 100000000
 }

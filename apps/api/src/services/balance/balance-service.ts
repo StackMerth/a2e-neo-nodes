@@ -182,9 +182,85 @@ export async function creditBalance(
 }
 
 /**
+ * Inner debit logic. Operates on a TransactionClient so it can be
+ * called from inside an existing $transaction without triggering
+ * Prisma's "nested transaction not supported" failure. The Public
+ * debitBalance() wrapper below opens its own $transaction and calls
+ * this.
+ *
+ * Pulled out 2026-06-01 to fix a real bug: the inference meter was
+ * calling debitBalance(tx, ...) from inside its own $transaction,
+ * which threw "$transaction is not a function" at runtime (the
+ * TransactionClient type strips $transaction). Error was caught by
+ * the route's try/catch, logged, but the InferenceRequest still got
+ * marked COMPLETED — so TokenUsage + BalanceTransaction never landed
+ * for the test inference calls.
+ */
+export async function debitBalanceInTx(
+  tx: Prisma.TransactionClient,
+  args: DebitArgs,
+): Promise<BalanceSnapshot> {
+  const existing = await tx.buyerBalance.upsert({
+    where: { userId: args.userId },
+    create: { userId: args.userId },
+    update: {},
+    select: { id: true, balanceUsd: true },
+  })
+
+  if (existing.balanceUsd < args.amountUsd) {
+    throw new InsufficientBalanceError(existing.balanceUsd, args.amountUsd)
+  }
+
+  const updated = await tx.buyerBalance.update({
+    where: { userId: args.userId },
+    data: {
+      balanceUsd: { decrement: args.amountUsd },
+      totalSpent: { increment: args.amountUsd },
+    },
+    select: {
+      id: true,
+      balanceUsd: true,
+      totalToppedUp: true,
+      totalSpent: true,
+      totalRefunded: true,
+    },
+  })
+
+  try {
+    await tx.balanceTransaction.create({
+      data: {
+        balanceId: updated.id,
+        type: args.type,
+        amountUsd: -args.amountUsd,  // signed: debits stored as negative
+        description: args.description,
+        referenceId: args.referenceId,
+        balanceAfter: updated.balanceUsd,
+      },
+    })
+  } catch (err) {
+    const prismaErr = err as Prisma.PrismaClientKnownRequestError
+    if (prismaErr.code === 'P2002') {
+      throw new DuplicateTransactionError(args.type, args.referenceId)
+    }
+    throw err
+  }
+
+  return {
+    balanceUsd: updated.balanceUsd,
+    totalToppedUp: updated.totalToppedUp,
+    totalSpent: updated.totalSpent,
+    totalRefunded: updated.totalRefunded,
+  }
+}
+
+/**
  * Debit the buyer's balance for a rental. Throws InsufficientBalance
  * if the balance is short. Throws DuplicateTransaction if the same
  * referenceId has already been charged.
+ *
+ * For callers ALREADY inside a $transaction (e.g. the inference
+ * meter wrapping TokenUsage create + this debit atomically), use
+ * debitBalanceInTx directly with the transaction client.
  */
 export async function debitBalance(
   prisma: PrismaClient,
@@ -194,59 +270,7 @@ export async function debitBalance(
     throw new Error(`debitBalance requires positive amount, got ${args.amountUsd}`)
   }
 
-  return prisma.$transaction(async (tx) => {
-    const existing = await tx.buyerBalance.upsert({
-      where: { userId: args.userId },
-      create: { userId: args.userId },
-      update: {},
-      select: { id: true, balanceUsd: true },
-    })
-
-    if (existing.balanceUsd < args.amountUsd) {
-      throw new InsufficientBalanceError(existing.balanceUsd, args.amountUsd)
-    }
-
-    const updated = await tx.buyerBalance.update({
-      where: { userId: args.userId },
-      data: {
-        balanceUsd: { decrement: args.amountUsd },
-        totalSpent: { increment: args.amountUsd },
-      },
-      select: {
-        id: true,
-        balanceUsd: true,
-        totalToppedUp: true,
-        totalSpent: true,
-        totalRefunded: true,
-      },
-    })
-
-    try {
-      await tx.balanceTransaction.create({
-        data: {
-          balanceId: updated.id,
-          type: args.type,
-          amountUsd: -args.amountUsd,  // signed: debits stored as negative
-          description: args.description,
-          referenceId: args.referenceId,
-          balanceAfter: updated.balanceUsd,
-        },
-      })
-    } catch (err) {
-      const prismaErr = err as Prisma.PrismaClientKnownRequestError
-      if (prismaErr.code === 'P2002') {
-        throw new DuplicateTransactionError(args.type, args.referenceId)
-      }
-      throw err
-    }
-
-    return {
-      balanceUsd: updated.balanceUsd,
-      totalToppedUp: updated.totalToppedUp,
-      totalSpent: updated.totalSpent,
-      totalRefunded: updated.totalRefunded,
-    }
-  })
+  return prisma.$transaction(async (tx) => debitBalanceInTx(tx, args))
 }
 
 /**

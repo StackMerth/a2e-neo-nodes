@@ -31,7 +31,7 @@
  */
 
 import type { PrismaClient } from '@a2e/database'
-import { debitBalance, InsufficientBalanceError } from '../balance/balance-service.js'
+import { debitBalanceInTx, InsufficientBalanceError } from '../balance/balance-service.js'
 import { creditInferenceCall } from '../revenue/inference-credit.js'
 
 export class UnknownModelError extends Error {
@@ -124,10 +124,18 @@ export async function meterInferenceCall(
     })
 
     if (!isNoCost) {
-      // debitBalance throws InsufficientBalanceError if short — the
-      // transaction wrapper rolls back the TokenUsage insert so we
-      // never store a usage row without a matching ledger entry.
-      await debitBalance(tx as unknown as PrismaClient, {
+      // debitBalanceInTx operates on the transaction client directly
+      // (no nested $transaction). Throws InsufficientBalanceError if
+      // short — the parent $transaction rolls back the TokenUsage
+      // insert so we never store a usage row without a matching
+      // ledger entry.
+      //
+      // Pre-2026-06-01 this called debitBalance(tx as PrismaClient)
+      // which silently failed at runtime (TransactionClient doesn't
+      // have $transaction). The error got caught + logged but the
+      // route still marked the InferenceRequest COMPLETED, leaving
+      // un-billed calls with no TokenUsage row.
+      await debitBalanceInTx(tx, {
         userId: args.userId,
         amountUsd: costUsd,
         type: 'SPEND_INFERENCE',
