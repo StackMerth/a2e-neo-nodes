@@ -137,16 +137,6 @@ export async function inferenceRoutes(fastify: FastifyInstance) {
       })
     }
 
-    if (parsed.data.stream === true) {
-      return reply.code(400).send({
-        error: {
-          message: 'stream=true is not yet supported on this endpoint (lands in E2.3). Set stream=false or omit.',
-          type: 'invalid_request_error',
-          code: 'streaming_not_yet_supported',
-        },
-      })
-    }
-
     // Pricing must exist before we route — the meter rejects unknown
     // models anyway, but checking here lets us 400 cleanly before
     // spending compute on the worker.
@@ -161,6 +151,13 @@ export async function inferenceRoutes(fastify: FastifyInstance) {
           code: 'model_not_found',
         },
       })
+    }
+
+    // E2.3: streaming path splits off here. SSE has a fundamentally
+    // different response lifecycle (raw writes vs. send()) so it gets
+    // its own handler function. Non-streaming continues below.
+    if (parsed.data.stream === true) {
+      return handleStreamingChat(fastify, request, reply, auth, parsed.data, pricing)
     }
 
     // Audit row created up front in ROUTING state. The whole call
@@ -413,4 +410,250 @@ function round4(n: number): number {
 
 function round8(n: number): number {
   return Math.round(n * 100000000) / 100000000
+}
+
+// ---------------------------------------------------------------------
+// E2.3 — SSE streaming handler
+// ---------------------------------------------------------------------
+
+/**
+ * Streaming variant of /v1/chat/completions. Same routing + audit +
+ * metering as the non-streaming path, but the upstream's
+ * Server-Sent Events response is proxied chunk-by-chunk to the buyer.
+ * Standard OpenAI SDK streaming UX works against this:
+ *
+ *   client.chat.completions.create(..., stream=True)
+ *
+ * Flow:
+ *   1. Create the InferenceRequest audit row (ROUTING).
+ *   2. Pick worker or external provider (same as non-stream path).
+ *   3. POST upstream with stream=true.
+ *   4. Set Content-Type: text/event-stream on the buyer reply, flush.
+ *   5. Pipe upstream's body to the buyer as raw bytes; parse each
+ *      SSE chunk to accumulate the response text (for the local
+ *      token-count fallback) and to capture the final usage block.
+ *   6. On stream close: run the meter (debits buyer, splits revenue),
+ *      update the audit row to COMPLETED.
+ *
+ * SSE format note: OpenAI / Groq / vLLM all emit
+ *   data: {"choices":[{"delta":{"content":"chunk"}}], ...}\n\n
+ *   ...
+ *   data: [DONE]\n\n
+ *
+ * We pass these through verbatim — no re-encoding, no re-formatting.
+ * Token counts come from the final non-[DONE] chunk's usage block
+ * when the upstream reports it (Groq/OpenAI do); otherwise the local
+ * tokenizer (M1.2) counts the accumulated content.
+ */
+async function handleStreamingChat(
+  fastify: FastifyInstance,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  auth: AuthResult,
+  parsedRequest: z.infer<typeof chatCompletionRequestSchema>,
+  pricing: { modelId: string; inputPricePerMillionTokens: number; outputPricePerMillionTokens: number; metadata: unknown },
+): Promise<void> {
+  const inferenceRequest = await fastify.prisma.inferenceRequest.create({
+    data: {
+      apiKeyId: auth.keyId,
+      userId: auth.userId,
+      model: parsedRequest.model,
+      status: 'ROUTING',
+    },
+    select: { id: true },
+  })
+
+  const startedAt = Date.now()
+  let operatorNodeId: string | null = null
+
+  // Resolve upstream. Same logic as non-stream path. We materialize
+  // the upstream HTTP call here so any pre-stream errors (worker
+  // refusal, missing fallback) can be reported as a normal JSON
+  // error before we commit to SSE.
+  const worker = await pickInferenceWorker(fastify.prisma, { model: parsedRequest.model })
+  let upstreamRes: Response
+  if (worker) {
+    operatorNodeId = worker.nodeId
+    await fastify.prisma.inferenceRequest.update({
+      where: { id: inferenceRequest.id },
+      data: { inferenceWorkerId: worker.id, status: 'STREAMING' },
+    })
+    upstreamRes = await fetch(`${worker.baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...(request.body as Record<string, unknown>), stream: true }),
+    })
+  } else {
+    const external = resolveExternalProvider(pricing.metadata)
+    if (!external) {
+      await fastify.prisma.inferenceRequest.update({
+        where: { id: inferenceRequest.id },
+        data: { status: 'FAILED', errorMessage: 'No worker and no external fallback configured', completedAt: new Date() },
+      })
+      reply.code(503).send({
+        error: {
+          message: `Model "${parsedRequest.model}" temporarily unavailable.`,
+          type: 'server_error',
+          code: 'model_unavailable',
+        },
+      })
+      return
+    }
+    await fastify.prisma.inferenceRequest.update({
+      where: { id: inferenceRequest.id },
+      data: { externalProvider: external.kind, status: 'STREAMING' },
+    })
+    upstreamRes = await fetch(`${external.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${external.apiKey}`,
+      },
+      body: JSON.stringify({
+        ...(request.body as Record<string, unknown>),
+        model: external.externalModel,
+        stream: true,
+      }),
+    })
+  }
+
+  if (!upstreamRes.ok || !upstreamRes.body) {
+    const text = await upstreamRes.text().catch(() => '')
+    const errMsg = `upstream ${upstreamRes.status}: ${text.slice(0, 200)}`
+    await fastify.prisma.inferenceRequest.update({
+      where: { id: inferenceRequest.id },
+      data: { status: 'FAILED', errorMessage: errMsg, completedAt: new Date() },
+    })
+    reply.code(502).send({
+      error: { message: errMsg, type: 'server_error', code: 'upstream_failure' },
+    })
+    return
+  }
+
+  // Commit to SSE. From here on we write to reply.raw directly and
+  // must not call reply.send().
+  reply.hijack()
+  const raw = reply.raw
+  raw.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    // Disable nginx-style buffering at any intermediate proxy so the
+    // buyer actually sees tokens as they arrive.
+    'X-Accel-Buffering': 'no',
+  })
+
+  let accumulatedText = ''
+  let upstreamUsage: { prompt_tokens?: number; completion_tokens?: number } | null = null
+  let upstreamId: string | null = null
+
+  // Process the SSE stream line by line. fetch's body is a ReadableStream;
+  // we decode + buffer to handle partial chunks straddling event boundaries.
+  const decoder = new TextDecoder()
+  const reader = upstreamRes.body.getReader()
+  let buffer = ''
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      const text = decoder.decode(value, { stream: true })
+      // Pass through to the buyer verbatim — every byte the upstream
+      // sent, the buyer gets, in order.
+      raw.write(text)
+      buffer += text
+
+      // Parse complete SSE events out of the buffer for usage/content
+      // accumulation. Events are separated by \n\n; partial events
+      // stay in the buffer until the next chunk arrives.
+      let sepIdx = buffer.indexOf('\n\n')
+      while (sepIdx !== -1) {
+        const event = buffer.slice(0, sepIdx)
+        buffer = buffer.slice(sepIdx + 2)
+        sepIdx = buffer.indexOf('\n\n')
+
+        for (const line of event.split('\n')) {
+          if (!line.startsWith('data: ')) continue
+          const payload = line.slice('data: '.length).trim()
+          if (payload === '[DONE]') continue
+          try {
+            const parsed = JSON.parse(payload) as {
+              id?: string
+              choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>
+              usage?: { prompt_tokens?: number; completion_tokens?: number }
+            }
+            if (parsed.id && !upstreamId) upstreamId = parsed.id
+            const contentDelta = parsed.choices?.[0]?.delta?.content
+            if (typeof contentDelta === 'string') accumulatedText += contentDelta
+            if (parsed.usage) upstreamUsage = parsed.usage
+          } catch {
+            // Non-JSON SSE line — ignore. Buyer still got the bytes.
+          }
+        }
+      }
+    }
+  } catch (err) {
+    // Mid-stream upstream failure. Surface a final error event to
+    // the buyer so their SDK doesn't hang.
+    const msg = (err as Error).message
+    raw.write(`event: error\ndata: ${JSON.stringify({ error: { message: msg, type: 'server_error' } })}\n\n`)
+    await fastify.prisma.inferenceRequest.update({
+      where: { id: inferenceRequest.id },
+      data: { status: 'FAILED', errorMessage: msg, completedAt: new Date() },
+    }).catch(() => undefined)
+    raw.end()
+    return
+  }
+
+  raw.end()
+
+  const latencyMs = Date.now() - startedAt
+
+  // Token counts: upstream's usage block first; fall back to local
+  // tokenizer over the accumulated assistant text + the prompt.
+  let inputTokens = upstreamUsage?.prompt_tokens
+  let outputTokens = upstreamUsage?.completion_tokens
+  if (inputTokens == null || outputTokens == null) {
+    const promptText = parsedRequest.messages
+      .map((m) => (typeof m.content === 'string' ? m.content : ''))
+      .join('\n')
+    const counted = countRequest(parsedRequest.model, promptText, accumulatedText)
+    inputTokens ??= counted.inputTokens
+    outputTokens ??= counted.outputTokens
+  }
+
+  // Meter — same as non-stream path. Don't surface errors to the
+  // buyer (the stream already closed cleanly); just log and audit.
+  try {
+    await meterInferenceCall(fastify.prisma, {
+      userId: auth.userId,
+      apiKeyId: auth.keyId,
+      model: parsedRequest.model,
+      inputTokens,
+      outputTokens,
+      referenceId: inferenceRequest.id,
+      operatorId: operatorNodeId,
+      latencyMs,
+    })
+  } catch (err) {
+    if (err instanceof InsufficientBalanceError) {
+      fastify.log.error({ err, requestId: inferenceRequest.id }, 'streaming inference unbillable')
+    } else if (!(err instanceof UnknownModelError)) {
+      fastify.log.error({ err, requestId: inferenceRequest.id }, 'streaming meter call failed')
+    }
+  }
+
+  await fastify.prisma.inferenceRequest.update({
+    where: { id: inferenceRequest.id },
+    data: {
+      status: 'COMPLETED',
+      inputTokens,
+      outputTokens,
+      latencyMs,
+      costUsd: round8(
+        (inputTokens * pricing.inputPricePerMillionTokens + outputTokens * pricing.outputPricePerMillionTokens) / 1_000_000,
+      ),
+      completedAt: new Date(),
+    },
+  })
 }
