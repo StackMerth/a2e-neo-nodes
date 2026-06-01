@@ -74,6 +74,8 @@ async function main(): Promise<void> {
     console.log(`  input tokens:      ${usage.inputTokens}`)
     console.log(`  output tokens:     ${usage.outputTokens}`)
     console.log(`  created:           ${usage.createdAt.toISOString()}`)
+  } else if (ir.status === 'FAILED' || ir.status === 'CANCELLED') {
+    console.log(`TokenUsage: not created (request ${ir.status} — buyer not billed)`)
   } else {
     console.log(`TokenUsage: NO ROW FOUND for requestId=${ir.id}`)
     console.log(`  This is a bug — meter should have created one. Check API logs.`)
@@ -102,6 +104,8 @@ async function main(): Promise<void> {
       console.log(`  balance after:     $${tx.balanceAfter.toFixed(8)}`)
       console.log(`  description:       ${tx.description}`)
       console.log(`  created:           ${tx.createdAt.toISOString()}`)
+    } else if (ir.status === 'FAILED' || ir.status === 'CANCELLED') {
+      console.log(`BalanceTransaction: not created (request ${ir.status} — buyer not billed, balance unchanged)`)
     } else {
       console.log(`BalanceTransaction: NO ROW FOUND for SPEND_INFERENCE/${ir.id}`)
       console.log(`  The meter call probably failed. Check API logs around ${ir.createdAt.toISOString()}.`)
