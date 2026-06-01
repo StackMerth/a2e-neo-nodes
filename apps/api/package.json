@@ -53,7 +53,8 @@
     "tokenizer:inspect": "tsx scripts/tokenizer-inspect.ts",
     "inference-workers:inspect": "tsx scripts/inference-workers-inspect.ts",
     "apikey:grant-inference": "tsx scripts/apikey-grant-inference.ts",
-    "inference-call:inspect": "tsx scripts/inference-call-inspect.ts"
+    "inference-call:inspect": "tsx scripts/inference-call-inspect.ts",
+    "seed:image-models": "tsx scripts/seed-image-models.ts"
   },
   "dependencies": {
     "@a2e/core": "workspace:*",
