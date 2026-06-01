@@ -41,6 +41,7 @@ import {
   UnknownModelError,
   InsufficientBalanceError,
 } from '../services/inference/meter.js'
+import { meterImageCall } from '../services/inference/image-meter.js'
 
 // -----------------------------------------------------------------
 // E3.1 — embeddings schemas
@@ -82,6 +83,92 @@ interface EmbeddingsResponse {
     total_tokens?: number
   }
   [k: string]: unknown
+}
+
+// -----------------------------------------------------------------
+// E3.2 — image generation schemas
+// -----------------------------------------------------------------
+
+// OpenAI's /v1/images/generations shape. Stricter than chat
+// completions because pricing depends on size + quality, so we can't
+// just passthrough unknown values — we have to know which price
+// bucket to charge.
+const imagesRequestSchema = z.object({
+  model: z.string().min(1).max(200),
+  prompt: z.string().min(1).max(8000),
+  n: z.number().int().min(1).max(10).optional(),
+  // OpenAI's DALL-E sizes. Open models (SDXL etc.) accept the same
+  // 1024x1024 base and we allow custom sizes via passthrough.
+  size: z.string().regex(/^\d+x\d+$/).optional(),
+  quality: z.enum(['standard', 'hd']).optional(),
+  response_format: z.enum(['url', 'b64_json']).optional(),
+  style: z.enum(['vivid', 'natural']).optional(),
+  user: z.string().optional(),
+}).passthrough()
+
+interface ImagesResponse {
+  created: number
+  data: Array<{
+    url?: string
+    b64_json?: string
+    revised_prompt?: string
+  }>
+  [k: string]: unknown
+}
+
+/**
+ * Look up the cost for a given (size, quality, n) combo from the
+ * model's pricing metadata. Returns null when the combo isn't priced
+ * (unknown size, missing quality tier, etc.) so the route can 400
+ * with a clean error.
+ *
+ * Pricing format on ModelPricing.metadata:
+ *   {
+ *     externalProvider: 'openai',
+ *     externalModel: 'dall-e-3',
+ *     imagePricing: {
+ *       'standard:1024x1024': 0.040,
+ *       'hd:1024x1024': 0.080,
+ *       ...
+ *     },
+ *     defaultSize: '1024x1024',
+ *     defaultQuality: 'standard'
+ *   }
+ *
+ * Open models without a quality tier can use 'default' as the key
+ * prefix: { 'default:1024x1024': 0.005 }.
+ */
+function resolveImageCost(
+  metadata: unknown,
+  size: string,
+  quality: string,
+  n: number,
+): { perImageUsd: number; totalUsd: number } | null {
+  if (!metadata || typeof metadata !== 'object') return null
+  const m = metadata as Record<string, unknown>
+  const pricing = m.imagePricing as Record<string, number> | undefined
+  if (!pricing) return null
+
+  const key = `${quality}:${size}`
+  let perImage = pricing[key]
+  // Fall back to default-quality entry when caller didn't specify
+  // a quality (e.g. SDXL models that don't have standard/hd tiers).
+  if (typeof perImage !== 'number' && quality !== 'default') {
+    perImage = pricing[`default:${size}`]
+  }
+  if (typeof perImage !== 'number') return null
+
+  return {
+    perImageUsd: perImage,
+    totalUsd: round8(perImage * n),
+  }
+}
+
+function defaultImageMetadataValue(metadata: unknown, key: string, fallback: string): string {
+  if (!metadata || typeof metadata !== 'object') return fallback
+  const m = metadata as Record<string, unknown>
+  const v = m[key]
+  return typeof v === 'string' ? v : fallback
 }
 
 // OpenAI-style message shape. Content is either a plain string OR an
@@ -530,6 +617,201 @@ export async function inferenceRoutes(fastify: FastifyInstance) {
       reply.code(502).send({
         error: {
           message: `Upstream embeddings failed: ${message}`,
+          type: 'server_error',
+          code: 'upstream_failure',
+        },
+      })
+    }
+  })
+
+  // -----------------------------------------------------------------
+  // E3.2 — POST /v1/images/generations
+  // -----------------------------------------------------------------
+  fastify.post('/v1/images/generations', async (request, reply) => {
+    const auth = await authenticateInferenceCall(request, reply)
+    if (!auth) return
+
+    const parsed = imagesRequestSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: {
+          message: parsed.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; '),
+          type: 'invalid_request_error',
+        },
+      })
+    }
+
+    const pricing = await fastify.prisma.modelPricing.findUnique({
+      where: { modelId: parsed.data.model },
+    })
+    if (!pricing || !pricing.isActive) {
+      return reply.code(400).send({
+        error: {
+          message: `Unknown model: ${parsed.data.model}. List available models via GET /v1/models.`,
+          type: 'invalid_request_error',
+          code: 'model_not_found',
+        },
+      })
+    }
+
+    const size = parsed.data.size ?? defaultImageMetadataValue(pricing.metadata, 'defaultSize', '1024x1024')
+    const quality = parsed.data.quality ?? defaultImageMetadataValue(pricing.metadata, 'defaultQuality', 'standard')
+    const n = parsed.data.n ?? 1
+
+    // Compute cost up front so the buyer's balance is pre-checked
+    // before we spend any compute. Images aren't sub-cent like
+    // embeddings; a buyer accidentally requesting 10 hd images at
+    // $0.12 each ($1.20) should fail cleanly if their balance is
+    // empty rather than after the upstream charge.
+    const costResolution = resolveImageCost(pricing.metadata, size, quality, n)
+    if (!costResolution) {
+      return reply.code(400).send({
+        error: {
+          message: `Model "${parsed.data.model}" doesn't have pricing configured for quality="${quality}" size="${size}". Try a different combination or check GET /v1/models.`,
+          type: 'invalid_request_error',
+          code: 'unsupported_image_options',
+        },
+      })
+    }
+
+    // Insufficient balance pre-check. 402 is the standard "you need
+    // to pay before we serve you" status code; OpenAI returns the
+    // same shape on their out-of-credit case.
+    const balanceRow = await fastify.prisma.buyerBalance.findUnique({
+      where: { userId: auth.userId },
+      select: { balanceUsd: true },
+    })
+    const currentBalance = balanceRow?.balanceUsd ?? 0
+    if (currentBalance < costResolution.totalUsd) {
+      return reply.code(402).send({
+        error: {
+          message: `Insufficient balance. This call costs $${costResolution.totalUsd.toFixed(4)} (${n} image${n === 1 ? '' : 's'} at $${costResolution.perImageUsd.toFixed(4)} each); balance is $${currentBalance.toFixed(4)}. Top up via /buyer/balance.`,
+          type: 'insufficient_balance',
+          code: 'insufficient_balance',
+        },
+      })
+    }
+
+    const inferenceRequest = await fastify.prisma.inferenceRequest.create({
+      data: {
+        apiKeyId: auth.keyId,
+        userId: auth.userId,
+        model: parsed.data.model,
+        status: 'ROUTING',
+      },
+      select: { id: true },
+    })
+
+    const startedAt = Date.now()
+    let operatorNodeId: string | null = null
+
+    try {
+      const worker = await pickInferenceWorker(fastify.prisma, { model: parsed.data.model })
+
+      let upstreamBody: ImagesResponse
+      if (worker) {
+        operatorNodeId = worker.nodeId
+        await fastify.prisma.inferenceRequest.update({
+          where: { id: inferenceRequest.id },
+          data: { inferenceWorkerId: worker.id, status: 'STREAMING' },
+        })
+        const res = await fetch(`${worker.baseUrl}/v1/images/generations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request.body),
+        })
+        if (!res.ok) {
+          const text = await res.text().catch(() => '')
+          throw new Error(`worker ${res.status}: ${text.slice(0, 200)}`)
+        }
+        upstreamBody = await res.json() as ImagesResponse
+      } else {
+        const external = resolveExternalProvider(pricing.metadata)
+        if (!external) {
+          await fastify.prisma.inferenceRequest.update({
+            where: { id: inferenceRequest.id },
+            data: { status: 'FAILED', errorMessage: 'No worker and no external fallback configured', completedAt: new Date() },
+          })
+          return reply.code(503).send({
+            error: {
+              message: `Model "${parsed.data.model}" temporarily unavailable.`,
+              type: 'server_error',
+              code: 'model_unavailable',
+            },
+          })
+        }
+        await fastify.prisma.inferenceRequest.update({
+          where: { id: inferenceRequest.id },
+          data: { externalProvider: external.kind, status: 'STREAMING' },
+        })
+        const upstreamReqBody = {
+          ...(request.body as Record<string, unknown>),
+          model: external.externalModel,
+        }
+        const res = await fetch(`${external.baseUrl}/images/generations`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${external.apiKey}`,
+          },
+          body: JSON.stringify(upstreamReqBody),
+        })
+        if (!res.ok) {
+          const text = await res.text().catch(() => '')
+          throw new Error(`external (${external.kind}) ${res.status}: ${text.slice(0, 200)}`)
+        }
+        upstreamBody = await res.json() as ImagesResponse
+      }
+
+      const latencyMs = Date.now() - startedAt
+
+      // Meter with the pre-computed cost. The image-meter helper
+      // handles the atomic TokenUsage + balance debit + revenue split.
+      try {
+        await meterImageCall(fastify.prisma, {
+          userId: auth.userId,
+          apiKeyId: auth.keyId,
+          model: parsed.data.model,
+          imageCount: n,
+          costUsd: costResolution.totalUsd,
+          referenceId: inferenceRequest.id,
+          operatorId: operatorNodeId,
+          latencyMs,
+        })
+      } catch (err) {
+        if (err instanceof InsufficientBalanceError) {
+          // Race against another concurrent call drained the balance
+          // between our pre-check and the debit. Buyer got their
+          // images; we eat this one and log.
+          fastify.log.error({ err, requestId: inferenceRequest.id, userId: auth.userId }, 'image call unbillable (raced balance pre-check)')
+        } else if (!(err instanceof UnknownModelError)) {
+          fastify.log.error({ err, requestId: inferenceRequest.id }, 'image meter call failed')
+        }
+      }
+
+      await fastify.prisma.inferenceRequest.update({
+        where: { id: inferenceRequest.id },
+        data: {
+          status: 'COMPLETED',
+          inputTokens: n,
+          outputTokens: 0,
+          latencyMs,
+          costUsd: costResolution.totalUsd,
+          completedAt: new Date(),
+        },
+      })
+
+      reply.code(200).send(upstreamBody)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      fastify.log.error({ err, requestId: inferenceRequest.id }, 'image generation call failed')
+      await fastify.prisma.inferenceRequest.update({
+        where: { id: inferenceRequest.id },
+        data: { status: 'FAILED', errorMessage: message, completedAt: new Date() },
+      }).catch(() => undefined)
+      reply.code(502).send({
+        error: {
+          message: `Upstream image generation failed: ${message}`,
           type: 'server_error',
           code: 'upstream_failure',
         },
