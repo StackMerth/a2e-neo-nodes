@@ -42,6 +42,48 @@ import {
   InsufficientBalanceError,
 } from '../services/inference/meter.js'
 
+// -----------------------------------------------------------------
+// E3.1 — embeddings schemas
+// -----------------------------------------------------------------
+
+// OpenAI's /v1/embeddings input is permissive: a single string, an
+// array of strings (batched), an array of token ids (pre-tokenized),
+// or an array of arrays of token ids (batched pre-tokenized). We
+// accept all four shapes and pass through to the upstream verbatim.
+const embeddingsInputSchema = z.union([
+  z.string().max(100000),
+  z.array(z.string().max(100000)).max(2048),
+  z.array(z.number().int()).max(100000),
+  z.array(z.array(z.number().int())).max(2048),
+])
+
+const embeddingsRequestSchema = z.object({
+  model: z.string().min(1).max(200),
+  input: embeddingsInputSchema,
+  // OpenAI defaults to float; base64 is denser for large batches.
+  // Passthrough — the upstream returns whichever the buyer asked for.
+  encoding_format: z.enum(['float', 'base64']).optional(),
+  // Reduce output dimensionality (Matryoshka models like
+  // text-embedding-3-small/large support this).
+  dimensions: z.number().int().positive().optional(),
+  user: z.string().optional(),
+}).passthrough()
+
+interface EmbeddingsResponse {
+  object: 'list'
+  data: Array<{
+    object: 'embedding'
+    embedding: number[] | string
+    index: number
+  }>
+  model: string
+  usage?: {
+    prompt_tokens?: number
+    total_tokens?: number
+  }
+  [k: string]: unknown
+}
+
 // OpenAI-style message shape. Content is either a plain string OR an
 // array of parts (for multimodal — vision images, audio). For E2.2
 // we only forward what we receive; we don't introspect or transform.
@@ -298,6 +340,196 @@ export async function inferenceRoutes(fastify: FastifyInstance) {
       reply.code(502).send({
         error: {
           message: `Upstream inference failed: ${message}`,
+          type: 'server_error',
+          code: 'upstream_failure',
+        },
+      })
+    }
+  })
+
+  // -----------------------------------------------------------------
+  // E3.1 — POST /v1/embeddings
+  // -----------------------------------------------------------------
+  fastify.post('/v1/embeddings', async (request, reply) => {
+    const auth = await authenticateInferenceCall(request, reply)
+    if (!auth) return
+
+    const parsed = embeddingsRequestSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: {
+          message: parsed.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; '),
+          type: 'invalid_request_error',
+        },
+      })
+    }
+
+    const pricing = await fastify.prisma.modelPricing.findUnique({
+      where: { modelId: parsed.data.model },
+    })
+    if (!pricing || !pricing.isActive) {
+      return reply.code(400).send({
+        error: {
+          message: `Unknown model: ${parsed.data.model}. List available models via GET /v1/models.`,
+          type: 'invalid_request_error',
+          code: 'model_not_found',
+        },
+      })
+    }
+
+    // Same audit pattern as chat completions — the request is tracked
+    // through ROUTING -> STREAMING -> COMPLETED even though embeddings
+    // don't actually stream. STREAMING is just our "upstream is in
+    // flight" lifecycle marker.
+    const inferenceRequest = await fastify.prisma.inferenceRequest.create({
+      data: {
+        apiKeyId: auth.keyId,
+        userId: auth.userId,
+        model: parsed.data.model,
+        status: 'ROUTING',
+      },
+      select: { id: true },
+    })
+
+    const startedAt = Date.now()
+    let operatorNodeId: string | null = null
+
+    try {
+      const worker = await pickInferenceWorker(fastify.prisma, { model: parsed.data.model })
+
+      let upstreamBody: EmbeddingsResponse
+      if (worker) {
+        operatorNodeId = worker.nodeId
+        await fastify.prisma.inferenceRequest.update({
+          where: { id: inferenceRequest.id },
+          data: { inferenceWorkerId: worker.id, status: 'STREAMING' },
+        })
+        const res = await fetch(`${worker.baseUrl}/v1/embeddings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request.body),
+        })
+        if (!res.ok) {
+          const text = await res.text().catch(() => '')
+          throw new Error(`worker ${res.status}: ${text.slice(0, 200)}`)
+        }
+        upstreamBody = await res.json() as EmbeddingsResponse
+      } else {
+        const external = resolveExternalProvider(pricing.metadata)
+        if (!external) {
+          await fastify.prisma.inferenceRequest.update({
+            where: { id: inferenceRequest.id },
+            data: { status: 'FAILED', errorMessage: 'No worker and no external fallback configured', completedAt: new Date() },
+          })
+          return reply.code(503).send({
+            error: {
+              message: `Model "${parsed.data.model}" temporarily unavailable: no operator workers online and no external fallback configured.`,
+              type: 'server_error',
+              code: 'model_unavailable',
+            },
+          })
+        }
+        await fastify.prisma.inferenceRequest.update({
+          where: { id: inferenceRequest.id },
+          data: { externalProvider: external.kind, status: 'STREAMING' },
+        })
+        const upstreamReqBody = { ...(request.body as Record<string, unknown>), model: external.externalModel }
+        const res = await fetch(`${external.baseUrl}/embeddings`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${external.apiKey}`,
+          },
+          body: JSON.stringify(upstreamReqBody),
+        })
+        if (!res.ok) {
+          const text = await res.text().catch(() => '')
+          throw new Error(`external (${external.kind}) ${res.status}: ${text.slice(0, 200)}`)
+        }
+        upstreamBody = await res.json() as EmbeddingsResponse
+        // Map the model id back so the buyer sees what they requested.
+        upstreamBody.model = parsed.data.model
+      }
+
+      const latencyMs = Date.now() - startedAt
+
+      // Token counts: prefer upstream's usage.prompt_tokens. Fall back
+      // to the local tokenizer over the concatenated input text. Note
+      // pre-tokenized inputs (number arrays) skip the local count
+      // since the upstream definitively knows the count there.
+      let inputTokens = upstreamBody.usage?.prompt_tokens
+      if (inputTokens == null) {
+        const input = parsed.data.input
+        let text = ''
+        if (typeof input === 'string') text = input
+        else if (Array.isArray(input) && input.every((x) => typeof x === 'string')) {
+          text = (input as string[]).join('\n')
+        }
+        if (text) {
+          const counted = countRequest(parsed.data.model, text, '')
+          inputTokens = counted.inputTokens
+        } else {
+          // Pre-tokenized input — just trust the array length.
+          inputTokens = Array.isArray(input)
+            ? input.flat(Infinity).length
+            : 0
+        }
+      }
+      // Embeddings have no completion tokens; the meter expects both
+      // halves but a zero is fine — costUsd math zeros out the output
+      // half regardless of outputPricePerMillionTokens.
+      const outputTokens = 0
+
+      // Meter — same call site as chat completions. Embeddings only
+      // bill on input tokens.
+      try {
+        await meterInferenceCall(fastify.prisma, {
+          userId: auth.userId,
+          apiKeyId: auth.keyId,
+          model: parsed.data.model,
+          inputTokens,
+          outputTokens,
+          referenceId: inferenceRequest.id,
+          operatorId: operatorNodeId,
+          latencyMs,
+        })
+      } catch (err) {
+        if (err instanceof InsufficientBalanceError) {
+          await fastify.prisma.inferenceRequest.update({
+            where: { id: inferenceRequest.id },
+            data: { status: 'FAILED', errorMessage: 'Insufficient balance — call served but unbillable', completedAt: new Date() },
+          }).catch(() => undefined)
+          fastify.log.error({ err, requestId: inferenceRequest.id, userId: auth.userId }, 'embeddings call unbillable')
+        } else if (!(err instanceof UnknownModelError)) {
+          fastify.log.error({ err, requestId: inferenceRequest.id }, 'embeddings meter call failed')
+        }
+      }
+
+      await fastify.prisma.inferenceRequest.update({
+        where: { id: inferenceRequest.id },
+        data: {
+          status: 'COMPLETED',
+          inputTokens,
+          outputTokens,
+          latencyMs,
+          costUsd: round8(
+            (inputTokens * pricing.inputPricePerMillionTokens) / 1_000_000,
+          ),
+          completedAt: new Date(),
+        },
+      })
+
+      reply.code(200).send(upstreamBody)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      fastify.log.error({ err, requestId: inferenceRequest.id }, 'embeddings call failed')
+      await fastify.prisma.inferenceRequest.update({
+        where: { id: inferenceRequest.id },
+        data: { status: 'FAILED', errorMessage: message, completedAt: new Date() },
+      }).catch(() => undefined)
+      reply.code(502).send({
+        error: {
+          message: `Upstream embeddings failed: ${message}`,
           type: 'server_error',
           code: 'upstream_failure',
         },
