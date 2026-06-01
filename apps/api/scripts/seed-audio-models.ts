@@ -38,6 +38,25 @@ const SEEDS: AudioSeed[] = [
       audioPricing: { perSecondUsd: 0.00005 },
     },
   },
+  {
+    // Groq's free-tier Whisper Large V3. Same model OpenAI runs, but
+    // free at modest rate limits. Use this for E3.3 testing while
+    // OpenAI billing is unfunded. Buyer model id is provider-prefixed
+    // so the OpenAI key 'whisper-1' still maps to OpenAI.
+    modelId: 'whisper-large-v3',
+    metadata: {
+      externalProvider: 'openai-compat',
+      externalModel: 'whisper-large-v3',
+      externalBaseUrl: 'https://api.groq.com/openai/v1',
+      externalApiKeyEnv: 'GROQ_API_KEY',
+      // We pass through Groq's true price (~$0.0001/sec equivalent)
+      // so the meter still records something — buyer balance moves,
+      // ledger still has a row to inspect. If you want truly free
+      // testing, set this to 0 and the meter creates a TokenUsage
+      // row but skips the debit.
+      audioPricing: { perSecondUsd: 0.0001 },
+    },
+  },
 ]
 
 async function main(): Promise<void> {
