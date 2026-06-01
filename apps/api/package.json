@@ -54,7 +54,8 @@
     "inference-workers:inspect": "tsx scripts/inference-workers-inspect.ts",
     "apikey:grant-inference": "tsx scripts/apikey-grant-inference.ts",
     "inference-call:inspect": "tsx scripts/inference-call-inspect.ts",
-    "seed:image-models": "tsx scripts/seed-image-models.ts"
+    "seed:image-models": "tsx scripts/seed-image-models.ts",
+    "seed:audio-models": "tsx scripts/seed-audio-models.ts"
   },
   "dependencies": {
     "@a2e/core": "workspace:*",
@@ -64,6 +65,7 @@
     "@aws-sdk/client-s3": "^3.1048.0",
     "@aws-sdk/s3-request-presigner": "^3.1048.0",
     "@fastify/cors": "^9.0.0",
+    "@fastify/multipart": "^8.0.0",
     "@fastify/swagger": "^8.14.0",
     "@fastify/swagger-ui": "^3.0.0",
     "@fastify/websocket": "^10.0.0",

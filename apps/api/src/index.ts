@@ -22,7 +22,7 @@ if (process.env.SENTRY_DSN) {
 
 import Fastify from 'fastify'
 import './types' // Type augmentations
-import { prismaPlugin, redisPlugin, authPlugin, corsPlugin, overflowRegistryPlugin, swaggerPlugin } from './plugins'
+import { prismaPlugin, redisPlugin, authPlugin, corsPlugin, overflowRegistryPlugin, swaggerPlugin, multipartPlugin } from './plugins'
 import errorHandlerPlugin from './plugins/error-handler'
 import {
   healthRoutes,
@@ -228,6 +228,10 @@ async function start() {
     await server.register(redisPlugin)
     await server.register(authPlugin)
     await server.register(overflowRegistryPlugin)
+    // Multipart support for /v1/audio/transcriptions (E3.3) — Whisper
+    // uploads a file alongside form fields. Must register before route
+    // handlers so request.file() / request.parts() are available.
+    await server.register(multipartPlugin)
     // Swagger must register BEFORE the routes so route schemas are
     // picked up into the generated OpenAPI spec. Serves /docs (UI) and
     // /docs/json (raw spec).

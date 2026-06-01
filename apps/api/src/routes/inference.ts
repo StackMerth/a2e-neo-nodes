@@ -42,6 +42,7 @@ import {
   InsufficientBalanceError,
 } from '../services/inference/meter.js'
 import { meterImageCall } from '../services/inference/image-meter.js'
+import { meterAudioCall } from '../services/inference/audio-meter.js'
 
 // -----------------------------------------------------------------
 // E3.1 — embeddings schemas
@@ -169,6 +170,51 @@ function defaultImageMetadataValue(metadata: unknown, key: string, fallback: str
   const m = metadata as Record<string, unknown>
   const v = m[key]
   return typeof v === 'string' ? v : fallback
+}
+
+// -----------------------------------------------------------------
+// E3.3 — audio pricing
+// -----------------------------------------------------------------
+
+/**
+ * Whisper-family models bill per second of audio. The pricing block
+ * on ModelPricing.metadata is the simplest possible shape:
+ *   {
+ *     externalProvider: 'openai',
+ *     externalModel: 'whisper-1',
+ *     audioPricing: { perSecondUsd: 0.0001 }
+ *   }
+ *
+ * Returns null when no audio pricing configured so the route can 400
+ * with a clean "model isn't an audio model" error before opening the
+ * multipart stream.
+ */
+function resolveAudioPerSecondPrice(metadata: unknown): number | null {
+  if (!metadata || typeof metadata !== 'object') return null
+  const m = metadata as Record<string, unknown>
+  const audioPricing = m.audioPricing as Record<string, unknown> | undefined
+  if (!audioPricing) return null
+  const v = audioPricing.perSecondUsd
+  return typeof v === 'number' && v > 0 ? v : null
+}
+
+// OpenAI's /v1/audio/transcriptions form fields. The file itself is
+// validated separately via request.file() — this schema covers the
+// non-file form fields we forward.
+const audioTranscriptionFormSchema = z.object({
+  model: z.string().min(1).max(200),
+  language: z.string().min(2).max(8).optional(),
+  prompt: z.string().max(8000).optional(),
+  response_format: z.enum(['json', 'text', 'srt', 'verbose_json', 'vtt']).optional(),
+  temperature: z.coerce.number().min(0).max(1).optional(),
+}).passthrough()
+
+interface VerboseTranscriptionResponse {
+  text: string
+  duration?: number
+  language?: string
+  segments?: Array<{ id: number; start: number; end: number; text: string }>
+  [k: string]: unknown
 }
 
 // OpenAI-style message shape. Content is either a plain string OR an
@@ -812,6 +858,304 @@ export async function inferenceRoutes(fastify: FastifyInstance) {
       reply.code(502).send({
         error: {
           message: `Upstream image generation failed: ${message}`,
+          type: 'server_error',
+          code: 'upstream_failure',
+        },
+      })
+    }
+  })
+
+  // -----------------------------------------------------------------
+  // E3.3 — POST /v1/audio/transcriptions
+  // -----------------------------------------------------------------
+  //
+  // OpenAI-compatible Whisper endpoint. Accepts multipart/form-data
+  // with a `file` field (audio bytes) and form fields for model,
+  // language, prompt, response_format, temperature.
+  //
+  // Billing: per second of audio duration. We can't pre-check the
+  // cost because the duration is only known after the upstream
+  // transcribes. Mitigation: cap upload at 25 MB (matches OpenAI's
+  // limit), so even at the highest realistic audio bitrate the
+  // worst-case cost is bounded (~25 min audio at $0.0001/sec =
+  // $0.15). A buyer with $0 balance and a 25-min upload eats us
+  // $0.15 once per race; the route logs + carries on.
+  //
+  // Routing: operator worker first, then external provider fallback.
+  // Same audit-row lifecycle as chat / embeddings / images. Worker
+  // handles multipart via the same route on its side.
+  //
+  // Response: we ALWAYS request verbose_json upstream (so we get the
+  // duration), then translate the response back to whatever
+  // response_format the buyer asked for. For 'text' / 'srt' / 'vtt',
+  // we make a second upstream call in the buyer's requested format
+  // and use the duration from the first call.
+  //   Trade-off: an extra call for non-json formats vs. forcing
+  //   verbose_json upstream and translating client-side. The extra
+  //   call is simpler and bounded by the operator's own latency.
+  fastify.post('/v1/audio/transcriptions', async (request, reply) => {
+    const auth = await authenticateInferenceCall(request, reply)
+    if (!auth) return
+
+    // Multipart guard. request.isMultipart() returns false for
+    // application/json or wrong Content-Type — surface a clean 400
+    // instead of letting multipart throw deep in the parser.
+    if (!request.isMultipart()) {
+      return reply.code(400).send({
+        error: {
+          message: 'Expected multipart/form-data. POST the audio file as `file` plus a `model` field, e.g. `curl -F file=@audio.mp3 -F model=whisper-1`.',
+          type: 'invalid_request_error',
+          code: 'expected_multipart',
+        },
+      })
+    }
+
+    // Drain multipart: pull every part. The file part is buffered to
+    // memory (bounded by the 25 MB plugin limit). Form fields go into
+    // a plain object so we can validate them with zod.
+    let fileBuffer: Buffer | null = null
+    let fileMime: string | null = null
+    let fileName: string | null = null
+    const fields: Record<string, string> = {}
+    try {
+      const parts = request.parts()
+      for await (const part of parts) {
+        if (part.type === 'file') {
+          // First file wins — the multipart plugin's `files: 1` limit
+          // means a second one would have errored already.
+          fileBuffer = await part.toBuffer()
+          fileMime = part.mimetype ?? 'application/octet-stream'
+          fileName = part.filename ?? 'audio.bin'
+        } else {
+          fields[part.fieldname] = (part as { value: unknown }).value as string
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'multipart parse failed'
+      // File too large is the common failure mode; map it to 413.
+      const isSize = /file too large|too big|size limit/i.test(message)
+      return reply.code(isSize ? 413 : 400).send({
+        error: {
+          message: isSize
+            ? `Audio file exceeds the 25 MB upload limit. Split the audio or use a smaller bitrate.`
+            : `Could not parse multipart body: ${message}`,
+          type: 'invalid_request_error',
+          code: isSize ? 'file_too_large' : 'invalid_multipart',
+        },
+      })
+    }
+
+    if (!fileBuffer || fileBuffer.length === 0) {
+      return reply.code(400).send({
+        error: {
+          message: 'Missing required form field `file` (the audio to transcribe).',
+          type: 'invalid_request_error',
+          code: 'missing_file',
+        },
+      })
+    }
+
+    const parsed = audioTranscriptionFormSchema.safeParse(fields)
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: {
+          message: parsed.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; '),
+          type: 'invalid_request_error',
+        },
+      })
+    }
+
+    const pricing = await fastify.prisma.modelPricing.findUnique({
+      where: { modelId: parsed.data.model },
+    })
+    if (!pricing || !pricing.isActive) {
+      return reply.code(400).send({
+        error: {
+          message: `Unknown model: ${parsed.data.model}. List available models via GET /v1/models.`,
+          type: 'invalid_request_error',
+          code: 'model_not_found',
+        },
+      })
+    }
+
+    const perSecondPrice = resolveAudioPerSecondPrice(pricing.metadata)
+    if (perSecondPrice === null) {
+      return reply.code(400).send({
+        error: {
+          message: `Model "${parsed.data.model}" is not configured for audio transcription. Use a Whisper-family model.`,
+          type: 'invalid_request_error',
+          code: 'not_audio_model',
+        },
+      })
+    }
+
+    // Buyer-requested response format (defaults to json per OpenAI).
+    const buyerFormat = parsed.data.response_format ?? 'json'
+
+    const inferenceRequest = await fastify.prisma.inferenceRequest.create({
+      data: {
+        apiKeyId: auth.keyId,
+        userId: auth.userId,
+        model: parsed.data.model,
+        status: 'ROUTING',
+      },
+      select: { id: true },
+    })
+
+    const startedAt = Date.now()
+    let operatorNodeId: string | null = null
+
+    try {
+      const worker = await pickInferenceWorker(fastify.prisma, { model: parsed.data.model })
+
+      // We always ask upstream for verbose_json so we get a duration
+      // back, regardless of what the buyer wanted. If they wanted
+      // something else (text/srt/vtt), make a second pass below.
+      let upstreamBaseUrl: string
+      let upstreamHeaders: Record<string, string>
+      let upstreamModelId: string
+      if (worker) {
+        operatorNodeId = worker.nodeId
+        await fastify.prisma.inferenceRequest.update({
+          where: { id: inferenceRequest.id },
+          data: { inferenceWorkerId: worker.id, status: 'STREAMING' },
+        })
+        upstreamBaseUrl = `${worker.baseUrl}/v1/audio/transcriptions`
+        upstreamHeaders = {}
+        upstreamModelId = parsed.data.model
+      } else {
+        const external = resolveExternalProvider(pricing.metadata)
+        if (!external) {
+          await fastify.prisma.inferenceRequest.update({
+            where: { id: inferenceRequest.id },
+            data: { status: 'FAILED', errorMessage: 'No worker and no external fallback configured', completedAt: new Date() },
+          })
+          return reply.code(503).send({
+            error: {
+              message: `Model "${parsed.data.model}" temporarily unavailable.`,
+              type: 'server_error',
+              code: 'model_unavailable',
+            },
+          })
+        }
+        await fastify.prisma.inferenceRequest.update({
+          where: { id: inferenceRequest.id },
+          data: { externalProvider: external.kind, status: 'STREAMING' },
+        })
+        upstreamBaseUrl = `${external.baseUrl}/audio/transcriptions`
+        upstreamHeaders = { Authorization: `Bearer ${external.apiKey}` }
+        upstreamModelId = external.externalModel
+      }
+
+      // Build the upstream multipart form. Node 20's native FormData
+      // + Blob handles this without any extra dep — fetch sets the
+      // boundary header automatically.
+      // Capture in a const so TypeScript narrows away the null type
+      // inside the closure (the route's outer null-check already
+      // guarantees this, but TS doesn't track through the lambda).
+      const fileBytes = new Uint8Array(fileBuffer)
+      const buildForm = (responseFormat: string): FormData => {
+        const f = new FormData()
+        f.append('file', new Blob([fileBytes], { type: fileMime ?? 'application/octet-stream' }), fileName ?? 'audio.bin')
+        f.append('model', upstreamModelId)
+        f.append('response_format', responseFormat)
+        if (parsed.data.language) f.append('language', parsed.data.language)
+        if (parsed.data.prompt) f.append('prompt', parsed.data.prompt)
+        if (parsed.data.temperature !== undefined) f.append('temperature', String(parsed.data.temperature))
+        return f
+      }
+
+      // First (and possibly only) upstream call: verbose_json so we
+      // get the duration back.
+      const verboseRes = await fetch(upstreamBaseUrl, {
+        method: 'POST',
+        headers: upstreamHeaders,
+        body: buildForm('verbose_json'),
+      })
+      if (!verboseRes.ok) {
+        const text = await verboseRes.text().catch(() => '')
+        throw new Error(`upstream ${verboseRes.status}: ${text.slice(0, 200)}`)
+      }
+      const verbose = await verboseRes.json() as VerboseTranscriptionResponse
+      const durationSeconds = typeof verbose.duration === 'number' && verbose.duration >= 0 ? verbose.duration : 0
+      const costUsd = round8(durationSeconds * perSecondPrice)
+
+      // If the buyer asked for verbose_json (or 'json'), we already
+      // have what they want — strip the verbose fields for plain json.
+      // For text/srt/vtt make a second upstream call.
+      let buyerResponse: unknown
+      if (buyerFormat === 'verbose_json') {
+        buyerResponse = verbose
+      } else if (buyerFormat === 'json') {
+        buyerResponse = { text: verbose.text }
+      } else {
+        const formatRes = await fetch(upstreamBaseUrl, {
+          method: 'POST',
+          headers: upstreamHeaders,
+          body: buildForm(buyerFormat),
+        })
+        if (!formatRes.ok) {
+          const text = await formatRes.text().catch(() => '')
+          throw new Error(`upstream(${buyerFormat}) ${formatRes.status}: ${text.slice(0, 200)}`)
+        }
+        buyerResponse = await formatRes.text()
+      }
+
+      const latencyMs = Date.now() - startedAt
+
+      try {
+        await meterAudioCall(fastify.prisma, {
+          userId: auth.userId,
+          apiKeyId: auth.keyId,
+          model: parsed.data.model,
+          durationSeconds,
+          costUsd,
+          referenceId: inferenceRequest.id,
+          operatorId: operatorNodeId,
+          latencyMs,
+        })
+      } catch (err) {
+        if (err instanceof InsufficientBalanceError) {
+          fastify.log.error({ err, requestId: inferenceRequest.id, userId: auth.userId }, 'audio call unbillable (insufficient balance after upstream)')
+        } else if (!(err instanceof UnknownModelError)) {
+          fastify.log.error({ err, requestId: inferenceRequest.id }, 'audio meter call failed')
+        }
+      }
+
+      await fastify.prisma.inferenceRequest.update({
+        where: { id: inferenceRequest.id },
+        data: {
+          status: 'COMPLETED',
+          inputTokens: Math.max(0, Math.round(durationSeconds)),
+          outputTokens: 0,
+          latencyMs,
+          costUsd,
+          completedAt: new Date(),
+        },
+      })
+
+      // OpenAI returns text/srt/vtt as plain text content type, not
+      // JSON. Honour that so SDKs parse correctly.
+      if (typeof buyerResponse === 'string') {
+        const contentType = buyerFormat === 'srt'
+          ? 'application/x-subrip'
+          : buyerFormat === 'vtt'
+            ? 'text/vtt'
+            : 'text/plain'
+        reply.header('Content-Type', contentType).code(200).send(buyerResponse)
+      } else {
+        reply.code(200).send(buyerResponse)
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      fastify.log.error({ err, requestId: inferenceRequest.id }, 'audio transcription call failed')
+      await fastify.prisma.inferenceRequest.update({
+        where: { id: inferenceRequest.id },
+        data: { status: 'FAILED', errorMessage: message, completedAt: new Date() },
+      }).catch(() => undefined)
+      reply.code(502).send({
+        error: {
+          message: `Upstream audio transcription failed: ${message}`,
           type: 'server_error',
           code: 'upstream_failure',
         },
