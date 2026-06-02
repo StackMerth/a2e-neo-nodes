@@ -45,17 +45,29 @@ const DEFAULT_BASE_URL = 'https://rest.runpod.io/v1'
 // the well-documented "SSH-ready" line: their entrypoint reads the
 // PUBLIC_KEY env var, writes it to /root/.ssh/authorized_keys, starts
 // openssh-server, and keeps the container alive for the rental's
-// lifetime. The 'base' family (e.g. runpod/base:0.7.4) does NOT keep
-// the container alive — first dry-run hit STARTING -> EXITED in
-// seconds.
+// lifetime.
+//
+// IMPORTANT — image tags MUST exist in RunPod's registry. The first
+// version of this constant used `runpod/base:0.7.4-cuda12.8.1-devel-
+// ubuntu22.04`, which was a plausible-looking tag I invented but
+// doesn't actually exist. Every pod creation succeeded at the API
+// layer (RunPod returned a pod id) but Docker immediately failed
+// with IMAGE_NOT_FOUND — pods went STARTING -> EXITED in seconds.
+// RunPod sent inbox notifications "manifest unknown" that confirmed
+// the root cause.
+//
+// When bumping this constant or overriding via createPod args:
+//   1. Verify the tag exists at https://hub.docker.com/r/runpod/
+//   2. Or check via `docker pull <tag>` from a machine with Docker
+//   3. Or run a one-off pod via RunPod's web UI with the tag and
+//      confirm it actually starts.
+//
+// Current pin verified working via T5e A4000 dry-run 2026-06-02:
+// pod cmpwoi7nw0003zg7vjat96rmt reached RUNNING with publicIp.
 //
 // Provides: Ubuntu 22.04 + CUDA 12.4 + Python 3.11 + PyTorch 2.4 +
 // openssh-server + RunPod's SSH entrypoint. Buyers can install other
 // frameworks on top via pip / apt after SSH'ing in.
-//
-// Pin a specific tag so RunPod template changes don't surprise a
-// mid-flight rental. Bump intentionally when their image gets
-// updated. Buyers can override per-rental via createPod args.
 export const DEFAULT_RUNPOD_IMAGE = 'runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04'
 
 export class RunPodApiError extends Error {
