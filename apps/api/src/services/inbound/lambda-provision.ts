@@ -72,11 +72,28 @@ export interface ProvisionResult {
  * again (defensive — should not happen if the allocator's status
  * guard is honored).
  */
+export interface ProvisionOptions {
+  client?: LambdaClient
+  /**
+   * Test-only: skip GpuTier -> instance type mapping and use the given
+   * Lambda SKU directly. Used by lambda-provision:test --type to dry-run
+   * any SKU regardless of how we've mapped our internal tiers. The
+   * allocator (T5b) never sets this — production rentals always go
+   * through tier mapping for the buyer-facing GpuTier guarantee.
+   */
+  instanceTypeOverride?: string
+}
+
 export async function provisionLambdaRental(
   prisma: PrismaClient,
   computeRequestId: string,
-  client?: LambdaClient,
+  optionsOrClient?: ProvisionOptions | LambdaClient,
 ): Promise<ProvisionResult> {
+  // Back-compat: callers that pass a bare LambdaClient still work.
+  const options: ProvisionOptions = optionsOrClient instanceof LambdaClient
+    ? { client: optionsOrClient }
+    : optionsOrClient ?? {}
+  const client = options.client
   if (!isKeyEncryptionConfigured()) {
     throw new LambdaProvisionError(
       'SSH_KEY_ENCRYPTION_KEY is not set. See key-encryption.ts header for the one-liner to generate it.',
@@ -106,31 +123,41 @@ export async function provisionLambdaRental(
     throw new LambdaProvisionError(`ComputeRequest ${computeRequestId} not found`)
   }
 
-  const mapping = lambdaTypeForTier(cr.gpuTier)
-  if (!mapping) {
-    throw new LambdaProvisionError(
-      `Lambda does not carry tier ${cr.gpuTier} (consumer/unknown SKU). Allocator should skip Lambda for this tier.`,
-    )
-  }
-  if (!fitsSingleLambdaInstance(cr.gpuTier, cr.gpuCount)) {
-    throw new LambdaProvisionError(
-      `Request needs ${cr.gpuCount} GPUs but Lambda's ${mapping.instanceTypeName} only provides ${mapping.gpusPerInstance}. Multi-instance clusters are out of scope for T5a.`,
-    )
+  // Resolve which Lambda SKU we're provisioning. Production path:
+  // GpuTier -> mapping table. Test-only override skips the mapping so a
+  // human can dry-run any SKU (e.g. cheapest with current capacity)
+  // without touching tier-mapping.ts.
+  let resolvedInstanceType: string
+  if (options.instanceTypeOverride) {
+    resolvedInstanceType = options.instanceTypeOverride
+  } else {
+    const mapping = lambdaTypeForTier(cr.gpuTier)
+    if (!mapping) {
+      throw new LambdaProvisionError(
+        `Lambda does not carry tier ${cr.gpuTier} (consumer/unknown SKU). Allocator should skip Lambda for this tier.`,
+      )
+    }
+    if (!fitsSingleLambdaInstance(cr.gpuTier, cr.gpuCount)) {
+      throw new LambdaProvisionError(
+        `Request needs ${cr.gpuCount} GPUs but Lambda's ${mapping.instanceTypeName} only provides ${mapping.gpusPerInstance}. Multi-instance clusters are out of scope for T5a.`,
+      )
+    }
+    resolvedInstanceType = mapping.instanceTypeName
   }
 
   const api = client ?? new LambdaClient()
 
   // Step 1: find a region with current capacity for this type.
   const types = await api.listInstanceTypes()
-  const match = types.find((t) => t.name === mapping.instanceTypeName)
+  const match = types.find((t) => t.name === resolvedInstanceType)
   if (!match) {
     throw new LambdaProvisionError(
-      `Lambda has no instance type named ${mapping.instanceTypeName}. Update tier-mapping.ts or wait for Lambda to add the SKU.`,
+      `Lambda has no instance type named ${resolvedInstanceType}. Update tier-mapping.ts or wait for Lambda to add the SKU.`,
     )
   }
   if (match.regionsAvailable.length === 0) {
     throw new LambdaProvisionError(
-      `Lambda has no current capacity for ${mapping.instanceTypeName}. Try again shortly or fall back to internal nodes.`,
+      `Lambda has no current capacity for ${resolvedInstanceType}. Try again shortly or fall back to internal nodes.`,
     )
   }
   // Pick the first region. T5b can add price/latency-aware selection;
@@ -158,7 +185,7 @@ export async function provisionLambdaRental(
   try {
     const ids = await api.launchInstance({
       region,
-      instanceTypeName: mapping.instanceTypeName,
+      instanceTypeName: resolvedInstanceType,
       sshKeyNames: [keypair.keyName],
       name: `tokenos-${cr.id.slice(0, 12)}`,
     })
@@ -172,7 +199,7 @@ export async function provisionLambdaRental(
       api.deleteSshKey(providerSshKeyId).catch(() => undefined)
     }
     throw new LambdaProvisionError(
-      `Lambda launch failed for ${mapping.instanceTypeName} in ${region}: ${(err as Error).message}`,
+      `Lambda launch failed for ${resolvedInstanceType} in ${region}: ${(err as Error).message}`,
       err,
     )
   }
@@ -187,7 +214,7 @@ export async function provisionLambdaRental(
       provider: 'LAMBDA',
       providerInstanceId,
       providerSshKeyId,
-      providerInstanceType: mapping.instanceTypeName,
+      providerInstanceType: resolvedInstanceType,
       providerRegion: region,
       status: 'PENDING',
       sshHost: null,
@@ -201,7 +228,7 @@ export async function provisionLambdaRental(
   return {
     externalRentalId: row.id,
     providerInstanceId,
-    providerInstanceType: mapping.instanceTypeName,
+    providerInstanceType: resolvedInstanceType,
     providerRegion: region,
     providerPricePerHourUsd: match.pricePerHourUsd,
   }
