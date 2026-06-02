@@ -68,6 +68,22 @@ async function main(): Promise<void> {
     await runRent(tier as GpuTier)
     return
   }
+  if (flag === '--type') {
+    // Direct Lambda SKU dry-run, bypassing tier mapping. Use for
+    // testing against whichever Lambda SKU is cheapest / has capacity
+    // right now (often gpu_1x_h100_pcie at $3.29/h). The synthetic
+    // ComputeRequest still gets a GpuTier (defaults to L40S as a
+    // placeholder) but provisioning skips the mapping.
+    //   pnpm --filter @a2e/api lambda-provision:test --type gpu_1x_h100_pcie
+    const sku = args[1]
+    if (!sku) {
+      console.log('--type requires a Lambda instance type name (e.g. gpu_1x_h100_pcie).')
+      console.log('Run `lambda:inspect --raw` to see every available SKU.')
+      process.exit(1)
+    }
+    await runRentByType(sku)
+    return
+  }
   if (flag === '--poll') {
     const id = args[1]
     if (!id) {
@@ -170,6 +186,76 @@ async function runRent(tier: GpuTier): Promise<void> {
   console.log(`Provisioning Lambda instance for ${tier} (${m.instanceTypeName})...`)
   console.log('  WARNING: this starts real billing on your Lambda account.')
   const result = await provisionLambdaRental(prisma, cr.id)
+
+  console.log()
+  console.log('Provisioned:')
+  console.log(`  externalRentalId:     ${result.externalRentalId}`)
+  console.log(`  providerInstanceId:   ${result.providerInstanceId}`)
+  console.log(`  providerInstanceType: ${result.providerInstanceType}`)
+  console.log(`  providerRegion:       ${result.providerRegion}`)
+  console.log(`  providerPrice:        $${result.providerPricePerHourUsd.toFixed(2)}/h`)
+  console.log()
+  console.log('Poll status with:')
+  console.log(`  pnpm --filter @a2e/api lambda-provision:test --poll ${result.externalRentalId}`)
+  console.log('Terminate (stops billing) with:')
+  console.log(`  pnpm --filter @a2e/api lambda-provision:test --terminate ${result.externalRentalId}`)
+}
+
+async function runRentByType(instanceType: string): Promise<void> {
+  // Verify the SKU is actually known to Lambda before going through
+  // synthetic-ComputeRequest creation, so the user gets a fast
+  // "wrong name" error rather than wasting a ComputeRequest row.
+  const client = new LambdaClient()
+  const types = await client.listInstanceTypes()
+  const match = types.find((t) => t.name === instanceType)
+  if (!match) {
+    console.log(`Lambda has no instance type named "${instanceType}".`)
+    console.log(`Run lambda:inspect --raw to see every valid SKU name.`)
+    process.exit(1)
+  }
+  if (match.regionsAvailable.length === 0) {
+    console.log(`Lambda has no capacity for ${instanceType} right now.`)
+    console.log(`Try a different SKU or wait for capacity.`)
+    process.exit(1)
+  }
+  console.log(`Lambda SKU ${instanceType}: $${match.pricePerHourUsd.toFixed(2)}/h in ${match.regionsAvailable.join(', ')}`)
+  console.log()
+
+  const user = await prisma.user.upsert({
+    where: { email: TEST_USER_EMAIL },
+    create: { email: TEST_USER_EMAIL, role: 'COMPUTE_BUYER', isBuyer: true },
+    update: {},
+    select: { id: true },
+  })
+
+  // ComputeRequest still needs a non-null GpuTier (schema constraint),
+  // but the override path skips the mapping so the tier value here
+  // doesn't influence which Lambda SKU we provision. L40S is a safe
+  // placeholder: it's in our enum but doesn't currently have a Lambda
+  // SKU, which keeps it clear in DB that this row was synthesized for
+  // a --type override and never went through normal allocator paths.
+  const cr = await prisma.computeRequest.create({
+    data: {
+      userId: user.id,
+      gpuTier: 'L40S',
+      gpuCount: 1,
+      durationDays: 1,
+      ratePerDay: 0,
+      totalCost: 0,
+      txHash: `T5A_TEST_TYPE_${Date.now()}`,
+      txConfirmed: true,
+      status: 'PENDING',
+      paymentSource: 'BUYER_BALANCE',
+    },
+    select: { id: true },
+  })
+  console.log(`Created synthetic ComputeRequest ${cr.id}`)
+
+  console.log(`Provisioning Lambda instance ${instanceType} (bypassing tier mapping)...`)
+  console.log('  WARNING: this starts real billing on your Lambda account.')
+  const result = await provisionLambdaRental(prisma, cr.id, {
+    instanceTypeOverride: instanceType,
+  })
 
   console.log()
   console.log('Provisioned:')
