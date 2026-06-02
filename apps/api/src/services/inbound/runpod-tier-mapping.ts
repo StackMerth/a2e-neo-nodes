@@ -32,15 +32,27 @@ export interface RunPodTierMapping {
   maxGpusPerPod: number
 }
 
+// IDs verified against RunPod's GraphQL gpuTypes catalog on 2026-06-02
+// during T5e dry-runs. Format is 'NVIDIA <displayName>' for datacenter
+// SKUs, 'NVIDIA GeForce <model>' for consumer. RunPod's id field is
+// what createPod expects in gpuTypeIds; displayName is what their
+// console shows. Re-verify with `runpod:inspect --raw` if a mapping
+// stops resolving (RunPod occasionally renames SKUs).
 const MAPPING: Partial<Record<GpuTier, RunPodTierMapping>> = {
   H100: {
+    // Verified id during A4000 dry-run lookup: H100 SXM -> this id.
+    // RunPod treats SXM as the canonical H100 chassis; PCIe and NVL
+    // are separate displayNames.
     gpuTypeId: 'NVIDIA H100 80GB HBM3',
-    label: 'H100 80GB HBM3',
+    label: 'H100 SXM',
     maxGpusPerPod: 8,
   },
   H200: {
-    gpuTypeId: 'NVIDIA H200',
-    label: 'H200',
+    // Real id is 'NVIDIA H200 NVL' (NOT 'NVIDIA H200'). Verified
+    // during H200 NVL dry-run lookup. Without the 'NVL' suffix
+    // RunPod's API would have returned 'gpu type not found'.
+    gpuTypeId: 'NVIDIA H200 NVL',
+    label: 'H200 NVL',
     maxGpusPerPod: 8,
   },
   B200: {
@@ -55,7 +67,8 @@ const MAPPING: Partial<Record<GpuTier, RunPodTierMapping>> = {
   },
   // Consumer tiers — RunPod's COMMUNITY tier carries these. Cheaper
   // than datacenter SKUs at the cost of less reliability. Useful for
-  // dev / inference workloads where preemption is acceptable.
+  // dev / inference workloads where preemption is acceptable. IDs
+  // pulled from the catalog (`NVIDIA GeForce RTX <model>` format).
   RTX_4090: {
     gpuTypeId: 'NVIDIA GeForce RTX 4090',
     label: 'RTX 4090',
