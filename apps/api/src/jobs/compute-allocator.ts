@@ -41,6 +41,12 @@ import {
   fitsSingleLambdaInstance,
 } from '../services/inbound/tier-mapping.js'
 import { provisionLambdaRental } from '../services/inbound/lambda-provision.js'
+import { isRunPodConfigured } from '../services/inbound/runpod-adapter.js'
+import {
+  runPodTypeForTier,
+  fitsSingleRunPodPod,
+} from '../services/inbound/runpod-tier-mapping.js'
+import { provisionRunPodRental } from '../services/inbound/runpod-provision.js'
 
 type ComputeRequestWithUser = ComputeRequest & { user: User }
 
@@ -307,6 +313,16 @@ async function processRequest(
     // would throw otherwise.
     const lambdaTook = await tryLambdaFallback(prisma, io, cr)
     if (lambdaTook) {
+      return
+    }
+
+    // T5e: try RunPod as 2nd fallback after Lambda. Same no-op rules
+    // (env missing, tier unmapped, capacity short, etc.). RunPod
+    // covers SKUs Lambda doesn't (consumer RTX) AND has independent
+    // capacity windows from Lambda for high-density boxes (H100,
+    // H200, B200) — when Lambda's empty RunPod often isn't.
+    const runpodTook = await tryRunPodFallback(prisma, io, cr)
+    if (runpodTook) {
       return
     }
 
@@ -615,6 +631,116 @@ async function tryLambdaFallback(
     requestId: cr.id,
     userId: cr.userId,
     provider: 'LAMBDA',
+    instanceType: provisionResult.providerInstanceType,
+    region: provisionResult.providerRegion,
+    timestamp: now.toISOString(),
+  })
+
+  return true
+}
+
+/**
+ * T5e — RunPod inbound supply fallback (2nd after Lambda).
+ *
+ * Same semantics as tryLambdaFallback: success returns true and the
+ * caller skips the rest of the allocator tick for this request;
+ * failure logs and returns false so the caller continues to the next
+ * fallback or the legacy WAITING_ON_CAPACITY path.
+ *
+ * No-op when:
+ *   - RUNPOD_API_KEY not set
+ *   - SSH key encryption not configured
+ *   - Tier not mapped on RunPod (B300 etc.)
+ *   - Request exceeds per-pod GPU max (>8 for most SKUs)
+ *   - RunPod returns 500 "no instances available" (real-world capacity
+ *     scarcity — community + datacenter both volatile for H100/H200/
+ *     B200). The provision call surfaces this as a typed error which
+ *     we catch + log + return false so the next allocator tick can
+ *     retry or another provider can take it.
+ *
+ * Tier cascade: COMMUNITY (cheapest) is tried by default. SECURE tier
+ * fallback within RunPod is a deliberate non-feature for MVP — the
+ * allocator tick will retry next pass, and capacity comes back fast
+ * on community. If community is consistently empty for a specific
+ * SKU class, we can add a per-tier secure escalation later.
+ */
+async function tryRunPodFallback(
+  prisma: PrismaClient,
+  io: SocketServer,
+  cr: ComputeRequestWithUser,
+): Promise<boolean> {
+  if (!isRunPodConfigured()) return false
+  if (!isKeyEncryptionConfigured()) return false
+  if (!runPodTypeForTier(cr.gpuTier)) return false
+  if (!fitsSingleRunPodPod(cr.gpuTier, cr.gpuCount)) return false
+
+  const session = mintSshSession(cr.durationDays)
+  const ratePerMinute = (cr.ratePerDay * cr.gpuCount) / (24 * 60)
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + cr.durationDays * 86400000)
+
+  let provisionResult
+  try {
+    provisionResult = await provisionRunPodRental(prisma, cr.id)
+  } catch (err) {
+    // RunPod's "no instances currently available" 500 lands here
+    // alongside any real error. Either way, return false so the
+    // allocator continues. The next tick will re-evaluate capacity.
+    // eslint-disable-next-line no-console
+    console.error(
+      `[compute-allocator] RunPod fallback failed for ${cr.id} (tier ${cr.gpuTier}):`,
+      (err as Error).message,
+    )
+    return false
+  }
+
+  const transitioned = await prisma.computeRequest.updateMany({
+    where: { id: cr.id, status: 'PENDING' },
+    data: {
+      status: 'PROVISIONING_EXTERNAL',
+      ratePerMinute,
+      expiresAt,
+      sshSessionToken: session.token,
+      sshSessionTokenExpiresAt: session.expiresAt,
+      sshSessionStatus: 'PROVISIONING',
+    },
+  })
+  if (transitioned.count === 0) {
+    // Lost race with another path (admin manual allocate, etc.).
+    // Roll back the RunPod provision so we don't leak billing.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[compute-allocator] race on ${cr.id} after RunPod provision; rolling back`,
+    )
+    const { terminateRunPodRental } = await import('../services/inbound/runpod-provision.js')
+    await terminateRunPodRental(
+      prisma,
+      provisionResult.externalRentalId,
+      'allocator race: another path won the request',
+    ).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(`[compute-allocator] RunPod rollback failed for ${provisionResult.externalRentalId}:`, err)
+    })
+    return false
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[compute-allocator] RunPod fallback OK for ${cr.id}: provisioned ${provisionResult.providerInstanceType} (externalRentalId=${provisionResult.externalRentalId})`,
+  )
+
+  void createNotification(
+    cr.userId,
+    'COMPUTE_REQUEST_APPROVED',
+    'Compute is Provisioning',
+    `Your ${cr.gpuCount}x ${cr.gpuTier} rental is being prepared on RunPod. SSH credentials appear in your dashboard within ~60s.`,
+    `/buyer/requests/${cr.id}`,
+  )
+
+  io.emit('compute:provisioning-external', {
+    requestId: cr.id,
+    userId: cr.userId,
+    provider: 'RUNPOD',
     instanceType: provisionResult.providerInstanceType,
     region: provisionResult.providerRegion,
     timestamp: now.toISOString(),

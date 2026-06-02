@@ -143,6 +143,11 @@ import {
   createLambdaCapacityWatcherWorker,
   scheduleLambdaCapacityWatcher,
 } from './jobs/lambda-capacity-watcher'
+import {
+  createRunPodPollQueue,
+  createRunPodPollWorker,
+  scheduleRunPodPoll,
+} from './jobs/runpod-poll'
 import { createSshSessionReaperWorker } from './jobs/ssh-session-reaper'
 import {
   createSeedKeepAliveQueue,
@@ -388,6 +393,16 @@ async function start() {
     createLambdaPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleLambdaPoll(lambdaPollQueue)
     server.log.info('Lambda poll worker initialized (10s tick)')
+
+    // T5e: RunPod status poller. Parallel of T5b for RunPod-provisioned
+    // pods. Flips ExternalRental PENDING -> ACTIVE once RunPod reports
+    // RUNNING + publicIp, which promotes the linked ComputeRequest to
+    // ACTIVE. Cancels + refunds on failed provision. No-op when
+    // RUNPOD_API_KEY isn't set.
+    const runpodPollQueue = createRunPodPollQueue(redisConnection)
+    createRunPodPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
+    await scheduleRunPodPoll(runpodPollQueue)
+    server.log.info('RunPod poll worker initialized (10s tick)')
 
     // T5d: Lambda capacity watcher. Slow-cadence poller that emails
     // admin when any of the watched SKUs (LAMBDA_CAPACITY_WATCH_SKUS)
