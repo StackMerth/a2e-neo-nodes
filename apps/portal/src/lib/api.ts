@@ -521,6 +521,12 @@ export const buyer = {
     // eligibility in the allocator. Defaults to MIXED on the server,
     // so omitting it preserves pre-migration semantics.
     workloadType?: 'INFERENCE' | 'TRAINING' | 'MIXED'
+    // T5e: when true, allocator skips RunPod COMMUNITY tier (peer
+    // hosts, co-tenant noise) and routes only to dedicated supply
+    // (internal operators, Lambda, RunPod SECURE). Use for benchmark
+    // workloads where co-tenant variance distorts measurements.
+    // Defaults to false on the server.
+    preferDedicatedTier?: boolean
     // Checkpoint Workspace restore: optional id of a prior rental's
     // READY checkpoint. Agent downloads + unpacks at provision time.
     restoreCheckpointId?: string | null
@@ -545,6 +551,7 @@ export const buyer = {
     durationDays: number
     tier?: 'ON_DEMAND' | 'SPOT' | 'RESERVED'
     workloadType?: 'INFERENCE' | 'TRAINING' | 'MIXED'
+    preferDedicatedTier?: boolean
     commitmentDays?: number
     requiredRegion?: string | null
     preferredOperatorSlug?: string | null

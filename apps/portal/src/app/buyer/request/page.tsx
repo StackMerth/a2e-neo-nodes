@@ -282,6 +282,15 @@ export default function RequestComputePage() {
   // selection so they don't have to scroll back up.
   const [workloadType, setWorkloadType] = useState<WorkloadType>('MIXED')
 
+  // T5e / Tyler-tester 2026-06-02: dedicated tenancy preference for
+  // variance-sensitive workloads (benchmarks, reproducible inference
+  // measurements). When true, the allocator skips RunPod COMMUNITY
+  // tier (peer-hosted, co-tenant noise on the physical host) and
+  // routes only to dedicated supply: internal operators, Lambda,
+  // RunPod SECURE. Default false — most rentals don't care about
+  // co-tenant variance and benefit from cheaper COMMUNITY tier.
+  const [preferDedicatedTier, setPreferDedicatedTier] = useState<boolean>(false)
+
   // Payment source picker:
   //   USDC             — fresh on-chain Solana transfer (always available)
   //   INTERNAL_BALANCE — operator-earned credit (dual-role users only)
@@ -446,6 +455,7 @@ export default function RequestComputePage() {
           durationDays: effectiveDuration,
           tier: rentalTier,
           workloadType,
+          preferDedicatedTier,
           commitmentDays: rentalTier === 'RESERVED' ? commitmentDays : undefined,
           requiredRegion: requiredRegion || null,
           preferredOperatorSlug: preferredOperatorSlug || null,
@@ -507,6 +517,7 @@ export default function RequestComputePage() {
         preferredOperatorSlug: preferredOperatorSlug || null,
         sshPubKey: trimmedPubKey,
         workloadType,
+        preferDedicatedTier,
         // Checkpoint Workspace restore: empty string = "Start fresh".
         restoreCheckpointId: restoreCheckpointId || null,
       }) as { id: string }
@@ -621,6 +632,53 @@ export default function RequestComputePage() {
                 )
               })}
             </div>
+          </FormSection>
+        </FormCard>
+
+        {/* T5e: dedicated tenancy preference. For variance-sensitive
+            workloads (benchmarks, reproducible inference). When checked,
+            the allocator skips RunPod COMMUNITY tier (peer-hosted, may
+            share physical host with other tenants) and routes only to
+            dedicated supply: internal operators, Lambda, RunPod SECURE.
+            Hidden default-OFF — most rentals don't care about co-tenant
+            variance and benefit from cheaper community tier. */}
+        <FormCard
+          title="Dedicated Tenancy"
+          description="For benchmark or reproducible-inference workloads where co-tenant noise distorts measurements."
+          icon={Workflow}
+        >
+          <FormSection>
+            <label
+              htmlFor="preferDedicatedTier"
+              className="flex items-start gap-3 cursor-pointer rounded-xl p-4 transition-all duration-200"
+              style={preferDedicatedTier
+                ? { background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.4)' }
+                : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
+              }
+            >
+              <input
+                id="preferDedicatedTier"
+                type="checkbox"
+                checked={preferDedicatedTier}
+                onChange={(e) => setPreferDedicatedTier(e.target.checked)}
+                className="mt-1 h-4 w-4"
+                style={{ accentColor: 'rgb(99, 102, 241)' }}
+              />
+              <div className="flex-1">
+                <div className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                  Require dedicated tenancy
+                </div>
+                <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
+                  Route only to dedicated hosts (Lambda VMs or RunPod SECURE datacenters).
+                  Skip RunPod COMMUNITY tier where multiple tenants may share the physical
+                  machine.
+                </p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Use this for benchmark consistency. Dedicated capacity is less abundant
+                  than community-tier supply, so requests may wait longer for placement.
+                </p>
+              </div>
+            </label>
           </FormSection>
         </FormCard>
 
