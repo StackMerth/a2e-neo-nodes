@@ -70,7 +70,11 @@ async function main(): Promise<void> {
       console.log('Run `runpod:inspect --raw` to see every valid id.')
       process.exit(1)
     }
-    await runRentByType(sku)
+    // Optional --secure flag right after the type arg. Default cloud
+    // type is COMMUNITY (cheapest); --secure switches to RunPod's
+    // datacenter tier which is more expensive but has reliable stock.
+    const secure = args.includes('--secure')
+    await runRentByType(sku, secure ? 'SECURE' : 'COMMUNITY')
     return
   }
   if (flag === '--poll') {
@@ -182,7 +186,7 @@ async function runRent(tier: GpuTier): Promise<void> {
   console.log(`  pnpm --filter @a2e/api runpod-provision:test --terminate ${result.externalRentalId}`)
 }
 
-async function runRentByType(input: string): Promise<void> {
+async function runRentByType(input: string, cloudType: 'SECURE' | 'COMMUNITY' = 'COMMUNITY'): Promise<void> {
   const client = new RunPodClient()
   const types = await client.listGpuTypes()
   // Accept either the canonical id or the displayName — users often
@@ -247,10 +251,11 @@ async function runRentByType(input: string): Promise<void> {
   })
   console.log(`Created synthetic ComputeRequest ${cr.id}`)
 
-  console.log(`Provisioning RunPod pod ${gpuTypeId} (bypassing tier mapping)...`)
+  console.log(`Provisioning RunPod pod ${gpuTypeId} (bypassing tier mapping, cloudType=${cloudType})...`)
   console.log('  WARNING: this starts real billing on your RunPod account.')
   const result = await provisionRunPodRental(prisma, cr.id, {
     gpuTypeOverride: gpuTypeId,
+    cloudType,
   })
 
   console.log()
