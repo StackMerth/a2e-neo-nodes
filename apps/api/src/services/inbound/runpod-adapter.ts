@@ -191,8 +191,14 @@ export class RunPodClient {
   }
 
   /**
-   * GET /gputypes — catalog of every GPU SKU RunPod offers with
-   * current pricing across SECURE + COMMUNITY tiers.
+   * Catalog of every GPU SKU RunPod offers with current pricing across
+   * SECURE + COMMUNITY tiers.
+   *
+   * IMPORTANT: RunPod's REST API (rest.runpod.io) does NOT include a
+   * GPU types endpoint as of 2026 — it's only available on their
+   * GraphQL API at api.runpod.io/graphql. So this method bypasses
+   * the REST base URL and goes straight to GraphQL. Pod CRUD
+   * operations stay on REST.
    *
    * RunPod's catalog isn't structured around per-tier "available
    * regions" the way Lambda's is; instead each GPU type exposes a
@@ -201,7 +207,40 @@ export class RunPodClient {
    * don't need for T5e MVP.
    */
   async listGpuTypes(): Promise<RunPodGpuType[]> {
-    const raw = await this.request<RawGpuTypeResponse[]>('/gputypes', 'GET')
+    const query = `
+      query GpuTypes {
+        gpuTypes {
+          id
+          displayName
+          memoryInGb
+          securePrice
+          communityPrice
+        }
+      }
+    `
+    const res = await fetch('https://api.runpod.io/graphql', {
+      method: 'POST',
+      headers: {
+        Authorization: this.authHeader,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query }),
+    })
+    const text = await res.text()
+    let parsed: unknown
+    try {
+      parsed = text ? JSON.parse(text) : null
+    } catch {
+      parsed = text
+    }
+    if (!res.ok) {
+      throw new RunPodApiError(res.status, '/graphql gpuTypes', parsed ?? text)
+    }
+    const body = parsed as { data?: { gpuTypes?: RawGpuTypeResponse[] }; errors?: unknown }
+    if (body.errors) {
+      throw new RunPodApiError(200, '/graphql gpuTypes', body.errors)
+    }
+    const raw = body.data?.gpuTypes ?? []
     return raw.map((t) => {
       const secure = typeof t.securePrice === 'number' ? t.securePrice : null
       const community = typeof t.communityPrice === 'number' ? t.communityPrice : null
@@ -216,9 +255,9 @@ export class RunPodClient {
         lowestPricePerHourUsd: lowest,
         securePricePerHourUsd: secure,
         communityPricePerHourUsd: community,
-        // RunPod's /gputypes endpoint returns SKUs even when they have
-        // zero capacity. A non-null price across either tier is the
-        // proxy for "we list this SKU as available right now."
+        // GraphQL returns every SKU regardless of capacity. A non-null
+        // price across either tier is the proxy for "we list this SKU
+        // as available right now."
         hasCurrentStock: lowest !== null,
       }
     })
