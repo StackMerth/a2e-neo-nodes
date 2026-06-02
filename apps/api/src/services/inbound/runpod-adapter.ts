@@ -398,7 +398,24 @@ export class RunPodClient {
 }
 
 function normalizePod(raw: RawPodResponse): RunPodPod {
-  // SSH port: find the port entry that maps container's 22.
+  // SSH port detection. RunPod's tier model affects how port 22 is
+  // exposed:
+  //
+  //   SECURE tier: container's port 22 maps to a dynamic public port
+  //     on the pod's host. We look for the entry with privatePort=22
+  //     and isIpPublic=true, then use its publicPort.
+  //
+  //   COMMUNITY tier: peer hosts expose port 22 DIRECTLY on the public
+  //     IP (no NAT). RunPod's API may report this either as a port
+  //     entry with publicPort=22 / privatePort=22 / isIpPublic=true,
+  //     OR not include port 22 in the ports array at all (because
+  //     there's no translation to surface). When ports[] is empty but
+  //     publicIp is populated AND status is RUNNING, port 22 is the
+  //     correct fallback.
+  //
+  // Both cases land on sshPort=22 for community tier, which matches
+  // the ExternalRental row's default (22) — so the buyer's SSH
+  // command `ssh root@<publicIp>` works without us writing the field.
   let sshPort: number | null = null
   let publicIp: string | null = raw.publicIp ?? null
   if (Array.isArray(raw.ports)) {
@@ -407,10 +424,15 @@ function normalizePod(raw: RawPodResponse): RunPodPod {
     )
     if (sshPortEntry) {
       sshPort = sshPortEntry.publicPort ?? null
-      // Some pod responses include the public IP only inside the ports
-      // array, not at the top level. Fall back to that when missing.
       if (!publicIp && typeof sshPortEntry.ip === 'string') publicIp = sshPortEntry.ip
     }
+  }
+  // Community-tier fallback: pod is running with a public IP but
+  // ports[] didn't surface a 22 mapping → assume direct port 22.
+  // Only apply when the pod is actually RUNNING; PENDING pods might
+  // get their public port assigned a few ticks later.
+  if (sshPort === null && publicIp !== null && raw.desiredStatus === 'RUNNING') {
+    sshPort = 22
   }
   return {
     id: raw.id,
