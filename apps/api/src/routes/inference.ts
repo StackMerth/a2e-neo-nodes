@@ -103,12 +103,18 @@ const imagesRequestSchema = z.object({
   model: z.string().min(1).max(200),
   prompt: z.string().min(1).max(8000),
   n: z.number().int().min(1).max(10).optional(),
-  // OpenAI's DALL-E sizes. Open models (SDXL etc.) accept the same
-  // 1024x1024 base and we allow custom sizes via passthrough.
+  // Permissive size: DALL-E sizes ("1024x1024"), gpt-image-1 sizes
+  // ("1024x1536"), or any other provider's W x H format.
   size: z.string().regex(/^\d+x\d+$/).optional(),
-  quality: z.enum(['standard', 'hd']).optional(),
+  // Permissive quality: 'standard' / 'hd' for DALL-E,
+  // 'low' / 'medium' / 'high' / 'auto' for gpt-image-1,
+  // 'default' for open-source models (SDXL, FLUX). The metadata's
+  // imagePricing table is the source of truth for what's actually
+  // priced; the route 400s if the (quality, size) combo isn't priced.
+  quality: z.string().min(1).max(32).optional(),
   response_format: z.enum(['url', 'b64_json']).optional(),
-  style: z.enum(['vivid', 'natural']).optional(),
+  // DALL-E 3 only — passed through; other models ignore it.
+  style: z.string().min(1).max(32).optional(),
   user: z.string().optional(),
 }).passthrough()
 
