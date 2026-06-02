@@ -27,6 +27,64 @@ interface ImageSeed {
 
 const SEEDS: ImageSeed[] = [
   {
+    // OpenAI's CURRENT flagship image model. Replaced DALL-E line in
+    // 2025 — most newer accounts have access to this and NOT to
+    // dall-e-3/dall-e-2 (which OpenAI didn't grandfather forward).
+    // Higher quality and better prompt adherence than DALL-E 3.
+    //
+    // Quality tiers (high/medium/low) replace DALL-E's standard/hd.
+    // Sizes: 1024x1024, 1536x1024 (landscape), 1024x1536 (portrait),
+    // 'auto' lets the model pick. We seed the three explicit sizes.
+    modelId: 'gpt-image-1',
+    metadata: {
+      externalProvider: 'openai',
+      externalModel: 'gpt-image-1',
+      // OpenAI gpt-image-1 published prices as of 2026-06.
+      imagePricing: {
+        'low:1024x1024': 0.011,
+        'low:1024x1536': 0.016,
+        'low:1536x1024': 0.016,
+        'medium:1024x1024': 0.042,
+        'medium:1024x1536': 0.063,
+        'medium:1536x1024': 0.063,
+        'high:1024x1024': 0.167,
+        'high:1024x1536': 0.25,
+        'high:1536x1024': 0.25,
+      },
+      defaultSize: '1024x1024',
+      defaultQuality: 'medium',
+    },
+  },
+  {
+    // OpenAI's cheap variant. ~4x cheaper than gpt-image-1 with
+    // somewhat lower quality. Good default for high-volume use cases
+    // where each image's quality isn't critical (chatbot avatars,
+    // batch placeholders, draft iterations).
+    modelId: 'gpt-image-1-mini',
+    metadata: {
+      externalProvider: 'openai',
+      externalModel: 'gpt-image-1-mini',
+      imagePricing: {
+        'low:1024x1024': 0.005,
+        'low:1024x1536': 0.0075,
+        'low:1536x1024': 0.0075,
+        'medium:1024x1024': 0.011,
+        'medium:1024x1536': 0.016,
+        'medium:1536x1024': 0.016,
+        'high:1024x1024': 0.042,
+        'high:1024x1536': 0.063,
+        'high:1536x1024': 0.063,
+      },
+      defaultSize: '1024x1024',
+      defaultQuality: 'medium',
+    },
+  },
+  {
+    // Legacy. OpenAI DEPRECATED DALL-E 3 and 2 — newer accounts won't
+    // have access. We keep these seeded for backward compatibility
+    // with any buyer who has DALL-E access from an older account.
+    // The platform returns OpenAI's "model does not exist" upstream
+    // error cleanly when the buyer doesn't have access.
     modelId: 'dall-e-3',
     metadata: {
       externalProvider: 'openai',
