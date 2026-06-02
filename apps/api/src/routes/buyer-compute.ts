@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { createNotification } from '../services/notification/service.js'
 import { creditCompletedRental } from '../services/revenue/rental-credit.js'
-import { terminateLambdaRental } from '../services/inbound/lambda-provision.js'
+import { terminateExternalRentalForRequest, UnknownProviderError } from '../services/inbound/terminate-dispatcher.js'
 import { decryptPrivateKey } from '../services/inbound/key-encryption.js'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import { checkIdempotencyKey, storeIdempotencyResponse } from '../services/idempotency/keys.js'
@@ -1032,15 +1032,25 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     // the provider side. Wrapped so a termination failure can't
     // block the response to the buyer.
     try {
-      const externalRental = await fastify.prisma.externalRental.findUnique({
-        where: { computeRequestId: id },
-        select: { id: true, status: true },
-      })
-      if (externalRental && externalRental.status !== 'CLOSED') {
-        await terminateLambdaRental(fastify.prisma, externalRental.id, `buyer terminated rental (${refundStatus})`)
-      }
+      // T6: dispatch to the right provider (LAMBDA / RUNPOD / future).
+      // Was hardcoded to terminateLambdaRental which silently leaked
+      // billing on RunPod rentals before T5e. The dispatcher routes
+      // by ExternalRental.provider so a single call covers every
+      // supplier.
+      await terminateExternalRentalForRequest(
+        fastify.prisma,
+        id,
+        `buyer terminated rental (${refundStatus})`,
+      )
     } catch (err) {
-      fastify.log.error({ err, requestId: id }, 'terminateLambdaRental failed during terminate')
+      if (err instanceof UnknownProviderError) {
+        fastify.log.error(
+          { err, requestId: id },
+          'PROVIDER LEAK during buyer terminate — manual ops needed to terminate on provider dashboard',
+        )
+      } else {
+        fastify.log.error({ err, requestId: id }, 'external terminate failed during buyer terminate')
+      }
     }
 
     void createNotification(

@@ -52,6 +52,7 @@
     "runpod:inspect": "tsx scripts/runpod-inspect.ts",
     "runpod-provision:test": "tsx scripts/runpod-provision-test.ts",
     "runpod-capacity:inspect": "tsx scripts/runpod-capacity-watch-inspect.ts",
+    "external-rental:inspect": "tsx scripts/external-rental-cost-inspect.ts",
     "topup:diagnose": "tsx scripts/topup-diagnose.ts",
     "stripe:diagnose": "tsx scripts/stripe-diagnose.ts",
     "lambda-capacity:inspect": "tsx scripts/lambda-capacity-watch-inspect.ts",
