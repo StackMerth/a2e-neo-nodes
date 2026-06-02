@@ -43,6 +43,11 @@ import {
 } from '../services/inference/meter.js'
 import { meterImageCall } from '../services/inference/image-meter.js'
 import { meterAudioCall } from '../services/inference/audio-meter.js'
+import {
+  callAnthropicChat,
+  streamAnthropicChat,
+  type OpenAIChatRequest,
+} from '../services/inference/anthropic-adapter.js'
 
 // -----------------------------------------------------------------
 // E3.1 — embeddings schemas
@@ -1239,8 +1244,21 @@ async function callExternalProvider(
 ): Promise<UpstreamResult> {
   if (!external) throw new Error('external provider config missing')
 
-  // Translate the model id to the provider's id without disturbing
-  // the rest of the request body. Pass everything else through.
+  // Anthropic uses a different API shape — translate via the adapter.
+  // The adapter handles request/response translation so the buyer's
+  // OpenAI-shaped request comes back as an OpenAI-shaped response.
+  if (external.kind === 'anthropic') {
+    const body = await callAnthropicChat(
+      rawBody as OpenAIChatRequest,
+      external.externalModel,
+      external.apiKey,
+      parsedRequest.model,
+    )
+    return { body: body as unknown as ChatCompletionResponse }
+  }
+
+  // OpenAI + openai-compat: translate the model id and pass everything
+  // else through. The upstream returns OpenAI's exact response shape.
   const upstreamBody = { ...(rawBody as Record<string, unknown>), model: external.externalModel, stream: false }
 
   const res = await fetch(`${external.baseUrl}/chat/completions`, {
@@ -1329,7 +1347,11 @@ async function handleStreamingChat(
   // refusal, missing fallback) can be reported as a normal JSON
   // error before we commit to SSE.
   const worker = await pickInferenceWorker(fastify.prisma, { model: parsedRequest.model })
-  let upstreamRes: Response
+  let upstreamRes: Response | null = null
+  // Set when routing through the Anthropic adapter (different shape
+  // than fetch-based upstream — translates events on our side).
+  let anthropicStream: ReturnType<typeof streamAnthropicChat> | null = null
+
   if (worker) {
     operatorNodeId = worker.nodeId
     await fastify.prisma.inferenceRequest.update({
@@ -1361,23 +1383,53 @@ async function handleStreamingChat(
       where: { id: inferenceRequest.id },
       data: { externalProvider: external.kind, status: 'STREAMING' },
     })
-    upstreamRes = await fetch(`${external.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${external.apiKey}`,
-      },
-      body: JSON.stringify({
-        ...(request.body as Record<string, unknown>),
-        model: external.externalModel,
-        stream: true,
-      }),
-    })
+    if (external.kind === 'anthropic') {
+      // Anthropic streams have a different event shape than OpenAI's
+      // SSE format; the adapter handles the translation and yields
+      // ready-to-write OpenAI-format SSE chunks.
+      try {
+        anthropicStream = streamAnthropicChat(
+          request.body as OpenAIChatRequest,
+          external.externalModel,
+          external.apiKey,
+          parsedRequest.model,
+        )
+      } catch (err) {
+        const errMsg = (err as Error).message
+        await fastify.prisma.inferenceRequest.update({
+          where: { id: inferenceRequest.id },
+          data: { status: 'FAILED', errorMessage: errMsg, completedAt: new Date() },
+        })
+        reply.code(502).send({
+          error: { message: errMsg, type: 'server_error', code: 'upstream_failure' },
+        })
+        return
+      }
+    } else {
+      upstreamRes = await fetch(`${external.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${external.apiKey}`,
+        },
+        body: JSON.stringify({
+          ...(request.body as Record<string, unknown>),
+          model: external.externalModel,
+          stream: true,
+        }),
+      })
+    }
   }
 
-  if (!upstreamRes.ok || !upstreamRes.body) {
-    const text = await upstreamRes.text().catch(() => '')
-    const errMsg = `upstream ${upstreamRes.status}: ${text.slice(0, 200)}`
+  // Skip the fetch-ok guard when streaming through Anthropic (the
+  // adapter throws on its own upstream failures).
+  if (!anthropicStream && (!upstreamRes || !upstreamRes.ok || !upstreamRes.body)) {
+    // Narrowing aid: upstreamRes is guaranteed truthy here only when
+    // the second sub-condition matched (response existed but was
+    // !ok / no body). Coerce defensively for the null short-circuit.
+    const status = upstreamRes?.status ?? 0
+    const text = await (upstreamRes?.text().catch(() => '') ?? Promise.resolve(''))
+    const errMsg = `upstream ${status}: ${text.slice(0, 200)}`
     await fastify.prisma.inferenceRequest.update({
       where: { id: inferenceRequest.id },
       data: { status: 'FAILED', errorMessage: errMsg, completedAt: new Date() },
@@ -1405,49 +1457,71 @@ async function handleStreamingChat(
   let upstreamUsage: { prompt_tokens?: number; completion_tokens?: number } | null = null
   let upstreamId: string | null = null
 
-  // Process the SSE stream line by line. fetch's body is a ReadableStream;
-  // we decode + buffer to handle partial chunks straddling event boundaries.
-  const decoder = new TextDecoder()
-  const reader = upstreamRes.body.getReader()
-  let buffer = ''
+  // Inline helper so both the fetch-reader and Anthropic-generator
+  // paths share the same OpenAI-SSE event parser (id capture, content
+  // accumulation, usage capture). The Anthropic adapter emits chunks
+  // already in OpenAI SSE format, so the parser logic is identical.
+  let sseBuffer = ''
+  const consumeSseText = (text: string): void => {
+    sseBuffer += text
+    let sepIdx = sseBuffer.indexOf('\n\n')
+    while (sepIdx !== -1) {
+      const event = sseBuffer.slice(0, sepIdx)
+      sseBuffer = sseBuffer.slice(sepIdx + 2)
+      sepIdx = sseBuffer.indexOf('\n\n')
+      for (const line of event.split('\n')) {
+        if (!line.startsWith('data: ')) continue
+        const payload = line.slice('data: '.length).trim()
+        if (payload === '[DONE]') continue
+        try {
+          const parsed = JSON.parse(payload) as {
+            id?: string
+            choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>
+            usage?: { prompt_tokens?: number; completion_tokens?: number }
+          }
+          if (parsed.id && !upstreamId) upstreamId = parsed.id
+          const contentDelta = parsed.choices?.[0]?.delta?.content
+          if (typeof contentDelta === 'string') accumulatedText += contentDelta
+          if (parsed.usage) upstreamUsage = parsed.usage
+        } catch {
+          // Non-JSON SSE line — ignore. Buyer still got the bytes.
+        }
+      }
+    }
+  }
 
   try {
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-      const text = decoder.decode(value, { stream: true })
-      // Pass through to the buyer verbatim — every byte the upstream
-      // sent, the buyer gets, in order.
-      raw.write(text)
-      buffer += text
-
-      // Parse complete SSE events out of the buffer for usage/content
-      // accumulation. Events are separated by \n\n; partial events
-      // stay in the buffer until the next chunk arrives.
-      let sepIdx = buffer.indexOf('\n\n')
-      while (sepIdx !== -1) {
-        const event = buffer.slice(0, sepIdx)
-        buffer = buffer.slice(sepIdx + 2)
-        sepIdx = buffer.indexOf('\n\n')
-
-        for (const line of event.split('\n')) {
-          if (!line.startsWith('data: ')) continue
-          const payload = line.slice('data: '.length).trim()
-          if (payload === '[DONE]') continue
-          try {
-            const parsed = JSON.parse(payload) as {
-              id?: string
-              choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>
-              usage?: { prompt_tokens?: number; completion_tokens?: number }
-            }
-            if (parsed.id && !upstreamId) upstreamId = parsed.id
-            const contentDelta = parsed.choices?.[0]?.delta?.content
-            if (typeof contentDelta === 'string') accumulatedText += contentDelta
-            if (parsed.usage) upstreamUsage = parsed.usage
-          } catch {
-            // Non-JSON SSE line — ignore. Buyer still got the bytes.
-          }
-        }
+    if (anthropicStream) {
+      // Anthropic adapter path: pull pre-translated SSE chunks from
+      // the generator and write each one to the buyer's stream.
+      for await (const chunk of anthropicStream.sseChunks) {
+        raw.write(chunk)
+        consumeSseText(chunk)
+      }
+      // The adapter's usage promise resolves once the stream closes
+      // with the final token counts from message_start + message_delta.
+      const adapterUsage = await anthropicStream.usage
+      // Adapter usage takes precedence over anything the SSE chunks
+      // showed (the adapter has the authoritative final values).
+      upstreamUsage = {
+        prompt_tokens: adapterUsage.inputTokens,
+        completion_tokens: adapterUsage.outputTokens,
+      }
+    } else {
+      // OpenAI / openai-compat / operator-worker path: stream the
+      // upstream HTTP body to the buyer verbatim.
+      // Type narrowing: the guard above proves upstreamRes + body are non-null here.
+      const body = upstreamRes!.body!
+      const decoder = new TextDecoder()
+      const reader = body.getReader()
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        const text = decoder.decode(value, { stream: true })
+        // Pass through to the buyer verbatim — every byte the upstream
+        // sent, the buyer gets, in order.
+        raw.write(text)
+        consumeSseText(text)
       }
     }
   } catch (err) {

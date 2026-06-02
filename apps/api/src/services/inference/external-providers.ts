@@ -34,7 +34,7 @@
  * trying to call the provider with no auth.
  */
 
-export type ExternalProviderKind = 'openai' | 'openai-compat'
+export type ExternalProviderKind = 'openai' | 'openai-compat' | 'anthropic'
 
 export interface ExternalProviderConfig {
   kind: ExternalProviderKind
@@ -84,6 +84,18 @@ export function resolveExternalProvider(
     const apiKey = process.env[envName]?.trim()
     if (!apiKey) return null
     return { kind: 'openai-compat', apiKey, baseUrl, externalModel }
+  }
+
+  if (kind === 'anthropic') {
+    // Anthropic uses a different request/response shape than OpenAI;
+    // the route handler detects kind=anthropic and routes through the
+    // anthropic-adapter which translates both directions. baseUrl is
+    // recorded for observability but not used by the adapter itself
+    // (the SDK manages its own URL).
+    const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
+    if (!apiKey) return null
+    const baseUrl = (typeof m.externalBaseUrl === 'string' ? m.externalBaseUrl : 'https://api.anthropic.com').replace(/\/+$/, '')
+    return { kind: 'anthropic', apiKey, baseUrl, externalModel }
   }
 
   return null
