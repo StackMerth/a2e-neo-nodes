@@ -644,7 +644,7 @@ export default function RequestComputePage() {
             variance and benefit from cheaper community tier. */}
         <FormCard
           title="Dedicated Tenancy"
-          description="For benchmark or reproducible-inference workloads where co-tenant noise distorts measurements."
+          description="Skip shared hosts for consistent benchmark results."
           icon={Workflow}
         >
           <FormSection>
@@ -668,14 +668,8 @@ export default function RequestComputePage() {
                 <div className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
                   Require dedicated tenancy
                 </div>
-                <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
-                  Route only to dedicated hosts (Lambda VMs or RunPod SECURE datacenters).
-                  Skip RunPod COMMUNITY tier where multiple tenants may share the physical
-                  machine.
-                </p>
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  Use this for benchmark consistency. Dedicated capacity is less abundant
-                  than community-tier supply, so requests may wait longer for placement.
+                  Routes to Lambda VMs or RunPod SECURE only. Tighter capacity; placement may take longer.
                 </p>
               </div>
             </label>
