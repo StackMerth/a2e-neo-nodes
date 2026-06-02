@@ -66,29 +66,32 @@ async function main(): Promise<void> {
     return a.lowestPricePerHourUsd - b.lowestPricePerHourUsd
   })
 
+  const printRow = (t: typeof sorted[number]): void => {
+    const lowest = t.lowestPricePerHourUsd !== null ? `$${t.lowestPricePerHourUsd.toFixed(2)}` : '-'
+    const secure = t.securePricePerHourUsd !== null ? `$${t.securePricePerHourUsd.toFixed(2)}` : '-'
+    const community = t.communityPricePerHourUsd !== null ? `$${t.communityPricePerHourUsd.toFixed(2)}` : '-'
+    const stock = t.hasCurrentStock ? 'yes' : 'NO'
+    // ID is what you pass to --type; display name is what RunPod's
+    // console shows. They often differ slightly (e.g. id "NVIDIA H200
+    // NVL 141GB" -> display "H200 NVL"), so we print both.
+    console.log(`  ${t.id.padEnd(48)} ${t.displayName.padEnd(22)} ${String(t.memoryInGb).padStart(5)}  ${lowest.padStart(7)} ${secure.padStart(7)} ${community.padStart(7)}  ${stock}`)
+  }
+
+  const header = '  id'.padEnd(50) + ' displayName'.padEnd(23) + 'memGB'.padStart(6) + '   lowest  secure    comm  stock'
+
   if (wantRaw) {
     console.log(`Full GPU type catalog (${sorted.length} types):`)
     console.log()
-    console.log('  name'.padEnd(50) + 'memGB'.padStart(8) + 'lowest'.padStart(10) + 'secure'.padStart(10) + 'comm'.padStart(10) + '  stock')
-    for (const t of sorted) {
-      const lowest = t.lowestPricePerHourUsd !== null ? `$${t.lowestPricePerHourUsd.toFixed(2)}` : '-'
-      const secure = t.securePricePerHourUsd !== null ? `$${t.securePricePerHourUsd.toFixed(2)}` : '-'
-      const community = t.communityPricePerHourUsd !== null ? `$${t.communityPricePerHourUsd.toFixed(2)}` : '-'
-      const stock = t.hasCurrentStock ? 'yes' : 'NO'
-      console.log(`  ${t.displayName.padEnd(48)}${String(t.memoryInGb).padStart(8)}${lowest.padStart(10)}${secure.padStart(10)}${community.padStart(10)}  ${stock}`)
-    }
+    console.log(header)
+    for (const t of sorted) printRow(t)
   } else {
-    const priority = sorted.filter((t) => PRIORITY_TOKENS.some((tok) => t.displayName.includes(tok)))
+    const priority = sorted.filter((t) =>
+      PRIORITY_TOKENS.some((tok) => t.displayName.includes(tok) || t.id.includes(tok)),
+    )
     console.log(`Priority types (H100 / H200 / B200 / L40S) — ${priority.length} found:`)
     console.log()
-    console.log('  name'.padEnd(50) + 'memGB'.padStart(8) + 'lowest'.padStart(10) + 'secure'.padStart(10) + 'comm'.padStart(10) + '  stock')
-    for (const t of priority) {
-      const lowest = t.lowestPricePerHourUsd !== null ? `$${t.lowestPricePerHourUsd.toFixed(2)}` : '-'
-      const secure = t.securePricePerHourUsd !== null ? `$${t.securePricePerHourUsd.toFixed(2)}` : '-'
-      const community = t.communityPricePerHourUsd !== null ? `$${t.communityPricePerHourUsd.toFixed(2)}` : '-'
-      const stock = t.hasCurrentStock ? 'yes' : 'NO'
-      console.log(`  ${t.displayName.padEnd(48)}${String(t.memoryInGb).padStart(8)}${lowest.padStart(10)}${secure.padStart(10)}${community.padStart(10)}  ${stock}`)
-    }
+    console.log(header)
+    for (const t of priority) printRow(t)
     console.log()
     console.log(`Full catalogue (${sorted.length} types) hidden — run with --raw to dump everything.`)
   }

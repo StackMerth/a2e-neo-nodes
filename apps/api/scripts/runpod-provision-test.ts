@@ -182,20 +182,45 @@ async function runRent(tier: GpuTier): Promise<void> {
   console.log(`  pnpm --filter @a2e/api runpod-provision:test --terminate ${result.externalRentalId}`)
 }
 
-async function runRentByType(gpuTypeId: string): Promise<void> {
+async function runRentByType(input: string): Promise<void> {
   const client = new RunPodClient()
   const types = await client.listGpuTypes()
-  const match = types.find((t) => t.id === gpuTypeId)
+  // Accept either the canonical id or the displayName — users often
+  // type what they see in the inspector output, which is the display
+  // name. Exact match first, then case-insensitive substring match.
+  let match = types.find((t) => t.id === input || t.displayName === input)
   if (!match) {
-    console.log(`RunPod has no gpu type named "${gpuTypeId}".`)
-    console.log(`Run runpod:inspect --raw to see every valid id.`)
+    const lower = input.toLowerCase()
+    match = types.find(
+      (t) => t.id.toLowerCase() === lower || t.displayName.toLowerCase() === lower,
+    )
+  }
+  if (!match) {
+    const lower = input.toLowerCase()
+    const candidates = types
+      .filter(
+        (t) =>
+          t.id.toLowerCase().includes(lower) || t.displayName.toLowerCase().includes(lower),
+      )
+      .slice(0, 8)
+    console.log(`RunPod has no gpu type named "${input}".`)
+    if (candidates.length > 0) {
+      console.log()
+      console.log('Did you mean one of these?')
+      for (const c of candidates) {
+        console.log(`  id="${c.id}"  display="${c.displayName}"`)
+      }
+    } else {
+      console.log(`Run runpod:inspect --raw to see every valid id.`)
+    }
     process.exit(1)
   }
   if (!match.hasCurrentStock) {
-    console.log(`RunPod has no capacity for ${gpuTypeId} right now.`)
+    console.log(`RunPod has no capacity for ${match.id} right now.`)
     process.exit(1)
   }
-  console.log(`RunPod SKU ${gpuTypeId}: $${(match.lowestPricePerHourUsd ?? 0).toFixed(2)}/h`)
+  const gpuTypeId = match.id
+  console.log(`RunPod SKU ${gpuTypeId} (${match.displayName}): $${(match.lowestPricePerHourUsd ?? 0).toFixed(2)}/h`)
   console.log()
 
   const user = await prisma.user.upsert({
