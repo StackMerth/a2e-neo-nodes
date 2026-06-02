@@ -1356,6 +1356,16 @@ model ComputeRequest {
   // tiers are inference-only.
   workloadType    WorkloadType         @default(MIXED)
 
+  // T5e + friend-feedback 2026-06-02: dedicated tenancy preference for
+  // variance-sensitive workloads (benchmarks, reproducible inference
+  // measurements). When true, the allocator skips RunPod COMMUNITY
+  // tier (peer-hosted, potential co-tenant noise on the physical
+  // host) and routes only to dedicated supply: internal operators,
+  // Lambda, RunPod SECURE. False is the default — most rentals don't
+  // care about co-tenant variance and benefit from cheaper COMMUNITY
+  // tier capacity.
+  preferDedicatedTier Boolean         @default(false)
+
   // Status
   status          ComputeRequestStatus @default(PENDING)
   adminNote       String?              // Admin's internal note

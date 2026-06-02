@@ -679,31 +679,45 @@ async function tryRunPodFallback(
   const now = new Date()
   const expiresAt = new Date(now.getTime() + cr.durationDays * 86400000)
 
-  // Tier escalation: try COMMUNITY first (cheapest), then SECURE if
-  // community returns "no instances available". Datacenter SECURE
-  // tier is more expensive (~5-7x for H100/H200) but reliably stocked
-  // even when community is dry. Only escalate on the specific
-  // "no instances available" 500 — real errors (config, network,
-  // etc.) skip straight to fall-through.
+  // Tier selection:
+  //   preferDedicatedTier=true  -> SECURE only (skip COMMUNITY
+  //     entirely). Buyer flagged the workload as variance-sensitive
+  //     (benchmarks, reproducible inference measurements). COMMUNITY
+  //     hosts may run other tenants on the same physical machine
+  //     which introduces noise that distorts benchmark results.
+  //   preferDedicatedTier=false -> COMMUNITY first (cheapest), then
+  //     SECURE if community returns "no instances available". Most
+  //     rentals don't need dedicated hosts and benefit from the 5-7x
+  //     cheaper community pricing for H100/H200.
   let provisionResult
+  const initialTier: 'COMMUNITY' | 'SECURE' = cr.preferDedicatedTier ? 'SECURE' : 'COMMUNITY'
   try {
-    provisionResult = await provisionRunPodRental(prisma, cr.id, { cloudType: 'COMMUNITY' })
+    provisionResult = await provisionRunPodRental(prisma, cr.id, { cloudType: initialTier })
   } catch (err) {
     const message = (err as Error).message
     const isCapacityShort = /no instances currently available/i.test(message)
     if (!isCapacityShort) {
       // eslint-disable-next-line no-console
       console.error(
-        `[compute-allocator] RunPod fallback failed for ${cr.id} (tier ${cr.gpuTier}, community):`,
+        `[compute-allocator] RunPod fallback failed for ${cr.id} (tier ${cr.gpuTier}, ${initialTier}):`,
         message,
       )
       return false
     }
 
-    // Community is empty; try SECURE tier as same-tick escalation.
-    // Allowed because allocator cost-of-service already reads from
-    // the rental's provider price snapshot, so the buyer-facing
-    // ratePerMinute we set below stays at the buyer's quote — the
+    // For preferDedicatedTier rentals there's no fallback — SECURE
+    // is the only acceptable tier so capacity shortage means we wait
+    // for the next allocator tick rather than satisfy with COMMUNITY.
+    if (cr.preferDedicatedTier) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[compute-allocator] RunPod SECURE empty for dedicated-tier ${cr.id}; no community fallback (preferDedicatedTier=true)`,
+      )
+      return false
+    }
+
+    // Standard escalation: COMMUNITY empty -> SECURE same tick.
+    // Buyer-facing ratePerMinute stays at the buyer's quote -- the
     // platform absorbs the secure-tier premium for this rental. Net
     // result: better availability UX, slightly thinner margin on
     // rentals that escalate. Track as a metric for pricing decisions.
