@@ -287,12 +287,45 @@ export class RunPodClient {
   }
 
   /**
-   * POST /pods — create + start a pod and begin billing. The
-   * entrypoint of our default image reads PUBLIC_KEY env var on first
-   * boot and writes it to /root/.ssh/authorized_keys, so SSH starts
-   * working as soon as status flips to RUNNING.
+   * POST /pods — create + start a pod and begin billing.
+   *
+   * Image + start-cmd contract: RunPod's "base" images don't have a
+   * built-in entrypoint that processes PUBLIC_KEY and keeps the
+   * container alive. If we just set imageName + env.PUBLIC_KEY and
+   * let Docker run the default CMD, the container exits immediately
+   * and the pod goes STARTING -> EXITED -> 404 in seconds (we hit
+   * this empirically on the first dry-run).
+   *
+   * Fix: override the container start command with the standard
+   * RunPod SSH-bootstrap script — installs openssh-server,
+   * authorizes the buyer's public key, starts the SSH daemon, then
+   * `sleep infinity` to keep the container alive for the rental's
+   * lifetime. This works on any Ubuntu-based image without us caring
+   * what the image's default entrypoint does.
+   *
+   * The script reads PUBLIC_KEY from env (still injected via the env
+   * block below) so the same key is the source of truth for SSH
+   * access — buyer's portal shows the matching private key.
    */
   async createPod(args: CreatePodArgs): Promise<string> {
+    const sshBootstrap = [
+      'bash',
+      '-c',
+      [
+        'apt-get update >/dev/null 2>&1',
+        'DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server >/dev/null 2>&1',
+        'mkdir -p /root/.ssh',
+        'echo "$PUBLIC_KEY" > /root/.ssh/authorized_keys',
+        'chmod 700 /root/.ssh',
+        'chmod 600 /root/.ssh/authorized_keys',
+        'service ssh start',
+        // Keep the container alive for the rental's lifetime so the
+        // pod stays RUNNING instead of EXITED. terminate() will
+        // SIGTERM the container when the buyer stops the rental.
+        'sleep infinity',
+      ].join(' && '),
+    ]
+
     const body = {
       name: args.name,
       gpuTypeIds: [args.gpuTypeId],
@@ -309,10 +342,9 @@ export class RunPodClient {
       // after status=RUNNING. REST spec requires array of strings,
       // not a single string.
       ports: ['22/tcp'],
+      // Override the image's CMD with the SSH bootstrap. See header.
+      dockerStartCmd: sshBootstrap,
       env: {
-        // RunPod base images include an entrypoint that appends this
-        // value (if present) to /root/.ssh/authorized_keys. This is
-        // their documented "SSH into your pod" flow.
         PUBLIC_KEY: args.sshPublicKey,
       },
     }
