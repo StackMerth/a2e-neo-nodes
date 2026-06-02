@@ -206,11 +206,53 @@ const TOGETHER_CHAT: ChatSeed[] = [
   },
 ]
 
+// Anthropic Claude family. Routed through the E2.3 anthropic-adapter
+// that translates OpenAI chat completions <-> Anthropic Messages API
+// (both directions, including streaming + tool use). Buyers call our
+// /v1/chat/completions with model=claude-opus-4-7 and don't see the
+// translation happening.
+const ANTHROPIC_CHAT: ChatSeed[] = [
+  {
+    modelId: 'claude-opus-4-7',
+    inputPricePerMillionTokens: 5.00,
+    outputPricePerMillionTokens: 25.00,
+    metadata: {
+      externalProvider: 'anthropic',
+      externalModel: 'claude-opus-4-7',
+      family: 'claude-4',
+      contextWindow: 1000000,
+    },
+  },
+  {
+    modelId: 'claude-sonnet-4-6',
+    inputPricePerMillionTokens: 3.00,
+    outputPricePerMillionTokens: 15.00,
+    metadata: {
+      externalProvider: 'anthropic',
+      externalModel: 'claude-sonnet-4-6',
+      family: 'claude-4',
+      contextWindow: 1000000,
+    },
+  },
+  {
+    modelId: 'claude-haiku-4-5',
+    inputPricePerMillionTokens: 1.00,
+    outputPricePerMillionTokens: 5.00,
+    metadata: {
+      externalProvider: 'anthropic',
+      externalModel: 'claude-haiku-4-5',
+      family: 'claude-4',
+      contextWindow: 200000,
+    },
+  },
+]
+
 const ALL_SEEDS: ChatSeed[] = [
   ...OPENAI_CHAT,
   ...OPENAI_EMBEDDINGS,
   ...GROQ_CHAT,
   ...TOGETHER_CHAT,
+  ...ANTHROPIC_CHAT,
 ]
 
 async function main(): Promise<void> {
@@ -247,6 +289,7 @@ async function main(): Promise<void> {
   console.log('  OPENAI_API_KEY     -> all openai/* models (gpt-4o, embeddings)')
   console.log('  GROQ_API_KEY       -> llama/mixtral/gemma/deepseek-r1-distill on Groq')
   console.log('  TOGETHER_API_KEY   -> Llama-3.3 / Qwen2.5 / DeepSeek-V3 on Together')
+  console.log('  ANTHROPIC_API_KEY  -> Claude opus-4-7 / sonnet-4-6 / haiku-4-5')
   console.log()
   console.log('Test with:')
   console.log('  curl https://a2e-api.onrender.com/v1/chat/completions \\')
