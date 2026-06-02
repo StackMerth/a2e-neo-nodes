@@ -58,7 +58,8 @@
     "inference-call:inspect": "tsx scripts/inference-call-inspect.ts",
     "seed:image-models": "tsx scripts/seed-image-models.ts",
     "seed:audio-models": "tsx scripts/seed-audio-models.ts",
-    "seed:chat-models": "tsx scripts/seed-chat-models.ts"
+    "seed:chat-models": "tsx scripts/seed-chat-models.ts",
+    "inference-catalog:inspect": "tsx scripts/inference-catalog-inspect.ts"
   },
   "dependencies": {
     "@a2e/core": "workspace:*",
