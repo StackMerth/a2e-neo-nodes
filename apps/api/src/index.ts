@@ -148,6 +148,11 @@ import {
   createRunPodPollWorker,
   scheduleRunPodPoll,
 } from './jobs/runpod-poll'
+import {
+  createRunPodCapacityWatcherQueue,
+  createRunPodCapacityWatcherWorker,
+  scheduleRunPodCapacityWatcher,
+} from './jobs/runpod-capacity-watcher'
 import { createSshSessionReaperWorker } from './jobs/ssh-session-reaper'
 import {
   createSeedKeepAliveQueue,
@@ -403,6 +408,15 @@ async function start() {
     createRunPodPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleRunPodPoll(runpodPollQueue)
     server.log.info('RunPod poll worker initialized (10s tick)')
+
+    // T5e: RunPod capacity watcher. Mirror of T5d for RunPod's gpu
+    // types catalog. Emails admin when watched SKU IDs gain stock.
+    // No-op when RUNPOD_CAPACITY_WATCH_IDS is unset, so production
+    // deploys without the flag get zero behavior change.
+    const runpodCapacityWatcherQueue = createRunPodCapacityWatcherQueue(redisConnection)
+    createRunPodCapacityWatcherWorker({ redis: redisConnection })
+    await scheduleRunPodCapacityWatcher(runpodCapacityWatcherQueue)
+    server.log.info('RunPod capacity watcher initialized (5min tick, env-driven SKU list)')
 
     // T5d: Lambda capacity watcher. Slow-cadence poller that emails
     // admin when any of the watched SKUs (LAMBDA_CAPACITY_WATCH_SKUS)

@@ -679,19 +679,48 @@ async function tryRunPodFallback(
   const now = new Date()
   const expiresAt = new Date(now.getTime() + cr.durationDays * 86400000)
 
+  // Tier escalation: try COMMUNITY first (cheapest), then SECURE if
+  // community returns "no instances available". Datacenter SECURE
+  // tier is more expensive (~5-7x for H100/H200) but reliably stocked
+  // even when community is dry. Only escalate on the specific
+  // "no instances available" 500 — real errors (config, network,
+  // etc.) skip straight to fall-through.
   let provisionResult
   try {
-    provisionResult = await provisionRunPodRental(prisma, cr.id)
+    provisionResult = await provisionRunPodRental(prisma, cr.id, { cloudType: 'COMMUNITY' })
   } catch (err) {
-    // RunPod's "no instances currently available" 500 lands here
-    // alongside any real error. Either way, return false so the
-    // allocator continues. The next tick will re-evaluate capacity.
-    // eslint-disable-next-line no-console
-    console.error(
-      `[compute-allocator] RunPod fallback failed for ${cr.id} (tier ${cr.gpuTier}):`,
-      (err as Error).message,
-    )
-    return false
+    const message = (err as Error).message
+    const isCapacityShort = /no instances currently available/i.test(message)
+    if (!isCapacityShort) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[compute-allocator] RunPod fallback failed for ${cr.id} (tier ${cr.gpuTier}, community):`,
+        message,
+      )
+      return false
+    }
+
+    // Community is empty; try SECURE tier as same-tick escalation.
+    // Allowed because allocator cost-of-service already reads from
+    // the rental's provider price snapshot, so the buyer-facing
+    // ratePerMinute we set below stays at the buyer's quote — the
+    // platform absorbs the secure-tier premium for this rental. Net
+    // result: better availability UX, slightly thinner margin on
+    // rentals that escalate. Track as a metric for pricing decisions.
+    try {
+      provisionResult = await provisionRunPodRental(prisma, cr.id, { cloudType: 'SECURE' })
+      // eslint-disable-next-line no-console
+      console.log(
+        `[compute-allocator] RunPod fallback ESCALATED to SECURE for ${cr.id} (community was empty)`,
+      )
+    } catch (escErr) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[compute-allocator] RunPod fallback failed for ${cr.id} on both COMMUNITY and SECURE:`,
+        (escErr as Error).message,
+      )
+      return false
+    }
   }
 
   const transitioned = await prisma.computeRequest.updateMany({
