@@ -60,6 +60,14 @@ const requestSchema = z.object({
   // hard-filter consumer tiers out. Default MIXED preserves the
   // pre-wave-2 routing semantics for buyers who don't pick.
   workloadType: z.enum(['INFERENCE', 'TRAINING', 'MIXED']).default('MIXED'),
+  // T5e + friend feedback 2026-06-02: when true, allocator skips
+  // RunPod COMMUNITY tier and routes only to dedicated supply
+  // (internal operators, Lambda, RunPod SECURE). Use for variance-
+  // sensitive workloads where co-tenant noise on the physical host
+  // distorts results (benchmarks, reproducible inference
+  // measurements). Default false — most rentals don't care and
+  // benefit from cheaper COMMUNITY tier capacity.
+  preferDedicatedTier: z.boolean().default(false),
   commitmentDays: z.number().int().refine(d => [7, 30, 90].includes(d), {
     message: 'commitmentDays must be 7, 30, or 90',
   }).optional(),
@@ -262,7 +270,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
     }
 
-    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion, preferredOperatorSlug, sshPubKey, paymentSource, workloadType, restoreCheckpointId } = parsed.data
+    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion, preferredOperatorSlug, sshPubKey, paymentSource, workloadType, preferDedicatedTier, restoreCheckpointId } = parsed.data
 
     // M5.10c: resolve preferred operator slug to NodeRunner.id. Silently
     // ignore unknown slugs (don't fail the request - the allocator just
@@ -435,6 +443,10 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       // MIXED keeps pre-wave-2 behavior (consumer tiers excluded);
       // INFERENCE unlocks consumer GPUs as candidates.
       workloadType: workloadType as import('@a2e/database').WorkloadType,
+      // T5e: when true, allocator skips RunPod COMMUNITY tier and
+      // routes only to dedicated supply (Lambda, RunPod SECURE,
+      // internal operators). For benchmark-sensitive workloads.
+      preferDedicatedTier,
       // M3: persist tier so the routing engine + preemption worker
       // can read it. commitmentDays only stored for RESERVED rentals
       // (refund logic checks this when buyer terminates early).
