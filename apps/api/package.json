@@ -49,6 +49,8 @@
     "push:diagnose": "tsx scripts/push-diagnose.ts",
     "lambda:inspect": "tsx scripts/lambda-inspect.ts",
     "lambda-provision:test": "tsx scripts/lambda-provision-test.ts",
+    "runpod:inspect": "tsx scripts/runpod-inspect.ts",
+    "runpod-provision:test": "tsx scripts/runpod-provision-test.ts",
     "topup:diagnose": "tsx scripts/topup-diagnose.ts",
     "stripe:diagnose": "tsx scripts/stripe-diagnose.ts",
     "lambda-capacity:inspect": "tsx scripts/lambda-capacity-watch-inspect.ts",
