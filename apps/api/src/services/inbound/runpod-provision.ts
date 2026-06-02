@@ -80,7 +80,7 @@ export interface RunPodProvisionOptions {
    */
   imageOverride?: string
   /** RunPod tier; defaults to ALL (cheapest available). */
-  cloudType?: 'ALL' | 'SECURE' | 'COMMUNITY'
+  cloudType?: 'SECURE' | 'COMMUNITY'
 }
 
 /**
@@ -176,7 +176,7 @@ export async function provisionRunPodRental(
       gpuCount: cr.gpuCount,
       sshPublicKey: keypair.publicKeyOpenssh,
       imageName: options.imageOverride ?? DEFAULT_RUNPOD_IMAGE,
-      cloudType: options.cloudType ?? 'ALL',
+      cloudType: options.cloudType ?? 'COMMUNITY',
     })
   } catch (err) {
     throw new RunPodProvisionError(

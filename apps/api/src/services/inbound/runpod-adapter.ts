@@ -128,10 +128,11 @@ export interface CreatePodArgs {
    * RunPod tier:
    *   SECURE    -> RunPod-owned datacenters, higher reliability, more $
    *   COMMUNITY -> peer-hosted compute, cheapest, variable SLA
-   *   ALL       -> RunPod picks the cheapest available tier
-   * Default ALL.
+   * Default COMMUNITY (cheapest available; matches T5d capacity goal).
+   * Note: RunPod's REST spec rejects 'ALL' even though GraphQL accepts
+   * it — callers must pick one tier explicitly.
    */
-  cloudType?: 'ALL' | 'SECURE' | 'COMMUNITY'
+  cloudType?: 'SECURE' | 'COMMUNITY'
 }
 
 interface RawGpuTypeResponse {
@@ -299,11 +300,15 @@ export class RunPodClient {
       imageName: args.imageName ?? DEFAULT_RUNPOD_IMAGE,
       containerDiskInGb: args.containerDiskInGb ?? 50,
       volumeInGb: args.volumeInGb ?? 0,
-      cloudType: args.cloudType ?? 'ALL',
+      // RunPod's REST spec only accepts 'SECURE' or 'COMMUNITY' (no
+      // 'ALL' wildcard like GraphQL allows). Default COMMUNITY to
+      // match the T5d capacity goal — cheapest tier with stock.
+      cloudType: args.cloudType ?? 'COMMUNITY',
       // Expose container's port 22 publicly. RunPod assigns a
       // dynamic public port; we read it from the pod's ports array
-      // after status=RUNNING.
-      ports: '22/tcp',
+      // after status=RUNNING. REST spec requires array of strings,
+      // not a single string.
+      ports: ['22/tcp'],
       env: {
         // RunPod base images include an entrypoint that appends this
         // value (if present) to /root/.ssh/authorized_keys. This is
