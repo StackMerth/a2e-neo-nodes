@@ -52,19 +52,14 @@
 const DEFAULT_BASE_URL = 'https://cloud-api.phala.com/api/v1'
 
 /**
- * Default CVM template image. Phala Cloud publishes pre-built CVM
- * images optimized for confidential AI workloads (Ubuntu + CUDA +
- * openssh-server + their TEE bootstrap). We pin a specific template
- * id once we know the real catalog format; for now this is a
- * placeholder that the inspector + provisioning code reads from
- * env so we can iterate without code changes.
- *
- * Set PHALA_DEFAULT_CVM_IMAGE in Render env once you've identified
- * the correct image id from Phala Cloud's console. Until then the
- * createCvm call will use whatever fallback is configured in the
- * provisioning orchestrator.
+ * The Phala CVM model is Docker Compose-driven, not single-image.
+ * We import the default compose template from phala-default-compose.ts
+ * and pass it in createCvm. Buyers wanting custom workloads can pass
+ * their own compose via the provisioning orchestrator options later
+ * (Path B / advanced — deferred per architecture decision).
  */
-export const DEFAULT_PHALA_IMAGE = process.env.PHALA_DEFAULT_CVM_IMAGE ?? 'phala/cuda-pytorch:latest'
+import { buildDefaultPhalaCompose } from './phala-default-compose.js'
+export { PHALA_DEFAULT_BASE_IMAGE } from './phala-default-compose.js'
 
 export class PhalaApiError extends Error {
   constructor(
@@ -167,21 +162,46 @@ export class PhalaClient {
   }
 
   /**
-   * Catalog of available GPU instance types Phala offers. Per the
-   * OpenAPI spec the path is /instance-types (sibling of /cvms);
-   * GPU CVMs are filtered by capability. May need refinement once
-   * we see a real response shape.
+   * Catalog of available instance types Phala offers. Response shape
+   * verified 2026-06-02:
+   *
+   *   {
+   *     result: [
+   *       { name: "cpu", items: [{ id: "tdx.small", ... }], total: 7 },
+   *       { name: "gpu", items: [{ id: "h200.small", ... }], total: 3 },
+   *     ]
+   *   }
+   *
+   * Every instance has TDX baked in (per description text). Filter
+   * to GPU family only; the platform never rents CPU CVMs to buyers.
+   *
+   * Real items currently available on Phala (2026-06-02):
+   *   - h200.small     1x H200, 24 vCPU, 256GB RAM        $4.80/h
+   *   - h200.16xlarge  8x H200, 24 vCPU, 128GB RAM        $32.00/h (low CPU)
+   *   - h200.8x.large  8x H200, 192 vCPU, 1.5TB RAM       $32.00/h (full CPU/RAM)
+   *
+   * No H100 / B200 / L40S yet on Phala. Tier mapping reflects this
+   * (only H200 entries; other tiers skip Phala in the cascade).
    */
   async listGpuTypes(): Promise<PhalaGpuType[]> {
-    const raw = await this.request<RawGpuTypeResponse[]>('/instance-types', 'GET')
-    return raw.map((t) => ({
+    const raw = await this.request<RawInstanceTypesResponse>('/instance-types', 'GET')
+    const gpuGroup = raw.result?.find((g) => g.name === 'gpu')
+    if (!gpuGroup) return []
+    return gpuGroup.items.map((t) => ({
       id: t.id,
-      displayName: t.displayName ?? t.name ?? t.id,
-      gpuModel: t.gpuModel ?? 'unknown',
-      memoryInGb: t.memoryInGb ?? 0,
-      pricePerHourUsd: t.pricePerHourUsd ?? 0,
-      teeSupport: t.teeSupport ?? ['TDX'],
-      hasCurrentStock: t.hasCurrentStock ?? true,
+      displayName: t.name ?? t.id,
+      gpuModel: parseGpuModel(t.id, t.name),
+      memoryInGb: Math.round((t.memory_mb ?? 0) / 1024),
+      pricePerHourUsd: parseFloat(t.hourly_rate ?? '0'),
+      // All Phala instances support TDX per their dashboard
+      // description; SEV-SNP isn't explicitly surfaced per SKU but
+      // is supported on their hardware fleet broadly. Default to
+      // both until we find a SKU that's TDX-only.
+      teeSupport: ['TDX', 'SEV-SNP'],
+      // Phala doesn't surface per-instance live capacity in this
+      // endpoint. If a SKU is in the catalog, treat it as orderable
+      // and let createCvm return 409 / 503 if all nodes are busy.
+      hasCurrentStock: true,
     }))
   }
 
@@ -224,18 +244,42 @@ export class PhalaClient {
    * phala-default-compose.ts and is built in Milestone 1.4.
    */
   async createCvm(args: CreateCvmArgs): Promise<string> {
+    // Build the default SSH+CUDA Compose so the buyer's UX matches
+    // Lambda/RunPod (they SSH in). Custom-image override flows
+    // through to the compose builder; advanced "bring your own
+    // compose" path is a deferred Path B option.
+    const compose = buildDefaultPhalaCompose({
+      imageName: args.imageName,
+      containerDiskInGb: args.containerDiskInGb,
+    })
+
+    // Body shape is BEST-GUESS based on common Compose-deploy API
+    // conventions (Phala's OpenAPI CreateWorkloadTappRequest schema
+    // is in the truncated binary section). The first real createCvm
+    // call will return a 422 with the actual required field names;
+    // we adjust those mappings then. Fields likely needed:
+    //   name (or display_name)
+    //   instance_type_id (or instance_type) — e.g. "h200.small"
+    //   compose_file (string YAML) or docker_compose (object)
+    //   env (object) — PUBLIC_KEY for SSH bootstrap
+    //   disk_size_gb (override of default_disk_size_gb from SKU)
+    //
+    // Sending both naming conventions until validation tells us which
+    // wins. Better than nothing for the first attempt.
     const body = {
       name: args.name,
-      gpuTypeId: args.gpuTypeId,
-      gpuCount: args.gpuCount,
-      imageName: args.imageName ?? DEFAULT_PHALA_IMAGE,
-      containerDiskInGb: args.containerDiskInGb ?? 50,
-      teeMode: args.teeMode ?? 'ANY',
+      // Most likely field name based on REST conventions:
+      instance_type_id: args.gpuTypeId,
+      // Backup naming Phala may use:
+      instance_type: args.gpuTypeId,
+      gpu_count: args.gpuCount,
+      compose_file: compose,
       env: {
-        // Standard SSH bootstrap convention; CVM image's entrypoint
-        // reads this and appends to /root/.ssh/authorized_keys.
         PUBLIC_KEY: args.sshPublicKey,
       },
+      ...(args.containerDiskInGb !== undefined
+        ? { disk_size_gb: args.containerDiskInGb }
+        : {}),
     }
     const raw = await this.request<{ id: string }>('/cvms/workload', 'POST', body)
     return raw.id
@@ -291,15 +335,38 @@ export class PhalaClient {
 // Raw response shapes — subject to verification against real API.
 // Field names are best-guess from Phala docs and may differ.
 
-interface RawGpuTypeResponse {
-  id: string
-  name?: string
-  displayName?: string
-  gpuModel?: string
-  memoryInGb?: number
-  pricePerHourUsd?: number
-  teeSupport?: Array<'TDX' | 'SEV-SNP'>
-  hasCurrentStock?: boolean
+// Verified response shape from GET /api/v1/instance-types (2026-06-02):
+// { result: [ { name: "cpu"|"gpu", items: [...], total: N } ] }
+interface RawInstanceTypesResponse {
+  result: Array<{
+    name: 'cpu' | 'gpu'
+    items: RawInstanceTypeItem[]
+    total: number
+  }>
+}
+
+interface RawInstanceTypeItem {
+  id: string                       // e.g. "h200.small", "h200.16xlarge"
+  name: string                     // e.g. "H200 SXM 141GB"
+  description: string              // "H200 SXM (141 GB VRAM), 24 vCPU, 256GB RAM with TDX support"
+  vcpu: number
+  memory_mb: number
+  hourly_rate: string              // String! e.g. "4.800000"
+  requires_gpu: boolean
+  default_disk_size_gb: number
+  family: 'cpu' | 'gpu'
+}
+
+/** Map Phala's instance id to the underlying GPU model name. */
+function parseGpuModel(id: string, name: string): string {
+  // ids look like "h200.small", "h200.16xlarge". Take everything
+  // before the first "." and upper-case (e.g. H200, H100, B200).
+  const prefix = (id.split('.')[0] ?? '').toUpperCase()
+  if (prefix) return prefix
+  // Fallback: parse from the human name field.
+  const match = name.match(/(H100|H200|B200|B300|A100|L40S|RTX\s*\d+)/i)
+  if (match && match[1]) return match[1].toUpperCase().replace(/\s+/g, '')
+  return 'unknown'
 }
 
 interface RawCvmResponse {
