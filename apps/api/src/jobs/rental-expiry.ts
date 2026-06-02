@@ -27,7 +27,7 @@ import type { PrismaClient } from '@a2e/database'
 import type { Server as SocketServer } from 'socket.io'
 import { createNotification } from '../services/notification/service.js'
 import { creditCompletedRental } from '../services/revenue/rental-credit.js'
-import { terminateLambdaRental } from '../services/inbound/lambda-provision.js'
+import { terminateExternalRentalForRequest, UnknownProviderError } from '../services/inbound/terminate-dispatcher.js'
 
 const QUEUE_NAME = 'rental-expiry'
 const TICK_INTERVAL_MS = parseInt(process.env.EXPIRY_TICK_MS ?? '60000', 10)
@@ -170,20 +170,24 @@ async function completeRental(
     console.error(`[rental-expiry] creditCompletedRental failed for ${cr.id}:`, err)
   }
 
-  // T5b: if this rental was Lambda-provisioned, terminate the
-  // provider instance so we stop burning Lambda billing dollars.
+  // T6: terminate the external provider instance (Lambda VM, RunPod
+  // pod, etc.) so we stop burning provider billing dollars. Dispatcher
+  // routes to the right provider based on ExternalRental.provider.
+  // No-op for internal-node-only rentals (no external row to terminate).
   // Wrapped to never block the COMPLETED notification + websocket
-  // emit below.
+  // emit below — a provider terminate failure shouldn't keep the
+  // ComputeRequest from completing on our side. We DO want loud
+  // logging so ops can investigate any leak.
   try {
-    const externalRental = await prisma.externalRental.findUnique({
-      where: { computeRequestId: cr.id },
-      select: { id: true, status: true },
-    })
-    if (externalRental && externalRental.status !== 'CLOSED') {
-      await terminateLambdaRental(prisma, externalRental.id, 'rental term reached (auto-expiry)')
-    }
+    await terminateExternalRentalForRequest(prisma, cr.id, 'rental term reached (auto-expiry)')
   } catch (err) {
-    console.error(`[rental-expiry] terminateLambdaRental failed for ${cr.id}:`, err)
+    if (err instanceof UnknownProviderError) {
+      // eslint-disable-next-line no-console
+      console.error(`[rental-expiry] PROVIDER LEAK for ${cr.id}: ${err.message} — manual ops needed to terminate on provider dashboard`)
+    } else {
+      // eslint-disable-next-line no-console
+      console.error(`[rental-expiry] external terminate failed for ${cr.id}:`, err)
+    }
   }
 
   void createNotification(
