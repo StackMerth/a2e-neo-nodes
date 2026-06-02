@@ -10,6 +10,14 @@
  */
 import { prisma } from '@a2e/database'
 
+// Swallow EPIPE when the script is piped through `head` and the
+// downstream closes early. Without this, every `inference-call:inspect
+// | head` exits with a noisy Node stack trace.
+process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE') process.exit(0)
+  throw err
+})
+
 async function main(): Promise<void> {
   const argId = process.argv[2]
 
