@@ -158,12 +158,11 @@ export class PhalaClient {
       /\/+$/,
       '',
     )
-    // Phala uses APIKeyHeader auth per their OpenAPI spec. The exact
-    // header name (X-API-Key vs Authorization Bearer vs bare
-    // Authorization) is still being verified empirically; the request
-    // method sends both common variants so whichever the gateway
-    // accepts will work. Once we know the canonical one we drop the
-    // redundant header.
+    // Canonical auth scheme verified 2026-06-02 via empirical curl
+    // test: X-API-Key header works (HTTP 200), Bearer returns 401
+    // "Invalid or expired token". Bearer is reserved for Phala's
+    // OAuth2 user-session flow; project API keys (phak_...) only
+    // authenticate via X-API-Key.
     this.apiKey = key
   }
 
@@ -268,12 +267,9 @@ export class PhalaClient {
     const res = await fetch(url, {
       method,
       headers: {
-        // Phala OpenAPI spec says "APIKeyHeader" without naming the
-        // header. Send both common variants; whichever the gateway
-        // recognizes will authenticate. After the first successful
-        // call, simplify to the canonical one.
+        // X-API-Key is the canonical auth header for Phala project
+        // API keys (verified 2026-06-02 — Bearer returns 401).
         'X-API-Key': this.apiKey,
-        Authorization: `Bearer ${this.apiKey}`,
         ...(body ? { 'Content-Type': 'application/json' } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
