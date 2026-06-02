@@ -66,11 +66,46 @@ const SEEDS: ImageSeed[] = [
     metadata: {
       externalProvider: 'openai-compat',
       externalModel: 'black-forest-labs/FLUX.1-schnell',
-      externalBaseUrlEnv: 'TOGETHER_BASE_URL',
+      externalBaseUrl: 'https://api.together.xyz/v1',
       externalApiKeyEnv: 'TOGETHER_API_KEY',
       imagePricing: {
         'default:1024x1024': 0.0027,
         'default:512x512': 0.0014,
+      },
+      defaultSize: '1024x1024',
+      defaultQuality: 'default',
+    },
+  },
+  {
+    // Higher-quality FLUX variant via Together AI. ~10x the cost of
+    // FLUX-schnell but significantly better output quality.
+    modelId: 'black-forest-labs/FLUX.1-dev',
+    metadata: {
+      externalProvider: 'openai-compat',
+      externalModel: 'black-forest-labs/FLUX.1-dev',
+      externalBaseUrl: 'https://api.together.xyz/v1',
+      externalApiKeyEnv: 'TOGETHER_API_KEY',
+      imagePricing: {
+        'default:1024x1024': 0.0275,
+        'default:512x512': 0.0145,
+      },
+      defaultSize: '1024x1024',
+      defaultQuality: 'default',
+    },
+  },
+  {
+    // SDXL base, the workhorse open-source image model. Cheap and
+    // widely understood. Use for buyers who want SDXL specifically
+    // (e.g. existing pipelines that fine-tuned on SDXL outputs).
+    modelId: 'stabilityai/stable-diffusion-xl-base-1.0',
+    metadata: {
+      externalProvider: 'openai-compat',
+      externalModel: 'stabilityai/stable-diffusion-xl-base-1.0',
+      externalBaseUrl: 'https://api.together.xyz/v1',
+      externalApiKeyEnv: 'TOGETHER_API_KEY',
+      imagePricing: {
+        'default:1024x1024': 0.0067,
+        'default:512x512': 0.0035,
       },
       defaultSize: '1024x1024',
       defaultQuality: 'default',

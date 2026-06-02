@@ -57,7 +57,8 @@
     "apikey:grant-inference": "tsx scripts/apikey-grant-inference.ts",
     "inference-call:inspect": "tsx scripts/inference-call-inspect.ts",
     "seed:image-models": "tsx scripts/seed-image-models.ts",
-    "seed:audio-models": "tsx scripts/seed-audio-models.ts"
+    "seed:audio-models": "tsx scripts/seed-audio-models.ts",
+    "seed:chat-models": "tsx scripts/seed-chat-models.ts"
   },
   "dependencies": {
     "@a2e/core": "workspace:*",
