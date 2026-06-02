@@ -46,7 +46,10 @@
  *     buyer's TokenOS balance via existing per-minute-meter.
  */
 
-const DEFAULT_BASE_URL = 'https://cloud-api.phala.network/v1'
+// Verified against Phala's OpenAPI spec at https://docs.phala.com/openapi.json
+// (2026-06-02). The host is `cloud-api.phala.com` (NOT phala.network — that
+// returns nginx 404). All endpoints live under /api/v1/.
+const DEFAULT_BASE_URL = 'https://cloud-api.phala.com/api/v1'
 
 /**
  * Default CVM template image. Phala Cloud publishes pre-built CVM
@@ -142,7 +145,7 @@ export function isPhalaConfigured(): boolean {
 
 export class PhalaClient {
   private readonly base: string
-  private readonly authHeader: string
+  private readonly apiKey: string
 
   constructor(apiKey?: string, baseUrl?: string) {
     const key = (apiKey ?? process.env.PHALA_API_KEY ?? '').trim()
@@ -155,27 +158,23 @@ export class PhalaClient {
       /\/+$/,
       '',
     )
-    // Standard Bearer auth. If Phala requires signed requests with
-    // a private key, this needs to change to a signing wrapper. We'll
-    // discover this when the first real call returns 401.
-    this.authHeader = `Bearer ${key}`
+    // Phala uses APIKeyHeader auth per their OpenAPI spec. The exact
+    // header name (X-API-Key vs Authorization Bearer vs bare
+    // Authorization) is still being verified empirically; the request
+    // method sends both common variants so whichever the gateway
+    // accepts will work. Once we know the canonical one we drop the
+    // redundant header.
+    this.apiKey = key
   }
 
   /**
-   * Catalog of every GPU CVM SKU Phala offers with pricing + TEE
-   * support flags. Endpoint path SUBJECT TO VERIFICATION — Phala's
-   * docs reference both /gpu-types and /templates depending on which
-   * page; we'll lock in once the first real call lands.
+   * Catalog of available GPU instance types Phala offers. Per the
+   * OpenAPI spec the path is /instance-types (sibling of /cvms);
+   * GPU CVMs are filtered by capability. May need refinement once
+   * we see a real response shape.
    */
   async listGpuTypes(): Promise<PhalaGpuType[]> {
-    // TODO Phase 1.2: discover correct endpoint. Possibilities:
-    //   GET /gpu-types
-    //   GET /templates?type=gpu
-    //   GET /cvm-templates
-    //   GraphQL query gpuTypes
-    // Start with the most likely REST path; iterate when 404 / 400
-    // tells us we're wrong.
-    const raw = await this.request<RawGpuTypeResponse[]>('/gpu-types', 'GET')
+    const raw = await this.request<RawGpuTypeResponse[]>('/instance-types', 'GET')
     return raw.map((t) => ({
       id: t.id,
       displayName: t.displayName ?? t.name ?? t.id,
@@ -210,9 +209,20 @@ export class PhalaClient {
   }
 
   /**
-   * Create + start a CVM and begin billing. Confidential VMs typically
-   * take longer to boot than standard pods (TEE attestation handshake
-   * adds ~30-60s) — expect ~90-180s before RUNNING.
+   * Create + start a GPU CVM and begin billing. Per the OpenAPI spec
+   * the GPU-specific endpoint is /cvms/workload which auto-selects a
+   * node from available resources (no separate node-picking step
+   * unlike Lambda's region selection).
+   *
+   * Confidential VMs typically take longer to boot than standard
+   * pods (TEE attestation handshake adds ~30-60s) — expect ~90-180s
+   * before RUNNING.
+   *
+   * Phala's CVM model is Docker Compose-based. We pass our default
+   * Compose template (SSH + CUDA + PUBLIC_KEY injection) so the
+   * buyer's UX matches Lambda/RunPod rentals — they SSH in after the
+   * CVM reaches RUNNING. Compose template lives in
+   * phala-default-compose.ts and is built in Milestone 1.4.
    */
   async createCvm(args: CreateCvmArgs): Promise<string> {
     const body = {
@@ -228,7 +238,7 @@ export class PhalaClient {
         PUBLIC_KEY: args.sshPublicKey,
       },
     }
-    const raw = await this.request<{ id: string }>('/cvms', 'POST', body)
+    const raw = await this.request<{ id: string }>('/cvms/workload', 'POST', body)
     return raw.id
   }
 
@@ -258,7 +268,12 @@ export class PhalaClient {
     const res = await fetch(url, {
       method,
       headers: {
-        Authorization: this.authHeader,
+        // Phala OpenAPI spec says "APIKeyHeader" without naming the
+        // header. Send both common variants; whichever the gateway
+        // recognizes will authenticate. After the first successful
+        // call, simplify to the canonical one.
+        'X-API-Key': this.apiKey,
+        Authorization: `Bearer ${this.apiKey}`,
         ...(body ? { 'Content-Type': 'application/json' } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
