@@ -138,6 +138,11 @@ import {
   createLambdaPollWorker,
   scheduleLambdaPoll,
 } from './jobs/lambda-poll'
+import {
+  createLambdaCapacityWatcherQueue,
+  createLambdaCapacityWatcherWorker,
+  scheduleLambdaCapacityWatcher,
+} from './jobs/lambda-capacity-watcher'
 import { createSshSessionReaperWorker } from './jobs/ssh-session-reaper'
 import {
   createSeedKeepAliveQueue,
@@ -383,6 +388,17 @@ async function start() {
     createLambdaPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleLambdaPoll(lambdaPollQueue)
     server.log.info('Lambda poll worker initialized (10s tick)')
+
+    // T5d: Lambda capacity watcher. Slow-cadence poller that emails
+    // admin when any of the watched SKUs (LAMBDA_CAPACITY_WATCH_SKUS)
+    // has capacity. Built so we can ping early testers the moment 8x
+    // H100 / B200 boxes (perpetually oversubscribed) open up. No-op
+    // when LAMBDA_CAPACITY_WATCH_SKUS is unset, so production deploys
+    // without the flag get zero behavior change.
+    const lambdaCapacityWatcherQueue = createLambdaCapacityWatcherQueue(redisConnection)
+    createLambdaCapacityWatcherWorker({ redis: redisConnection })
+    await scheduleLambdaCapacityWatcher(lambdaCapacityWatcherQueue)
+    server.log.info('Lambda capacity watcher initialized (5min tick, env-driven SKU list)')
 
     // Launch-blocker #2: SSH session reaper. Failsafe for agent-confirmed
     // teardown — force-releases nodes stuck on TERMINATING rentals after

@@ -51,6 +51,7 @@
     "lambda-provision:test": "tsx scripts/lambda-provision-test.ts",
     "topup:diagnose": "tsx scripts/topup-diagnose.ts",
     "stripe:diagnose": "tsx scripts/stripe-diagnose.ts",
+    "lambda-capacity:inspect": "tsx scripts/lambda-capacity-watch-inspect.ts",
     "tokenizer:inspect": "tsx scripts/tokenizer-inspect.ts",
     "inference-workers:inspect": "tsx scripts/inference-workers-inspect.ts",
     "apikey:grant-inference": "tsx scripts/apikey-grant-inference.ts",
