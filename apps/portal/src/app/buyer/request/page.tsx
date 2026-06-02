@@ -656,20 +656,37 @@ export default function RequestComputePage() {
                 : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
               }
             >
+              {/* Custom-styled checkbox: native input is visually hidden;
+                  the visible square is a div whose appearance we control.
+                  Avoids the green system-default border that the browser
+                  was applying around the native checkbox. */}
               <input
                 id="preferDedicatedTier"
                 type="checkbox"
                 checked={preferDedicatedTier}
                 onChange={(e) => setPreferDedicatedTier(e.target.checked)}
-                className="mt-1 h-4 w-4"
-                style={{ accentColor: 'rgb(99, 102, 241)' }}
+                className="sr-only peer"
               />
+              <span
+                aria-hidden="true"
+                className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm transition-colors"
+                style={preferDedicatedTier
+                  ? { background: 'rgb(99, 102, 241)', border: '1px solid rgb(99, 102, 241)' }
+                  : { background: 'transparent', border: '1px solid var(--border-color)' }
+                }
+              >
+                {preferDedicatedTier && (
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M1.5 5L4 7.5L8.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </span>
               <div className="flex-1">
                 <div className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
                   Require dedicated tenancy
                 </div>
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  Routes to Lambda VMs or RunPod SECURE only. Tighter capacity; placement may take longer.
+                  Routes only to single-tenant hardware. Tighter capacity; placement may take longer.
                 </p>
               </div>
             </label>
