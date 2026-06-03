@@ -58,7 +58,7 @@ async function main(): Promise<void> {
     console.log(`Deployment ${dep.id}`)
     console.log(`  name:           ${dep.resourcePrivateName}`)
     console.log(`  status:         ${dep.status}`)
-    console.log(`  hardware:       ${dep.hardwareName} (id ${dep.hardwareId})`)
+    console.log(`  hardware:       ${dep.hardwareName} (deploy_id=${dep.hardwareId})`)
     console.log(`  vms:            ${dep.totalVms}  gpus/vm: ${dep.gpusPerVm}  total gpus: ${dep.totalGpus}`)
     console.log(`  locations:      ${dep.locations.map((l) => l.iso2).join(', ') || '(none)'}`)
     console.log(`  amount paid:    ${dep.amountPaidUsd !== null ? `$${dep.amountPaidUsd.toFixed(2)}` : '(n/a)'}`)
@@ -95,14 +95,14 @@ async function main(): Promise<void> {
 
   const printRow = (h: typeof sorted[number]): void => {
     const price = `$${h.pricePerHourUsd.toFixed(2)}`
-    const storage = `${Math.round(h.storageMb / 1024)}GB`
+    const storage = `${h.storageGb}GB`
     console.log(
-      `  ${String(h.deployId).padStart(5)} ${h.name.padEnd(38)} ${String(h.numCards).padStart(3)}x  ${String(h.vramPerCardGb).padStart(4)}GB  ${String(h.vcpu).padStart(4)}vCPU ${String(h.memoryGb).padStart(5)}GB  ${storage.padStart(7)}  ${h.location.padEnd(8)}  ${price.padStart(7)}  ${h.supplier}`,
+      `  ${h.deployId.padEnd(14)} ${h.name.padEnd(28)} ${String(h.numCards).padStart(3)}x  ${String(h.vramPerCardGb).padStart(4)}GB  ${String(h.vcpu).padStart(4)}vCPU ${String(h.memoryGb).padStart(5)}GB  ${storage.padStart(7)}  ${h.location.padEnd(4)}  ${price.padStart(8)}  ${h.supplier}`,
     )
   }
 
   const header =
-    '  id'.padEnd(7) + 'name'.padEnd(39) + 'gpus '.padStart(5) + 'vram '.padStart(8) + 'cpu '.padStart(7) + ' ram '.padStart(8) + 'storage'.padStart(9) + '  region'.padEnd(10) + '  $/h    supplier'
+    '  deploy_id'.padEnd(16) + 'name'.padEnd(29) + 'gpus '.padStart(5) + 'vram '.padStart(8) + 'cpu '.padStart(7) + ' ram '.padStart(8) + 'storage'.padStart(9) + '  loc '.padEnd(6) + '   $/h   supplier'
 
   let filtered = sorted
   if (wantTdxOnly) {

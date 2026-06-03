@@ -21,13 +21,16 @@
 import type { GpuTier } from '@a2e/database'
 
 export interface IoNetTierMapping {
-  /** io.net deploy_id (numeric, NOT the internal id). */
-  hardwareId: number
+  /**
+   * io.net deploy_id (string like "8B300.240V" — NOT numeric as
+   * the public docs suggested; verified 2026-06-03 against live API).
+   */
+  hardwareId: string
   /** Pretty label for logs / admin UI. */
   label: string
   /** Max GPU count per VM at this SKU. */
   maxGpusPerVm: number
-  /** Default location preference (io.net region code, e.g. "US"). */
+  /** Default location preference (io.net region code, e.g. "US", "FI"). */
   defaultLocation?: string
 }
 
