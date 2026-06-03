@@ -134,6 +134,24 @@ export interface CreateCvmArgs {
   teeMode?: 'TDX' | 'SEV-SNP' | 'ANY'
 }
 
+/**
+ * Result of POST /api/v1/cvms/provision. Phala's "dstack app" model:
+ * provisioning an app uploads the compose file + registers a
+ * content-addressed app identity. Returned app_id + compose_hash are
+ * passed verbatim to /api/v1/cvms in step 2 to actually instantiate
+ * a CVM. Provisioning an app is FREE — only CVMs cost money.
+ *
+ * Shape inferred from the 422 on POST /cvms (which named app_id +
+ * compose_hash as required body fields). Other fields the provision
+ * response may include (kms info, app salt, image hash, etc.) are
+ * captured via the index signature so we can pass them through.
+ */
+export interface PhalaAppProvisioned {
+  app_id: string
+  compose_hash: string
+  [extraField: string]: unknown
+}
+
 export function isPhalaConfigured(): boolean {
   return Boolean(process.env.PHALA_API_KEY?.trim())
 }
@@ -228,52 +246,72 @@ export class PhalaClient {
   }
 
   /**
-   * Create + start a GPU CVM and begin billing. Per the OpenAPI spec
-   * the GPU-specific endpoint is /cvms/workload which auto-selects a
-   * node from available resources (no separate node-picking step
-   * unlike Lambda's region selection).
+   * Step 1 of the CVM creation flow: register a dstack "app" with
+   * Phala. Returns app_id + compose_hash that step 2 uses to launch
+   * the actual CVM. App provisioning is FREE (it just uploads the
+   * compose + computes content hashes); only step 2 (createCvm)
+   * starts billing.
+   *
+   * Verified empirically 2026-06-03:
+   *   - Endpoint: POST /api/v1/cvms/provision
+   *   - Required body fields: compose_file (YAML string), name (str)
+   *   - Returns: { app_id, compose_hash, ...other fields we pass
+   *     through opaquely to step 2 }
+   */
+  async provisionApp(args: {
+    name: string
+    composeFile: string
+  }): Promise<PhalaAppProvisioned> {
+    return await this.request<PhalaAppProvisioned>(
+      '/cvms/provision',
+      'POST',
+      {
+        name: args.name,
+        compose_file: args.composeFile,
+      },
+    )
+  }
+
+  /**
+   * Full CVM creation flow (provisionApp -> launch CVM). Calls step 1
+   * then step 2. Returns the CVM id from step 2.
+   *
+   * Step 2 endpoint: POST /api/v1/cvms (verified — 422 from there
+   * named app_id + compose_hash as required fields). Spreading the
+   * step-1 response into the step-2 body so any extra fields Phala
+   * returns from provisionApp (kms info, app salt, image hash, etc.)
+   * are passed through opaquely without us needing to know each one.
    *
    * Confidential VMs typically take longer to boot than standard
    * pods (TEE attestation handshake adds ~30-60s) — expect ~90-180s
    * before RUNNING.
    *
-   * Phala's CVM model is Docker Compose-based. We pass our default
-   * Compose template (SSH + CUDA + PUBLIC_KEY injection) so the
-   * buyer's UX matches Lambda/RunPod rentals — they SSH in after the
-   * CVM reaches RUNNING. Compose template lives in
-   * phala-default-compose.ts and is built in Milestone 1.4.
+   * Step 2 body field names beyond {app_id, compose_hash} are still
+   * best-guess; the next 422 will name any additional required
+   * fields. Includes instance_type_id + env (PUBLIC_KEY) for SSH
+   * bootstrap, plus optional disk_size_gb.
    */
   async createCvm(args: CreateCvmArgs): Promise<string> {
-    // Build the default SSH+CUDA Compose so the buyer's UX matches
-    // Lambda/RunPod (they SSH in). Custom-image override flows
-    // through to the compose builder; advanced "bring your own
-    // compose" path is a deferred Path B option.
+    // Build the default SSH+CUDA Compose template.
     const compose = buildDefaultPhalaCompose({
       imageName: args.imageName,
       containerDiskInGb: args.containerDiskInGb,
     })
 
-    // Body shape is BEST-GUESS based on common Compose-deploy API
-    // conventions (Phala's OpenAPI CreateWorkloadTappRequest schema
-    // is in the truncated binary section). The first real createCvm
-    // call will return a 422 with the actual required field names;
-    // we adjust those mappings then. Fields likely needed:
-    //   name (or display_name)
-    //   instance_type_id (or instance_type) — e.g. "h200.small"
-    //   compose_file (string YAML) or docker_compose (object)
-    //   env (object) — PUBLIC_KEY for SSH bootstrap
-    //   disk_size_gb (override of default_disk_size_gb from SKU)
-    //
-    // Sending both naming conventions until validation tells us which
-    // wins. Better than nothing for the first attempt.
-    const body = {
+    // Step 1: register the dstack app (free).
+    const app = await this.provisionApp({
       name: args.name,
-      // Most likely field name based on REST conventions:
+      composeFile: compose,
+    })
+
+    // Step 2: launch the CVM. Spread the entire step-1 response so
+    // we don't drop any opaque fields Phala uses for attestation
+    // (kms id, app salt, image hash, etc.), then add the runtime
+    // parameters (instance type, GPU count, env vars, optional disk).
+    const body = {
+      ...app,
       instance_type_id: args.gpuTypeId,
-      // Backup naming Phala may use:
-      instance_type: args.gpuTypeId,
       gpu_count: args.gpuCount,
-      compose_file: compose,
       env: {
         PUBLIC_KEY: args.sshPublicKey,
       },
@@ -281,7 +319,7 @@ export class PhalaClient {
         ? { disk_size_gb: args.containerDiskInGb }
         : {}),
     }
-    const raw = await this.request<{ id: string }>('/cvms/workload', 'POST', body)
+    const raw = await this.request<{ id: string }>('/cvms', 'POST', body)
     return raw.id
   }
 
