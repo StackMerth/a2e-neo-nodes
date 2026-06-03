@@ -175,12 +175,20 @@ export async function provisionIoNetRental(
   // 1-hour minimum (cr.durationDays is days; convert + ceil).
   // First hour is non-refundable so the worst case is we over-pay
   // by 59 minutes on a buyer's sub-hour rental — acceptable.
+  //
+  // BALANCE GOTCHA (verified 2026-06-03): io.net returns 500
+  // "Internal Server Error" when the requested duration_hours *
+  // hourly_rate exceeds account balance. There's no clean way to
+  // pre-check (all /credits and /billing paths 404). If a 500
+  // surfaces here, the caller's most likely failure mode is
+  // insufficient balance, not a real server error.
   const durationHours = Math.max(1, Math.ceil(cr.durationDays * 24))
 
   const resourcePrivateName = `tokenos-${cr.id.slice(0, 18)}-${Date.now().toString(36)}`
 
+  let providerInstanceId: string
   try {
-    await api.deployVm({
+    providerInstanceId = await api.deployVm({
       resourcePrivateName,
       durationHours,
       gpusPerVm: cr.gpuCount,
@@ -192,37 +200,33 @@ export async function provisionIoNetRental(
       vmImageType: options.vmImageType ?? 'general',
     })
   } catch (err) {
+    const msg = (err as Error).message
+    const hint = /500/.test(msg)
+      ? ' (500 from io.net usually means insufficient account balance — required: ~$' +
+        (match.pricePerHourUsd * durationHours).toFixed(2) +
+        ' for ' +
+        durationHours +
+        'h @ $' +
+        match.pricePerHourUsd.toFixed(2) +
+        '/h)'
+      : ''
     throw new IoNetProvisionError(
-      `io.net deployVm failed for ${resolvedLabel}: ${(err as Error).message}`,
+      `io.net deployVm failed for ${resolvedLabel}: ${msg}${hint}`,
       err,
     )
   }
 
-  // Step 4: io.net's POST /deploy returns an empty body, so look up
-  // the deployment by the resource_private_name we just sent. Retry
-  // a couple times since there may be a brief indexing delay.
-  let deployment: IoNetDeployment | null = null
-  for (let i = 0; i < 5; i++) {
-    deployment = await api.findDeploymentByName(resourcePrivateName)
-    if (deployment) break
-    await new Promise((r) => setTimeout(r, 1500))
-  }
-  if (!deployment) {
-    throw new IoNetProvisionError(
-      `io.net deployVm appeared to succeed but no deployment with resource_private_name="${resourcePrivateName}" was found after 5 lookups. Investigate via the io.net dashboard.`,
-    )
-  }
-
-  // Step 5: persist. Region populates from deployment.locations
-  // if set; otherwise placeholder. ssh_access populates after first
-  // worker reaches RUNNING (poll worker updates).
+  // Step 4: persist. Region defaults to resolvedLocation (what we
+  // asked for); the poll worker overwrites if io.net returns
+  // something different. ssh_access populates after first worker
+  // reaches RUNNING (poll worker updates).
   const encryptedPrivKey = encryptPrivateKey(keypair.privateKeyPem)
-  const region = deployment.locations[0]?.iso2 ?? options.location ?? '(pending)'
+  const region = resolvedLocation
   const row = await prisma.externalRental.create({
     data: {
       computeRequestId: cr.id,
       provider: 'IONET',
-      providerInstanceId: deployment.id,
+      providerInstanceId,
       providerSshKeyId: null,
       providerInstanceType: resolvedHardwareId,
       providerRegion: region,
@@ -237,7 +241,7 @@ export async function provisionIoNetRental(
 
   return {
     externalRentalId: row.id,
-    providerInstanceId: deployment.id,
+    providerInstanceId,
     providerInstanceType: resolvedHardwareId,
     providerRegion: region,
     providerPricePerHourUsd: match.pricePerHourUsd,

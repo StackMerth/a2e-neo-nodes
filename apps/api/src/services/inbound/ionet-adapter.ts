@@ -291,10 +291,15 @@ export class IoNetClient {
   }
 
   /**
-   * Provision a VM. Returns the resource_private_name so the caller
-   * can immediately call listDeployments({status: 'deployment requested'})
-   * to discover the assigned deployment_id (io.net's POST /deploy
-   * returns an empty body — the id is not in the response).
+   * Provision a VM. Returns the deployment_id directly from io.net's
+   * response (verified empirically 2026-06-03: response shape is
+   * `{status:"success", deployment_id:"<uuid>"}`, contradicting the
+   * docs which claimed an empty body).
+   *
+   * 500 ERRORS USUALLY MEAN INSUFFICIENT BALANCE on io.net's side.
+   * The /credits/check endpoint isn't exposed (all balance-check
+   * paths 404), so we can't pre-flight. If you get a 500 here,
+   * try a shorter duration_hours and/or a cheaper SKU.
    */
   async deployVm(args: DeployVmArgs): Promise<string> {
     if (args.locationIds && args.nodePoolId) {
@@ -312,8 +317,19 @@ export class IoNetClient {
     if (args.nodePoolId) body.node_pool_id = args.nodePoolId
     if (args.networkServices) body.network_services = args.networkServices
 
-    await this.request<unknown>('/deploy', 'POST', body)
-    return args.resourcePrivateName
+    const res = await this.request<{ status?: string; deployment_id?: string } | null>(
+      '/deploy',
+      'POST',
+      body,
+    )
+    if (!res || !res.deployment_id) {
+      throw new IoNetApiError(
+        500,
+        '/deploy',
+        `Unexpected response body: ${JSON.stringify(res)}. Expected {status, deployment_id}.`,
+      )
+    }
+    return res.deployment_id
   }
 
   /**
