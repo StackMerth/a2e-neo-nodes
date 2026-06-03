@@ -16,15 +16,19 @@
  * Returns null for unmapped (tier, count) — allocator skips io.net
  * and falls through to WAITING_ON_CAPACITY.
  *
- * CATALOG DRIFT: io.net rotates SKUs frequently. Verified once
- * (2026-06-03 morning) and again the same day, 1L40S.20V had been
- * dropped and replaced with a plain "L40S" deploy_id. The
- * orchestrator's listHardware-and-verify step at provision time
- * catches stale entries (returns "io.net has no hardware with
- * deploy_id X") so requests don't silently fail — they just bypass
- * io.net for that tier until the mapping gets updated. Re-run
- * `pnpm --filter @a2e/api ionet:inspect --raw` periodically and
- * refresh this file.
+ * CATALOG DRIFT: io.net rotates SKUs FREQUENTLY. Observed three
+ * different L40S 1x SKUs across a single 30-minute window on
+ * 2026-06-03 (1L40S.20V -> L40S -> 1L40S.20V). The orchestrator's
+ * listHardware-and-verify step at provision time catches stale
+ * entries (returns "io.net has no hardware with deploy_id X") so
+ * requests don't silently fail — they just bypass io.net for that
+ * tier until the mapping gets updated.
+ *
+ * TODO(t5g.followup): dynamic SKU discovery — instead of fixed
+ * hardwareId per (tier, count), scan the live catalog for any SKU
+ * matching gpu_name + num_cards and pick the cheapest. Removes the
+ * need to chase rotations manually. Trade-off: slightly slower
+ * provision path (extra filter call) for resilience.
  */
 
 import type { GpuTier } from '@a2e/database'
@@ -140,18 +144,18 @@ const MAPPING: Partial<Record<GpuTier, Partial<Record<number, IoNetTierMapping>>
   },
   L40S: {
     1: {
-      // io.net dropped 1L40S.20V (FI, $1.73, 20 vCPU) from the
-      // catalog between 2026-06-03 morning + evening probes. The
-      // replacement deploy_id is simply "L40S" (FR/PL, $1.70, 8
-      // vCPU/96GB RAM — smaller box than the old SKU). Note that
-      // multiple SKU rows can share the same deploy_id with
-      // different regions; we pick FR as the default location and
-      // io.net resolves to whichever has capacity.
-      hardwareId: 'L40S',
+      // SKU rotation churn observed 2026-06-03: 1L40S.20V (FI, $1.73)
+      // -> "L40S" (FR/PL, $1.70) -> 1L40S.20V (FI, $1.73) again,
+      // all within hours. io.net's marketplace deploy_ids appear/
+      // disappear as suppliers come and go. Current default reflects
+      // what's live RIGHT NOW; we should add dynamic SKU discovery
+      // (see TODO below) so the allocator gracefully handles missing
+      // deploy_ids by scanning the catalog for any matching tier/count.
+      hardwareId: '1L40S.20V',
       label: 'L40S 48GB (1x)',
       gpusPerVm: 1,
-      defaultLocation: 'FR',
-      approxPricePerHourUsd: 1.7,
+      defaultLocation: 'FI',
+      approxPricePerHourUsd: 1.73,
     },
     2: {
       hardwareId: 'L40Sx2',
