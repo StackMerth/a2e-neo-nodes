@@ -261,6 +261,13 @@ export class PhalaClient {
   async provisionApp(args: {
     name: string
     composeFile: Record<string, unknown>
+    /**
+     * Phala SKU id (e.g. "h200.small"). REQUIRED — dstack apps are
+     * SKU-bound at provision time so the app identity is reproducible
+     * for attestation (verified 2026-06-03: omitting yields ERR-02-008
+     * "You must specify either instance_type or vcpu/memory pair").
+     */
+    instanceType: string
   }): Promise<PhalaAppProvisioned> {
     return await this.request<PhalaAppProvisioned>(
       '/cvms/provision',
@@ -268,6 +275,7 @@ export class PhalaClient {
       {
         name: args.name,
         compose_file: args.composeFile,
+        instance_type: args.instanceType,
       },
     )
   }
@@ -303,10 +311,13 @@ export class PhalaClient {
       containerDiskInGb: args.containerDiskInGb,
     })
 
-    // Step 1: register the dstack app (free).
+    // Step 1: register the dstack app (free). The app is SKU-bound
+    // at this step so attestation can pin to the exact hardware
+    // class — this is the dstack model.
     const app = await this.provisionApp({
       name: args.name,
       composeFile: compose,
+      instanceType: args.gpuTypeId,
     })
 
     // Step 2: launch the CVM. Spread the entire step-1 response so
