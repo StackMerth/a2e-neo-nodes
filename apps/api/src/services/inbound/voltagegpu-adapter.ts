@@ -52,18 +52,30 @@
 const DEFAULT_BASE_URL = 'https://api.voltagegpu.com/api/volt'
 
 /**
- * Default template UID — "Docker and Systemd Container" template
- * verified in inventory 2026-06-03 (volt templates list). Has
- * systemd as PID 1 (long-running) + sshd configured + injects the
- * registered SSH keys at boot. Required because plain image names
- * like "ubuntu:22.04" exit immediately (code 0 -> Kubernetes
- * CrashLoopBackOff -> pod status flips to "error").
+ * Default container image. VoltageGPU's deploy body needs either
+ * (resource_name + image) or template_uid. Plain "ubuntu:22.04"
+ * has no PID 1 daemon -> exits immediately -> CrashLoopBackOff
+ * (verified by error message "Container keeps crashing — back-off
+ * 2m40s ..." 2026-06-03).
  *
- * Override per-pod by passing template/image explicitly. Future
- * enhancement: let buyers choose Jupyter / Docker / custom from
- * the portal UI.
+ * Default is the runpod/pytorch image which we already use for
+ * Phala: openssh-server + CUDA 12.4 + long-running entrypoint that
+ * processes PUBLIC_KEY env injection. Public Docker Hub image,
+ * platform-agnostic, proven to keep running in Kubernetes-style
+ * GPU compute environments (targon, which underlies VoltageGPU,
+ * uses Kubernetes).
+ *
+ * Buyer can override per-rental with a custom image or template_uid
+ * once the portal exposes that choice.
+ *
+ * Note: the public "Docker and Systemd" template (tpl-igm0l8262qxp)
+ * looks tempting but is BOUND to resource_name="cpu-small" in the
+ * VoltageGPU catalog — it cannot serve H100 traffic. Templates here
+ * carry their resource binding; for GPU buyers we send
+ * resource_name + image explicitly instead.
  */
-export const VOLTAGEGPU_DEFAULT_TEMPLATE = 'tpl-igm0l8262qxp'
+export const VOLTAGEGPU_DEFAULT_IMAGE =
+  'runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04'
 
 /** Constant jump-host SSH endpoint (verified 2026-06-03). */
 export const VOLTAGEGPU_SSH_HOST = 'ssh.voltagegpu.com'
@@ -174,16 +186,19 @@ export interface CreatePodArgs {
   /** Whether to enforce confidential compute. Default true. */
   confidential?: boolean
   /**
-   * Template UID for the pod's container manifest. Templates provide
-   * a long-running PID 1 + sshd + GPU drivers. Defaults to
-   * VOLTAGEGPU_DEFAULT_TEMPLATE (Docker + Systemd). Mutually
-   * exclusive with `image`.
+   * Template UID (volt templates list). VoltageGPU templates carry
+   * a resource_name binding — picking a CPU-bound template would
+   * spin up CPU not the GPU the buyer asked for. When set, the
+   * adapter sends template_uid alone and does NOT include
+   * resource_name + image. Use only when buyer accepts the
+   * template's hardware. Mutually exclusive with image.
    */
-  template?: string
+  template_uid?: string
   /**
-   * Custom Docker image. Must have a long-running PID 1 (otherwise
-   * Kubernetes CrashLoopBackOff). Mutually exclusive with `template`.
-   * Setting this overrides the default template.
+   * Custom Docker image. Defaults to VOLTAGEGPU_DEFAULT_IMAGE
+   * (runpod/pytorch). Must have long-running PID 1 or the
+   * container exits and triggers CrashLoopBackOff. Sent alongside
+   * resource_name. Mutually exclusive with template_uid.
    */
   image?: string
 }
@@ -305,15 +320,24 @@ export class VoltageGpuClient {
     // and triggers CrashLoopBackOff. Default to the systemd template
     // which has long-running PID 1 + sshd configured. Buyer can
     // override per-rental via args.image or args.template.
+    // Per the VoltageGPU API error message "name is required, plus
+    // either (resource_name and image) or template_uid":
+    //   - template_uid path: pod inherits resource_name from the
+    //     template manifest (NOT what we want for SKU-driven flows)
+    //   - resource_name + image path: explicit hardware + container
+    //     (what we use by default for GPU rentals)
     const body: Record<string, unknown> = {
       provider: args.provider ?? 'targon',
       name: args.name,
-      resource_name: args.gpuType,
     }
-    if (args.image) {
-      body.image = args.image
+    if (args.template_uid) {
+      // Buyer explicitly chose a template; the SKU is whatever the
+      // template manifest declares.
+      body.template_uid = args.template_uid
     } else {
-      body.template = args.template ?? VOLTAGEGPU_DEFAULT_TEMPLATE
+      // Default path: GPU SKU + long-running container image.
+      body.resource_name = args.gpuType
+      body.image = args.image ?? VOLTAGEGPU_DEFAULT_IMAGE
     }
     if (args.sshKeyIds && args.sshKeyIds.length > 0) {
       body.ssh_keys = args.sshKeyIds
