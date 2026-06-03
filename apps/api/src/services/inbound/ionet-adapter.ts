@@ -253,41 +253,64 @@ export class IoNetClient {
     if (filters?.page !== undefined) qs.set('page', String(filters.page))
     if (filters?.pageSize !== undefined) qs.set('page_size', String(filters.pageSize))
     const suffix = qs.toString() ? `?${qs.toString()}` : ''
-    const raw = await this.request<{ deployments?: RawDeploymentItem[] } | RawDeploymentItem[]>(
+    // All io.net GET endpoints wrap their payload in {data: ...}
+    // (verified 2026-06-03). Handle every plausible nesting.
+    type Wrapped = {
+      data?: { deployments?: RawDeploymentItem[]; workers?: RawDeploymentItem[] } | RawDeploymentItem[]
+      deployments?: RawDeploymentItem[]
+    }
+    const raw = await this.request<Wrapped | RawDeploymentItem[]>(
       `/deployments${suffix}`,
       'GET',
     )
-    // Docs are vague about whether /deployments returns an array
-    // directly or wraps it in {deployments:[]}. Handle both.
-    const items = Array.isArray(raw) ? raw : (raw.deployments ?? [])
+    let items: RawDeploymentItem[]
+    if (Array.isArray(raw)) {
+      items = raw
+    } else if (Array.isArray(raw.data)) {
+      items = raw.data
+    } else if (raw.data?.deployments) {
+      items = raw.data.deployments
+    } else if (raw.deployments) {
+      items = raw.deployments
+    } else {
+      items = []
+    }
     return items.map(normalizeDeployment)
   }
 
-  /** Fetch a single deployment by id. */
+  /** Fetch a single deployment by id. Response is wrapped: {data: {...}}. */
   async getDeployment(id: string): Promise<IoNetDeployment> {
-    const raw = await this.request<RawDeploymentItem>(
+    const raw = (await this.request<unknown>(
       `/deployment/${encodeURIComponent(id)}`,
       'GET',
-    )
-    return normalizeDeployment(raw)
+    )) as { data?: RawDeploymentItem } & RawDeploymentItem
+    // Unwrap data envelope (verified shape 2026-06-03).
+    const item: RawDeploymentItem = raw.data ?? raw
+    return normalizeDeployment(item)
   }
 
   /**
    * Fetch the VMs/workers under a deployment. Single-VM rentals
    * return a workers[] of length 1; clusters return one entry per
    * worker. ssh_access + public_ip populate after the worker reaches
-   * running status.
+   * running status. Response is wrapped: {data: {total, workers}}.
    */
   async getDeploymentVms(
     id: string,
     page = 1,
     pageSize = 20,
   ): Promise<IoNetVm[]> {
-    const raw = await this.request<{ total: number; workers: RawVmItem[] }>(
+    const raw = (await this.request<unknown>(
       `/deployment/${encodeURIComponent(id)}/vms?page=${page}&page_size=${pageSize}`,
       'GET',
-    )
-    return (raw.workers ?? []).map(normalizeVm)
+    )) as {
+      data?: { total?: number; workers?: RawVmItem[] }
+      total?: number
+      workers?: RawVmItem[]
+    }
+    // Unwrap data envelope (verified shape 2026-06-03).
+    const inner = raw.data ?? raw
+    return (inner.workers ?? []).map(normalizeVm)
   }
 
   /**
@@ -457,7 +480,13 @@ interface RawDeploymentItem {
   id: string
   resource_private_name?: string
   status?: IoNetDeploymentStatus
-  hardware_id?: string
+  /**
+   * NOTE: this is the INTERNAL numeric id of the hardware row
+   * (verified 2026-06-03: returned as `26` for an A6000 deployment),
+   * NOT the string deploy_id we sent on POST /deploy. Coerced to
+   * string in the normalizer so consumers can treat it uniformly.
+   */
+  hardware_id?: string | number
   hardware_name?: string
   total_gpus?: number
   gpus_per_vm?: number
@@ -478,7 +507,7 @@ function normalizeDeployment(raw: RawDeploymentItem): IoNetDeployment {
     id: raw.id,
     resourcePrivateName: raw.resource_private_name ?? '',
     status: raw.status ?? 'deployment requested',
-    hardwareId: raw.hardware_id ?? '',
+    hardwareId: raw.hardware_id !== undefined ? String(raw.hardware_id) : '',
     hardwareName: raw.hardware_name ?? 'unknown',
     totalGpus: raw.total_gpus ?? 0,
     gpusPerVm: raw.gpus_per_vm ?? 1,
