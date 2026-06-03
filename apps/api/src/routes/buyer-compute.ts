@@ -864,6 +864,8 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         providerInstanceType: true,
         providerRegion: true,
         launchedAt: true,
+        attestationUrl: true,
+        attestationFetchedAt: true,
       },
     })
     if (!ext) return reply.code(404).send({ error: 'No external rental for this request' })
@@ -896,6 +898,11 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       instanceType: ext.providerInstanceType,
       region: ext.providerRegion,
       launchedAt: ext.launchedAt,
+      // T7: cryptographic attestation report. Only populated for
+      // confidential providers (VoltageGPU / Phala / io.net-allow-
+      // listed); null for Lambda / RunPod / internal nodes.
+      attestationUrl: ext.attestationUrl,
+      attestationFetchedAt: ext.attestationFetchedAt,
     })
   })
 

@@ -586,6 +586,10 @@ export const buyer = {
       instanceType: string
       region: string
       launchedAt: string | null
+      // T7: cryptographic attestation report link. Only set on
+      // confidential rentals (VoltageGPU / Phala / io.net allow-listed).
+      attestationUrl: string | null
+      attestationFetchedAt: string | null
     }>(`/v1/buyer/compute/requests/${id}/external-credentials`),
   rate: (id: string, data: { score: number; comment?: string }) =>
     apiFetch(`/v1/buyer/compute/requests/${id}/rate`, { method: 'POST', body: data }),

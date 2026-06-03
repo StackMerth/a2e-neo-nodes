@@ -284,6 +284,13 @@ export async function pollPhalaRentalStatus(
   if (cvm.region && row.providerRegion === '(phala)') {
     updates.providerRegion = cvm.region
   }
+  // T7: capture Phala's attestation report URL when the CVM exposes
+  // it (post TEE handshake on TDX+SEV-SNP H200 SKUs). Buyers verify
+  // their confidential workload via this link.
+  if (cvm.attestationReportUrl && row.attestationUrl !== cvm.attestationReportUrl) {
+    updates.attestationUrl = cvm.attestationReportUrl
+    updates.attestationFetchedAt = new Date()
+  }
   if (newStatus === 'CLOSED' && !row.terminatedAt) {
     updates.terminatedAt = new Date()
   }

@@ -701,7 +701,7 @@ export default function RequestComputePage() {
         {/* T7: Confidential Compute */}
         <FormCard
           title="Confidential Compute"
-          description="Hardware-attested TEE — Intel TDX with NVIDIA Hopper CC mode."
+          description="Hardware-attested TEE (Intel TDX or AMD SEV-SNP) with GPU CC mode."
           icon={Workflow}
         >
           <FormSection>
@@ -739,7 +739,7 @@ export default function RequestComputePage() {
                   Require confidential compute
                 </div>
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  Routes only to TEE-enabled hardware (Intel TDX with GPU CC mode). Memory and PCIe traffic encrypted; cryptographic attestation available. Specialized supply &mdash; placement may take longer or wait for capacity.
+                  Encrypted memory, attested by Intel TDX or AMD SEV-SNP with GPU CC. Specialized supply, placement may take longer.
                 </p>
               </div>
             </label>
