@@ -89,7 +89,11 @@ export interface VoltageGpuOffer {
   raw: Record<string, unknown>
 }
 
-/** Pod lifecycle states. Values BEST-GUESS, verify empirically. */
+/**
+ * Pod lifecycle states. VoltageGPU returns UPPERCASE values
+ * (verified 2026-06-03: "RUNNING" in createPod response). Adapter
+ * accepts mixed case; normalizer lower-cases for internal mapping.
+ */
 export type VoltageGpuPodStatus =
   | 'creating'
   | 'starting'
@@ -272,13 +276,24 @@ export class VoltageGpuClient {
       body.ssh_keys = args.sshKeyIds
     }
     const raw = await this.request<unknown>('/pods', 'POST', body)
-    // BEST-GUESS response shape: { pod_id, status } or { id }, etc.
-    const r = raw as { id?: string; pod_id?: string; data?: { id?: string; pod_id?: string } }
-    const id = r.id ?? r.pod_id ?? r.data?.id ?? r.data?.pod_id
+    // Verified response shape 2026-06-03:
+    //   { "success": true, "pod": { "id": "...", "targonUid": "...",
+    //     "ssh_command": "ssh <targonUid>@ssh.voltagegpu.com",
+    //     "status": "RUNNING", "provider": "confidential", ... } }
+    // We extract pod.id as the canonical pod identifier. Legacy
+    // fallbacks kept for forward-compat in case shape changes.
+    const r = raw as {
+      success?: boolean
+      pod?: { id?: string; targonUid?: string }
+      id?: string
+      pod_id?: string
+      data?: { id?: string; pod_id?: string }
+    }
+    const id = r.pod?.id ?? r.id ?? r.pod_id ?? r.data?.id ?? r.data?.pod_id
     if (!id) {
       throw new VoltageGpuApiError(
         500,
-        '/pods/create',
+        '/pods',
         `Could not extract pod id from response: ${JSON.stringify(raw)}`,
       )
     }
@@ -400,36 +415,84 @@ function normalizeOffer(raw: RawOfferItem): VoltageGpuOffer {
   }
 }
 
+/**
+ * Real GET /pods/{id} response (verified 2026-06-03):
+ *   {
+ *     "id": "<cuid>",
+ *     "targonUid": "wrk-<base32>",
+ *     "name": "tokenos-...",
+ *     "resource_name": "h100-small",
+ *     "image": "ubuntu:22.04",
+ *     "hourlyPrice": 3.75,
+ *     "status": "RUNNING",
+ *     "provider": "confidential",
+ *     "ssh_command": "ssh <targonUid>@ssh.voltagegpu.com"
+ *   }
+ *
+ * SSH model is a JUMP HOST, not direct: buyers SSH to
+ * ssh.voltagegpu.com using the targonUid as username. The jump
+ * server proxies to the actual TDX pod. No public IP exposed;
+ * isolation is by design.
+ */
 interface RawPodItem {
   id?: string
   pod_id?: string
-  status?: VoltageGpuPodStatus
+  targonUid?: string
+  status?: string
+  resource_name?: string
   gpu_type?: string
   gpu_count?: number
   region?: string
   public_ip?: string
+  ssh_command?: string
   ssh_port?: number
   ssh_user?: string
   ssh_username?: string
+  hourlyPrice?: number
   price_per_hour?: number
+  provider?: string
   attestation_url?: string
   attestation_report_url?: string
   created_at?: string
   [extra: string]: unknown
 }
 
+/**
+ * Parse VoltageGPU's ssh_command string into (host, user) parts.
+ * Format: "ssh <user>@<host>" (no port flag implies default 22).
+ */
+function parseSshCommand(s: string | undefined): { host: string | null; user: string | null } {
+  if (!s) return { host: null, user: null }
+  const m = s.match(/ssh\s+(?:-p\s+\d+\s+)?([^@\s]+)@([\w.\-]+)/i)
+  if (!m) return { host: null, user: null }
+  return { user: m[1] ?? null, host: m[2] ?? null }
+}
+
 function normalizePod(raw: RawPodItem): VoltageGpuPod {
+  // Status comes back uppercase from VoltageGPU; downcast for our
+  // mapVoltageGpuStatus enum.
+  const status = ((raw.status ?? 'creating') as string).toLowerCase() as VoltageGpuPodStatus
+  // SSH model: prefer the structured fields if present, else fall
+  // back to parsing the ssh_command string ("ssh <targonUid>@<host>").
+  const parsed = parseSshCommand(raw.ssh_command)
+  const sshHost = raw.public_ip ?? parsed.host
+  const sshUser =
+    raw.ssh_user ?? raw.ssh_username ?? raw.targonUid ?? parsed.user
   return {
     id: raw.id ?? raw.pod_id ?? '',
-    status: raw.status ?? 'creating',
-    gpuType: raw.gpu_type ?? '',
+    status,
+    gpuType: raw.gpu_type ?? raw.resource_name ?? '',
     gpuCount: raw.gpu_count ?? 1,
     region: raw.region ?? null,
-    publicIp: raw.public_ip ?? null,
-    sshPort: typeof raw.ssh_port === 'number' ? raw.ssh_port : null,
-    sshUser: raw.ssh_user ?? raw.ssh_username ?? null,
+    publicIp: sshHost,
+    sshPort: typeof raw.ssh_port === 'number' ? raw.ssh_port : 22,
+    sshUser,
     pricePerHourUsd:
-      typeof raw.price_per_hour === 'number' ? raw.price_per_hour : null,
+      typeof raw.hourlyPrice === 'number'
+        ? raw.hourlyPrice
+        : typeof raw.price_per_hour === 'number'
+          ? raw.price_per_hour
+          : null,
     attestationReportUrl: raw.attestation_url ?? raw.attestation_report_url ?? null,
     createdAt: raw.created_at ?? null,
     raw,
