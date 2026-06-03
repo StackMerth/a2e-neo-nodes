@@ -51,6 +51,23 @@
 // docs.voltagegpu.com 2026-06-03.
 const DEFAULT_BASE_URL = 'https://api.voltagegpu.com/api/volt'
 
+/**
+ * Default template UID — "Docker and Systemd Container" template
+ * verified in inventory 2026-06-03 (volt templates list). Has
+ * systemd as PID 1 (long-running) + sshd configured + injects the
+ * registered SSH keys at boot. Required because plain image names
+ * like "ubuntu:22.04" exit immediately (code 0 -> Kubernetes
+ * CrashLoopBackOff -> pod status flips to "error").
+ *
+ * Override per-pod by passing template/image explicitly. Future
+ * enhancement: let buyers choose Jupyter / Docker / custom from
+ * the portal UI.
+ */
+export const VOLTAGEGPU_DEFAULT_TEMPLATE = 'tpl-igm0l8262qxp'
+
+/** Constant jump-host SSH endpoint (verified 2026-06-03). */
+export const VOLTAGEGPU_SSH_HOST = 'ssh.voltagegpu.com'
+
 export class VoltageGpuApiError extends Error {
   constructor(
     public statusCode: number,
@@ -116,7 +133,31 @@ export interface VoltageGpuPod {
   createdAt: string | null
   /** Attestation report (DCAP quote or URL); Phase 1.8+ surface. */
   attestationReportUrl: string | null
+  /**
+   * Human-readable status message from the provider (verified GET
+   * response 2026-06-03 includes a `message` field on error states,
+   * e.g. "Container keeps crashing — back-off 2m40s ..."). Useful
+   * to surface in ExternalRental.lastError for failed rentals.
+   */
+  statusMessage: string | null
   raw: Record<string, unknown>
+}
+
+/**
+ * Rich result returned by createPod. The POST /pods response
+ * contains SSH connection info (targonUid, ssh_command) that the
+ * GET /pods/{id} response does NOT include — so we must persist
+ * SSH credentials at provision time, not during polling.
+ */
+export interface CreatePodResult {
+  /** Canonical pod id (cuid). Use for getPod / terminatePod URLs. */
+  id: string
+  /** Worker uid for the jump-host SSH connection (e.g. "wrk-..."). */
+  targonUid: string | null
+  /** Full ssh_command string ("ssh <targonUid>@ssh.voltagegpu.com"). */
+  sshCommand: string | null
+  /** Initial status from create response (often "running" already). */
+  status: VoltageGpuPodStatus | null
 }
 
 export interface CreatePodArgs {
@@ -132,6 +173,19 @@ export interface CreatePodArgs {
   region?: string
   /** Whether to enforce confidential compute. Default true. */
   confidential?: boolean
+  /**
+   * Template UID for the pod's container manifest. Templates provide
+   * a long-running PID 1 + sshd + GPU drivers. Defaults to
+   * VOLTAGEGPU_DEFAULT_TEMPLATE (Docker + Systemd). Mutually
+   * exclusive with `image`.
+   */
+  template?: string
+  /**
+   * Custom Docker image. Must have a long-running PID 1 (otherwise
+   * Kubernetes CrashLoopBackOff). Mutually exclusive with `template`.
+   * Setting this overrides the default template.
+   */
+  image?: string
 }
 
 export function isVoltageGpuConfigured(): boolean {
@@ -241,55 +295,50 @@ export class VoltageGpuClient {
    * still BEST-GUESS — iterate from the first 422 response if it
    * surfaces required fields we missed.
    */
-  async createPod(args: CreatePodArgs & { sshKeyIds?: string[]; image?: string; provider?: string }): Promise<string> {
+  async createPod(args: CreatePodArgs & { sshKeyIds?: string[]; provider?: string }): Promise<CreatePodResult> {
     // Verified body shape captured 2026-06-03 via httpx monkey-patch
-    // of the official volt CLI (volt cc deploy). Required fields:
-    //   provider:      "targon" (VoltageGPU's underlying supplier; can
-    //                  be read from listOffers raw response per-SKU,
-    //                  defaulting to "targon" since all current SKUs
-    //                  use it)
-    //   name:          string identifier
-    //   resource_name: e.g. "h100-small" (matches inventory)
-    //   image:         Docker image, e.g. "ubuntu:22.04"
+    // of the official volt CLI + first real provision.
+    // Required: provider, name, resource_name, plus EITHER image
+    // OR template. Optional: ssh_keys (array of pre-registered uids).
     //
-    // Optional:
-    //   ssh_keys:      array of pre-registered SSH key UIDs from
-    //                  POST /api/volt/ssh-keys
-    //
-    // Notes:
-    //   - The 405 our adapter saw earlier was due to missing provider
-    //     + image fields; the API returns 405 for malformed body, NOT
-    //     422. With valid body, balance-related rejection surfaces as
-    //     402 Payment Required.
-    //   - confidential_compute is NOT in the body — confidentiality
-    //     is intrinsic to the resource_name tier (all h100/h200/b200
-    //     SKUs are TDX-sealed by default per VoltageGPU's catalog).
-    //   - gpu_count is implicit in resource_name (h100-small=1,
-    //     h100-medium=2, h100-large=4, h100-xlarge=8) — not in body.
+    // Default image (ubuntu:22.04) is INVALID — it exits immediately
+    // and triggers CrashLoopBackOff. Default to the systemd template
+    // which has long-running PID 1 + sshd configured. Buyer can
+    // override per-rental via args.image or args.template.
     const body: Record<string, unknown> = {
       provider: args.provider ?? 'targon',
       name: args.name,
       resource_name: args.gpuType,
-      image: args.image ?? 'ubuntu:22.04',
+    }
+    if (args.image) {
+      body.image = args.image
+    } else {
+      body.template = args.template ?? VOLTAGEGPU_DEFAULT_TEMPLATE
     }
     if (args.sshKeyIds && args.sshKeyIds.length > 0) {
       body.ssh_keys = args.sshKeyIds
     }
     const raw = await this.request<unknown>('/pods', 'POST', body)
-    // Verified response shape 2026-06-03:
-    //   { "success": true, "pod": { "id": "...", "targonUid": "...",
-    //     "ssh_command": "ssh <targonUid>@ssh.voltagegpu.com",
-    //     "status": "RUNNING", "provider": "confidential", ... } }
-    // We extract pod.id as the canonical pod identifier. Legacy
-    // fallbacks kept for forward-compat in case shape changes.
+    // POST response shape:
+    //   { "success": true, "pod": { "id", "targonUid",
+    //     "ssh_command", "status": "RUNNING", "provider": "...", ... } }
+    // SSH info (targonUid, ssh_command) is ONLY here — GET /pods/{id}
+    // does NOT return it. Caller MUST persist SSH details at provision
+    // time using the returned CreatePodResult, not wait for poll.
     const r = raw as {
       success?: boolean
-      pod?: { id?: string; targonUid?: string }
+      pod?: {
+        id?: string
+        targonUid?: string
+        ssh_command?: string
+        status?: string
+      }
       id?: string
       pod_id?: string
       data?: { id?: string; pod_id?: string }
     }
-    const id = r.pod?.id ?? r.id ?? r.pod_id ?? r.data?.id ?? r.data?.pod_id
+    const pod = r.pod
+    const id = pod?.id ?? r.id ?? r.pod_id ?? r.data?.id ?? r.data?.pod_id
     if (!id) {
       throw new VoltageGpuApiError(
         500,
@@ -297,7 +346,14 @@ export class VoltageGpuClient {
         `Could not extract pod id from response: ${JSON.stringify(raw)}`,
       )
     }
-    return id
+    return {
+      id,
+      targonUid: pod?.targonUid ?? null,
+      sshCommand: pod?.ssh_command ?? null,
+      status: pod?.status
+        ? (pod.status.toLowerCase() as VoltageGpuPodStatus)
+        : null,
+    }
   }
 
   /**
@@ -418,27 +474,32 @@ function normalizeOffer(raw: RawOfferItem): VoltageGpuOffer {
 /**
  * Real GET /pods/{id} response (verified 2026-06-03):
  *   {
- *     "id": "<cuid>",
- *     "targonUid": "wrk-<base32>",
- *     "name": "tokenos-...",
- *     "resource_name": "h100-small",
- *     "image": "ubuntu:22.04",
- *     "hourlyPrice": 3.75,
- *     "status": "RUNNING",
- *     "provider": "confidential",
- *     "ssh_command": "ssh <targonUid>@ssh.voltagegpu.com"
+ *     "uid": "wrk-2cj7aibmu91j",
+ *     "workload_type": "RENTAL",
+ *     "status": "error",
+ *     "message": "Container keeps crashing — back-off 2m40s ...",
+ *     "ready_replicas": 0,
+ *     "total_replicas": 0,
+ *     "updated_at": "2026-06-03T21:25:17.461136Z"
  *   }
  *
- * SSH model is a JUMP HOST, not direct: buyers SSH to
- * ssh.voltagegpu.com using the targonUid as username. The jump
- * server proxies to the actual TDX pod. No public IP exposed;
- * isolation is by design.
+ * VERY DIFFERENT from the POST /pods response. SSH info is NOT here —
+ * only the workload status. We capture SSH at provision time and
+ * use this response only to update status + capture error messages.
  */
 interface RawPodItem {
+  // GET response fields
+  uid?: string
+  workload_type?: string
+  status?: string
+  message?: string
+  ready_replicas?: number
+  total_replicas?: number
+  updated_at?: string
+  // POST response fields (kept for createPod normalization)
   id?: string
   pod_id?: string
   targonUid?: string
-  status?: string
   resource_name?: string
   gpu_type?: string
   gpu_count?: number
@@ -469,17 +530,16 @@ function parseSshCommand(s: string | undefined): { host: string | null; user: st
 }
 
 function normalizePod(raw: RawPodItem): VoltageGpuPod {
-  // Status comes back uppercase from VoltageGPU; downcast for our
-  // mapVoltageGpuStatus enum.
+  // VoltageGPU returns mixed-case status across endpoints
+  // ("RUNNING" in POST, "error" in GET). Lowercase before mapping.
   const status = ((raw.status ?? 'creating') as string).toLowerCase() as VoltageGpuPodStatus
-  // SSH model: prefer the structured fields if present, else fall
-  // back to parsing the ssh_command string ("ssh <targonUid>@<host>").
+  // SSH info only present on POST responses. On GET it's null.
   const parsed = parseSshCommand(raw.ssh_command)
   const sshHost = raw.public_ip ?? parsed.host
   const sshUser =
     raw.ssh_user ?? raw.ssh_username ?? raw.targonUid ?? parsed.user
   return {
-    id: raw.id ?? raw.pod_id ?? '',
+    id: raw.id ?? raw.pod_id ?? raw.uid ?? '',
     status,
     gpuType: raw.gpu_type ?? raw.resource_name ?? '',
     gpuCount: raw.gpu_count ?? 1,
@@ -494,7 +554,8 @@ function normalizePod(raw: RawPodItem): VoltageGpuPod {
           ? raw.price_per_hour
           : null,
     attestationReportUrl: raw.attestation_url ?? raw.attestation_report_url ?? null,
-    createdAt: raw.created_at ?? null,
+    statusMessage: raw.message ?? null,
+    createdAt: raw.created_at ?? raw.updated_at ?? null,
     raw,
   }
 }

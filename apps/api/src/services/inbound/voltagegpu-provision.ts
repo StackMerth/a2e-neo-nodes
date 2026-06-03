@@ -36,6 +36,7 @@ import type { PrismaClient } from '@a2e/database'
 import {
   VoltageGpuApiError,
   VoltageGpuClient,
+  VOLTAGEGPU_SSH_HOST,
   type VoltageGpuPod,
   type VoltageGpuPodStatus,
 } from './voltagegpu-adapter.js'
@@ -158,14 +159,14 @@ export async function provisionVoltageGpuRental(
   }
 
   // Step 4: deploy the pod. Verified body shape includes
-  // {provider, name, resource_name, image, ssh_keys}. The provider
-  // string ("targon") comes from the catalog entry; we pass it
-  // through from the SKU's raw response.
-  let providerInstanceId: string
+  // {provider, name, resource_name, template OR image, ssh_keys}.
+  // Default template (set by adapter) provides systemd PID 1 + sshd.
+  // The provider string ("targon") comes from the catalog entry.
+  let createResult
   try {
     const offerProvider =
       (match.raw as { provider?: string } | undefined)?.provider ?? 'targon'
-    providerInstanceId = await api.createPod({
+    createResult = await api.createPod({
       name: `tokenos-${cr.id.slice(0, 12)}`,
       gpuType: resolvedHardwareId,
       gpuCount: cr.gpuCount,
@@ -174,6 +175,7 @@ export async function provisionVoltageGpuRental(
       provider: offerProvider,
       region: resolvedRegion,
       confidential: true,
+      // template defaults to VOLTAGEGPU_DEFAULT_TEMPLATE; can override later
     })
   } catch (err) {
     // Roll back the SSH key registration so we don't leave orphans
@@ -185,31 +187,41 @@ export async function provisionVoltageGpuRental(
     )
   }
 
-  // Step 5: persist. sshUsername defaults to "root" per VoltageGPU's
-  // quick-start docs (`ssh root@<pod-ip>`). providerSshKeyId stores
-  // the registered key UID for cleanup on terminate.
+  // Step 5: persist. SSH connection info comes from the POST response
+  // (targonUid + ssh_command). The GET endpoint does NOT return SSH
+  // details so we MUST persist them now or lose them.
+  //   sshHost: constant jump-host (parsed from ssh_command if present)
+  //   sshUsername: targonUid (the worker id used as SSH user)
+  //   sshPort: 22 (no explicit port in VoltageGPU's ssh_command format)
   const encryptedPrivKey = encryptPrivateKey(keypair.privateKeyPem)
+  const sshUsername = createResult.targonUid ?? 'wrk-unknown'
+  // If the initial status from create response is already running,
+  // mark the row ACTIVE immediately. Otherwise PENDING and poll
+  // worker will promote it.
+  const initialStatus = createResult.status === 'running' ? 'ACTIVE' : 'PENDING'
   const row = await prisma.externalRental.create({
     data: {
       computeRequestId: cr.id,
       provider: 'VOLTAGE_GPU',
-      providerInstanceId,
+      providerInstanceId: createResult.id,
       providerSshKeyId,
       providerInstanceType: resolvedHardwareId,
       providerRegion: resolvedRegion,
-      status: 'PENDING',
-      sshHost: null,
-      sshUsername: 'root',
+      status: initialStatus,
+      sshHost: VOLTAGEGPU_SSH_HOST,
+      sshPort: 22,
+      sshUsername,
       sshPublicKey: keypair.publicKeyOpenssh,
       sshPrivateKeyEnc: encryptedPrivKey,
       providerPricePerHourUsd: match.pricePerHourUsd,
+      launchedAt: initialStatus === 'ACTIVE' ? new Date() : null,
     },
     select: { id: true },
   })
 
   return {
     externalRentalId: row.id,
-    providerInstanceId,
+    providerInstanceId: createResult.id,
     providerInstanceType: resolvedHardwareId,
     providerRegion: resolvedRegion,
     providerPricePerHourUsd: match.pricePerHourUsd,
@@ -251,21 +263,35 @@ export async function pollVoltageGpuRentalStatus(
   }
 
   const newStatus = mapVoltageGpuStatus(pod.status)
-  const updates: Record<string, unknown> = { status: newStatus, lastError: null }
+  const updates: Record<string, unknown> = { status: newStatus }
   if (newStatus === 'ACTIVE' && !row.launchedAt) {
     updates.launchedAt = new Date()
   }
   if (newStatus === 'CLOSED' && !row.terminatedAt) {
     updates.terminatedAt = new Date()
   }
-  if (pod.publicIp && row.sshHost !== pod.publicIp) {
-    updates.sshHost = pod.publicIp
-  }
-  if (pod.sshPort !== null && row.sshPort !== pod.sshPort) {
-    updates.sshPort = pod.sshPort
-  }
-  if (pod.sshUser && row.sshUsername !== pod.sshUser) {
-    updates.sshUsername = pod.sshUser
+  // GET /pods/{id} response does NOT return SSH info — only workload
+  // status. So we do NOT overwrite sshHost / sshUsername / sshPort
+  // here; they were set at provision time from the POST response.
+  //
+  // Capture VoltageGPU's status message for visibility. Treat
+  // "error" status as a hard failure: surface message to lastError
+  // so admin + buyer see why the pod failed (e.g. "Container keeps
+  // crashing - CrashLoopBackOff"). For non-error states, clear
+  // lastError since the rental is healthy again.
+  if (pod.status === 'failed' || pod.status === 'stopped' || pod.statusMessage?.includes('crash')) {
+    if (pod.statusMessage) {
+      updates.lastError = pod.statusMessage
+    }
+  } else if (newStatus === 'CLOSED') {
+    // Clean termination — store the message as a note rather than
+    // an error.
+    if (pod.statusMessage) {
+      updates.lastNote = pod.statusMessage
+    }
+    updates.lastError = null
+  } else {
+    updates.lastError = null
   }
   // T7: capture the attestation report URL once VoltageGPU exposes
   // it (typically after the pod reaches RUNNING and the TDX/CC
@@ -354,6 +380,11 @@ function mapVoltageGpuStatus(
     case 'failed':
       return 'CLOSED'
     default:
+      // VoltageGPU also emits "error" (CrashLoopBackOff and similar
+      // unrecoverable workload states). Treat as CLOSED so the poll
+      // worker cancels the request and refunds the buyer rather
+      // than letting it sit in PENDING forever.
+      if ((s as string) === 'error') return 'CLOSED'
       return 'PENDING'
   }
 }
