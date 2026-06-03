@@ -68,6 +68,13 @@ const requestSchema = z.object({
   // measurements). Default false — most rentals don't care and
   // benefit from cheaper COMMUNITY tier capacity.
   preferDedicatedTier: z.boolean().default(false),
+  // T7: hardware-attested confidential compute toggle. When true the
+  // allocator skips Lambda / RunPod / internal nodes (none provide
+  // TEE) and routes only to confidential-capable suppliers (Phala,
+  // io.net allow-listed, VoltageGPU). Falls through to
+  // WAITING_ON_CAPACITY with "no confidential supply" if no provider
+  // has stock — DOES NOT silently downgrade to unattested hardware.
+  preferConfidential: z.boolean().default(false),
   commitmentDays: z.number().int().refine(d => [7, 30, 90].includes(d), {
     message: 'commitmentDays must be 7, 30, or 90',
   }).optional(),
@@ -270,7 +277,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
     }
 
-    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion, preferredOperatorSlug, sshPubKey, paymentSource, workloadType, preferDedicatedTier, restoreCheckpointId } = parsed.data
+    const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion, preferredOperatorSlug, sshPubKey, paymentSource, workloadType, preferDedicatedTier, preferConfidential, restoreCheckpointId } = parsed.data
 
     // M5.10c: resolve preferred operator slug to NodeRunner.id. Silently
     // ignore unknown slugs (don't fail the request - the allocator just
@@ -447,6 +454,10 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       // routes only to dedicated supply (Lambda, RunPod SECURE,
       // internal operators). For benchmark-sensitive workloads.
       preferDedicatedTier,
+      // T7: when true, allocator skips non-TEE suppliers (Lambda,
+      // RunPod, internal nodes) and routes only to confidential
+      // suppliers (Phala / io.net allow-listed / VoltageGPU).
+      preferConfidential,
       // M3: persist tier so the routing engine + preemption worker
       // can read it. commitmentDays only stored for RESERVED rentals
       // (refund logic checks this when buyer terminates early).

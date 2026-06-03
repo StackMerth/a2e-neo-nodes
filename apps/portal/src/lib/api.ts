@@ -527,6 +527,11 @@ export const buyer = {
     // workloads where co-tenant variance distorts measurements.
     // Defaults to false on the server.
     preferDedicatedTier?: boolean
+    // T7: when true, allocator routes ONLY to TEE-enabled suppliers
+    // (Phala / io.net allow-listed / VoltageGPU). Lambda / RunPod /
+    // internal nodes are skipped. Falls through to
+    // WAITING_ON_CAPACITY if no confidential supplier has stock.
+    preferConfidential?: boolean
     // Checkpoint Workspace restore: optional id of a prior rental's
     // READY checkpoint. Agent downloads + unpacks at provision time.
     restoreCheckpointId?: string | null
@@ -552,6 +557,7 @@ export const buyer = {
     tier?: 'ON_DEMAND' | 'SPOT' | 'RESERVED'
     workloadType?: 'INFERENCE' | 'TRAINING' | 'MIXED'
     preferDedicatedTier?: boolean
+    preferConfidential?: boolean
     commitmentDays?: number
     requiredRegion?: string | null
     preferredOperatorSlug?: string | null

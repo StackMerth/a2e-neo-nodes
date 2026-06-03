@@ -290,6 +290,10 @@ export default function RequestComputePage() {
   // RunPod SECURE. Default false — most rentals don't care about
   // co-tenant variance and benefit from cheaper COMMUNITY tier.
   const [preferDedicatedTier, setPreferDedicatedTier] = useState<boolean>(false)
+  // T7: hardware-attested TEE compute. When true, allocator skips
+  // Lambda / RunPod / internal nodes (no TEE primitives) and routes
+  // only to Phala / io.net allow-listed / VoltageGPU.
+  const [preferConfidential, setPreferConfidential] = useState<boolean>(false)
 
   // Payment source picker:
   //   USDC             — fresh on-chain Solana transfer (always available)
@@ -456,6 +460,7 @@ export default function RequestComputePage() {
           tier: rentalTier,
           workloadType,
           preferDedicatedTier,
+          preferConfidential,
           commitmentDays: rentalTier === 'RESERVED' ? commitmentDays : undefined,
           requiredRegion: requiredRegion || null,
           preferredOperatorSlug: preferredOperatorSlug || null,
@@ -687,6 +692,54 @@ export default function RequestComputePage() {
                 </div>
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   Routes only to single-tenant hardware. Tighter capacity; placement may take longer.
+                </p>
+              </div>
+            </label>
+          </FormSection>
+        </FormCard>
+
+        {/* T7: Confidential Compute */}
+        <FormCard
+          title="Confidential Compute"
+          description="Hardware-attested TEE — Intel TDX with NVIDIA Hopper CC mode."
+          icon={Workflow}
+        >
+          <FormSection>
+            <label
+              htmlFor="preferConfidential"
+              className="flex items-start gap-3 cursor-pointer rounded-xl p-4 transition-all duration-200"
+              style={preferConfidential
+                ? { background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.4)' }
+                : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
+              }
+            >
+              <input
+                id="preferConfidential"
+                type="checkbox"
+                checked={preferConfidential}
+                onChange={(e) => setPreferConfidential(e.target.checked)}
+                className="sr-only peer"
+              />
+              <span
+                aria-hidden="true"
+                className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm transition-colors"
+                style={preferConfidential
+                  ? { background: 'rgb(99, 102, 241)', border: '1px solid rgb(99, 102, 241)' }
+                  : { background: 'transparent', border: '1px solid var(--border-color)' }
+                }
+              >
+                {preferConfidential && (
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M1.5 5L4 7.5L8.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </span>
+              <div className="flex-1">
+                <div className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                  Require confidential compute
+                </div>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Routes only to TEE-enabled hardware (Intel TDX with GPU CC mode). Memory and PCIe traffic encrypted; cryptographic attestation available. Specialized supply &mdash; placement may take longer or wait for capacity.
                 </p>
               </div>
             </label>
