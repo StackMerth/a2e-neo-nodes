@@ -58,7 +58,7 @@ const DEFAULT_BASE_URL = 'https://cloud-api.phala.com/api/v1'
  * their own compose via the provisioning orchestrator options later
  * (Path B / advanced — deferred per architecture decision).
  */
-import { buildDefaultPhalaCompose } from './phala-default-compose.js'
+import { buildDefaultPhalaComposeJson } from './phala-default-compose.js'
 export { PHALA_DEFAULT_BASE_IMAGE } from './phala-default-compose.js'
 
 export class PhalaApiError extends Error {
@@ -260,7 +260,7 @@ export class PhalaClient {
    */
   async provisionApp(args: {
     name: string
-    composeFile: string
+    composeFile: Record<string, unknown>
   }): Promise<PhalaAppProvisioned> {
     return await this.request<PhalaAppProvisioned>(
       '/cvms/provision',
@@ -292,8 +292,12 @@ export class PhalaClient {
    * bootstrap, plus optional disk_size_gb.
    */
   async createCvm(args: CreateCvmArgs): Promise<string> {
-    // Build the default SSH+CUDA Compose template.
-    const compose = buildDefaultPhalaCompose({
+    // Build the default SSH+CUDA Compose template as a JSON object —
+    // Phala's /cvms/provision validation requires compose_file to be
+    // a dictionary, not a YAML string (verified 2026-06-03 via 422
+    // "Input should be a valid dictionary or object to extract
+    // fields from").
+    const compose = buildDefaultPhalaComposeJson({
       imageName: args.imageName,
       containerDiskInGb: args.containerDiskInGb,
     })
