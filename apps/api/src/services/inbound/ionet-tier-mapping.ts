@@ -15,6 +15,16 @@
  *
  * Returns null for unmapped (tier, count) — allocator skips io.net
  * and falls through to WAITING_ON_CAPACITY.
+ *
+ * CATALOG DRIFT: io.net rotates SKUs frequently. Verified once
+ * (2026-06-03 morning) and again the same day, 1L40S.20V had been
+ * dropped and replaced with a plain "L40S" deploy_id. The
+ * orchestrator's listHardware-and-verify step at provision time
+ * catches stale entries (returns "io.net has no hardware with
+ * deploy_id X") so requests don't silently fail — they just bypass
+ * io.net for that tier until the mapping gets updated. Re-run
+ * `pnpm --filter @a2e/api ionet:inspect --raw` periodically and
+ * refresh this file.
  */
 
 import type { GpuTier } from '@a2e/database'
@@ -130,11 +140,18 @@ const MAPPING: Partial<Record<GpuTier, Partial<Record<number, IoNetTierMapping>>
   },
   L40S: {
     1: {
-      hardwareId: '1L40S.20V',
+      // io.net dropped 1L40S.20V (FI, $1.73, 20 vCPU) from the
+      // catalog between 2026-06-03 morning + evening probes. The
+      // replacement deploy_id is simply "L40S" (FR/PL, $1.70, 8
+      // vCPU/96GB RAM — smaller box than the old SKU). Note that
+      // multiple SKU rows can share the same deploy_id with
+      // different regions; we pick FR as the default location and
+      // io.net resolves to whichever has capacity.
+      hardwareId: 'L40S',
       label: 'L40S 48GB (1x)',
       gpusPerVm: 1,
-      defaultLocation: 'FI',
-      approxPricePerHourUsd: 1.73,
+      defaultLocation: 'FR',
+      approxPricePerHourUsd: 1.7,
     },
     2: {
       hardwareId: 'L40Sx2',
