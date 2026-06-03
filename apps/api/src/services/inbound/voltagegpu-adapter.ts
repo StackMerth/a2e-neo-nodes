@@ -44,7 +44,12 @@
  *      6th-priority fallback (after io.net)
  */
 
-const DEFAULT_BASE_URL = 'https://api.voltagegpu.com/v1'
+// Volt API (confidential pods/machines/SSH/templates) is at /api/volt/*
+// with X-API-Key auth. The /v1/* prefix is for the SEPARATE
+// OpenAI-compatible confidential inference API which uses Bearer
+// auth and is not handled by this adapter. Verified against
+// docs.voltagegpu.com 2026-06-03.
+const DEFAULT_BASE_URL = 'https://api.voltagegpu.com/api/volt'
 
 export class VoltageGpuApiError extends Error {
   constructor(
@@ -147,22 +152,22 @@ export class VoltageGpuClient {
   }
 
   /**
-   * Catalog of available pods/offers. Endpoint path is BEST-GUESS;
-   * verify against the live API. Candidates if /offers 404s:
-   * /catalog, /skus, /gpus, /pods/catalog.
+   * Catalog of available TDX-sealed GPU machines. Verified path
+   * 2026-06-03: GET /api/volt/machines. Response shape unwrap is
+   * defensive — handles {machines:[]}, {data:[]}, or [].
    */
   async listOffers(): Promise<VoltageGpuOffer[]> {
-    const raw = await this.request<unknown>('/offers', 'GET')
-    // Defensive: handle either {offers:[]}, {data:[]}, or [].
+    const raw = await this.request<unknown>('/machines', 'GET')
     const items: RawOfferItem[] = Array.isArray(raw)
       ? raw
-      : ((raw as { offers?: RawOfferItem[]; data?: RawOfferItem[] }).offers ??
+      : ((raw as { machines?: RawOfferItem[] }).machines ??
+        (raw as { offers?: RawOfferItem[] }).offers ??
         (raw as { data?: RawOfferItem[] }).data ??
         [])
     return items.map(normalizeOffer)
   }
 
-  /** List currently-running pods on the account. */
+  /** List currently-running pods on the account (GET /api/volt/pods). */
   async listPods(): Promise<VoltageGpuPod[]> {
     const raw = await this.request<unknown>('/pods', 'GET')
     const items: RawPodItem[] = Array.isArray(raw)
@@ -187,19 +192,21 @@ export class VoltageGpuClient {
   }
 
   /**
-   * Create a pod. Body shape BEST-GUESS; iterate from the first
-   * 422 response if io.net's experience repeats.
+   * Create a confidential pod via POST /api/volt/pods. Body shape
+   * still BEST-GUESS — iterate from the first 422 response if it
+   * surfaces required fields we missed.
    */
   async createPod(args: CreatePodArgs): Promise<string> {
     const body = {
       name: args.name,
+      machine_type: args.gpuType,
       gpu_type: args.gpuType,
       gpu_count: args.gpuCount,
       ssh_public_key: args.sshPublicKey,
       confidential: args.confidential ?? true,
       ...(args.region ? { region: args.region } : {}),
     }
-    const raw = await this.request<unknown>('/pods/create', 'POST', body)
+    const raw = await this.request<unknown>('/pods', 'POST', body)
     // BEST-GUESS response shape: { pod_id, status } or { id }, etc.
     const r = raw as { id?: string; pod_id?: string; data?: { id?: string; pod_id?: string } }
     const id = r.id ?? r.pod_id ?? r.data?.id ?? r.data?.pod_id
@@ -238,7 +245,11 @@ export class VoltageGpuClient {
     const res = await fetch(url, {
       method,
       headers: {
-        Authorization: `Bearer ${this.apiKey}`,
+        // Volt API uses X-API-Key, NOT Authorization: Bearer.
+        // Bearer auth is reserved for the SEPARATE OpenAI-compat
+        // inference API at /v1/* (not handled by this adapter).
+        // Verified against docs.voltagegpu.com 2026-06-03.
+        'X-API-Key': this.apiKey,
         ...(body ? { 'Content-Type': 'application/json' } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
