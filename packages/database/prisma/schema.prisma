@@ -2055,9 +2055,20 @@ model ExternalRental {
   terminationRequestedAt DateTime?
   terminatedAt           DateTime?
 
-  // Last provisioning / status / termination error, kept for the
-  // admin debug view. Cleared on the next successful poll.
+  // Last REAL provisioning / status / termination error. Surfaces
+  // 404s, terminate-API failures, unexpected provider exceptions.
+  // Cleared on the next successful poll. Reading this alongside
+  // status='FAILED' explains why a rental couldn't be provisioned.
   lastError              String?
+
+  // Last lifecycle NOTE (not an error): termination reason from the
+  // buyer or admin, rental-expiry trigger, allocator-race rollback
+  // reason, etc. Distinguishing from lastError lets admins look at
+  // CLOSED rows and immediately tell "did this fail or did the
+  // buyer/system close it cleanly?" without parsing free-form text.
+  // Persists across polls (only overwritten on the next lifecycle
+  // event), unlike lastError which clears.
+  lastNote               String?
 
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt

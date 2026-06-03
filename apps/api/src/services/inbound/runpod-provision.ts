@@ -248,7 +248,7 @@ export async function pollRunPodRentalStatus(
         data: {
           status: 'CLOSED',
           terminatedAt: new Date(),
-          lastError: 'RunPod returned 404 on getPod; presumed terminated',
+          lastNote: 'RunPod returned 404 on getPod; presumed terminated',
         },
       })
       return null
@@ -305,7 +305,8 @@ export async function terminateRunPodRental(
     data: {
       status: 'CLOSING',
       terminationRequestedAt: new Date(),
-      lastError: reason,
+      lastNote: reason,
+      lastError: null,
     },
   })
 

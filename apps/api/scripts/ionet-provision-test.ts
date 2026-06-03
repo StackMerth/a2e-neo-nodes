@@ -278,6 +278,7 @@ async function runPoll(externalRentalId: string): Promise<void> {
   console.log(`  sshUsername:      ${row.sshUsername}`)
   console.log(`  region:           ${row.providerRegion}`)
   console.log(`  launchedAt:       ${row.launchedAt?.toISOString() ?? '(not yet)'}`)
+  console.log(`  lastNote:         ${row.lastNote ?? '(none)'}`)
   console.log(`  lastError:        ${row.lastError ?? '(none)'}`)
   if (dep) {
     console.log()

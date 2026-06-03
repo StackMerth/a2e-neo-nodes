@@ -285,7 +285,7 @@ export async function pollIoNetRentalStatus(
         data: {
           status: 'CLOSED',
           terminatedAt: new Date(),
-          lastError: 'io.net returned 404 on getDeployment; presumed terminated',
+          lastNote: 'io.net returned 404 on getDeployment; presumed terminated',
         },
       })
       return null
@@ -375,7 +375,8 @@ export async function terminateIoNetRental(
     data: {
       status: 'CLOSING',
       terminationRequestedAt: new Date(),
-      lastError: reason,
+      lastNote: reason,
+      lastError: null,
     },
   })
 

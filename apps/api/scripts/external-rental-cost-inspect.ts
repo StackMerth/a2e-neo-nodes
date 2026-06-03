@@ -79,6 +79,7 @@ async function main(): Promise<void> {
     const margin = buyerCharged - providerEstimate
     const marginPct = providerEstimate > 0 ? (margin / providerEstimate) * 100 : 0
     console.log(`  platform margin:         $${margin.toFixed(4)}  ${providerEstimate > 0 ? `(${marginPct.toFixed(1)}%)` : ''}`)
+    if (r.lastNote) console.log(`  lastNote:                ${r.lastNote}`)
     if (r.lastError) console.log(`  lastError:               ${r.lastError}`)
     console.log()
   }

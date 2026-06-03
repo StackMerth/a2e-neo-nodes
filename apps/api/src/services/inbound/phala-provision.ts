@@ -262,7 +262,7 @@ export async function pollPhalaRentalStatus(
         data: {
           status: 'CLOSED',
           terminatedAt: new Date(),
-          lastError: 'Phala returned 404 on getCvm; presumed terminated',
+          lastNote: 'Phala returned 404 on getCvm; presumed terminated',
         },
       })
       return null
@@ -322,7 +322,8 @@ export async function terminatePhalaRental(
     data: {
       status: 'CLOSING',
       terminationRequestedAt: new Date(),
-      lastError: reason,
+      lastNote: reason,
+      lastError: null,
     },
   })
 

@@ -267,7 +267,7 @@ export async function pollLambdaRentalStatus(
         data: {
           status: 'CLOSED',
           terminatedAt: new Date(),
-          lastError: 'Lambda returned 404 on getInstance; presumed terminated',
+          lastNote: 'Lambda returned 404 on getInstance; presumed terminated',
         },
       })
       return null
@@ -318,7 +318,12 @@ export async function terminateLambdaRental(
 
   await prisma.externalRental.update({
     where: { id: externalRentalId },
-    data: { status: 'CLOSING', terminationRequestedAt: new Date(), lastError: null },
+    data: {
+      status: 'CLOSING',
+      terminationRequestedAt: new Date(),
+      lastNote: reason,
+      lastError: null,
+    },
   })
 
   // Terminate the instance (idempotent on Lambda's side).
@@ -352,7 +357,9 @@ export async function terminateLambdaRental(
     data: {
       status: 'CLOSED',
       terminatedAt: new Date(),
-      lastError: reason,
+      // lastNote already set when CLOSING transitioned; do not
+      // re-write here to preserve the original termination reason
+      // in case any retry hits this final update.
     },
   })
 }
