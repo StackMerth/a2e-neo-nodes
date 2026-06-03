@@ -267,6 +267,14 @@ export async function pollVoltageGpuRentalStatus(
   if (pod.sshUser && row.sshUsername !== pod.sshUser) {
     updates.sshUsername = pod.sshUser
   }
+  // T7: capture the attestation report URL once VoltageGPU exposes
+  // it (typically after the pod reaches RUNNING and the TDX/CC
+  // handshake completes). Buyers click this on their rental detail
+  // page to cryptographically verify they're in a real TEE.
+  if (pod.attestationReportUrl && row.attestationUrl !== pod.attestationReportUrl) {
+    updates.attestationUrl = pod.attestationReportUrl
+    updates.attestationFetchedAt = new Date()
+  }
   if (pod.region && row.providerRegion !== pod.region) {
     updates.providerRegion = pod.region
   }

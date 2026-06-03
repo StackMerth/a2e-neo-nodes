@@ -282,6 +282,8 @@ export default function RequestDetailPage() {
     sshPrivateKey: string
     instanceType: string
     region: string
+    attestationUrl?: string | null
+    attestationFetchedAt?: string | null
   } | null>(null)
   const [externalCredsError, setExternalCredsError] = useState<string | null>(null)
   const [showPrivateKey, setShowPrivateKey] = useState(false)
@@ -737,6 +739,38 @@ export default function RequestDetailPage() {
                 <CopyButton text={`ssh -i tokenos-rental-${id.slice(0, 12)}.pem ${externalCreds.sshUsername}@${externalCreds.sshHost} -p ${externalCreds.sshPort}`} />
               </div>
             </div>
+
+            {/* T7: Cryptographic attestation. Only renders for
+                confidential rentals (VoltageGPU / Phala / io.net allow-
+                listed) where the provider exposes an attestation URL. */}
+            {externalCreds.attestationUrl && (
+              <div className="mt-4 p-3 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
+                <div className="flex items-start gap-3">
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                      Cryptographic attestation
+                    </div>
+                    <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
+                      Hardware-signed proof your workload is running inside the TEE. Verify with the provider tools or your own attestation client.
+                    </p>
+                    <a
+                      href={externalCreds.attestationUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-mono inline-flex items-center gap-1 hover:underline"
+                      style={{ color: 'rgb(99, 102, 241)' }}
+                    >
+                      View attestation report &rarr;
+                    </a>
+                    {externalCreds.attestationFetchedAt && (
+                      <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                        Captured {new Date(externalCreds.attestationFetchedAt).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </SectionCard>
         )}
 

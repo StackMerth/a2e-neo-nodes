@@ -2082,6 +2082,15 @@ model ExternalRental {
   // event), unlike lastError which clears.
   lastNote               String?
 
+  // T7: cryptographic attestation report URL surfaced by the
+  // provider after the pod reaches RUNNING. Buyers click this to
+  // verify their workload is actually running in a hardware-attested
+  // TEE (DCAP quote / NVIDIA Hopper CC report). Only confidential
+  // providers populate this: VoltageGPU, Phala, io.net (when
+  // confidential SKUs are allow-listed). null for non-TEE rentals.
+  attestationUrl         String?
+  attestationFetchedAt   DateTime?
+
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 

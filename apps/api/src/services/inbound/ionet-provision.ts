@@ -338,6 +338,26 @@ export async function pollIoNetRentalStatus(
         if (parsed.port && row.sshPort !== parsed.port) updates.sshPort = parsed.port
       }
     }
+    // T7: capture io.net's attestation report URL when the worker
+    // exposes it. Currently io.net surfaces attestation only on the
+    // separate Confidential Inference product (api.intelligence.io.net),
+    // NOT on the standard VMaaS pod detail. After business@io.net
+    // allow-lists confidential VMaaS, the VM response may add a
+    // dedicated attestation field; we watch for common names here.
+    const rawWithAttestation = firstVm.raw as {
+      attestation_url?: string
+      attestation_report_url?: string
+      attestation?: { url?: string }
+    }
+    const attUrl =
+      rawWithAttestation.attestation_url ??
+      rawWithAttestation.attestation_report_url ??
+      rawWithAttestation.attestation?.url ??
+      null
+    if (attUrl && row.attestationUrl !== attUrl) {
+      updates.attestationUrl = attUrl
+      updates.attestationFetchedAt = new Date()
+    }
   }
 
   await prisma.externalRental.update({
