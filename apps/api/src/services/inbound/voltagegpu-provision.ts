@@ -157,8 +157,9 @@ export async function provisionVoltageGpuRental(
     )
   }
 
-  // Step 4: persist. sshUsername left at default; poll worker
-  // overwrites once the pod's ssh_user field is known.
+  // Step 4: persist. sshUsername defaults to "root" per VoltageGPU's
+  // quick-start docs (`ssh root@<pod-ip>`). Poll worker overwrites
+  // if the pod detail response surfaces a different user.
   const encryptedPrivKey = encryptPrivateKey(keypair.privateKeyPem)
   const row = await prisma.externalRental.create({
     data: {
@@ -170,6 +171,7 @@ export async function provisionVoltageGpuRental(
       providerRegion: resolvedRegion,
       status: 'PENDING',
       sshHost: null,
+      sshUsername: 'root',
       sshPublicKey: keypair.publicKeyOpenssh,
       sshPrivateKeyEnc: encryptedPrivKey,
       providerPricePerHourUsd: match.pricePerHourUsd,
