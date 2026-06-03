@@ -29,6 +29,7 @@ import { terminateLambdaRental } from './lambda-provision.js'
 import { terminateRunPodRental } from './runpod-provision.js'
 import { terminatePhalaRental } from './phala-provision.js'
 import { terminateIoNetRental } from './ionet-provision.js'
+import { terminateVoltageGpuRental } from './voltagegpu-provision.js'
 
 export class UnknownProviderError extends Error {
   constructor(public provider: string, public externalRentalId: string) {
@@ -78,6 +79,9 @@ export async function terminateExternalRental(
       return
     case 'IONET':
       await terminateIoNetRental(prisma, externalRentalId, reason)
+      return
+    case 'VOLTAGE_GPU':
+      await terminateVoltageGpuRental(prisma, externalRentalId, reason)
       return
     default:
       throw new UnknownProviderError(row.provider, externalRentalId)

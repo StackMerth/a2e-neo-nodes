@@ -59,6 +59,12 @@ import {
   fitsSingleIoNetVm,
 } from '../services/inbound/ionet-tier-mapping.js'
 import { provisionIoNetRental } from '../services/inbound/ionet-provision.js'
+import { isVoltageGpuConfigured } from '../services/inbound/voltagegpu-adapter.js'
+import {
+  voltageGpuTypeForTier,
+  fitsSingleVoltageGpuPod,
+} from '../services/inbound/voltagegpu-tier-mapping.js'
+import { provisionVoltageGpuRental } from '../services/inbound/voltagegpu-provision.js'
 
 type ComputeRequestWithUser = ComputeRequest & { user: User }
 
@@ -358,6 +364,17 @@ async function processRequest(
     // populate ionet-tier-mapping.ts, then flip the env).
     const ionetTook = await tryIoNetFallback(prisma, io, cr)
     if (ionetTook) {
+      return
+    }
+
+    // T5h: VoltageGPU as 5th-tier fallback. Confidential-only
+    // provider (TDX + NVIDIA H100/H200/B200 CC). Cheapest H100 CC
+    // in the market ($2.77/h vs Azure's $8.90/h). Gated by
+    // VOLTAGEGPU_ALLOCATOR_ENABLED=true env until the tier mapping
+    // is populated against the live catalog (voltagegpu:inspect
+    // first to verify offer ids; mappings are BEST-GUESS).
+    const voltageGpuTook = await tryVoltageGpuFallback(prisma, io, cr)
+    if (voltageGpuTook) {
       return
     }
 
@@ -1030,6 +1047,105 @@ async function tryIoNetFallback(
     requestId: cr.id,
     userId: cr.userId,
     provider: 'IONET',
+    instanceType: provisionResult.providerInstanceType,
+    region: provisionResult.providerRegion,
+    timestamp: now.toISOString(),
+  })
+
+  return true
+}
+
+/**
+ * T5h — try VoltageGPU as 5th-tier overflow supplier (confidential
+ * GPU). Cheapest H100 CC mode in the market today ($2.77/h vs
+ * Azure's $8.90/h). Confidential-only — non-confidential workloads
+ * route to standard suppliers above.
+ *
+ * Gated by env VOLTAGEGPU_ALLOCATOR_ENABLED=true. Default OFF until
+ * tier mapping is verified against the live catalog. Adapter body
+ * shapes are BEST-GUESS (docs.voltagegpu.com wasn't reachable from
+ * the research sandbox) so expect some empirical iteration on first
+ * provision attempts.
+ *
+ * No-op when:
+ *   - VOLTAGEGPU_ALLOCATOR_ENABLED is not exactly "true"
+ *   - VOLTAGEGPU_API_KEY not set
+ *   - SSH key encryption not configured
+ *   - Tier+count not mapped (skeleton currently has H100/H200/B200 x1 only)
+ */
+async function tryVoltageGpuFallback(
+  prisma: PrismaClient,
+  io: SocketServer,
+  cr: ComputeRequestWithUser,
+): Promise<boolean> {
+  if (process.env.VOLTAGEGPU_ALLOCATOR_ENABLED !== 'true') return false
+  if (!isVoltageGpuConfigured()) return false
+  if (!isKeyEncryptionConfigured()) return false
+  if (!voltageGpuTypeForTier(cr.gpuTier, cr.gpuCount)) return false
+  if (!fitsSingleVoltageGpuPod(cr.gpuTier, cr.gpuCount)) return false
+
+  const session = mintSshSession(cr.durationDays)
+  const ratePerMinute = (cr.ratePerDay * cr.gpuCount) / (24 * 60)
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + cr.durationDays * 86400000)
+
+  let provisionResult
+  try {
+    provisionResult = await provisionVoltageGpuRental(prisma, cr.id)
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[compute-allocator] VoltageGPU fallback failed for ${cr.id} (${cr.gpuTier} x${cr.gpuCount}):`,
+      (err as Error).message,
+    )
+    return false
+  }
+
+  const transitioned = await prisma.computeRequest.updateMany({
+    where: { id: cr.id, status: 'PENDING' },
+    data: {
+      status: 'PROVISIONING_EXTERNAL',
+      ratePerMinute,
+      expiresAt,
+      sshSessionToken: session.token,
+      sshSessionTokenExpiresAt: session.expiresAt,
+      sshSessionStatus: 'PROVISIONING',
+    },
+  })
+  if (transitioned.count === 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[compute-allocator] race on ${cr.id} after VoltageGPU provision; rolling back`,
+    )
+    const { terminateVoltageGpuRental } = await import('../services/inbound/voltagegpu-provision.js')
+    await terminateVoltageGpuRental(
+      prisma,
+      provisionResult.externalRentalId,
+      'allocator race: another path won the request',
+    ).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(`[compute-allocator] VoltageGPU rollback failed for ${provisionResult.externalRentalId}:`, err)
+    })
+    return false
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[compute-allocator] VoltageGPU fallback OK for ${cr.id}: ${provisionResult.providerInstanceType} (externalRentalId=${provisionResult.externalRentalId})`,
+  )
+
+  void createNotification(
+    cr.userId,
+    'COMPUTE_REQUEST_APPROVED',
+    'Compute is Provisioning',
+    `Your ${cr.gpuCount}x ${cr.gpuTier} confidential rental is being prepared. SSH credentials appear in your dashboard within ~60s.`,
+    `/buyer/requests/${cr.id}`,
+  )
+
+  io.emit('compute:provisioning-external', {
+    requestId: cr.id,
+    userId: cr.userId,
+    provider: 'VOLTAGE_GPU',
     instanceType: provisionResult.providerInstanceType,
     region: provisionResult.providerRegion,
     timestamp: now.toISOString(),
