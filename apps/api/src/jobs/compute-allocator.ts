@@ -53,6 +53,12 @@ import {
   fitsSinglePhalaCvm,
 } from '../services/inbound/phala-tier-mapping.js'
 import { provisionPhalaRental } from '../services/inbound/phala-provision.js'
+import { isIoNetConfigured } from '../services/inbound/ionet-adapter.js'
+import {
+  ioNetTypeForTier,
+  fitsSingleIoNetVm,
+} from '../services/inbound/ionet-tier-mapping.js'
+import { provisionIoNetRental } from '../services/inbound/ionet-provision.js'
 
 type ComputeRequestWithUser = ComputeRequest & { user: User }
 
@@ -341,6 +347,17 @@ async function processRequest(
     // real call will return a 422 with required field names).
     const phalaTook = await tryPhalaFallback(prisma, io, cr)
     if (phalaTook) {
+      return
+    }
+
+    // T5g: try io.net as 4th fallback. Currently a standard
+    // (non-confidential) overflow supplier alongside Lambda/RunPod;
+    // adds a 3rd capacity pool with independent stock windows.
+    // Gated by IONET_ALLOCATOR_ENABLED=true env until tier mapping
+    // is populated with real hardware_ids (run ionet:inspect first,
+    // populate ionet-tier-mapping.ts, then flip the env).
+    const ionetTook = await tryIoNetFallback(prisma, io, cr)
+    if (ionetTook) {
       return
     }
 
@@ -912,6 +929,107 @@ async function tryPhalaFallback(
     requestId: cr.id,
     userId: cr.userId,
     provider: 'PHALA',
+    instanceType: provisionResult.providerInstanceType,
+    region: provisionResult.providerRegion,
+    timestamp: now.toISOString(),
+  })
+
+  return true
+}
+
+/**
+ * T5g — try io.net VMaaS as the 4th-tier overflow supplier.
+ *
+ * Same shape as tryRunPodFallback. io.net is currently a standard
+ * (non-confidential) overflow supplier; its confidential SKUs are
+ * email-gated and not used by this fallback. When/if confidential
+ * SKUs surface in the catalog after allow-list, ionet-tier-mapping.ts
+ * gets updated and this hook routes them too.
+ *
+ * Gated by env IONET_ALLOCATOR_ENABLED=true. Default OFF until tier
+ * mapping is populated with real hardware_ids (run ionet:inspect to
+ * see the catalog, populate the MAPPING constant, then flip the env).
+ *
+ * No-op when:
+ *   - IONET_ALLOCATOR_ENABLED is not exactly "true"
+ *   - IONET_API_KEY not set
+ *   - SSH key encryption not configured
+ *   - Tier not mapped on io.net (mapping has no entry)
+ *   - Request needs more GPUs than the SKU's maxGpusPerVm
+ */
+async function tryIoNetFallback(
+  prisma: PrismaClient,
+  io: SocketServer,
+  cr: ComputeRequestWithUser,
+): Promise<boolean> {
+  if (process.env.IONET_ALLOCATOR_ENABLED !== 'true') return false
+  if (!isIoNetConfigured()) return false
+  if (!isKeyEncryptionConfigured()) return false
+  if (!ioNetTypeForTier(cr.gpuTier)) return false
+  if (!fitsSingleIoNetVm(cr.gpuTier, cr.gpuCount)) return false
+
+  const session = mintSshSession(cr.durationDays)
+  const ratePerMinute = (cr.ratePerDay * cr.gpuCount) / (24 * 60)
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + cr.durationDays * 86400000)
+
+  let provisionResult
+  try {
+    provisionResult = await provisionIoNetRental(prisma, cr.id)
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[compute-allocator] io.net fallback failed for ${cr.id} (tier ${cr.gpuTier} x${cr.gpuCount}):`,
+      (err as Error).message,
+    )
+    return false
+  }
+
+  const transitioned = await prisma.computeRequest.updateMany({
+    where: { id: cr.id, status: 'PENDING' },
+    data: {
+      status: 'PROVISIONING_EXTERNAL',
+      ratePerMinute,
+      expiresAt,
+      sshSessionToken: session.token,
+      sshSessionTokenExpiresAt: session.expiresAt,
+      sshSessionStatus: 'PROVISIONING',
+    },
+  })
+  if (transitioned.count === 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[compute-allocator] race on ${cr.id} after io.net provision; rolling back`,
+    )
+    const { terminateIoNetRental } = await import('../services/inbound/ionet-provision.js')
+    await terminateIoNetRental(
+      prisma,
+      provisionResult.externalRentalId,
+      'allocator race: another path won the request',
+    ).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(`[compute-allocator] io.net rollback failed for ${provisionResult.externalRentalId}:`, err)
+    })
+    return false
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[compute-allocator] io.net fallback OK for ${cr.id}: provisioned hardware_id=${provisionResult.providerInstanceType} (externalRentalId=${provisionResult.externalRentalId})`,
+  )
+
+  void createNotification(
+    cr.userId,
+    'COMPUTE_REQUEST_APPROVED',
+    'Compute is Provisioning',
+    `Your ${cr.gpuCount}x ${cr.gpuTier} rental is being prepared. SSH credentials appear in your dashboard within ~60-90s.`,
+    `/buyer/requests/${cr.id}`,
+  )
+
+  io.emit('compute:provisioning-external', {
+    requestId: cr.id,
+    userId: cr.userId,
+    provider: 'IONET',
     instanceType: provisionResult.providerInstanceType,
     region: provisionResult.providerRegion,
     timestamp: now.toISOString(),

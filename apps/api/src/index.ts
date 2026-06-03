@@ -154,6 +154,11 @@ import {
   schedulePhalaPoll,
 } from './jobs/phala-poll'
 import {
+  createIoNetPollQueue,
+  createIoNetPollWorker,
+  scheduleIoNetPoll,
+} from './jobs/ionet-poll'
+import {
   createRunPodCapacityWatcherQueue,
   createRunPodCapacityWatcherWorker,
   scheduleRunPodCapacityWatcher,
@@ -423,6 +428,14 @@ async function start() {
     createPhalaPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await schedulePhalaPoll(phalaPollQueue)
     server.log.info('Phala poll worker initialized (15s tick)')
+
+    // T5g: io.net VMaaS status poller. 10s tick (same as Lambda/RunPod;
+    // io.net VMs reach RUNNING in ~30-90s typically). No-op when
+    // IONET_API_KEY isn't set.
+    const ionetPollQueue = createIoNetPollQueue(redisConnection)
+    createIoNetPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
+    await scheduleIoNetPoll(ionetPollQueue)
+    server.log.info('io.net poll worker initialized (10s tick)')
 
     // T5e: RunPod capacity watcher. Mirror of T5d for RunPod's gpu
     // types catalog. Emails admin when watched SKU IDs gain stock.
