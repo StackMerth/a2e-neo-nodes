@@ -18,8 +18,6 @@ const footerLinks = {
   ],
   Company: [
     { name: "About", href: "#" },
-    { name: "Blog", href: "#" },
-    { name: "Careers", href: "#", badge: "Hiring" },
     { name: "Contact", href: "#" },
   ],
   Legal: [
@@ -30,9 +28,10 @@ const footerLinks = {
 };
 
 const socialLinks = [
-  { name: "Twitter", href: "#" },
-  { name: "GitHub", href: "#" },
-  { name: "LinkedIn", href: "#" },
+  { name: "X", href: "https://x.com/TokenOS_AI" },
+  { name: "Discord", href: "https://discord.gg/Jht9UYAHrP" },
+  { name: "Telegram", href: "https://t.me/tokenos_ai" },
+  { name: "YouTube", href: "https://www.youtube.com/channel/UC66OxY0dSR5yiLxNQScSbMg" },
 ];
 
 export function FooterSection() {
@@ -62,11 +61,13 @@ export function FooterSection() {
               </p>
 
               {/* Social Links */}
-              <div className="flex gap-6">
+              <div className="flex flex-wrap gap-6">
                 {socialLinks.map((link) => (
                   <a
                     key={link.name}
                     href={link.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 group"
                   >
                     {link.name}
@@ -88,11 +89,6 @@ export function FooterSection() {
                         className="text-sm text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-2"
                       >
                         {link.name}
-                        {"badge" in link && link.badge && (
-                          <span className="text-xs px-2 py-0.5 bg-foreground text-background rounded-full">
-                            {link.badge}
-                          </span>
-                        )}
                       </a>
                     </li>
                   ))}
