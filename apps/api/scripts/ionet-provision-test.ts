@@ -166,12 +166,16 @@ async function runRent(tier: GpuTier, gpuCount: number): Promise<void> {
     select: { id: true },
   })
 
+  // Smoke-test default: 1-hour rental (the io.net minimum).
+  // durationDays = 1/24 -> ceil(1/24 * 24) = 1 hour in the orchestrator.
+  // For longer test rentals, hit provisionIoNetRental directly with a
+  // ComputeRequest that has durationDays > 1/24.
   const cr = await prisma.computeRequest.create({
     data: {
       userId: user.id,
       gpuTier: tier,
       gpuCount,
-      durationDays: 1,
+      durationDays: 1 / 24,
       ratePerDay: 0,
       totalCost: 0,
       txHash: `T5G_TEST_${Date.now()}`,
@@ -181,10 +185,10 @@ async function runRent(tier: GpuTier, gpuCount: number): Promise<void> {
     },
     select: { id: true },
   })
-  console.log(`Created synthetic ComputeRequest ${cr.id}`)
+  console.log(`Created synthetic ComputeRequest ${cr.id} (1-hour smoke test)`)
 
   console.log(`Provisioning io.net VM for ${tier} x${gpuCount} (deploy_id=${m.hardwareId})...`)
-  console.log('  WARNING: this starts real billing (1 hour minimum, non-refundable).')
+  console.log(`  WARNING: real billing — 1 hour minimum non-refundable (~$${m.approxPricePerHourUsd.toFixed(2)})`)
   const result = await provisionIoNetRental(prisma, cr.id)
 
   console.log()
@@ -221,12 +225,13 @@ async function runRentByType(hardwareId: string): Promise<void> {
   })
 
   // Placeholder tier for the synthetic request (--type override bypasses mapping).
+  // 1-hour smoke-test duration (1/24 day = ceil(1) hour in orchestrator).
   const cr = await prisma.computeRequest.create({
     data: {
       userId: user.id,
       gpuTier: 'H100',
       gpuCount: match.numCards,
-      durationDays: 1,
+      durationDays: 1 / 24,
       ratePerDay: 0,
       totalCost: 0,
       txHash: `T5G_TEST_TYPE_${Date.now()}`,
@@ -236,10 +241,10 @@ async function runRentByType(hardwareId: string): Promise<void> {
     },
     select: { id: true },
   })
-  console.log(`Created synthetic ComputeRequest ${cr.id}`)
+  console.log(`Created synthetic ComputeRequest ${cr.id} (1-hour smoke test)`)
 
   console.log(`Provisioning io.net VM ${match.name} (deploy_id=${hardwareId}, ${match.numCards} GPUs)...`)
-  console.log('  WARNING: this starts real billing (1 hour minimum, non-refundable).')
+  console.log(`  WARNING: real billing — 1 hour minimum non-refundable (~$${match.pricePerHourUsd.toFixed(2)})`)
   const result = await provisionIoNetRental(prisma, cr.id, {
     hardwareIdOverride: hardwareId,
   })
