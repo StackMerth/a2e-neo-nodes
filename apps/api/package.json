@@ -55,6 +55,7 @@
     "phala:inspect": "tsx scripts/phala-inspect.ts",
     "phala-provision:test": "tsx scripts/phala-provision-test.ts",
     "ionet:inspect": "tsx scripts/ionet-inspect.ts",
+    "ionet-provision:test": "tsx scripts/ionet-provision-test.ts",
     "external-rental:inspect": "tsx scripts/external-rental-cost-inspect.ts",
     "topup:diagnose": "tsx scripts/topup-diagnose.ts",
     "stripe:diagnose": "tsx scripts/stripe-diagnose.ts",

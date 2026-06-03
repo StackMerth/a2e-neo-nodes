@@ -28,6 +28,7 @@ import type { PrismaClient } from '@a2e/database'
 import { terminateLambdaRental } from './lambda-provision.js'
 import { terminateRunPodRental } from './runpod-provision.js'
 import { terminatePhalaRental } from './phala-provision.js'
+import { terminateIoNetRental } from './ionet-provision.js'
 
 export class UnknownProviderError extends Error {
   constructor(public provider: string, public externalRentalId: string) {
@@ -74,6 +75,9 @@ export async function terminateExternalRental(
       return
     case 'PHALA':
       await terminatePhalaRental(prisma, externalRentalId, reason)
+      return
+    case 'IONET':
+      await terminateIoNetRental(prisma, externalRentalId, reason)
       return
     default:
       throw new UnknownProviderError(row.provider, externalRentalId)
