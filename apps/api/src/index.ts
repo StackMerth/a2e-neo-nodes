@@ -149,6 +149,11 @@ import {
   scheduleRunPodPoll,
 } from './jobs/runpod-poll'
 import {
+  createPhalaPollQueue,
+  createPhalaPollWorker,
+  schedulePhalaPoll,
+} from './jobs/phala-poll'
+import {
   createRunPodCapacityWatcherQueue,
   createRunPodCapacityWatcherWorker,
   scheduleRunPodCapacityWatcher,
@@ -408,6 +413,16 @@ async function start() {
     createRunPodPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleRunPodPoll(runpodPollQueue)
     server.log.info('RunPod poll worker initialized (10s tick)')
+
+    // T5f: Phala status poller. Parallel of T5e for Phala-provisioned
+    // confidential CVMs. 15s tick (slightly slower than RunPod's 10s
+    // because TEE attestation handshake is slow; 6 polls/min is plenty
+    // of granularity for the 90-180s boot window). No-op when
+    // PHALA_API_KEY isn't set.
+    const phalaPollQueue = createPhalaPollQueue(redisConnection)
+    createPhalaPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
+    await schedulePhalaPoll(phalaPollQueue)
+    server.log.info('Phala poll worker initialized (15s tick)')
 
     // T5e: RunPod capacity watcher. Mirror of T5d for RunPod's gpu
     // types catalog. Emails admin when watched SKU IDs gain stock.
