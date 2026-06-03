@@ -64,10 +64,14 @@ export class IoNetApiError extends Error {
  * networks. The deploy_id is what POST /deploy needs as hardware_id.
  */
 export interface IoNetHardware {
-  /** Internal id; not what we pass to deploy. */
-  id: number
-  /** The id to pass as hardware_id when calling deploy. */
-  deployId: number
+  /** Composite internal id e.g. "8B300.240V__FI"; not used for deploy. */
+  id: string
+  /**
+   * The id to pass as hardware_id when calling deploy.
+   * io.net returns this as a STRING like "8B300.240V" (NOT numeric
+   * as the public docs example suggested).
+   */
+  deployId: string
   /** Human-readable SKU name e.g. "H100 80GB SXM5". */
   name: string
   /** GPU count per VM at this SKU. */
@@ -82,10 +86,18 @@ export interface IoNetHardware {
   vcpu: number
   /** RAM in GiB. */
   memoryGb: number
-  /** Storage in MB (raw from API). */
-  storageMb: number
-  /** Free-form location string e.g. "US". */
+  /**
+   * Storage in GB. Docs say MB but real responses show values like
+   * 3000 / 2500 — i.e. gigabytes (3TB / 2.5TB), consistent with the
+   * size you'd expect on an 8-GPU enterprise box.
+   */
+  storageGb: number
+  /** Free-form location string e.g. "FI", "US". */
   location: string
+  /** Optional interconnect type e.g. "sxm6", "pcie5". */
+  interconnect: string | null
+  /** Whether NVLink is enabled. */
+  nvlink: boolean
   /** Raw API row in case caller needs unknown fields. */
   raw: Record<string, unknown>
 }
@@ -106,7 +118,7 @@ export interface IoNetDeployment {
   id: string
   resourcePrivateName: string
   status: IoNetDeploymentStatus
-  hardwareId: number
+  hardwareId: string
   hardwareName: string
   totalGpus: number
   gpusPerVm: number
@@ -150,8 +162,8 @@ export interface DeployVmArgs {
   durationHours: number
   /** GPU count per VM. 1..8. */
   gpusPerVm: number
-  /** Hardware deploy_id from GET /hardware. */
-  hardwareId: number
+  /** Hardware deploy_id from GET /hardware (string like "8B300.240V"). */
+  hardwareId: string
   /** SSH public key map. Key = name, value = openssh public key. */
   sshKeys: Record<string, string>
   /** Region location list, e.g. ["US"]. Mutually exclusive with node_pool_id. */
@@ -209,8 +221,20 @@ export class IoNetClient {
     if (filters?.supplier) qs.set('supplier', filters.supplier)
     if (filters?.regions) for (const r of filters.regions) qs.append('regions', r)
     const suffix = qs.toString() ? `?${qs.toString()}` : ''
-    const raw = await this.request<RawHardwareItem[]>(`/hardware${suffix}`, 'GET')
-    return raw.map(normalizeHardware)
+    // Real response shape verified 2026-06-03:
+    //   { data: { hardware: [...] } }
+    // The public docs example showed a flat array; the live API
+    // wraps in a "data" envelope (probably for consistency with
+    // io.net's other endpoints that paginate). Handle both shapes
+    // for resilience against future repackaging.
+    const raw = await this.request<RawHardwareEnvelope | RawHardwareItem[]>(
+      `/hardware${suffix}`,
+      'GET',
+    )
+    const items: RawHardwareItem[] = Array.isArray(raw)
+      ? raw
+      : (raw.data?.hardware ?? raw.hardware ?? [])
+    return items.map(normalizeHardware)
   }
 
   /**
@@ -372,9 +396,14 @@ export class IoNetClient {
 // Raw response shapes + normalizers
 // ---------------------------------------------------------------------------
 
+interface RawHardwareEnvelope {
+  data?: { hardware?: RawHardwareItem[] }
+  hardware?: RawHardwareItem[]
+}
+
 interface RawHardwareItem {
-  id: number
-  deploy_id: number
+  id: string
+  deploy_id: string
   name: string
   num_cards: number
   supplier: 'internal' | 'external'
@@ -384,6 +413,8 @@ interface RawHardwareItem {
   memory: number
   storage: number
   location: string
+  interconnect?: string | null
+  nvlink?: boolean
   [extra: string]: unknown
 }
 
@@ -398,8 +429,10 @@ function normalizeHardware(raw: RawHardwareItem): IoNetHardware {
     vramPerCardGb: raw.vram_per_card,
     vcpu: raw.vcpu,
     memoryGb: raw.memory,
-    storageMb: raw.storage,
+    storageGb: raw.storage,
     location: raw.location,
+    interconnect: raw.interconnect ?? null,
+    nvlink: raw.nvlink ?? false,
     raw,
   }
 }
@@ -408,7 +441,7 @@ interface RawDeploymentItem {
   id: string
   resource_private_name?: string
   status?: IoNetDeploymentStatus
-  hardware_id?: number
+  hardware_id?: string
   hardware_name?: string
   total_gpus?: number
   gpus_per_vm?: number
@@ -429,7 +462,7 @@ function normalizeDeployment(raw: RawDeploymentItem): IoNetDeployment {
     id: raw.id,
     resourcePrivateName: raw.resource_private_name ?? '',
     status: raw.status ?? 'deployment requested',
-    hardwareId: raw.hardware_id ?? 0,
+    hardwareId: raw.hardware_id ?? '',
     hardwareName: raw.hardware_name ?? 'unknown',
     totalGpus: raw.total_gpus ?? 0,
     gpusPerVm: raw.gpus_per_vm ?? 1,

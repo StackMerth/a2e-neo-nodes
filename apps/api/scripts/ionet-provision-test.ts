@@ -65,16 +65,11 @@ async function main(): Promise<void> {
   if (flag === '--type') {
     const sku = args[1]
     if (!sku) {
-      console.log('--type requires an io.net deploy_id (numeric).')
+      console.log('--type requires an io.net deploy_id (string, e.g. "8B300.240V").')
       console.log('Run `ionet:inspect --raw` to see every valid id.')
       process.exit(1)
     }
-    const hardwareId = parseInt(sku, 10)
-    if (!Number.isFinite(hardwareId)) {
-      console.log(`--type expects a numeric deploy_id; got "${sku}".`)
-      process.exit(1)
-    }
-    await runRentByType(hardwareId)
+    await runRentByType(sku)
     return
   }
   if (flag === '--poll') {
@@ -191,7 +186,7 @@ async function runRent(tier: GpuTier): Promise<void> {
   console.log(`  pnpm --filter @a2e/api ionet-provision:test --terminate ${result.externalRentalId}`)
 }
 
-async function runRentByType(hardwareId: number): Promise<void> {
+async function runRentByType(hardwareId: string): Promise<void> {
   const client = new IoNetClient()
   const hardware = await client.listHardware()
   const match = hardware.find((h) => h.deployId === hardwareId)

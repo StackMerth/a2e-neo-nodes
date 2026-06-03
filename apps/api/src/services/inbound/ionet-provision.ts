@@ -74,11 +74,12 @@ export interface IoNetProvisionOptions {
   client?: IoNetClient
   /**
    * Test-only: skip GpuTier mapping and use the given io.net
-   * hardware deploy_id directly. Used by ionet-provision:test
+   * hardware deploy_id directly. deploy_id is a string like
+   * "8B300.240V" (verified 2026-06-03). Used by ionet-provision:test
    * --type for arbitrary-SKU dry-runs. Production allocator path
    * never sets this.
    */
-  hardwareIdOverride?: number
+  hardwareIdOverride?: string
   /** Override default location. e.g. "US". */
   location?: string
   /**
@@ -135,7 +136,7 @@ export async function provisionIoNetRental(
   }
 
   // Resolve hardware_id. Production: tier mapping. Override: dry-runs.
-  let resolvedHardwareId: number
+  let resolvedHardwareId: string
   let resolvedLabel: string
   if (options.hardwareIdOverride !== undefined) {
     resolvedHardwareId = options.hardwareIdOverride
@@ -225,7 +226,7 @@ export async function provisionIoNetRental(
       provider: 'IONET',
       providerInstanceId: deployment.id,
       providerSshKeyId: null,
-      providerInstanceType: String(resolvedHardwareId),
+      providerInstanceType: resolvedHardwareId,
       providerRegion: region,
       status: 'PENDING',
       sshHost: null,
@@ -239,7 +240,7 @@ export async function provisionIoNetRental(
   return {
     externalRentalId: row.id,
     providerInstanceId: deployment.id,
-    providerInstanceType: String(resolvedHardwareId),
+    providerInstanceType: resolvedHardwareId,
     providerRegion: region,
     providerPricePerHourUsd: match.pricePerHourUsd,
   }
