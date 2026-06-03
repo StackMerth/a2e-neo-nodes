@@ -965,7 +965,7 @@ async function tryIoNetFallback(
   if (process.env.IONET_ALLOCATOR_ENABLED !== 'true') return false
   if (!isIoNetConfigured()) return false
   if (!isKeyEncryptionConfigured()) return false
-  if (!ioNetTypeForTier(cr.gpuTier)) return false
+  if (!ioNetTypeForTier(cr.gpuTier, cr.gpuCount)) return false
   if (!fitsSingleIoNetVm(cr.gpuTier, cr.gpuCount)) return false
 
   const session = mintSshSession(cr.durationDays)
