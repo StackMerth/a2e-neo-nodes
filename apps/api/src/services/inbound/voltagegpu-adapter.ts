@@ -197,14 +197,17 @@ export class VoltageGpuClient {
    * surfaces required fields we missed.
    */
   async createPod(args: CreatePodArgs): Promise<string> {
+    // Body uses VoltageGPU's verified field names where known
+    // (resource_name + confidential_compute). machine_type is sent
+    // as a fallback since their exact create-body schema isn't
+    // documented yet; whichever field they accept wins.
     const body = {
       name: args.name,
+      resource_name: args.gpuType,
       machine_type: args.gpuType,
-      gpu_type: args.gpuType,
       gpu_count: args.gpuCount,
       ssh_public_key: args.sshPublicKey,
-      confidential: args.confidential ?? true,
-      ...(args.region ? { region: args.region } : {}),
+      confidential_compute: args.confidential ?? true,
     }
     const raw = await this.request<unknown>('/pods', 'POST', body)
     // BEST-GUESS response shape: { pod_id, status } or { id }, etc.
@@ -272,38 +275,65 @@ export class VoltageGpuClient {
 // Raw response shapes + normalizers (BEST-GUESS, verify empirically)
 // ---------------------------------------------------------------------------
 
+/**
+ * Verified shape from GET /api/volt/machines (2026-06-03):
+ *   {
+ *     "name": "NVIDIA H100 - Small [Confidential]",
+ *     "price": 3.75,
+ *     "rental_rate": 3.75,
+ *     "p_min": 2.5, "p_max": 3.75, "base_price": 2.5,
+ *     "total_gpu_count": 21,
+ *     "k": 1,
+ *     "provider": "targon",
+ *     "resource_name": "h100-small",
+ *     "gpu_type": "NVIDIA-H100",
+ *     "gpu_count": 1,
+ *     "vcpu": 14375,
+ *     "memory": 175000,
+ *     "confidential_compute": true
+ *   }
+ *
+ * resource_name is the canonical machine identifier passed to
+ * createPod. gpu_type carries the "NVIDIA-" prefix on the model
+ * which we strip for display. No region field — single-region
+ * (EU) per research.
+ *
+ * p_min / p_max indicate dynamic / auction-style pricing; we
+ * snapshot `price` (current rental_rate) at provision time.
+ */
 interface RawOfferItem {
-  id?: string
-  sku_id?: string
   name?: string
-  gpu_model?: string
-  gpu?: string
+  resource_name?: string
+  gpu_type?: string
   gpu_count?: number
-  num_gpus?: number
   price?: number
-  price_per_hour?: number
-  hourly_rate?: number | string
-  region?: string
-  confidential?: boolean
-  cc_mode?: boolean
-  available?: boolean
-  in_stock?: boolean
+  rental_rate?: number
+  p_min?: number
+  p_max?: number
+  total_gpu_count?: number
+  k?: number
+  provider?: string
+  vcpu?: number
+  memory?: number
+  confidential_compute?: boolean
   [extra: string]: unknown
 }
 
 function normalizeOffer(raw: RawOfferItem): VoltageGpuOffer {
-  const id = raw.id ?? raw.sku_id ?? ''
-  const priceRaw = raw.price ?? raw.price_per_hour ?? raw.hourly_rate ?? 0
-  const price = typeof priceRaw === 'string' ? parseFloat(priceRaw) : priceRaw
+  // Strip the "NVIDIA-" prefix from gpu_type for display
+  // (e.g. "NVIDIA-H100" -> "H100").
+  const gpuModel = (raw.gpu_type ?? '').replace(/^NVIDIA-/i, '') ||
+    parseGpuModelFromName(raw.name ?? '')
   return {
-    id,
-    name: raw.name ?? id,
-    gpuModel: raw.gpu_model ?? raw.gpu ?? parseGpuModelFromName(raw.name ?? id),
-    gpuCount: raw.gpu_count ?? raw.num_gpus ?? 1,
-    pricePerHourUsd: price,
-    region: raw.region ?? 'EU',
-    confidential: raw.confidential ?? raw.cc_mode ?? true,
-    available: raw.available ?? raw.in_stock ?? true,
+    id: raw.resource_name ?? '',
+    name: raw.name ?? raw.resource_name ?? '',
+    gpuModel,
+    gpuCount: raw.gpu_count ?? 1,
+    pricePerHourUsd: raw.price ?? raw.rental_rate ?? 0,
+    region: 'EU',
+    confidential: raw.confidential_compute ?? true,
+    // total_gpu_count > 0 implies stock; treat 0 / undefined as no.
+    available: (raw.total_gpu_count ?? 0) > 0,
     raw,
   }
 }
