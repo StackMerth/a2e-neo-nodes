@@ -1366,6 +1366,18 @@ model ComputeRequest {
   // tier capacity.
   preferDedicatedTier Boolean         @default(false)
 
+  // T7: when true, allocator routes ONLY to TEE-enabled suppliers
+  // (VoltageGPU TDX H100/H200/B200, Phala TDX+SEV-SNP H200, io.net
+  // confidential TDX once business@io.net allow-listed). Skips
+  // Lambda, RunPod, and internal nodes — none of those provide
+  // hardware-attested confidential compute. If no confidential
+  // supplier is enabled or has stock, request lands in
+  // WAITING_ON_CAPACITY with a clear "no confidential supply"
+  // reason rather than silently routing to a non-confidential
+  // supplier (which would let an unsuspecting tester run on
+  // unattested hardware).
+  preferConfidential Boolean          @default(false)
+
   // Status
   status          ComputeRequestStatus @default(PENDING)
   adminNote       String?              // Admin's internal note

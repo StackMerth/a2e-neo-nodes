@@ -322,26 +322,40 @@ async function processRequest(
     .slice(0, cr.gpuCount)
 
   if (idleNodes.length < cr.gpuCount) {
-    // T5b: try Lambda fallback before giving up. Falls through to
-    // legacy PENDING + WAITING_ON_CAPACITY behavior when Lambda is
-    // not configured, the tier isn't mapped, the request needs more
-    // GPUs than a single Lambda instance provides, or Lambda is out
-    // of capacity for the type. Lambda fallback also no-ops when
-    // SSH_KEY_ENCRYPTION_KEY isn't set — the provisioning service
-    // would throw otherwise.
-    const lambdaTook = await tryLambdaFallback(prisma, io, cr)
-    if (lambdaTook) {
-      return
-    }
+    // T7 confidential routing: when buyer asked for hardware-attested
+    // TEE compute, skip every supplier that doesn't provide it.
+    // Lambda / RunPod / internal-nodes have no TEE primitives so
+    // we go STRAIGHT to the confidential cascade (Phala -> io.net
+    // confidential -> VoltageGPU) and fall through to
+    // WAITING_ON_CAPACITY with a clear "no confidential supply"
+    // message rather than silently downgrading to unattested
+    // hardware. This protects buyers (mostly early testers and
+    // privacy-regulated workloads) from running on non-confidential
+    // GPUs without realizing.
+    const wantConfidential = (cr as { preferConfidential?: boolean }).preferConfidential === true
 
-    // T5e: try RunPod as 2nd fallback after Lambda. Same no-op rules
-    // (env missing, tier unmapped, capacity short, etc.). RunPod
-    // covers SKUs Lambda doesn't (consumer RTX) AND has independent
-    // capacity windows from Lambda for high-density boxes (H100,
-    // H200, B200) — when Lambda's empty RunPod often isn't.
-    const runpodTook = await tryRunPodFallback(prisma, io, cr)
-    if (runpodTook) {
-      return
+    if (!wantConfidential) {
+      // T5b: try Lambda fallback before giving up. Falls through to
+      // legacy PENDING + WAITING_ON_CAPACITY behavior when Lambda is
+      // not configured, the tier isn't mapped, the request needs more
+      // GPUs than a single Lambda instance provides, or Lambda is out
+      // of capacity for the type. Lambda fallback also no-ops when
+      // SSH_KEY_ENCRYPTION_KEY isn't set — the provisioning service
+      // would throw otherwise.
+      const lambdaTook = await tryLambdaFallback(prisma, io, cr)
+      if (lambdaTook) {
+        return
+      }
+
+      // T5e: try RunPod as 2nd fallback after Lambda. Same no-op rules
+      // (env missing, tier unmapped, capacity short, etc.). RunPod
+      // covers SKUs Lambda doesn't (consumer RTX) AND has independent
+      // capacity windows from Lambda for high-density boxes (H100,
+      // H200, B200) — when Lambda's empty RunPod often isn't.
+      const runpodTook = await tryRunPodFallback(prisma, io, cr)
+      if (runpodTook) {
+        return
+      }
     }
 
     // T5f: try Phala as 3rd fallback (confidential GPU compute,
@@ -984,6 +998,16 @@ async function tryIoNetFallback(
   if (!isKeyEncryptionConfigured()) return false
   if (!ioNetTypeForTier(cr.gpuTier, cr.gpuCount)) return false
   if (!fitsSingleIoNetVm(cr.gpuTier, cr.gpuCount)) return false
+  // T7 — when buyer asked for confidential, only route to io.net IF
+  // the business@io.net allow-list email has completed AND we've
+  // flipped IONET_CONFIDENTIAL_ENABLED=true. Without that gate,
+  // io.net's catalog only exposes standard (non-TEE) SKUs, so
+  // routing a confidential request here would silently produce
+  // non-attested hardware. Allocator falls through to VoltageGPU.
+  const wantConfidential = (cr as { preferConfidential?: boolean }).preferConfidential === true
+  if (wantConfidential && process.env.IONET_CONFIDENTIAL_ENABLED !== 'true') {
+    return false
+  }
 
   const session = mintSshSession(cr.durationDays)
   const ratePerMinute = (cr.ratePerDay * cr.gpuCount) / (24 * 60)
