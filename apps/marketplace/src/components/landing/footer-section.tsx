@@ -14,7 +14,7 @@ const footerLinks = {
     { name: "Documentation", href: "#developers" },
     { name: "API Reference", href: "#" },
     { name: "SDK", href: "#developers" },
-    { name: "Status", href: "#" },
+    { name: "Status", href: "https://tokenos.betteruptime.com" },
   ],
   Company: [
     { name: "About", href: "#" },
@@ -106,10 +106,15 @@ export function FooterSection() {
           </p>
 
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <span className="flex items-center gap-2">
+            <a
+              href="https://tokenos.betteruptime.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 hover:text-foreground transition-colors"
+            >
               <span className="w-2 h-2 rounded-full bg-green-500" />
               All systems operational
-            </span>
+            </a>
           </div>
         </div>
       </div>
