@@ -384,9 +384,22 @@ export class IoNetClient {
 
   /**
    * Terminate a deployment. Stops billing (beyond the
-   * first-hour-nonrefundable charge). Returns nothing on success;
-   * 404 on already-deleted is treated as a no-op so callers can
-   * safely retry.
+   * first-hour-nonrefundable charge). Returns nothing on success.
+   *
+   * Idempotency / state-restriction quirks (verified 2026-06-03):
+   *   - 404 on already-deleted -> no-op (clean idempotent retry)
+   *   - 400 "Resource does not belong to user and / or does not
+   *     exist" -> covers BOTH "already destroyed" AND "still in
+   *     'deployment requested' queue state (can't be cancelled)".
+   *     Treated as soft-fail no-op so callers can mark CLOSED
+   *     locally; the deployment will auto-terminate when its
+   *     duration_hours expires anyway. Caller's financial exposure
+   *     is bounded by (duration_hours × hourly_rate) regardless.
+   *
+   * TODO(t5g.followup): retry DELETE in the poll worker when state
+   * transitions from "deployment requested" -> "running", so we
+   * actually stop billing instead of waiting for the duration cap.
+   * For now the auto-expire backstop is acceptable.
    */
   async terminateDeployment(id: string): Promise<void> {
     try {
@@ -396,6 +409,24 @@ export class IoNetClient {
       )
     } catch (err) {
       if (err instanceof IoNetApiError && err.statusCode === 404) return
+      if (
+        err instanceof IoNetApiError &&
+        err.statusCode === 400 &&
+        typeof err.body === 'object' &&
+        err.body !== null &&
+        'error' in err.body &&
+        typeof (err.body as { error: unknown }).error === 'string' &&
+        /does not (belong|exist)/i.test((err.body as { error: string }).error)
+      ) {
+        // Either already destroyed OR still in queue state. Either
+        // way, caller proceeds to mark CLOSED locally.
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[ionet] DELETE ${id} returned 400 "does not belong/exist"; treating as soft-fail. ` +
+            `Deployment may continue billing until duration_hours expires.`,
+        )
+        return
+      }
       throw err
     }
   }
