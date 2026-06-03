@@ -34,40 +34,107 @@ export interface VoltageGpuTierMapping {
 }
 
 /**
- * BEST-GUESS skeleton. Real offer ids unknown until /offers responds.
- * After first inspect, populate this with actual hardwareId strings
- * from the live catalog.
+ * Verified against live catalog 2026-06-03 via voltagegpu:inspect.
+ * VoltageGPU uses resource_name strings of the form
+ * "{gpu}-{size}" where size is small=1x, medium=2x, large=4x,
+ * xlarge=8x. All EU, all confidential, all live.
+ *
+ * Prices are slightly above the original research-page numbers
+ * (e.g. H100 1x is $3.75 not $2.77) — they show p_min/p_max
+ * dynamic pricing so actual rate varies. We snapshot live price
+ * at provision time via listOffers.
  */
 const MAPPING: Partial<Record<GpuTier, Partial<Record<number, VoltageGpuTierMapping>>>> = {
   H100: {
     1: {
-      hardwareId: 'h100', // VERIFY: probably "h100", "h100-1x", or numeric id
+      hardwareId: 'h100-small',
       label: 'H100 80GB Confidential (1x)',
       gpusPerVm: 1,
       defaultRegion: 'EU',
-      approxPricePerHourUsd: 2.77,
+      approxPricePerHourUsd: 3.75,
     },
-    // Multi-GPU H100: add entries after inspect surfaces them.
+    2: {
+      hardwareId: 'h100-medium',
+      label: 'H100 80GB Confidential (2x)',
+      gpusPerVm: 2,
+      defaultRegion: 'EU',
+      approxPricePerHourUsd: 7.5,
+    },
+    4: {
+      hardwareId: 'h100-large',
+      label: 'H100 80GB Confidential (4x)',
+      gpusPerVm: 4,
+      defaultRegion: 'EU',
+      approxPricePerHourUsd: 15.0,
+    },
+    // No H100 8x in current VoltageGPU catalog.
   },
   H200: {
     1: {
-      hardwareId: 'h200',
+      hardwareId: 'h200-small',
       label: 'H200 141GB Confidential (1x)',
       gpusPerVm: 1,
       defaultRegion: 'EU',
-      approxPricePerHourUsd: 4.07,
+      approxPricePerHourUsd: 4.94,
+    },
+    2: {
+      hardwareId: 'h200-medium',
+      label: 'H200 141GB Confidential (2x)',
+      gpusPerVm: 2,
+      defaultRegion: 'EU',
+      approxPricePerHourUsd: 9.87,
+    },
+    4: {
+      hardwareId: 'h200-large',
+      label: 'H200 141GB Confidential (4x)',
+      gpusPerVm: 4,
+      defaultRegion: 'EU',
+      approxPricePerHourUsd: 19.74,
+    },
+    // VERIFY: 8x H200 is $39.48/h in catalog; resource_name
+    // pattern suggests "h200-xlarge" but unconfirmed until first
+    // create or until inspect surfaces it explicitly.
+    8: {
+      hardwareId: 'h200-xlarge',
+      label: 'H200 141GB Confidential (8x)',
+      gpusPerVm: 8,
+      defaultRegion: 'EU',
+      approxPricePerHourUsd: 39.48,
     },
   },
   B200: {
     1: {
-      hardwareId: 'b200',
+      hardwareId: 'b200-small',
       label: 'B200 192GB Confidential (1x)',
       gpusPerVm: 1,
       defaultRegion: 'EU',
-      approxPricePerHourUsd: 0, // TBD per pricing page
+      approxPricePerHourUsd: 7.95,
+    },
+    2: {
+      hardwareId: 'b200-medium',
+      label: 'B200 192GB Confidential (2x)',
+      gpusPerVm: 2,
+      defaultRegion: 'EU',
+      approxPricePerHourUsd: 15.9,
+    },
+    4: {
+      hardwareId: 'b200-large',
+      label: 'B200 192GB Confidential (4x)',
+      gpusPerVm: 4,
+      defaultRegion: 'EU',
+      approxPricePerHourUsd: 31.8,
+    },
+    // VERIFY: 8x B200 is $63.60/h in catalog; resource_name
+    // pattern suggests "b200-xlarge".
+    8: {
+      hardwareId: 'b200-xlarge',
+      label: 'B200 192GB Confidential (8x)',
+      gpusPerVm: 8,
+      defaultRegion: 'EU',
+      approxPricePerHourUsd: 63.6,
     },
   },
-  // L40S / RTX / etc. — not VoltageGPU's focus (they're confidential-only).
+  // L40S / RTX / B300 / etc. — VoltageGPU is H100/H200/B200 only.
 }
 
 /** Lookup VoltageGPU offer for an internal (tier, count). */
