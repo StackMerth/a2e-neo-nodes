@@ -87,10 +87,50 @@ export function buildDefaultPhalaCompose(opts: {
 }
 
 /**
- * Same as the YAML version but returned as a structured JS object —
- * useful when Phala's createCvm expects a JSON compose representation
- * rather than a raw YAML string. We'll pick whichever shape the 422
- * validation error guides us to.
+ * Build the dstack "AppCompose" envelope that wraps the docker
+ * compose YAML for Phala Cloud. Discovered empirically 2026-06-03:
+ * Phala's /cvms/provision compose_file field is NOT a raw docker
+ * compose dict — it's a dstack AppCompose object with metadata
+ * around the embedded compose YAML.
+ *
+ * Required (per /cvms/provision 422 errors so far):
+ *   - name (string)
+ *   - docker_compose_file (YAML string) [next 422 will confirm name]
+ *
+ * Optional dstack AppCompose fields with sensible defaults baked in
+ * — we ship the minimal-safe envelope so the CVM boots without
+ * needing KMS, tproxy, or public log endpoints (none of those are
+ * relevant for an SSH-only rental).
+ */
+export function buildPhalaAppCompose(opts: {
+  name: string
+  imageName?: string
+  containerDiskInGb?: number
+}): Record<string, unknown> {
+  return {
+    name: opts.name,
+    manifest_version: 2,
+    runner: 'docker-compose',
+    docker_compose_file: buildDefaultPhalaCompose({
+      imageName: opts.imageName,
+      containerDiskInGb: opts.containerDiskInGb,
+    }),
+    kms_enabled: false,
+    tproxy_enabled: false,
+    public_logs: false,
+    public_sysinfo: false,
+    local_key_provider_enabled: false,
+    // Allow PUBLIC_KEY env var to be passed at deploy time. dstack
+    // restricts which envs the CVM accepts to a declared allowlist
+    // for attestation reproducibility.
+    allowed_envs: ['PUBLIC_KEY'],
+  }
+}
+
+/**
+ * Legacy JSON-form docker compose builder — kept around in case the
+ * next 422 reveals docker_compose_file expects a dict instead of a
+ * YAML string. Not currently wired.
  */
 export function buildDefaultPhalaComposeJson(opts: {
   imageName?: string
