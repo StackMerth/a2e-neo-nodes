@@ -222,6 +222,10 @@ export async function provisionIoNetRental(
   // reaches RUNNING (poll worker updates).
   const encryptedPrivKey = encryptPrivateKey(keypair.privateKeyPem)
   const region = resolvedLocation
+  // io.net's default SSH user is "ionet", NOT "ubuntu" (the schema
+  // default). Verified empirically 2026-06-03 from the ssh_access
+  // string "ssh -p 22 ionet@<ip>". Override here so buyers SSH
+  // with the right username.
   const row = await prisma.externalRental.create({
     data: {
       computeRequestId: cr.id,
@@ -232,6 +236,7 @@ export async function provisionIoNetRental(
       providerRegion: region,
       status: 'PENDING',
       sshHost: null,
+      sshUsername: 'ionet',
       sshPublicKey: keypair.publicKeyOpenssh,
       sshPrivateKeyEnc: encryptedPrivKey,
       providerPricePerHourUsd: match.pricePerHourUsd,
