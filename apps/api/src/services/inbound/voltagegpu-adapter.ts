@@ -192,22 +192,84 @@ export class VoltageGpuClient {
   }
 
   /**
+   * Register an SSH key. Required body uses snake_case
+   * `public_key` (verified 2026-06-03 against POST returning 201).
+   * VoltageGPU's own CLI v1.2.1 has a bug: it sends camelCase
+   * `publicKey` which the API rejects with 400 "name and public_key
+   * required". Their bug, our adapter's win.
+   *
+   * Returns the SSH key UID for use in createPod's ssh_keys array.
+   */
+  async registerSshKey(args: { name: string; publicKey: string }): Promise<string> {
+    const body = {
+      name: args.name,
+      public_key: args.publicKey,
+    }
+    const raw = await this.request<unknown>('/ssh-keys', 'POST', body)
+    // Response shape: stored object with `id` (cuid-style) field.
+    const r = raw as { id?: string; data?: { id?: string } }
+    const id = r.id ?? r.data?.id
+    if (!id) {
+      throw new VoltageGpuApiError(
+        500,
+        '/ssh-keys',
+        `Could not extract id from response: ${JSON.stringify(raw)}`,
+      )
+    }
+    return id
+  }
+
+  /** Delete an SSH key by id. Idempotent on 404. */
+  async deleteSshKey(id: string): Promise<void> {
+    try {
+      await this.request<unknown>(
+        `/ssh-keys/${encodeURIComponent(id)}`,
+        'DELETE',
+      )
+    } catch (err) {
+      if (err instanceof VoltageGpuApiError && err.statusCode === 404) return
+      throw err
+    }
+  }
+
+  /**
    * Create a confidential pod via POST /api/volt/pods. Body shape
    * still BEST-GUESS — iterate from the first 422 response if it
    * surfaces required fields we missed.
    */
-  async createPod(args: CreatePodArgs): Promise<string> {
-    // Body uses VoltageGPU's verified field names where known
-    // (resource_name + confidential_compute). machine_type is sent
-    // as a fallback since their exact create-body schema isn't
-    // documented yet; whichever field they accept wins.
-    const body = {
+  async createPod(args: CreatePodArgs & { sshKeyIds?: string[]; image?: string; provider?: string }): Promise<string> {
+    // Verified body shape captured 2026-06-03 via httpx monkey-patch
+    // of the official volt CLI (volt cc deploy). Required fields:
+    //   provider:      "targon" (VoltageGPU's underlying supplier; can
+    //                  be read from listOffers raw response per-SKU,
+    //                  defaulting to "targon" since all current SKUs
+    //                  use it)
+    //   name:          string identifier
+    //   resource_name: e.g. "h100-small" (matches inventory)
+    //   image:         Docker image, e.g. "ubuntu:22.04"
+    //
+    // Optional:
+    //   ssh_keys:      array of pre-registered SSH key UIDs from
+    //                  POST /api/volt/ssh-keys
+    //
+    // Notes:
+    //   - The 405 our adapter saw earlier was due to missing provider
+    //     + image fields; the API returns 405 for malformed body, NOT
+    //     422. With valid body, balance-related rejection surfaces as
+    //     402 Payment Required.
+    //   - confidential_compute is NOT in the body — confidentiality
+    //     is intrinsic to the resource_name tier (all h100/h200/b200
+    //     SKUs are TDX-sealed by default per VoltageGPU's catalog).
+    //   - gpu_count is implicit in resource_name (h100-small=1,
+    //     h100-medium=2, h100-large=4, h100-xlarge=8) — not in body.
+    const body: Record<string, unknown> = {
+      provider: args.provider ?? 'targon',
       name: args.name,
       resource_name: args.gpuType,
-      machine_type: args.gpuType,
-      gpu_count: args.gpuCount,
-      ssh_public_key: args.sshPublicKey,
-      confidential_compute: args.confidential ?? true,
+      image: args.image ?? 'ubuntu:22.04',
+    }
+    if (args.sshKeyIds && args.sshKeyIds.length > 0) {
+      body.ssh_keys = args.sshKeyIds
     }
     const raw = await this.request<unknown>('/pods', 'POST', body)
     // BEST-GUESS response shape: { pod_id, status } or { id }, etc.
