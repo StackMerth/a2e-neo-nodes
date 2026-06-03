@@ -57,9 +57,15 @@ async function main(): Promise<void> {
     const tier = args[1]
     if (!tier) {
       console.log('--rent requires a GpuTier (e.g. H100, H200, L40S, RTX_4090).')
+      console.log('Optional [count] argument; defaults to 1.')
       process.exit(1)
     }
-    await runRent(tier as GpuTier)
+    const count = args[2] ? parseInt(args[2], 10) : 1
+    if (!Number.isFinite(count) || count < 1) {
+      console.log('GPU count must be a positive integer.')
+      process.exit(1)
+    }
+    await runRent(tier as GpuTier, count)
     return
   }
   if (flag === '--type') {
@@ -95,13 +101,22 @@ async function main(): Promise<void> {
 }
 
 async function runInspect(): Promise<void> {
-  console.log('Tier mappings (internal GpuTier -> io.net deploy_id):')
-  for (const tier of ['H100', 'H200', 'B200', 'L40S', 'RTX_4090', 'RTX_3090'] as GpuTier[]) {
-    const m = ioNetTypeForTier(tier)
+  const TIER_COUNT_COMBOS: Array<[GpuTier, number]> = [
+    ['H100', 1], ['H100', 2], ['H100', 8],
+    ['H200', 1], ['H200', 2], ['H200', 4],
+    ['B200', 1], ['B200', 8],
+    ['B300', 1], ['B300', 2], ['B300', 8],
+    ['L40S', 1], ['L40S', 2], ['L40S', 4], ['L40S', 8],
+    ['RTX_4090', 8],
+  ]
+
+  console.log('Tier mappings (internal GpuTier x count -> io.net deploy_id):')
+  for (const [tier, count] of TIER_COUNT_COMBOS) {
+    const m = ioNetTypeForTier(tier, count)
     if (m) {
-      console.log(`  ${tier.padEnd(10)} -> ${String(m.hardwareId).padEnd(8)} (${m.label}, max ${m.maxGpusPerVm} GPUs/VM)`)
-    } else {
-      console.log(`  ${tier.padEnd(10)} -> (no mapping; populate ionet-tier-mapping.ts)`)
+      console.log(
+        `  ${tier.padEnd(10)} x${count} -> ${m.hardwareId.padEnd(20)} (${m.label}, ${m.defaultLocation}, ~$${m.approxPricePerHourUsd.toFixed(2)}/h)`,
+      )
     }
   }
   console.log()
@@ -109,17 +124,17 @@ async function runInspect(): Promise<void> {
   const client = new IoNetClient()
   const hardware = await client.listHardware()
   console.log(`io.net catalog: ${hardware.length} SKUs available right now.`)
-  console.log('Capacity for our mapped tiers:')
-  for (const tier of ['H100', 'H200', 'B200', 'L40S', 'RTX_4090', 'RTX_3090'] as GpuTier[]) {
-    const m = ioNetTypeForTier(tier)
+  console.log('Capacity verification for our mapped (tier, count) combos:')
+  for (const [tier, count] of TIER_COUNT_COMBOS) {
+    const m = ioNetTypeForTier(tier, count)
     if (!m) continue
     const match = hardware.find((h) => h.deployId === m.hardwareId)
     if (!match) {
-      console.log(`  ${String(m.hardwareId).padEnd(8)} unknown to io.net (mapping needs update)`)
+      console.log(`  ${m.hardwareId.padEnd(20)} unknown to io.net (mapping out of date)`)
       continue
     }
     console.log(
-      `  ${String(m.hardwareId).padEnd(8)} ${match.name.padEnd(36)} $${match.pricePerHourUsd.toFixed(2)}/h  ${match.location}`,
+      `  ${m.hardwareId.padEnd(20)} ${match.name.padEnd(20)} ${String(match.numCards).padStart(2)}x  $${match.pricePerHourUsd.toFixed(2)}/h  ${match.location}`,
     )
   }
   console.log()
@@ -137,10 +152,10 @@ async function runInspect(): Promise<void> {
   }
 }
 
-async function runRent(tier: GpuTier): Promise<void> {
-  const m = ioNetTypeForTier(tier)
+async function runRent(tier: GpuTier, gpuCount: number): Promise<void> {
+  const m = ioNetTypeForTier(tier, gpuCount)
   if (!m) {
-    console.log(`No io.net mapping for tier ${tier}. Populate ionet-tier-mapping.ts first.`)
+    console.log(`No io.net mapping for ${tier} x${gpuCount}. See ionet-tier-mapping.ts for supported combinations.`)
     process.exit(1)
   }
 
@@ -155,7 +170,7 @@ async function runRent(tier: GpuTier): Promise<void> {
     data: {
       userId: user.id,
       gpuTier: tier,
-      gpuCount: 1,
+      gpuCount,
       durationDays: 1,
       ratePerDay: 0,
       totalCost: 0,
@@ -168,7 +183,7 @@ async function runRent(tier: GpuTier): Promise<void> {
   })
   console.log(`Created synthetic ComputeRequest ${cr.id}`)
 
-  console.log(`Provisioning io.net VM for ${tier} (deploy_id=${m.hardwareId})...`)
+  console.log(`Provisioning io.net VM for ${tier} x${gpuCount} (deploy_id=${m.hardwareId})...`)
   console.log('  WARNING: this starts real billing (1 hour minimum, non-refundable).')
   const result = await provisionIoNetRental(prisma, cr.id)
 

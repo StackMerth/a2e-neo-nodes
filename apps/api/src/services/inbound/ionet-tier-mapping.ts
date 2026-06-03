@@ -1,71 +1,197 @@
 /**
- * T5g — internal GpuTier -> io.net hardware deploy_id mapping.
+ * T5g — internal (GpuTier, gpuCount) -> io.net hardware deploy_id mapping.
  *
- * io.net's hardware catalog uses numeric deploy_id values (e.g. 12)
- * which we must populate empirically from the live /hardware
- * response. Run `pnpm --filter @a2e/api ionet:inspect` to see your
- * account's catalog with real deploy_id values, then update the
- * MAPPING constant below.
+ * io.net's catalog has distinct SKUs per GPU count within a family
+ * (gpu_1x_h100, gpu_2x_h100, 8H100.80S.176V, etc.). Mapping is keyed
+ * by (tier, count) so multi-GPU rentals route to the right SKU.
  *
- * Until populated, every tier returns null and the allocator skips
- * io.net entirely (falls through to WAITING_ON_CAPACITY or the next
- * provider in the cascade).
+ * Populated from the live /hardware catalog dump 2026-06-03:
+ *   - Cheapest viable SKU picked per (tier, count); US-region
+ *     preferred where available, FI/FR/PL otherwise
+ *   - RTX_4090 only available as 8x bundle ($3.92/h) — no 1x/2x/4x
+ *     SKU exists; we only register the 8x mapping
+ *   - RTX_3090, GB300, CONSUMER, OTHER: not carried by io.net
+ *   - H200: no 8x SKU available; max 4x
  *
- * Multi-GPU rentals: io.net uses (hardware_id, gpus_per_vm) pairs
- * per VM. A given deploy_id may have a max gpu count per VM that
- * varies by SKU; fitsSingleIoNetVm() bounds-checks this with
- * maxGpusPerVm. Multi-VM clusters via replica_count are out of
- * scope for Phase 1 (single-VM rentals only).
+ * Returns null for unmapped (tier, count) — allocator skips io.net
+ * and falls through to WAITING_ON_CAPACITY.
  */
 
 import type { GpuTier } from '@a2e/database'
 
 export interface IoNetTierMapping {
   /**
-   * io.net deploy_id (string like "8B300.240V" — NOT numeric as
-   * the public docs suggested; verified 2026-06-03 against live API).
+   * io.net deploy_id (string like "gpu_1x_h100" or "8B300.240V").
+   * Verified 2026-06-03 against live API.
    */
   hardwareId: string
   /** Pretty label for logs / admin UI. */
   label: string
-  /** Max GPU count per VM at this SKU. */
-  maxGpusPerVm: number
-  /** Default location preference (io.net region code, e.g. "US", "FI"). */
-  defaultLocation?: string
+  /** GPU count this SKU provides (must match the requested count). */
+  gpusPerVm: number
+  /** Default location for this SKU (io.net region code). */
+  defaultLocation: string
+  /** Per-hour rate snapshotted at mapping time; live rate fetched on provision. */
+  approxPricePerHourUsd: number
 }
 
 /**
- * EMPTY UNTIL VERIFIED. Populate after running:
- *   pnpm --filter @a2e/api ionet:inspect --raw
- *
- * The output shows each SKU's deploy_id, name, num_cards, and
- * pricePerHour. Match each of our internal GpuTier enum values to
- * the io.net SKU that matches:
- *   H100  -> "H100 80GB SXM5" or similar (deploy_id TBD)
- *   H200  -> "H200 141GB SXM5" or similar (deploy_id TBD)
- *   B200  -> "B200 192GB SXM5" or similar (deploy_id TBD)
- *   L40S  -> "L40S" or similar (deploy_id TBD)
- *   RTX_4090 -> "RTX 4090" or similar (deploy_id TBD)
- *   RTX_3090 -> "RTX 3090" or similar (deploy_id TBD)
+ * Nested map: tier -> gpuCount -> mapping. Populated from the live
+ * catalog. When io.net adds new SKUs, add entries here; when SKUs
+ * change deploy_id, update here. The orchestrator's listHardware
+ * call verifies the SKU is still in the catalog at provision time.
  */
-const MAPPING: Partial<Record<GpuTier, IoNetTierMapping>> = {
-  // Empty intentionally. Populate after ionet:inspect.
+const MAPPING: Partial<Record<GpuTier, Partial<Record<number, IoNetTierMapping>>>> = {
+  H100: {
+    1: {
+      hardwareId: 'gpu_1x_h100',
+      label: 'H100 80GB (1x)',
+      gpusPerVm: 1,
+      defaultLocation: 'US',
+      approxPricePerHourUsd: 2.6,
+    },
+    2: {
+      hardwareId: 'gpu_2x_h100',
+      label: 'H100 80GB (2x)',
+      gpusPerVm: 2,
+      defaultLocation: 'US',
+      approxPricePerHourUsd: 5.21,
+    },
+    8: {
+      hardwareId: '8H100.80S.176V',
+      label: 'H100 80GB SXM (8x, 176 vCPU)',
+      gpusPerVm: 8,
+      defaultLocation: 'FI',
+      approxPricePerHourUsd: 27.88,
+    },
+  },
+  H200: {
+    1: {
+      hardwareId: 'gpu_1x_h200_nvl',
+      label: 'H200 141GB NVL (1x)',
+      gpusPerVm: 1,
+      defaultLocation: 'US',
+      approxPricePerHourUsd: 3.79,
+    },
+    2: {
+      hardwareId: 'gpu_2x_h200_nvl',
+      label: 'H200 141GB NVL (2x)',
+      gpusPerVm: 2,
+      defaultLocation: 'US',
+      approxPricePerHourUsd: 7.58,
+    },
+    4: {
+      hardwareId: 'gpu_4x_h200_nvl',
+      label: 'H200 141GB NVL (4x)',
+      gpusPerVm: 4,
+      defaultLocation: 'US',
+      approxPricePerHourUsd: 15.16,
+    },
+    // No 8x H200 in io.net's catalog as of 2026-06-03.
+  },
+  B200: {
+    1: {
+      hardwareId: '1B200.30V',
+      label: 'B200 180GB (1x)',
+      gpusPerVm: 1,
+      defaultLocation: 'FI',
+      approxPricePerHourUsd: 7.13,
+    },
+    8: {
+      hardwareId: '8B200.240V',
+      label: 'B200 180GB (8x, 240 vCPU)',
+      gpusPerVm: 8,
+      defaultLocation: 'FI',
+      approxPricePerHourUsd: 52.04,
+    },
+  },
+  B300: {
+    1: {
+      hardwareId: '1B300.30V',
+      label: 'B300 288GB (1x)',
+      gpusPerVm: 1,
+      defaultLocation: 'FI',
+      approxPricePerHourUsd: 8.74,
+    },
+    2: {
+      hardwareId: '2B300.60V',
+      label: 'B300 288GB (2x)',
+      gpusPerVm: 2,
+      defaultLocation: 'FI',
+      approxPricePerHourUsd: 16.61,
+    },
+    8: {
+      hardwareId: '8B300.240V',
+      label: 'B300 288GB (8x, 240 vCPU)',
+      gpusPerVm: 8,
+      defaultLocation: 'FI',
+      approxPricePerHourUsd: 63.86,
+    },
+  },
+  L40S: {
+    1: {
+      hardwareId: '1L40S.20V',
+      label: 'L40S 48GB (1x)',
+      gpusPerVm: 1,
+      defaultLocation: 'FI',
+      approxPricePerHourUsd: 1.73,
+    },
+    2: {
+      hardwareId: 'L40Sx2',
+      label: 'L40S 48GB (2x)',
+      gpusPerVm: 2,
+      // L40Sx2 exists in both FR and PL at $3.40/h. Pick FR for
+      // primary; allocator will fall through if region unavailable.
+      defaultLocation: 'FR',
+      approxPricePerHourUsd: 3.4,
+    },
+    4: {
+      hardwareId: 'L40Sx4',
+      label: 'L40S 48GB (4x)',
+      gpusPerVm: 4,
+      defaultLocation: 'US',
+      approxPricePerHourUsd: 5.8,
+    },
+    8: {
+      hardwareId: 'L40Sx8',
+      label: 'L40S 48GB (8x)',
+      gpusPerVm: 8,
+      defaultLocation: 'US',
+      approxPricePerHourUsd: 11.6,
+    },
+  },
+  RTX_4090: {
+    // Only 8x bundle available — io.net doesn't carry 1x/2x/4x RTX 4090.
+    8: {
+      hardwareId: 'RTX4090x8',
+      label: 'RTX 4090 24GB (8x)',
+      gpusPerVm: 8,
+      defaultLocation: 'US',
+      approxPricePerHourUsd: 3.92,
+    },
+  },
+  // RTX_3090 / GB300 / CONSUMER / OTHER: io.net doesn't carry these
+  // in its current catalog (2026-06-03). Allocator skips io.net for
+  // these tiers.
 }
 
 /**
- * Lookup hardware_id for an internal tier. Returns null when io.net
- * doesn't carry the tier (or MAPPING hasn't been populated yet).
+ * Lookup the io.net SKU for an internal (tier, count) combo.
+ * Returns null when io.net doesn't carry that specific combination.
  */
-export function ioNetTypeForTier(tier: GpuTier): IoNetTierMapping | null {
-  return MAPPING[tier] ?? null
+export function ioNetTypeForTier(
+  tier: GpuTier,
+  gpuCount: number,
+): IoNetTierMapping | null {
+  return MAPPING[tier]?.[gpuCount] ?? null
 }
 
 /**
- * Whether (tier, gpuCount) fits in a single io.net VM. Multi-VM
- * clusters via replica_count are deferred to Phase 2 of T5g.
+ * Whether (tier, gpuCount) maps to a single io.net VM SKU. Same as
+ * ioNetTypeForTier returning non-null since every mapped SKU is
+ * exactly the requested GPU count. Multi-VM clusters via
+ * replica_count are out of scope for T5g Phase 1.
  */
 export function fitsSingleIoNetVm(tier: GpuTier, gpuCount: number): boolean {
-  const m = MAPPING[tier]
-  if (!m) return false
-  return gpuCount <= m.maxGpusPerVm && gpuCount >= 1
+  return ioNetTypeForTier(tier, gpuCount) !== null
 }

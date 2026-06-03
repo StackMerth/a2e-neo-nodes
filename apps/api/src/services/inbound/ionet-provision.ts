@@ -138,23 +138,21 @@ export async function provisionIoNetRental(
   // Resolve hardware_id. Production: tier mapping. Override: dry-runs.
   let resolvedHardwareId: string
   let resolvedLabel: string
+  let resolvedLocation: string
   if (options.hardwareIdOverride !== undefined) {
     resolvedHardwareId = options.hardwareIdOverride
     resolvedLabel = `hardware_id=${options.hardwareIdOverride}`
+    resolvedLocation = options.location ?? 'US'
   } else {
-    const mapping = ioNetTypeForTier(cr.gpuTier)
+    const mapping = ioNetTypeForTier(cr.gpuTier, cr.gpuCount)
     if (!mapping) {
       throw new IoNetProvisionError(
-        `io.net tier mapping has no entry for ${cr.gpuTier}. Run \`pnpm --filter @a2e/api ionet:inspect --raw\` and populate ionet-tier-mapping.ts.`,
-      )
-    }
-    if (!fitsSingleIoNetVm(cr.gpuTier, cr.gpuCount)) {
-      throw new IoNetProvisionError(
-        `Request needs ${cr.gpuCount} GPUs but io.net ${mapping.label} caps at ${mapping.maxGpusPerVm} per VM. Multi-VM clusters are out of scope for T5g Phase 1.`,
+        `io.net has no SKU for ${cr.gpuTier} x${cr.gpuCount}. Allocator should skip io.net for this tier/count or update ionet-tier-mapping.ts.`,
       )
     }
     resolvedHardwareId = mapping.hardwareId
     resolvedLabel = mapping.label
+    resolvedLocation = options.location ?? mapping.defaultLocation
   }
 
   const api = options.client ?? new IoNetClient()
@@ -190,7 +188,7 @@ export async function provisionIoNetRental(
       sshKeys: { [sshKeyName]: keypair.publicKeyOpenssh },
       ...(options.nodePoolId
         ? { nodePoolId: options.nodePoolId }
-        : { locationIds: [options.location ?? 'US'] }),
+        : { locationIds: [resolvedLocation] }),
       vmImageType: options.vmImageType ?? 'general',
     })
   } catch (err) {
