@@ -67,7 +67,13 @@ const MAPPING: Partial<Record<GpuTier, Partial<Record<number, VoltageGpuTierMapp
       defaultRegion: 'EU',
       approxPricePerHourUsd: 15.0,
     },
-    // No H100 8x in current VoltageGPU catalog.
+    8: {
+      hardwareId: 'h100-xlarge',
+      label: 'H100 80GB Confidential (8x)',
+      gpusPerVm: 8,
+      defaultRegion: 'EU',
+      approxPricePerHourUsd: 30.0,
+    },
   },
   H200: {
     1: {

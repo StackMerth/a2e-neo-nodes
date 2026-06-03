@@ -139,34 +139,62 @@ export async function provisionVoltageGpuRental(
   // Step 2: mint ephemeral keypair.
   const keypair = generateRentalKeypair(cr.id)
 
-  // Step 3: create the pod.
+  // Step 3: register the public key with VoltageGPU. They require
+  // pre-registered keys identified by UID in the deploy body (NOT
+  // inline like RunPod / io.net). Same Lambda-style two-step flow.
+  // Verified empirically 2026-06-03 via CLI HTTP capture.
+  const sshKeyName = `tokenos-${cr.id.slice(0, 12)}`
+  let providerSshKeyId: string
+  try {
+    providerSshKeyId = await api.registerSshKey({
+      name: sshKeyName,
+      publicKey: keypair.publicKeyOpenssh,
+    })
+  } catch (err) {
+    throw new VoltageGpuProvisionError(
+      `VoltageGPU registerSshKey failed for ${cr.id}: ${(err as Error).message}`,
+      err,
+    )
+  }
+
+  // Step 4: deploy the pod. Verified body shape includes
+  // {provider, name, resource_name, image, ssh_keys}. The provider
+  // string ("targon") comes from the catalog entry; we pass it
+  // through from the SKU's raw response.
   let providerInstanceId: string
   try {
+    const offerProvider =
+      (match.raw as { provider?: string } | undefined)?.provider ?? 'targon'
     providerInstanceId = await api.createPod({
       name: `tokenos-${cr.id.slice(0, 12)}`,
       gpuType: resolvedHardwareId,
       gpuCount: cr.gpuCount,
       sshPublicKey: keypair.publicKeyOpenssh,
+      sshKeyIds: [providerSshKeyId],
+      provider: offerProvider,
       region: resolvedRegion,
       confidential: true,
     })
   } catch (err) {
+    // Roll back the SSH key registration so we don't leave orphans
+    // when deploy fails (insufficient balance, capacity, etc.).
+    void api.deleteSshKey(providerSshKeyId).catch(() => {})
     throw new VoltageGpuProvisionError(
       `VoltageGPU createPod failed for ${resolvedLabel}: ${(err as Error).message}`,
       err,
     )
   }
 
-  // Step 4: persist. sshUsername defaults to "root" per VoltageGPU's
-  // quick-start docs (`ssh root@<pod-ip>`). Poll worker overwrites
-  // if the pod detail response surfaces a different user.
+  // Step 5: persist. sshUsername defaults to "root" per VoltageGPU's
+  // quick-start docs (`ssh root@<pod-ip>`). providerSshKeyId stores
+  // the registered key UID for cleanup on terminate.
   const encryptedPrivKey = encryptPrivateKey(keypair.privateKeyPem)
   const row = await prisma.externalRental.create({
     data: {
       computeRequestId: cr.id,
       provider: 'VOLTAGE_GPU',
       providerInstanceId,
-      providerSshKeyId: null,
+      providerSshKeyId,
       providerInstanceType: resolvedHardwareId,
       providerRegion: resolvedRegion,
       status: 'PENDING',
@@ -287,6 +315,13 @@ export async function terminateVoltageGpuRental(
       },
     })
     throw err
+  }
+
+  // Clean up the registered SSH key. Best-effort: stranded keys
+  // aren't billable, but admin clutter is annoying. 404 = already
+  // gone, treat as success.
+  if (row.providerSshKeyId) {
+    void api.deleteSshKey(row.providerSshKeyId).catch(() => {})
   }
 
   await prisma.externalRental.update({
