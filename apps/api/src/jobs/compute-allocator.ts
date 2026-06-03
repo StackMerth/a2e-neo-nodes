@@ -47,6 +47,12 @@ import {
   fitsSingleRunPodPod,
 } from '../services/inbound/runpod-tier-mapping.js'
 import { provisionRunPodRental } from '../services/inbound/runpod-provision.js'
+import { isPhalaConfigured } from '../services/inbound/phala-adapter.js'
+import {
+  phalaTypeForTier,
+  fitsSinglePhalaCvm,
+} from '../services/inbound/phala-tier-mapping.js'
+import { provisionPhalaRental } from '../services/inbound/phala-provision.js'
 
 type ComputeRequestWithUser = ComputeRequest & { user: User }
 
@@ -323,6 +329,18 @@ async function processRequest(
     // H200, B200) — when Lambda's empty RunPod often isn't.
     const runpodTook = await tryRunPodFallback(prisma, io, cr)
     if (runpodTook) {
+      return
+    }
+
+    // T5f: try Phala as 3rd fallback (confidential GPU compute,
+    // Intel TDX + AMD SEV-SNP). Currently H200-only on Phala's side
+    // so all non-H200 tiers no-op here automatically. Gated by
+    // PHALA_ALLOCATOR_ENABLED=true env until createCvm body schema
+    // has been verified empirically via phala-provision:test (the
+    // body shape in phala-adapter.ts is still best-guess; the first
+    // real call will return a 422 with required field names).
+    const phalaTook = await tryPhalaFallback(prisma, io, cr)
+    if (phalaTook) {
       return
     }
 
@@ -784,6 +802,116 @@ async function tryRunPodFallback(
     requestId: cr.id,
     userId: cr.userId,
     provider: 'RUNPOD',
+    instanceType: provisionResult.providerInstanceType,
+    region: provisionResult.providerRegion,
+    timestamp: now.toISOString(),
+  })
+
+  return true
+}
+
+/**
+ * T5f — try Phala as the 3rd-tier overflow supplier for confidential
+ * GPU rentals (Intel TDX + AMD SEV-SNP).
+ *
+ * Same semantics as tryRunPodFallback: success returns true and the
+ * caller skips the rest of the allocator tick; failure logs and
+ * returns false so the caller falls through to WAITING_ON_CAPACITY.
+ *
+ * Gated by env PHALA_ALLOCATOR_ENABLED=true. Default OFF until the
+ * createCvm body schema has been verified end-to-end via
+ * phala-provision:test (the body shape in phala-adapter.ts is
+ * best-guess; first real call returns a 422 with required field
+ * names that we then bake into the adapter). Once verified, set
+ * PHALA_ALLOCATOR_ENABLED=true in Render env to activate the cascade.
+ *
+ * No-op when:
+ *   - PHALA_ALLOCATOR_ENABLED is not exactly "true"
+ *   - PHALA_API_KEY not set
+ *   - SSH key encryption not configured
+ *   - Tier not mapped on Phala (currently H100/B200/L40S all no-op
+ *     because Phala only carries H200)
+ *   - Request needs a GPU count that doesn't match a Phala SKU
+ *     (only 1x and 8x H200 currently)
+ *
+ * Phala has no community/secure tier split (every CVM is dedicated
+ * by construction; confidential VMs can't be multi-tenanted), so
+ * there's no escalation logic — provision succeeds or doesn't.
+ */
+async function tryPhalaFallback(
+  prisma: PrismaClient,
+  io: SocketServer,
+  cr: ComputeRequestWithUser,
+): Promise<boolean> {
+  if (process.env.PHALA_ALLOCATOR_ENABLED !== 'true') return false
+  if (!isPhalaConfigured()) return false
+  if (!isKeyEncryptionConfigured()) return false
+  if (!phalaTypeForTier(cr.gpuTier, cr.gpuCount)) return false
+  if (!fitsSinglePhalaCvm(cr.gpuTier, cr.gpuCount)) return false
+
+  const session = mintSshSession(cr.durationDays)
+  const ratePerMinute = (cr.ratePerDay * cr.gpuCount) / (24 * 60)
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + cr.durationDays * 86400000)
+
+  let provisionResult
+  try {
+    provisionResult = await provisionPhalaRental(prisma, cr.id)
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[compute-allocator] Phala fallback failed for ${cr.id} (tier ${cr.gpuTier} x${cr.gpuCount}):`,
+      (err as Error).message,
+    )
+    return false
+  }
+
+  const transitioned = await prisma.computeRequest.updateMany({
+    where: { id: cr.id, status: 'PENDING' },
+    data: {
+      status: 'PROVISIONING_EXTERNAL',
+      ratePerMinute,
+      expiresAt,
+      sshSessionToken: session.token,
+      sshSessionTokenExpiresAt: session.expiresAt,
+      sshSessionStatus: 'PROVISIONING',
+    },
+  })
+  if (transitioned.count === 0) {
+    // Lost race; roll back Phala provision so we don't leak billing.
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[compute-allocator] race on ${cr.id} after Phala provision; rolling back`,
+    )
+    const { terminatePhalaRental } = await import('../services/inbound/phala-provision.js')
+    await terminatePhalaRental(
+      prisma,
+      provisionResult.externalRentalId,
+      'allocator race: another path won the request',
+    ).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(`[compute-allocator] Phala rollback failed for ${provisionResult.externalRentalId}:`, err)
+    })
+    return false
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[compute-allocator] Phala fallback OK for ${cr.id}: provisioned ${provisionResult.providerInstanceType} (externalRentalId=${provisionResult.externalRentalId})`,
+  )
+
+  void createNotification(
+    cr.userId,
+    'COMPUTE_REQUEST_APPROVED',
+    'Compute is Provisioning',
+    `Your ${cr.gpuCount}x ${cr.gpuTier} confidential rental is being prepared. SSH credentials appear in your dashboard within ~90-180s (TEE attestation adds boot time).`,
+    `/buyer/requests/${cr.id}`,
+  )
+
+  io.emit('compute:provisioning-external', {
+    requestId: cr.id,
+    userId: cr.userId,
+    provider: 'PHALA',
     instanceType: provisionResult.providerInstanceType,
     region: provisionResult.providerRegion,
     timestamp: now.toISOString(),
