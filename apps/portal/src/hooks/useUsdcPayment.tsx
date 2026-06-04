@@ -21,6 +21,7 @@
 import { useCallback, useState } from 'react'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import {
+  ComputeBudgetProgram,
   PublicKey,
   Transaction,
   type Commitment,
@@ -90,6 +91,39 @@ export function useUsdcPayment() {
 
         const tx = new Transaction()
 
+        // Priority fee instructions: pushes the transaction higher in
+        // the validator's processing queue during network congestion.
+        // Without these, transactions routinely get dropped or
+        // confirmation times out on mainnet during busy periods. Cost
+        // impact is negligible (fractions of a cent total).
+        //
+        // setComputeUnitLimit caps the compute units the tx is allowed
+        // to consume. USDC transfers fit comfortably under 60k CUs.
+        // Bumping the limit slightly above the actual usage protects
+        // against fluctuating accounting overhead.
+        //
+        // setComputeUnitPrice sets the per-CU price in micro-lamports
+        // (1 lamport = 1,000,000 micro-lamports). 50k micro-lamports/CU
+        // is mid-range — high enough to be prioritized during light to
+        // moderate congestion, still cheap (60k CU * 50k uLam = 3M uLam
+        // = 3000 lamports = ~$0.0003 at SOL ~$170).
+        const PRIORITY_FEE_MICROLAMPORTS_PER_CU = parseInt(
+          process.env.NEXT_PUBLIC_SOLANA_PRIORITY_FEE_MICROLAMPORTS_PER_CU ?? '50000',
+          10,
+        )
+        const COMPUTE_UNIT_LIMIT = parseInt(
+          process.env.NEXT_PUBLIC_SOLANA_COMPUTE_UNIT_LIMIT ?? '80000',
+          10,
+        )
+        tx.add(
+          ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNIT_LIMIT }),
+        )
+        tx.add(
+          ComputeBudgetProgram.setComputeUnitPrice({
+            microLamports: PRIORITY_FEE_MICROLAMPORTS_PER_CU,
+          }),
+        )
+
         // Create the recipient's USDC token account if it does not
         // exist yet — first-time topups to a fresh recipient need
         // this instruction or the transfer reverts.
@@ -121,9 +155,53 @@ export function useUsdcPayment() {
         // when sendTransaction is invoked, then prompts the wallet
         // for a signature, then forwards to the connection.
         const signature = await sendTransaction(tx, connection)
-        await connection.confirmTransaction(signature, args.commitment ?? 'confirmed')
 
-        return { signature, network: resolveNetwork() }
+        // Active polling for confirmation. Replaces
+        // connection.confirmTransaction(signature, commitment) which
+        // uses the connection's confirmTransactionInitialTimeout (~30s
+        // default) and gives terrible feedback on timeout. We poll
+        // getSignatureStatus on a 2s interval for up to 90s. Returns
+        // as soon as the tx is confirmed/finalized, throws explicitly
+        // on rejection, and on timeout surfaces the signature so the
+        // user can verify on Solana Explorer.
+        const POLL_INTERVAL_MS = 2_000
+        const POLL_TIMEOUT_MS = parseInt(
+          process.env.NEXT_PUBLIC_SOLANA_CONFIRM_TIMEOUT_MS ?? '90000',
+          10,
+        )
+        const targetCommitment = args.commitment ?? 'confirmed'
+        const start = Date.now()
+        while (Date.now() - start < POLL_TIMEOUT_MS) {
+          const { value } = await connection.getSignatureStatus(signature, {
+            searchTransactionHistory: true,
+          })
+          if (value?.err) {
+            throw new Error(
+              `Transaction failed on-chain: ${JSON.stringify(value.err)}. ` +
+              `Signature: ${signature}. ` +
+              `No funds were debited.`,
+            )
+          }
+          const status = value?.confirmationStatus
+          if (
+            status === 'finalized' ||
+            (targetCommitment === 'confirmed' && (status === 'confirmed' || status === 'finalized'))
+          ) {
+            return { signature, network: resolveNetwork() }
+          }
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+        }
+
+        // Timeout. The signature may have actually confirmed and we
+        // just couldn't see it from the current RPC. Surface the
+        // signature so the user can verify on Solana Explorer instead
+        // of leaving them guessing.
+        throw new Error(
+          `Transaction was broadcast but not confirmed within ${POLL_TIMEOUT_MS / 1000}s. ` +
+          `Signature: ${signature}. ` +
+          `It may still confirm — check https://solscan.io/tx/${signature} before retrying. ` +
+          `If it shows "Success" there, your USDC was debited; do not retry.`,
+        )
       } finally {
         setSubmitting(false)
       }
