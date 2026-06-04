@@ -419,8 +419,16 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      style={{
+        // Backdrop fully obscures the TopHeader (z-30) so the modal
+        // reads as a single focused layer. Earlier rgba(0,0,0,0.6) +
+        // 4px blur let the TopHeader's backdrop-blur bleed through,
+        // creating the "two layers visible at top" effect.
+        background: 'rgba(0,0,0,0.85)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+      }}
       onClick={onClose}
     >
       <div
