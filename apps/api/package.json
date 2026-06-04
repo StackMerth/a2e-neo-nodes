@@ -54,6 +54,7 @@
     "runpod-capacity:inspect": "tsx scripts/runpod-capacity-watch-inspect.ts",
     "phala:inspect": "tsx scripts/phala-inspect.ts",
     "phala:catalog": "tsx scripts/phala-catalog-full.ts",
+    "phala:cvm-raw": "tsx scripts/phala-cvm-raw.ts",
     "phala-provision:test": "tsx scripts/phala-provision-test.ts",
     "ionet:inspect": "tsx scripts/ionet-inspect.ts",
     "ionet-provision:test": "tsx scripts/ionet-provision-test.ts",
