@@ -730,15 +730,53 @@ export default function RequestDetailPage() {
               </div>
             </div>
 
-            {/* Ready-to-run SSH command. -i points at the saved .pem. */}
-            <div className="mt-4 p-3 rounded-lg" style={{ background: 'var(--bg-card)' }}>
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
-                  ssh -i tokenos-rental-{id.slice(0, 12)}.pem {externalCreds.sshUsername}@{externalCreds.sshHost} -p {externalCreds.sshPort}
-                </p>
-                <CopyButton text={`ssh -i tokenos-rental-${id.slice(0, 12)}.pem ${externalCreds.sshUsername}@${externalCreds.sshHost} -p ${externalCreds.sshPort}`} />
-              </div>
-            </div>
+            {/* Ready-to-run SSH command. Phala dstack-gateway hosts
+                (https://...phala.network) need TLS-tunneled SSH via
+                openssl ProxyCommand; other providers use direct TCP. */}
+            {(() => {
+              // Detect Phala dstack-gateway hosts whether the URL was
+              // stored with or without the https:// prefix. Either
+              // shape requires openssl ProxyCommand because the gateway
+              // terminates TLS at 443 with SNI routing.
+              const isDstackTproxy =
+                typeof externalCreds.sshHost === 'string' &&
+                externalCreds.sshHost.includes('.phala.network')
+              const pemName = `tokenos-rental-${id.slice(0, 12)}.pem`
+              if (isDstackTproxy) {
+                const hostname = externalCreds.sshHost
+                  .replace(/^https:\/\//, '')
+                  .replace(/\/$/, '')
+                const tunneledCmd = `ssh -i ${pemName} -o "ProxyCommand=openssl s_client -quiet -connect ${hostname}:443 -servername ${hostname} 2>/dev/null" -o StrictHostKeyChecking=no ${externalCreds.sshUsername}@${hostname}`
+                return (
+                  <div className="mt-4 p-3 rounded-lg" style={{ background: 'var(--bg-card)' }}>
+                    <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
+                      Phala routes SSH over TLS via the dstack gateway. Use openssl as a ProxyCommand to bridge the connection:
+                    </p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-mono break-all" style={{ color: 'var(--text-secondary)' }}>
+                        {tunneledCmd}
+                      </p>
+                      <CopyButton text={tunneledCmd} />
+                    </div>
+                    <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+                      Requires openssl installed locally. Direct{' '}
+                      <code className="font-mono">ssh user@host</code> will fail because the gateway terminates TLS at port 443 with SNI routing, not raw TCP at port 22.
+                    </p>
+                  </div>
+                )
+              }
+              const directCmd = `ssh -i ${pemName} ${externalCreds.sshUsername}@${externalCreds.sshHost} -p ${externalCreds.sshPort}`
+              return (
+                <div className="mt-4 p-3 rounded-lg" style={{ background: 'var(--bg-card)' }}>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
+                      {directCmd}
+                    </p>
+                    <CopyButton text={directCmd} />
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* T7: Cryptographic attestation. Only renders for
                 confidential rentals (VoltageGPU / Phala / io.net allow-
