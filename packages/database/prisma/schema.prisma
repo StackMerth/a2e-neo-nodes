@@ -214,6 +214,8 @@ model User {
   notifications    Notification[]
   refreshTokens    RefreshToken[]
   computeRequests   ComputeRequest[]
+  // Confidential compute waitlist entries when CONFIDENTIAL_COMPUTE_UI_MODE=waitlist.
+  confidentialInterests ConfidentialInterest[]
   apiKeys           ApiKey[]
   ratingsGiven      Rating[]
   buyerBalance      BuyerBalance?
@@ -2300,4 +2302,68 @@ enum InferenceRequestStatus {
   COMPLETED   // stream closed normally; tokens + cost persisted
   FAILED      // worker errored or external provider rejected
   CANCELLED   // buyer cancelled before stream completed
+}
+
+// ============================================================================
+// CONFIDENTIAL COMPUTE WAITLIST
+// ============================================================================
+// Captured by the buyer request page when CONFIDENTIAL_COMPUTE_UI_MODE
+// env is set to 'waitlist'. Active when our confidential GPU TEE
+// supply is intermittent or not yet onboarded (today: Phala h200
+// capacity exhausted, GCP A3 quota pending, Azure signup blocked,
+// io.net enterprise sales gated).
+//
+// Behavior in waitlist mode: buyer checks "Require confidential
+// compute" and the form swaps from "submit + pay" to "express
+// interest + thank you". No ComputeRequest is created, no balance
+// is debited. Admin gets notified to prioritize supplier onboarding,
+// buyer gets a confirmation email and is added to the list to
+// contact when capacity is available.
+//
+// Flip back to active mode (env=active) when at least one
+// confidential supplier is reliably online; that restores the
+// original "submit + provision" flow.
+
+model ConfidentialInterest {
+  id              String   @id @default(cuid())
+
+  // User reference is OPTIONAL. The waitlist form is reachable by
+  // any signed-in buyer (most cases) but we also keep it filing-
+  // capable for guest/anonymous users if we surface it pre-auth
+  // later. When null, email is the only contact.
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id])
+
+  // Required: how do we reach them when capacity lands.
+  email           String
+
+  // What they want (best-effort, all optional). Lets admin
+  // prioritize which suppliers to onboard first based on tier
+  // demand and target deadlines.
+  gpuTier         GpuTier?
+  gpuCount        Int?
+  // Free-form: training, inference, fine-tune, multi-party
+  // computation, confidential database, etc. Helps us understand
+  // which testers need GPU TEE vs CPU-only TDX.
+  workloadType    String?
+  // Rough estimate of monthly compute hours. Helps us size the
+  // initial supplier commitment.
+  expectedHours   Int?
+  // When does the buyer need this? Drives outreach priority.
+  timelineWeeks   Int?
+  // Free-form notes (use case, budget signal, contact preference).
+  notes           String?
+
+  // Set when admin emails the buyer that capacity is available.
+  // Lets admin filter the list to "not yet contacted" rows.
+  notifiedAt      DateTime?
+
+  // Optional admin annotation: status, follow-up notes, etc.
+  adminNote       String?
+
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([notifiedAt])
+  @@index([userId])
 }

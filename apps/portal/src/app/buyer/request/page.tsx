@@ -295,6 +295,25 @@ export default function RequestComputePage() {
   // only to Phala / io.net allow-listed / VoltageGPU.
   const [preferConfidential, setPreferConfidential] = useState<boolean>(false)
 
+  // CONFIDENTIAL_COMPUTE_UI_MODE-driven render mode for the
+  // confidential compute section. Read from the API on mount.
+  //   active   - normal: checkbox flips preferConfidential, submission
+  //              creates a paid ComputeRequest as usual
+  //   waitlist - checkbox switches the section to an interest-capture
+  //              form. No ComputeRequest is created, no balance debited.
+  //              Server records the interest, emails admin + buyer.
+  //   hidden   - section doesn't render at all
+  // Defaults to 'active' until the fetch resolves so the UI doesn't
+  // flicker for the common case.
+  const [confidentialMode, setConfidentialMode] = useState<'active' | 'waitlist' | 'hidden'>('active')
+  const [interestEmail, setInterestEmail] = useState<string>('')
+  const [interestWorkloadType, setInterestWorkloadType] = useState<string>('')
+  const [interestExpectedHours, setInterestExpectedHours] = useState<string>('')
+  const [interestTimelineWeeks, setInterestTimelineWeeks] = useState<string>('')
+  const [interestNotes, setInterestNotes] = useState<string>('')
+  const [interestSubmitting, setInterestSubmitting] = useState<boolean>(false)
+  const [interestSubmittedMessage, setInterestSubmittedMessage] = useState<string | null>(null)
+
   // Payment source picker:
   //   USDC             — fresh on-chain Solana transfer (always available)
   //   INTERNAL_BALANCE — operator-earned credit (dual-role users only)
@@ -380,6 +399,58 @@ export default function RequestComputePage() {
       .catch(() => { /* if list fails, restore picker just stays empty */ })
     return () => { cancelled = true }
   }, [])
+
+  // Fetch CONFIDENTIAL_COMPUTE_UI_MODE on mount so the section renders
+  // the right shape. Defaults to 'active' on fetch failure so an API
+  // hiccup never silently hides the feature.
+  useEffect(() => {
+    let cancelled = false
+    buyer.confidentialMode()
+      .then((r) => {
+        if (cancelled) return
+        if (r?.mode === 'waitlist' || r?.mode === 'hidden') {
+          setConfidentialMode(r.mode)
+        } else {
+          setConfidentialMode('active')
+        }
+      })
+      .catch(() => {
+        /* leave as 'active' default; mode endpoint failure shouldn't
+           silently waitlist or hide the section */
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  // Submit handler for the waitlist interest form. Captures the
+  // buyer's intent without taking payment or creating a ComputeRequest.
+  const submitConfidentialInterest = async () => {
+    if (!interestEmail.trim()) {
+      toast('error', 'Please provide an email so we can contact you.')
+      return
+    }
+    setInterestSubmitting(true)
+    try {
+      const r = await buyer.confidentialInterest({
+        email: interestEmail.trim(),
+        gpuTier: selectedTier || undefined,
+        gpuCount,
+        workloadType: interestWorkloadType.trim() || undefined,
+        expectedHours: interestExpectedHours
+          ? parseInt(interestExpectedHours, 10) || undefined
+          : undefined,
+        timelineWeeks: interestTimelineWeeks
+          ? parseInt(interestTimelineWeeks, 10) || undefined
+          : undefined,
+        notes: interestNotes.trim() || undefined,
+      })
+      setInterestSubmittedMessage(r.message)
+      toast('success', r.alreadyOnWaitlist ? 'Already on the waitlist' : 'Joined the waitlist')
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Could not join the waitlist')
+    } finally {
+      setInterestSubmitting(false)
+    }
+  }
 
   const hourlyRate = selectedTier ? HOURLY_RATES[selectedTier] ?? 0 : 0
   const tierMultiplier = TIER_OPTIONS.find(t => t.id === rentalTier)?.multiplier ?? 1
@@ -698,53 +769,193 @@ export default function RequestComputePage() {
           </FormSection>
         </FormCard>
 
-        {/* T7: Confidential Compute */}
-        <FormCard
-          title="Confidential Compute"
-          description="Hardware-attested TEE (Intel TDX or AMD SEV-SNP) with GPU CC mode."
-          icon={Workflow}
-        >
-          <FormSection>
-            <label
-              htmlFor="preferConfidential"
-              className="flex items-start gap-3 cursor-pointer rounded-xl p-4 transition-all duration-200"
-              style={preferConfidential
-                ? { background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.4)' }
-                : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
-              }
-            >
-              <input
-                id="preferConfidential"
-                type="checkbox"
-                checked={preferConfidential}
-                onChange={(e) => setPreferConfidential(e.target.checked)}
-                className="sr-only peer"
-              />
-              <span
-                aria-hidden="true"
-                className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm transition-colors"
+        {/* T7: Confidential Compute. Rendering depends on
+            CONFIDENTIAL_COMPUTE_UI_MODE env (fetched on mount):
+              - 'hidden'   -> the entire FormCard is skipped
+              - 'active'   -> normal checkbox; selection routes a paid
+                              ComputeRequest to confidential supply
+              - 'waitlist' -> checkbox surfaces a waitlist signup form
+                              instead. No payment, no provisioning,
+                              just captures email + workload context. */}
+        {confidentialMode !== 'hidden' && (
+          <FormCard
+            title="Confidential Compute"
+            description={confidentialMode === 'waitlist'
+              ? 'Hardware-attested TEE (Intel TDX or AMD SEV-SNP) with GPU CC mode. Currently waitlisted while we onboard suppliers.'
+              : 'Hardware-attested TEE (Intel TDX or AMD SEV-SNP) with GPU CC mode.'}
+            icon={Workflow}
+          >
+            <FormSection>
+              <label
+                htmlFor="preferConfidential"
+                className="flex items-start gap-3 cursor-pointer rounded-xl p-4 transition-all duration-200"
                 style={preferConfidential
-                  ? { background: 'rgb(99, 102, 241)', border: '1px solid rgb(99, 102, 241)' }
-                  : { background: 'transparent', border: '1px solid var(--border-color)' }
+                  ? { background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.4)' }
+                  : { background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }
                 }
               >
-                {preferConfidential && (
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M1.5 5L4 7.5L8.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </span>
-              <div className="flex-1">
-                <div className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-                  Require confidential compute
+                <input
+                  id="preferConfidential"
+                  type="checkbox"
+                  checked={preferConfidential}
+                  onChange={(e) => {
+                    setPreferConfidential(e.target.checked)
+                    if (!e.target.checked) {
+                      setInterestSubmittedMessage(null)
+                    }
+                  }}
+                  className="sr-only peer"
+                />
+                <span
+                  aria-hidden="true"
+                  className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm transition-colors"
+                  style={preferConfidential
+                    ? { background: 'rgb(99, 102, 241)', border: '1px solid rgb(99, 102, 241)' }
+                    : { background: 'transparent', border: '1px solid var(--border-color)' }
+                  }
+                >
+                  {preferConfidential && (
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M1.5 5L4 7.5L8.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </span>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      Require confidential compute
+                    </div>
+                    {confidentialMode === 'waitlist' && (
+                      <span
+                        className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded"
+                        style={{
+                          background: 'rgba(234, 179, 8, 0.15)',
+                          color: 'rgb(202, 138, 4)',
+                          border: '1px solid rgba(234, 179, 8, 0.3)',
+                        }}
+                      >
+                        Waitlist
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {confidentialMode === 'waitlist'
+                      ? "We're onboarding suppliers for Intel TDX + NVIDIA Hopper CC mode. Check this to join the waitlist — we'll email you the moment capacity is available. No payment is taken."
+                      : 'Encrypted memory, attested by Intel TDX or AMD SEV-SNP with GPU CC. Specialized supply, placement may take longer.'}
+                  </p>
                 </div>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  Encrypted memory, attested by Intel TDX or AMD SEV-SNP with GPU CC. Specialized supply, placement may take longer.
-                </p>
-              </div>
-            </label>
-          </FormSection>
-        </FormCard>
+              </label>
+
+              {/* Waitlist interest form. Surfaces only when the box is
+                  checked AND we're in waitlist mode. After successful
+                  submit, the form collapses into a thank-you state. */}
+              {confidentialMode === 'waitlist' && preferConfidential && (
+                <div
+                  className="mt-4 rounded-xl p-4"
+                  style={{
+                    background: 'rgba(99, 102, 241, 0.05)',
+                    border: '1px solid rgba(99, 102, 241, 0.25)',
+                  }}
+                >
+                  {interestSubmittedMessage ? (
+                    <div className="flex items-start gap-3">
+                      <CircleCheck size={18} style={{ color: 'rgb(34, 197, 94)' }} className="mt-0.5 shrink-0" />
+                      <div>
+                        <div className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                          You&apos;re on the waitlist
+                        </div>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {interestSubmittedMessage}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mb-3">
+                        <div className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                          Join the confidential compute waitlist
+                        </div>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          Tell us a bit about your workload. We&apos;ll email you the moment capacity is available — no payment is taken now.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="sm:col-span-2">
+                          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
+                            Contact email <span style={{ color: 'rgb(239, 68, 68)' }}>*</span>
+                          </label>
+                          <Input
+                            type="email"
+                            placeholder="you@company.com"
+                            value={interestEmail}
+                            onChange={(e) => setInterestEmail(e.target.value)}
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
+                            Workload type
+                          </label>
+                          <Input
+                            type="text"
+                            placeholder="e.g. confidential inference, fine-tuning, multi-party computation"
+                            value={interestWorkloadType}
+                            onChange={(e) => setInterestWorkloadType(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
+                            Estimated hours / month
+                          </label>
+                          <Input
+                            type="number"
+                            min="0"
+                            placeholder="e.g. 200"
+                            value={interestExpectedHours}
+                            onChange={(e) => setInterestExpectedHours(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
+                            Timeline (weeks)
+                          </label>
+                          <Input
+                            type="number"
+                            min="0"
+                            placeholder="When do you need it?"
+                            value={interestTimelineWeeks}
+                            onChange={(e) => setInterestTimelineWeeks(e.target.value)}
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
+                            Notes (optional)
+                          </label>
+                          <Input
+                            type="text"
+                            placeholder="Anything else we should know — budget signal, compliance constraints, preferred region…"
+                            value={interestNotes}
+                            onChange={(e) => setInterestNotes(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <Button
+                          onClick={submitConfidentialInterest}
+                          disabled={interestSubmitting || !interestEmail.trim()}
+                        >
+                          {interestSubmitting ? 'Joining…' : 'Join the waitlist'}
+                        </Button>
+                        <p className="text-[11px] mt-2" style={{ color: 'var(--text-muted)' }}>
+                          Your GPU tier and count below are auto-attached to the interest record. Submit the waitlist form here — the regular &quot;Submit Request&quot; button at the bottom is disabled for confidential rentals while we&apos;re waitlisted.
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </FormSection>
+          </FormCard>
+        )}
 
         {/* GPU Tier */}
         <FormCard
@@ -1438,7 +1649,13 @@ export default function RequestComputePage() {
                 !selectedTier ||
                 (paymentSource === 'USDC' && !walletPaySelected && !txHash.trim()) ||
                 internalShort ||
-                buyerBalanceShort
+                buyerBalanceShort ||
+                // Block the regular submit when the buyer ticked
+                // confidential compute AND we're in waitlist mode. The
+                // server enforces the same gate (422) but disabling the
+                // button here keeps the UX honest: buyer sees the
+                // waitlist form is the only way forward for confidential.
+                (confidentialMode !== 'active' && preferConfidential)
               }
               className="px-8"
             >
