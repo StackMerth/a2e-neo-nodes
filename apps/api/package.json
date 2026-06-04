@@ -62,6 +62,7 @@
     "voltagegpu-provision:test": "tsx scripts/voltagegpu-provision-test.ts",
     "gcp:inspect": "tsx scripts/gcp-inspect.ts",
     "gcp-provision:test": "tsx scripts/gcp-provision-test.ts",
+    "azure:inspect": "tsx scripts/azure-inspect.ts",
     "external-rental:inspect": "tsx scripts/external-rental-cost-inspect.ts",
     "topup:diagnose": "tsx scripts/topup-diagnose.ts",
     "stripe:diagnose": "tsx scripts/stripe-diagnose.ts",
