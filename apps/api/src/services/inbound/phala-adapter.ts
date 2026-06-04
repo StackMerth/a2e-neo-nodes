@@ -83,16 +83,18 @@ export interface PhalaGpuType {
   id: string
   /** Human-readable label e.g. "H100 80GB Confidential". */
   displayName: string
-  /** GPU model: H100, H200, B200 etc. */
+  /** GPU model: H100, H200, B200 etc. (or 'unknown' for CPU SKUs). */
   gpuModel: string
   /** Memory per GPU in GiB. */
   memoryInGb: number
-  /** Per-hour price in USD (Phala converts PHA → USD if needed). */
+  /** Per-hour price in USD (Phala converts PHA -> USD if needed). */
   pricePerHourUsd: number
   /** TEE primitives this SKU supports (TDX / SEV-SNP / both). */
   teeSupport: Array<'TDX' | 'SEV-SNP'>
   /** Whether Phala reports stock available right now. */
   hasCurrentStock: boolean
+  /** Family group: 'cpu' for tdx.* SKUs, 'gpu' for h200.*. */
+  family?: 'cpu' | 'gpu'
 }
 
 export type PhalaCvmStatus =
@@ -202,25 +204,36 @@ export class PhalaClient {
    * (only H200 entries; other tiers skip Phala in the cascade).
    */
   async listGpuTypes(): Promise<PhalaGpuType[]> {
+    const all = await this.listInstanceTypes()
+    return all.filter((t) => t.family === 'gpu')
+  }
+
+  /**
+   * Catalog of EVERY Phala instance type (CPU TEE + GPU TEE). Used by
+   * the provision orchestrator's verify-step so CPU SKUs (tdx.small
+   * etc.) can be exercised via the --type override path for cheap
+   * adapter validation. The standard allocator path still uses
+   * listGpuTypes() to stay GPU-only.
+   */
+  async listInstanceTypes(): Promise<PhalaGpuType[]> {
     const raw = await this.request<RawInstanceTypesResponse>('/instance-types', 'GET')
-    const gpuGroup = raw.result?.find((g) => g.name === 'gpu')
-    if (!gpuGroup) return []
-    return gpuGroup.items.map((t) => ({
-      id: t.id,
-      displayName: t.name ?? t.id,
-      gpuModel: parseGpuModel(t.id, t.name),
-      memoryInGb: Math.round((t.memory_mb ?? 0) / 1024),
-      pricePerHourUsd: parseFloat(t.hourly_rate ?? '0'),
-      // All Phala instances support TDX per their dashboard
-      // description; SEV-SNP isn't explicitly surfaced per SKU but
-      // is supported on their hardware fleet broadly. Default to
-      // both until we find a SKU that's TDX-only.
-      teeSupport: ['TDX', 'SEV-SNP'],
-      // Phala doesn't surface per-instance live capacity in this
-      // endpoint. If a SKU is in the catalog, treat it as orderable
-      // and let createCvm return 409 / 503 if all nodes are busy.
-      hasCurrentStock: true,
-    }))
+    if (!raw.result) return []
+    return raw.result.flatMap((group) =>
+      group.items.map((t) => ({
+        id: t.id,
+        displayName: t.name ?? t.id,
+        gpuModel: parseGpuModel(t.id, t.name),
+        memoryInGb: Math.round((t.memory_mb ?? 0) / 1024),
+        pricePerHourUsd: parseFloat(t.hourly_rate ?? '0'),
+        family: group.name,
+        // All Phala instances ship with TDX per dashboard description;
+        // SEV-SNP availability is broader on their hardware fleet.
+        teeSupport: ['TDX', 'SEV-SNP'] as Array<'TDX' | 'SEV-SNP'>,
+        // No per-instance live capacity in this endpoint; createCvm
+        // returns 409/503 when capacity is exhausted.
+        hasCurrentStock: true,
+      })),
+    )
   }
 
   /**
@@ -327,7 +340,8 @@ export class PhalaClient {
     const body = {
       ...app,
       instance_type_id: args.gpuTypeId,
-      gpu_count: args.gpuCount,
+      // Omit gpu_count for CPU TEE SKUs (tdx.*) where it's 0.
+      ...(args.gpuCount > 0 ? { gpu_count: args.gpuCount } : {}),
       env: {
         PUBLIC_KEY: args.sshPublicKey,
       },

@@ -155,7 +155,10 @@ export async function provisionPhalaRental(
 
   // Step 1: verify Phala has this SKU + snapshot the per-hour rate
   // (locked into the ExternalRental row for T6 settlement / refunds).
-  const instanceTypes = await api.listGpuTypes()
+  // Use listInstanceTypes (not listGpuTypes) so CPU TEE SKUs are
+  // accepted via --type override for cheap adapter validation. The
+  // standard allocator path still only targets GPU mappings.
+  const instanceTypes = await api.listInstanceTypes()
   const match = instanceTypes.find((t) => t.id === resolvedInstanceTypeId)
   if (!match) {
     throw new PhalaProvisionError(

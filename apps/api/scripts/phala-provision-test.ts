@@ -192,7 +192,7 @@ async function runRent(tier: GpuTier, gpuCount: number): Promise<void> {
 
 async function runRentByType(input: string): Promise<void> {
   const client = new PhalaClient()
-  const types = await client.listGpuTypes()
+  const types = await client.listInstanceTypes()
   let match = types.find((t) => t.id === input)
   if (!match) {
     const lower = input.toLowerCase()
@@ -203,12 +203,13 @@ async function runRentByType(input: string): Promise<void> {
     console.log()
     console.log('Available types:')
     for (const t of types) {
-      console.log(`  ${t.id}  ($${t.pricePerHourUsd.toFixed(2)}/h)`)
+      console.log(`  ${t.id.padEnd(20)} family=${t.family ?? '?'}  $${t.pricePerHourUsd.toFixed(2)}/h`)
     }
     process.exit(1)
   }
   const instanceTypeId = match.id
-  console.log(`Phala SKU ${instanceTypeId}: $${match.pricePerHourUsd.toFixed(2)}/h  TEE=${match.teeSupport.join('+')}`)
+  const isCpuFamily = match.family === 'cpu' || instanceTypeId.startsWith('tdx.')
+  console.log(`Phala SKU ${instanceTypeId}: $${match.pricePerHourUsd.toFixed(2)}/h  TEE=${match.teeSupport.join('+')}  family=${match.family ?? '?'}`)
   console.log()
 
   const user = await prisma.user.upsert({
@@ -218,13 +219,15 @@ async function runRentByType(input: string): Promise<void> {
     select: { id: true },
   })
 
-  // Use H200 as placeholder tier for the synthetic ComputeRequest;
-  // the --type override bypasses tier mapping entirely.
+  // For CPU TEE SKUs (tdx.*) set gpuCount=0 so createCvm omits the
+  // gpu_count field from the body. For GPU SKUs (h200.*) keep 1.
+  // gpuTier is just a placeholder used to satisfy the schema; the
+  // --type override bypasses tier mapping entirely.
   const cr = await prisma.computeRequest.create({
     data: {
       userId: user.id,
       gpuTier: 'H200',
-      gpuCount: 1,
+      gpuCount: isCpuFamily ? 0 : 1,
       durationDays: 1,
       ratePerDay: 0,
       totalCost: 0,
