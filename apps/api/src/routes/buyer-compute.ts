@@ -732,6 +732,13 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     durationDays: z.number().int().min(1).max(365).default(7),
     tier: z.enum(['ON_DEMAND', 'SPOT', 'RESERVED']).default('ON_DEMAND'),
     workloadType: z.enum(['INFERENCE', 'TRAINING', 'MIXED']).default('MIXED'),
+    // Mirror requestSchema: portal sends these for STRIPE_DIRECT flows
+    // too. Prior schema dropped them silently — Stripe-paid rentals
+    // never carried the dedicated/confidential flags forward. Adding
+    // them here makes the Stripe and balance/USDC paths behave the
+    // same, AND lets the waitlist gate below work on Stripe requests.
+    preferDedicatedTier: z.boolean().default(false),
+    preferConfidential: z.boolean().default(false),
     commitmentDays: z.number().int().refine(d => [7, 30, 90].includes(d)).optional(),
     requiredRegion: z.string().max(64).optional().nullable(),
     preferredOperatorSlug: z.string().max(120).optional().nullable(),
