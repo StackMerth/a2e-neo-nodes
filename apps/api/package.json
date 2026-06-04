@@ -60,6 +60,8 @@
     "ionet-provision:test": "tsx scripts/ionet-provision-test.ts",
     "voltagegpu:inspect": "tsx scripts/voltagegpu-inspect.ts",
     "voltagegpu-provision:test": "tsx scripts/voltagegpu-provision-test.ts",
+    "gcp:inspect": "tsx scripts/gcp-inspect.ts",
+    "gcp-provision:test": "tsx scripts/gcp-provision-test.ts",
     "external-rental:inspect": "tsx scripts/external-rental-cost-inspect.ts",
     "topup:diagnose": "tsx scripts/topup-diagnose.ts",
     "stripe:diagnose": "tsx scripts/stripe-diagnose.ts",
