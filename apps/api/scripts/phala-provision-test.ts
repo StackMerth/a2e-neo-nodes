@@ -121,8 +121,25 @@ async function main(): Promise<void> {
     await runTerminate(id, args[2] ?? 'manual test terminate')
     return
   }
+  if (flag === '--terminate-cvm') {
+    const id = args[1]
+    if (!id) {
+      console.log('--terminate-cvm requires a Phala CVM id (cvm_...).')
+      console.log('Use this for orphan cleanup when no ExternalRental exists.')
+      process.exit(1)
+    }
+    await runTerminateCvm(id)
+    return
+  }
 
   await runInspect()
+}
+
+async function runTerminateCvm(cvmId: string): Promise<void> {
+  console.log(`DELETE /cvms/${cvmId} (orphan cleanup, bypasses ExternalRental)`)
+  const client = new PhalaClient()
+  await client.terminateCvm(cvmId)
+  console.log('Terminate request accepted (or 404 if already gone).')
 }
 
 async function runStart(cvmId: string): Promise<void> {

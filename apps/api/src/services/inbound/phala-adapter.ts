@@ -365,14 +365,40 @@ export class PhalaClient {
 
   /**
    * Start a CVM. dstack two-phase pattern: create allocates the slot,
-   * start triggers VM provisioning + boot. Idempotent on already-
-   * running CVMs (Phala returns 200 or 409 depending on state).
+   * start triggers VM provisioning + boot.
+   *
+   * POST /cvms returns immediately, but Phala kicks off an async
+   * scheduling operation in the background (allocating the VM on the
+   * assigned node). Calling /start during that window returns 409
+   * "Another operation is already in progress for this CVM" — verified
+   * 2026-06-04 with cvm_OwmrdMj3.
+   *
+   * Retry on 409 with backoff until the prior operation settles
+   * (typically <10s). Bail on any other error.
    */
   async startCvm(id: string): Promise<void> {
-    await this.request<unknown>(
-      `/cvms/${encodeURIComponent(id)}/start`,
-      'POST',
-    )
+    const maxAttempts = 8
+    let delayMs = 1500
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await this.request<unknown>(
+          `/cvms/${encodeURIComponent(id)}/start`,
+          'POST',
+        )
+        return
+      } catch (err) {
+        if (
+          err instanceof PhalaApiError &&
+          err.statusCode === 409 &&
+          attempt < maxAttempts
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs))
+          delayMs = Math.min(Math.round(delayMs * 1.5), 6000)
+          continue
+        }
+        throw err
+      }
+    }
   }
 
   /**
