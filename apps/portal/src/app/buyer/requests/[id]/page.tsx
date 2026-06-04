@@ -129,9 +129,12 @@ const STATUS_MESSAGES: Record<string, { title: string; desc: string; color: stri
   APPROVED: { title: 'Request Approved', desc: 'Your request has been approved and resources are being prepared.', color: '#3b82f6' },
   ALLOCATED: { title: 'Resources Allocated', desc: 'GPUs have been allocated and are being configured for you.', color: '#8b5cf6' },
   ACTIVE: { title: 'Active, Connect via SSH', desc: 'Your compute resources are ready. Use the SSH details below to connect.', color: '#22c55e' },
-  // T5b: external-provider intermediate state — Lambda is booting the
-  // image. Page polls every 5s for credentials while this is shown.
-  PROVISIONING_EXTERNAL: { title: 'Provisioning on Lambda', desc: 'Your compute is being prepared on Lambda Labs. SSH credentials appear within ~60s.', color: '#06b6d4' },
+  // External provider intermediate state. The page polls every 5s
+  // for credentials while this is shown. Underlying supplier is
+  // intentionally abstracted — buyers see "TokenOS Compute" so the
+  // platform reads as a unified service, not a router into named
+  // third-party clouds.
+  PROVISIONING_EXTERNAL: { title: 'Provisioning your compute', desc: 'TokenOS is preparing your instance. SSH credentials appear within ~60s.', color: '#06b6d4' },
   COMPLETED: { title: 'Completed', desc: 'This compute allocation has ended.', color: '#71717a' },
   CANCELLED: { title: 'Cancelled', desc: 'This request was cancelled.', color: '#71717a' },
   REJECTED: { title: 'Rejected', desc: 'This request was not approved.', color: '#ef4444' },
@@ -600,26 +603,27 @@ export default function RequestDetailPage() {
           </SectionCard>
         )}
 
-        {/* T5c: PROVISIONING_EXTERNAL placeholder — Lambda is booting,
-            credentials not yet available. The polling effect above is
-            already retrying every 5s. */}
+        {/* External-provisioned credentials not yet available. The
+            polling effect above retries every 5s. Underlying supplier
+            stays abstracted — buyers see "TokenOS Compute," not a
+            named third-party cloud. */}
         {data.status === 'PROVISIONING_EXTERNAL' && !externalCreds && (
           <SectionCard
-            title="Provisioning on Lambda Labs"
+            title="Provisioning your compute"
             icon={Cloud}
             badge={
               <span
                 className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full"
                 style={{ background: 'rgba(6, 182, 212, 0.12)', color: '#06b6d4', border: '1px solid rgba(6, 182, 212, 0.35)' }}
               >
-                External
+                TokenOS
               </span>
             }
           >
             <div className="flex items-center gap-3 py-4">
               <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--info)' }} />
               <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                Lambda is booting your instance. SSH credentials will appear here within ~60 seconds.
+                Your instance is booting. SSH credentials will appear here within ~60 seconds.
                 <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
                   This page refreshes automatically.
                 </div>
@@ -633,12 +637,12 @@ export default function RequestDetailPage() {
           </SectionCard>
         )}
 
-        {/* T5c: Lambda-provisioned SSH access. Shown alongside the
-            internal SSH section, with a key-based auth flow instead
-            of the password flow internal nodes use. */}
+        {/* SSH access for externally-provisioned rentals. Same
+            key-based auth flow as internal nodes — but with the
+            supplier name abstracted away to keep TokenOS unified. */}
         {externalCreds && (data.status === 'ACTIVE' || data.status === 'PROVISIONING_EXTERNAL') && (
           <SectionCard
-            title="SSH Access (Lambda Labs)"
+            title="SSH Access"
             icon={Cloud}
             badge={
               <span
