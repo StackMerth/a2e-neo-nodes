@@ -64,22 +64,34 @@ async function main(): Promise<void> {
 
   if (args.includes('--auth')) {
     const client = new GcpClient()
-    // Cheap call: list zones the project knows. If auth is broken,
-    // this throws GcpApiError 401 / 403. We use a low-cost endpoint
-    // rather than instances.list to avoid triggering quota.
+    // Cheap call: fetch a nonexistent instance. Auth is proven by
+    // ANY response from Compute Engine API (whether 404 for the
+    // instance, 400 for name validation, 403 for missing role).
+    // We use a name that PASSES GCP's regex
+    // /[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?/ so the response is a clean
+    // 404 rather than a 400 name-validation error.
     try {
-      const inst = await client.getInstance(GCP_A3_CONFIDENTIAL_ZONES[0], '__nonexistent_auth_probe__')
+      const inst = await client.getInstance(
+        GCP_A3_CONFIDENTIAL_ZONES[0],
+        'nonexistent-auth-probe',
+      )
       console.log('Unexpected: probe instance exists?', inst)
     } catch (err) {
       const msg = (err as Error).message
       if (msg.includes('404')) {
         console.log('Auth OK: GCP returned 404 for probe instance (expected).')
+        console.log('JWT + OAuth2 + Bearer all working. Adapter is ready.')
       } else if (msg.includes('403')) {
         console.log('Auth OK at Bearer layer but PERMISSION_DENIED on Compute.')
-        console.log('Check service account roles: needs Compute Admin.')
+        console.log('JWT works; service account is missing required roles.')
+        console.log('Check service account roles: needs Compute Admin + Service Account User.')
         console.log('Raw error:', msg)
       } else if (msg.includes('401')) {
         console.log('Auth FAILED at JWT exchange. Verify GCP_SA_KEY_JSON is the full file contents.')
+        console.log('Raw error:', msg)
+      } else if (msg.includes('400')) {
+        console.log('Auth OK at Bearer layer but Compute rejected the probe shape.')
+        console.log('This still confirms JWT + Bearer work. Adapter likely ready.')
         console.log('Raw error:', msg)
       } else {
         console.log('Auth probe returned unexpected error:', msg)
