@@ -556,13 +556,14 @@ function mapRawPhalaStatus(raw: string | undefined | null): PhalaCvmStatus {
 
 function normalizeCvm(raw: RawCvmResponse): PhalaCvm {
   // dstack exposes ports via the gateway URL pattern. When the
-  // instance is running, endpoints[].instance is populated with a
-  // tproxy-routed URL (TCP-over-TLS); when stopped/booting, instance
-  // is empty string and endpoints[].app is an HTTP reverse-proxy URL
-  // only. SSH-via-TCP requires tproxy_enabled in the AppCompose +
-  // CVM in running state; we surface whichever is available, with
-  // instance preferred. Note: Phala does NOT expose raw IP+port for
-  // CVMs — buyer connectivity is always via dstack-gateway URL.
+  // instance is running AND tproxy_enabled=true, endpoints[].instance
+  // is populated with a tproxy-routed TCP-over-TLS URL; when stopped
+  // or booting, instance is empty string and endpoints[].app is an
+  // HTTP reverse-proxy URL. We surface whichever is available, with
+  // instance preferred. Note: Phala does NOT expose raw IP+port —
+  // buyer connectivity is always via dstack-gateway URL with TLS
+  // termination (TCP-over-TLS for SSH via openssl ProxyCommand or
+  // dstack's ssh-tunnel helper).
   let sshHost: string | null = null
   if (Array.isArray(raw.endpoints)) {
     for (const ep of raw.endpoints) {
@@ -583,6 +584,20 @@ function normalizeCvm(raw: RawCvmResponse): PhalaCvm {
   const price = raw.resource?.compute_billing_price
     ? parseFloat(raw.resource.compute_billing_price)
     : null
+
+  // Attestation surface: Phala does not expose a single REST endpoint
+  // that returns the raw TEE quote for arbitrary CVMs (the
+  // application-level /attestation endpoint pattern is buyer-owned
+  // — they instrument their own CVM app via dstack SDK). The CVM
+  // detail page on the Phala dashboard has an "Attestation" tab where
+  // buyers can click "Check Attestation" to view the hardware quote
+  // + TCB info. We surface that dashboard URL as the
+  // attestationReportUrl so buyers have a one-click verification path
+  // without needing to instrument their own code.
+  const dashboardUrl = raw.id
+    ? `https://cloud.phala.network/dashboard/cvms/${encodeURIComponent(raw.id)}`
+    : null
+
   return {
     id: raw.id,
     name: raw.name ?? null,
@@ -593,7 +608,7 @@ function normalizeCvm(raw: RawCvmResponse): PhalaCvm {
     publicIp: sshHost,
     sshPort: sshHost ? 22 : null,
     pricePerHourUsd: typeof price === 'number' && !Number.isNaN(price) ? price : null,
-    attestationReportUrl: null,
+    attestationReportUrl: dashboardUrl,
     createdAt: raw.created_at ?? null,
   }
 }

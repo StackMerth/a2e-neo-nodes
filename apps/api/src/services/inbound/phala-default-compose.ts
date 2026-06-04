@@ -116,7 +116,14 @@ export function buildPhalaAppCompose(opts: {
       containerDiskInGb: opts.containerDiskInGb,
     }),
     kms_enabled: false,
-    tproxy_enabled: false,
+    // Enable tproxy so dstack-gateway routes raw TCP via SNI for
+    // any port the CVM exposes (notably port 22 for SSH). Without
+    // this, only HTTP/HTTPS reverse-proxy works, blocking direct
+    // `ssh user@host` access by buyers. Connection pattern when
+    // enabled: TLS-tunneled TCP at `<app_id>-<port>.<gateway>:443`
+    // via SNI routing. Buyers use openssl ProxyCommand or dstack's
+    // ssh-tunnel helper to bridge SSH over TLS.
+    tproxy_enabled: true,
     public_logs: false,
     public_sysinfo: false,
     local_key_provider_enabled: false,
