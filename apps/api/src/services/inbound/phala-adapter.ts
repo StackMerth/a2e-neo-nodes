@@ -350,13 +350,47 @@ export class PhalaClient {
         : {}),
     }
     const raw = await this.request<{ id: string }>('/cvms', 'POST', body)
+
+    // dstack CVMs are returned in `stopped` state — POST /cvms creates
+    // the CVM record + assigns a node but does NOT allocate the VM or
+    // start billing. We MUST explicitly call /cvms/{id}/start to
+    // provision the TDX instance + boot the container. Verified
+    // 2026-06-04 via raw GET /cvms/{id} (instance_id=null, status=
+    // 'stopped', endpoints[0].instance=''). Without this step the CVM
+    // never reaches running and SSH/HTTPS endpoints stay empty.
+    await this.startCvm(raw.id)
+
     return raw.id
   }
 
   /**
-   * Stop a CVM. Phala distinguishes STOP (pause, keep allocation)
-   * from TERMINATE (full release). For our rental model we always
-   * want TERMINATE to stop billing fully.
+   * Start a CVM. dstack two-phase pattern: create allocates the slot,
+   * start triggers VM provisioning + boot. Idempotent on already-
+   * running CVMs (Phala returns 200 or 409 depending on state).
+   */
+  async startCvm(id: string): Promise<void> {
+    await this.request<unknown>(
+      `/cvms/${encodeURIComponent(id)}/start`,
+      'POST',
+    )
+  }
+
+  /**
+   * Stop a CVM without releasing it. Pauses billing but keeps the
+   * CVM record + node allocation. Used to pause without losing
+   * scheduled hardware; use terminateCvm to fully release.
+   */
+  async stopCvm(id: string): Promise<void> {
+    await this.request<unknown>(
+      `/cvms/${encodeURIComponent(id)}/stop`,
+      'POST',
+    )
+  }
+
+  /**
+   * Terminate (delete) a CVM. Fully releases the allocation. For our
+   * rental model this is what we call when a buyer's rental ends or
+   * the orchestrator decides to refund.
    */
   async terminateCvm(id: string): Promise<void> {
     try {
@@ -437,45 +471,103 @@ function parseGpuModel(id: string, name: string): string {
   return 'unknown'
 }
 
+// Verified shape from GET /api/v1/cvms/{id} (2026-06-04 raw probe):
+// status is LOWERCASE string ("stopped" / "running" / etc); resource +
+// node_info + endpoints are the real field locations for instance_type
+// / region / SSH endpoint. publicIp + sshPort + ports were never real
+// fields — those were best-guess at scaffold time.
 interface RawCvmResponse {
   id: string
   name?: string
-  status?: PhalaCvmStatus
-  gpuTypeId?: string
-  gpuCount?: number
-  region?: string
-  publicIp?: string
-  sshPort?: number
-  pricePerHourUsd?: number
-  attestationReportUrl?: string
-  createdAt?: string
-  ports?: Array<{ privatePort?: number; publicPort?: number; ip?: string }>
+  status?: string
+  instance_id?: string | null
+  resource?: {
+    instance_type?: string
+    vcpu?: number
+    memory_in_gb?: number
+    disk_in_gb?: number
+    gpus?: number
+    compute_billing_price?: string
+    billing_period?: string
+  }
+  node_info?: {
+    id?: number
+    node_id?: number
+    name?: string
+    region?: string
+    status?: string
+  }
+  endpoints?: Array<{
+    app?: string
+    instance?: string
+  }>
+  created_at?: string
+  deleted_at?: string | null
+  in_progress?: boolean
+}
+
+/** Phala returns lowercase statuses ("stopped", "running"); map to our internal enum. */
+function mapRawPhalaStatus(raw: string | undefined | null): PhalaCvmStatus {
+  switch ((raw ?? '').toLowerCase()) {
+    case 'creating':
+      return 'CREATING'
+    case 'starting':
+    case 'pending':
+      return 'STARTING'
+    case 'running':
+      return 'RUNNING'
+    case 'stopping':
+      return 'STOPPING'
+    case 'stopped':
+      return 'STOPPED'
+    case 'terminated':
+    case 'deleted':
+      return 'TERMINATED'
+    default:
+      return 'CREATING'
+  }
 }
 
 function normalizeCvm(raw: RawCvmResponse): PhalaCvm {
-  // SSH port: same pattern as RunPod — find the entry mapping port 22
-  // to a public port. Confidential CVMs may not surface this until
-  // attestation completes, so PENDING pods get sshPort=null.
-  let sshPort: number | null = raw.sshPort ?? null
-  let publicIp: string | null = raw.publicIp ?? null
-  if (sshPort === null && Array.isArray(raw.ports)) {
-    const sshEntry = raw.ports.find((p) => p.privatePort === 22 && typeof p.publicPort === 'number')
-    if (sshEntry) {
-      sshPort = sshEntry.publicPort ?? null
-      if (!publicIp && typeof sshEntry.ip === 'string') publicIp = sshEntry.ip
+  // dstack exposes ports via the gateway URL pattern. When the
+  // instance is running, endpoints[].instance is populated with a
+  // tproxy-routed URL (TCP-over-TLS); when stopped/booting, instance
+  // is empty string and endpoints[].app is an HTTP reverse-proxy URL
+  // only. SSH-via-TCP requires tproxy_enabled in the AppCompose +
+  // CVM in running state; we surface whichever is available, with
+  // instance preferred. Note: Phala does NOT expose raw IP+port for
+  // CVMs — buyer connectivity is always via dstack-gateway URL.
+  let sshHost: string | null = null
+  if (Array.isArray(raw.endpoints)) {
+    for (const ep of raw.endpoints) {
+      if (ep.instance && ep.instance.length > 0) {
+        sshHost = ep.instance
+        break
+      }
+    }
+    if (!sshHost) {
+      for (const ep of raw.endpoints) {
+        if (ep.app && ep.app.length > 0) {
+          sshHost = ep.app
+          break
+        }
+      }
     }
   }
+  const price = raw.resource?.compute_billing_price
+    ? parseFloat(raw.resource.compute_billing_price)
+    : null
   return {
     id: raw.id,
     name: raw.name ?? null,
-    status: raw.status ?? 'CREATING',
-    gpuTypeId: raw.gpuTypeId ?? 'unknown',
-    gpuCount: raw.gpuCount ?? 1,
-    region: raw.region ?? null,
-    publicIp,
-    sshPort,
-    pricePerHourUsd: typeof raw.pricePerHourUsd === 'number' ? raw.pricePerHourUsd : null,
-    attestationReportUrl: raw.attestationReportUrl ?? null,
-    createdAt: raw.createdAt ?? null,
+    status: mapRawPhalaStatus(raw.status),
+    gpuTypeId: raw.resource?.instance_type ?? 'unknown',
+    gpuCount: raw.resource?.gpus ?? 0,
+    region: raw.node_info?.region ?? null,
+    publicIp: sshHost,
+    sshPort: sshHost ? 22 : null,
+    pricePerHourUsd: typeof price === 'number' && !Number.isNaN(price) ? price : null,
+    attestationReportUrl: null,
+    createdAt: raw.created_at ?? null,
   }
 }

@@ -94,6 +94,24 @@ async function main(): Promise<void> {
     await runPoll(id)
     return
   }
+  if (flag === '--start') {
+    const id = args[1]
+    if (!id) {
+      console.log('--start requires a Phala CVM id (cvm_...).')
+      process.exit(1)
+    }
+    await runStart(id)
+    return
+  }
+  if (flag === '--stop') {
+    const id = args[1]
+    if (!id) {
+      console.log('--stop requires a Phala CVM id (cvm_...).')
+      process.exit(1)
+    }
+    await runStop(id)
+    return
+  }
   if (flag === '--terminate') {
     const id = args[1]
     if (!id) {
@@ -105,6 +123,24 @@ async function main(): Promise<void> {
   }
 
   await runInspect()
+}
+
+async function runStart(cvmId: string): Promise<void> {
+  console.log(`POST /cvms/${cvmId}/start`)
+  const client = new PhalaClient()
+  await client.startCvm(cvmId)
+  console.log('Start request accepted. dstack typically transitions:')
+  console.log('  stopped -> starting (~10s) -> running (~60-180s for TEE attestation)')
+  console.log()
+  console.log('Re-poll the matching ExternalRental in ~30s to track progress.')
+}
+
+async function runStop(cvmId: string): Promise<void> {
+  console.log(`POST /cvms/${cvmId}/stop`)
+  const client = new PhalaClient()
+  await client.stopCvm(cvmId)
+  console.log('Stop request accepted. CVM transitions running -> stopping -> stopped.')
+  console.log('Allocation kept; use --terminate to fully release.')
 }
 
 async function runInspect(): Promise<void> {
