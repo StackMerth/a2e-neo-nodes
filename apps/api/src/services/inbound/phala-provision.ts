@@ -371,6 +371,13 @@ function mapPhalaStatus(
     case 'STOPPING':
       return 'CLOSING'
     case 'STOPPED':
+      // dstack 'stopped' is a paused/transient state, NOT terminated.
+      // A freshly-provisioned CVM is briefly 'stopped' before start
+      // takes effect, and an explicitly stopped CVM can be restarted.
+      // Treat as PENDING so the poll worker keeps tracking it instead
+      // of prematurely closing the rental. Real termination surfaces
+      // as a 404 from getCvm (handled separately above).
+      return 'PENDING'
     case 'TERMINATED':
       return 'CLOSED'
     default:
