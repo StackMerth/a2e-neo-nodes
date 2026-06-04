@@ -14,6 +14,7 @@ import {
   debitBalance,
   InsufficientBalanceError,
 } from '../services/balance/balance-service.js'
+import { getConfidentialComputeUiMode } from './buyer-confidential-interest.js'
 
 const GPU_DAILY_RATES: Record<string, number> = {
   H100: 140.15, H200: 179.85, L40S: 21, B200: 321.10, B300: 431.75, GB300: 499.35,
@@ -278,6 +279,25 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     }
 
     const { gpuTier, gpuCount, durationDays, purpose, txHash, tier, commitmentDays, requiredRegion, preferredOperatorSlug, sshPubKey, paymentSource, workloadType, preferDedicatedTier, preferConfidential, restoreCheckpointId } = parsed.data
+
+    // Defense-in-depth: when CONFIDENTIAL_COMPUTE_UI_MODE is waitlist
+    // or hidden, no confidential supply is reliably online. Reject
+    // preferConfidential=true here so a buyer who hand-crafts an API
+    // call (or whose portal cache is stale) doesn't end up with a
+    // debited balance and a permanently-WAITING ComputeRequest. The
+    // portal's primary defense is to render the waitlist UI; this is
+    // the server-side guarantee.
+    if (preferConfidential) {
+      const mode = getConfidentialComputeUiMode()
+      if (mode !== 'active') {
+        return reply.code(422).send({
+          error: 'Confidential Compute Waitlisted',
+          message:
+            'Confidential compute is temporarily waitlisted while we onboard suppliers. Join the waitlist at /v1/buyer/compute/confidential-interest to be notified when capacity returns. No payment is taken.',
+          uiMode: mode,
+        })
+      }
+    }
 
     // M5.10c: resolve preferred operator slug to NodeRunner.id. Silently
     // ignore unknown slugs (don't fail the request - the allocator just
@@ -735,6 +755,22 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     }
     const body = parsed.data
     const userId = request.user!.userId
+
+    // Defense-in-depth: same waitlist gate as the regular submit path.
+    // Block Stripe checkout sessions for confidential requests when
+    // CONFIDENTIAL_COMPUTE_UI_MODE != active so a buyer doesn't pay
+    // the card processor for compute we can't deliver.
+    if (body.preferConfidential) {
+      const mode = getConfidentialComputeUiMode()
+      if (mode !== 'active') {
+        return reply.code(422).send({
+          error: 'confidential_compute_waitlisted',
+          message:
+            'Confidential compute is temporarily waitlisted while we onboard suppliers. Join the waitlist instead — no payment is taken.',
+          uiMode: mode,
+        })
+      }
+    }
 
     // Compute totalCost the same way the regular submit path does:
     // GPU_TIER_CONFIG.retailRate is per-day per-GPU. SPOT discount and

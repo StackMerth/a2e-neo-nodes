@@ -543,6 +543,35 @@ export const buyer = {
   },
   request: (id: string) => apiFetch(`/v1/buyer/compute/requests/${id}`),
   activeCompute: () => apiFetch('/v1/buyer/compute/active'),
+  // Confidential compute UI mode. Returns one of 'active' | 'waitlist'
+  // | 'hidden'. Drives the buyer/request page's rendering of the
+  // confidential compute toggle. Defaults to 'active' on the server
+  // when CONFIDENTIAL_COMPUTE_UI_MODE env is unset.
+  confidentialMode: () =>
+    apiFetch<{ mode: 'active' | 'waitlist' | 'hidden' }>(
+      '/v1/buyer/compute/confidential-mode',
+    ),
+  // Confidential compute waitlist signup. Active when confidentialMode
+  // returns 'waitlist'. No payment is taken, no ComputeRequest is
+  // created — just records an interest expression and emails admin
+  // + buyer confirmation. Idempotent within a 24h window per user.
+  confidentialInterest: (data: {
+    email: string
+    gpuTier?: string
+    gpuCount?: number
+    workloadType?: string
+    expectedHours?: number
+    timelineWeeks?: number
+    notes?: string
+  }) =>
+    apiFetch<{
+      id: string
+      alreadyOnWaitlist: boolean
+      message: string
+    }>('/v1/buyer/compute/confidential-interest', {
+      method: 'POST',
+      body: data,
+    }),
   cancelRequest: (id: string) => apiFetch(`/v1/buyer/compute/requests/${id}/cancel`, { method: 'PATCH' }),
   terminateRequest: (id: string) => apiFetch(`/v1/buyer/compute/requests/${id}/terminate`, { method: 'POST' }),
   // T3.1: pay for a rental directly with a card via Stripe Hosted

@@ -49,6 +49,7 @@ import {
   portalPushRoutes,
   adminDeploymentRoutes,
   buyerComputeRoutes,
+  buyerConfidentialInterestRoutes,
   adminComputeRoutes,
   portalWithdrawalRoutes,
   adminWithdrawalRoutes,
@@ -294,6 +295,7 @@ async function start() {
     await server.register(portalPushRoutes)
     await server.register(adminDeploymentRoutes)
     await server.register(buyerComputeRoutes)
+    await server.register(buyerConfidentialInterestRoutes)
     await server.register(adminComputeRoutes)
     await server.register(portalWithdrawalRoutes)
     await server.register(adminWithdrawalRoutes)
