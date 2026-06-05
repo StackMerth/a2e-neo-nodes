@@ -59,6 +59,13 @@ export interface UsdcPaymentArgs {
   recipient: string  // base58 Solana address
   amountUsd: number  // USD value, converted to USDC base units (6 decimals)
   commitment?: Commitment  // default 'confirmed'
+  // Optional progress hook so the caller can update its UI between
+  // major steps. Fired on each transition. Without this the UI is
+  // stuck on "Awaiting signature..." while the 90s polling loop
+  // runs, which looks like a hang.
+  onProgress?: (
+    phase: 'building' | 'signing' | 'broadcasting' | 'confirming',
+  ) => void
 }
 
 export interface UsdcPaymentResult {
@@ -86,6 +93,7 @@ export function useUsdcPayment() {
 
       setSubmitting(true)
       try {
+        args.onProgress?.('building')
         const senderAta = await getAssociatedTokenAddress(mint, publicKey)
         const recipientAta = await getAssociatedTokenAddress(mint, recipient)
 
@@ -171,17 +179,21 @@ export function useUsdcPayment() {
         // Step 2: ask the wallet to SIGN ONLY. Phantom's signTransaction
         // returns the signed transaction without broadcasting or
         // confirming, so no 30s timer starts here.
+        args.onProgress?.('signing')
         const signedTx = await signTransaction(tx)
 
         // Step 3: broadcast the signed transaction ourselves via the
         // connection. sendRawTransaction is a plain JSON-RPC POST with
         // no built-in confirmation timeout — it returns the signature
         // immediately after the RPC accepts the bytes.
+        args.onProgress?.('broadcasting')
         const signature = await connection.sendRawTransaction(signedTx.serialize(), {
           skipPreflight: false,
           preflightCommitment: 'confirmed',
           maxRetries: 3,
         })
+
+        args.onProgress?.('confirming')
 
         // Step 4: own the confirmation loop. Poll getSignatureStatus on
         // a 2s interval for up to 90s. Returns as soon as the tx is

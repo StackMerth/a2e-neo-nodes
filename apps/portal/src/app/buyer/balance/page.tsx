@@ -314,12 +314,18 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
     setCompletedTx(null)
     try {
       setPhase('awaiting-signature')
-      // sendTransaction in the hook handles signature + confirmation
-      // in one call. The internal state on the hook tracks submitting,
-      // but we want to surface our own phase strings here.
+      // The hook fires onProgress at each step. We map those to our
+      // UI phases so the user sees real-time feedback instead of
+      // being stuck on "Awaiting wallet signature..." for 90 seconds
+      // while the polling loop runs.
       const { signature } = await pay({
         recipient: destination.wallet,
         amountUsd: amountNumber,
+        onProgress: (step) => {
+          if (step === 'broadcasting' || step === 'confirming') {
+            setPhase('confirming')
+          }
+        },
       })
       setPhase('crediting')
       const result = await buyer.balance.topupSolana({
@@ -434,34 +440,65 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
   // Re-introduce only if we add a real wallet-side network probe.
 
   // Render via React Portal to document.body so the modal escapes any
-  // parent stacking context (page wrapper, sidebar transforms, etc).
-  // Without the portal, the TopHeader's backdrop-filter creates a
-  // sibling stacking context that the modal's z-index can lose to
-  // depending on layout nesting. SSR-safe: typeof document guard.
+  // parent stacking context. Three-layer z-index scheme:
+  //   z-50  : backdrop (dim/blur the page below TopHeader)
+  //   z-100 : TopHeader (boosted from z-30 by body.modal-open in
+  //           globals.css) — chrome remains visible + interactive
+  //   z-150 : modal card (above EVERYTHING including TopHeader)
+  //
+  // Backdrop and card go to SEPARATE portals so the card's z-index
+  // (150) is not capped by the backdrop's stacking context (50).
+  // Both portals append to document.body so the layout's transforms
+  // and stacking contexts can't trap them. SSR-safe via the
+  // typeof document guard.
   if (typeof document === 'undefined') return null
 
-  return createPortal(
-    <div
-      className="fixed inset-0 flex items-center justify-center p-4"
-      style={{
-        // Max signed-32-bit int. Belt-and-suspenders: the body.modal-open
-        // CSS class already hides the TopHeader and sidebar entirely
-        // (display:none), so technically any z-index works. We keep a
-        // huge value as a safety net in case the CSS rule ever gets
-        // dropped or a new fixed-positioned element appears.
-        zIndex: 2147483647,
-        // 95% opacity backdrop + 16px blur. With the TopHeader hidden
-        // by display:none, there's nothing left to bleed through, but
-        // the dark backdrop still provides visual focus on the modal.
-        background: 'rgba(0,0,0,0.95)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
-      }}
-      onClick={onClose}
-    >
+  return (
+    <>
+      {createPortal(
+        <div
+          key="topup-backdrop"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
+            // 60% opacity + 8px blur. Page content shows faintly
+            // through — matches IMG 3. TopHeader's own blur is
+            // neutralized by body.modal-open (globals.css) so the
+            // top strip doesn't double-glass.
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+          }}
+          onClick={onClose}
+        />,
+        document.body,
+      )}
+      {createPortal(
+        <div
+          key="topup-card-wrapper"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 150,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+            // Pass clicks through the empty area around the card to
+            // the backdrop underneath so backdrop-click-to-close
+            // still works. The card itself opts back in with
+            // pointerEvents: 'auto' inline.
+            pointerEvents: 'none',
+          }}
+        >
       <div
         className="w-full max-w-lg rounded-2xl p-6 sm:p-7 max-h-[90vh] overflow-y-auto"
-        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
+        style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-color)',
+          pointerEvents: 'auto',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
@@ -686,7 +723,9 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
           </button>
         </div>
       </div>
-    </div>,
-    document.body, // portal target
+        </div>,
+        document.body, // card wrapper portal target
+      )}
+    </>
   )
 }
