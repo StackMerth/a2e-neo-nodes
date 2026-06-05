@@ -219,6 +219,7 @@ model User {
   apiKeys           ApiKey[]
   ratingsGiven      Rating[]
   buyerBalance      BuyerBalance?
+  buyerWithdrawals  BuyerWithdrawal[]
   pushSubscriptions PushSubscription[]
 
   @@index([role])
@@ -1736,17 +1737,70 @@ enum WithdrawalPayoutMethod {
 // as a BalanceTransaction so the ledger is fully reconstructable.
 
 model BuyerBalance {
-  id            String   @id @default(cuid())
-  userId        String   @unique
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  balanceUsd    Float    @default(0)  // current spendable balance
-  totalToppedUp Float    @default(0)  // lifetime topup sum (audit)
-  totalSpent    Float    @default(0)  // lifetime spend on rentals
-  totalRefunded Float    @default(0)  // lifetime refunds credited back
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balanceUsd      Float    @default(0)  // current spendable balance
+  totalToppedUp   Float    @default(0)  // lifetime topup sum (audit)
+  totalSpent      Float    @default(0)  // lifetime spend on rentals
+  totalRefunded   Float    @default(0)  // lifetime refunds credited back
+  totalWithdrawn  Float    @default(0)  // lifetime withdrawal sum (audit)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  transactions  BalanceTransaction[]
+  transactions    BalanceTransaction[]
+}
+
+// Buyer-initiated withdrawal of unused prepaid balance back to their
+// own Solana wallet (USDC). Lifecycle:
+//
+//   1. Buyer POSTs /v1/buyer/balance/withdraw {amountUsd}
+//   2. API debits BuyerBalance, creates BuyerWithdrawal status=PENDING +
+//      BalanceTransaction(type=WITHDRAW_USDC, referenceId=withdrawal.id)
+//   3. processPayment() sends USDC from platform wallet to user.walletAddress
+//   4. On success -> status=COMPLETED, txHash set
+//   5. On failure -> status=FAILED, error set, balance is refunded
+//      back via REFUND_FAILED ledger entry (compensating tx)
+//
+// Sync flow for v1 (no worker queue): the API call blocks until the
+// USDC send returns. Future versions may move processing into a
+// dedicated worker if buyer volume calls for it.
+model BuyerWithdrawal {
+  id            String                  @id @default(cuid())
+  userId        String
+  user          User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  amountUsd     Float
+  method        BuyerWithdrawalMethod   @default(SOLANA)
+  status        BuyerWithdrawalStatus   @default(PENDING)
+
+  // Snapshot of the destination at request time, even if the user later
+  // changes their User.walletAddress. Audit trail for "where did the
+  // money go" stays correct regardless of later edits.
+  walletAddress String
+
+  // On-chain Solana signature once the USDC send returns SUCCESS.
+  txHash        String?
+
+  // Human-readable error if processing failed.
+  error         String?
+
+  requestedAt   DateTime  @default(now())
+  processedAt   DateTime?
+
+  @@index([userId, requestedAt])
+  @@index([status])
+}
+
+enum BuyerWithdrawalMethod {
+  SOLANA  // USDC sent to user.walletAddress on Solana
+}
+
+enum BuyerWithdrawalStatus {
+  PENDING      // accepted, not yet sent
+  PROCESSING   // sending now
+  COMPLETED    // on-chain confirmation received
+  FAILED       // send failed; balance was refunded
 }
 
 model BalanceTransaction {
@@ -1794,6 +1848,10 @@ enum BalanceTxType {
   // model when another operator HOSTS inference on it. Funded from the
   // hosting operator's profit slice per the M3.3 split rules.
   ROYALTY_PAYOUT
+  // Buyer withdraws their unused prepaid balance back to their own
+  // Solana wallet as USDC. Debits BuyerBalance, mirrored by a
+  // BuyerWithdrawal row that tracks the on-chain send status.
+  WITHDRAW_USDC
 }
 
 // ============================================================================

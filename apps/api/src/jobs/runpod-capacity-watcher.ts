@@ -62,7 +62,18 @@ export function createRunPodCapacityWatcherQueue(connection: ConnectionOptions):
 }
 
 export function createRunPodCapacityWatcherWorker(deps: WatcherDeps): Worker {
-  const redis = new Redis(deps.redis as never)
+  // Dedicated Redis client for dedupe SET/GET. Reuses the plugin's
+  // REDIS_URL so it picks up Render's a2e-redis connection string.
+  // The old `new Redis(deps.redis as never)` passed the existing
+  // ioredis instance as the constructor arg — ioredis can't parse a
+  // Redis object as a URL/options and silently fell back to
+  // localhost:6379, producing the ECONNREFUSED log spam on every
+  // tick. Fixed by reading the URL directly the same way the plugin
+  // does.
+  const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+  })
   return new Worker(
     QUEUE_NAME,
     async () => {
