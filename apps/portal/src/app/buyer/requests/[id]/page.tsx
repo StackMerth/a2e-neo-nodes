@@ -132,7 +132,7 @@ const STEP_LABELS: Record<string, string> = {
 }
 
 const STATUS_MESSAGES: Record<string, { title: string; desc: string; color: string }> = {
-  PENDING: { title: 'Searching for capacity', desc: 'No admin action needed. The allocator re-probes suppliers every 10 seconds; provisioning starts the moment a supplier reports stock.', color: '#f59e0b' },
+  PENDING: { title: 'Looking for available capacity', desc: 'Checking suppliers every 10 seconds for a matching GPU. Provisioning starts the moment one is available. No action needed.', color: '#f59e0b' },
   APPROVED: { title: 'Request Approved', desc: 'Your request has been approved and resources are being prepared.', color: '#3b82f6' },
   ALLOCATED: { title: 'Resources Allocated', desc: 'GPUs have been allocated and are being configured for you.', color: '#8b5cf6' },
   ACTIVE: { title: 'Active, Connect via SSH', desc: 'Your compute resources are ready. Use the SSH details below to connect.', color: '#22c55e' },
@@ -493,23 +493,23 @@ export default function RequestDetailPage() {
     if (data.status === 'PENDING') {
       if (flags.includes('NO_REGION_CAPACITY')) {
         return {
-          title: 'No capacity in your requested region',
-          desc: 'The allocator keeps trying every 10 seconds. You can also cancel this request and resubmit without a region constraint to widen the supplier pool.',
+          title: 'No capacity in your region right now',
+          desc: 'We keep checking every 10 seconds. You can also cancel and resubmit without a region pin to widen the search.',
           color: '#f59e0b',
         }
       }
       if (flags.includes('SEARCHING_CAPACITY') || flags.includes('WAITING_ON_CAPACITY')) {
         return {
-          title: 'Searching for capacity',
-          desc: 'No admin action needed. The allocator re-probes suppliers every 10 seconds; provisioning starts the moment a supplier reports stock.',
+          title: 'Looking for available capacity',
+          desc: 'Checking suppliers every 10 seconds for a matching GPU. Provisioning starts the moment one is available. No action needed.',
           color: '#f59e0b',
         }
       }
-      // Brand new PENDING (first tick hasn't run yet) — eligibility is
-      // still being evaluated. ~10s window.
+      // Brand new PENDING (first tick hasn't run yet) — request is
+      // validated and about to be picked up. ~10s window.
       return {
         title: 'Queued',
-        desc: 'Eligibility check in progress. The allocator picks this up within ~10 seconds.',
+        desc: 'Validating your request. Provisioning starts in a few seconds. No action needed.',
         color: '#f59e0b',
       }
     }
