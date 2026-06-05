@@ -84,7 +84,7 @@ async function main(): Promise<void> {
   // if a stale market enum value was used)
   const fakeMarketEarnings = await prisma.earning.findMany({
     where: { market: { in: [...FAKE_MARKETS] } },
-    select: { id: true, market: true, amount: true },
+    select: { id: true, market: true, earnings: true },
   })
 
   console.log(`Found ${seedUsers.length} seed users:`)
@@ -105,7 +105,7 @@ async function main(): Promise<void> {
   console.log(`Found ${fakeMarketEarnings.length} fake-market earnings (AKASH/VASTAI):`)
   let fakeTotal = 0
   for (const e of fakeMarketEarnings) {
-    fakeTotal += e.amount
+    fakeTotal += e.earnings
   }
   console.log(`  Total fake earnings: $${fakeTotal.toFixed(2)}`)
   console.log()
