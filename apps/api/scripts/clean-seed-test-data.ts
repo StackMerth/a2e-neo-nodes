@@ -155,10 +155,10 @@ async function main(): Promise<void> {
     })
     console.log(`Deleted ${delInfraCosts.count} infrastructure cost rows`)
 
-    const delInstallations = await tx.nodeInstallation.deleteMany({
+    const delProvisionJobs = await tx.provisionJob.deleteMany({
       where: { nodeId: { in: nodeIds } },
     })
-    console.log(`Deleted ${delInstallations.count} node installation rows`)
+    console.log(`Deleted ${delProvisionJobs.count} provision job rows`)
 
     // 3. Seed nodes by id prefix. Cascades to: ExternalDeployment
     //    (nodeId FK cascade), Earning (nodeId FK cascade), Heartbeats,
