@@ -21,16 +21,23 @@
 import { PrismaClient } from '@a2e/database'
 
 async function main(): Promise<void> {
-  const reqId = process.argv[2]
-  if (!reqId) {
-    console.error('Usage: inspect-rental.ts <computeRequestId>')
+  const reqIdOrPrefix = process.argv[2]
+  if (!reqIdOrPrefix) {
+    console.error('Usage: inspect-rental.ts <computeRequestId | id-prefix>')
+    console.error('Tip: the .pem filename uses the first 12 chars of the request ID')
+    console.error('     (cr.id.slice(0, 12)), not the full ID. Either works as the')
+    console.error('     argument — startsWith lookup unambiguates.')
     process.exit(1)
   }
 
   const prisma = new PrismaClient()
 
-  const cr = await prisma.computeRequest.findUnique({
-    where: { id: reqId },
+  // Accept the full cuid OR the 12-char slug printed in the .pem
+  // filename / rental page header. Cuids are unique on any 8+ char
+  // prefix; this just stops the caller having to dig the full id out
+  // of the URL bar.
+  const candidates = await prisma.computeRequest.findMany({
+    where: { id: { startsWith: reqIdOrPrefix } },
     select: {
       id: true,
       gpuTier: true,
@@ -44,11 +51,19 @@ async function main(): Promise<void> {
       requestedAt: true,
       activatedAt: true,
     },
+    take: 5,
   })
-  if (!cr) {
-    console.error(`No ComputeRequest with id ${reqId}`)
+  if (candidates.length === 0) {
+    console.error(`No ComputeRequest matching id prefix "${reqIdOrPrefix}"`)
     process.exit(1)
   }
+  if (candidates.length > 1) {
+    console.error(`Ambiguous prefix "${reqIdOrPrefix}" — matches:`)
+    for (const c of candidates) console.error(`  ${c.id}  (${c.gpuCount}x ${c.gpuTier}, ${c.status})`)
+    console.error('Re-run with a longer prefix.')
+    process.exit(1)
+  }
+  const cr = candidates[0]!
 
   console.log('=== ComputeRequest ===')
   console.log(`  id:             ${cr.id}`)
@@ -64,7 +79,7 @@ async function main(): Promise<void> {
   console.log()
 
   const exts = await prisma.externalRental.findMany({
-    where: { computeRequestId: reqId },
+    where: { computeRequestId: cr.id },
     select: {
       id: true,
       provider: true,
