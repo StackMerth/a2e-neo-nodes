@@ -131,15 +131,44 @@ async function main(): Promise<void> {
     })
     console.log(`Deleted ${delFakeEarnings.count} fake-market earnings rows (AKASH/VASTAI)`)
 
-    // 2. Seed nodes by id prefix. Cascades to: ExternalDeployment
+    // 2. Pre-delete rows that reference seed nodes via FKs WITHOUT
+    //    onDelete: Cascade in schema.prisma. Without these, the Node
+    //    deleteMany below would fail with a P2003 FK violation. Audited
+    //    relations: Settlement (1063), Job (799), InfrastructureCost
+    //    (1116), NodeInstallation (1207) — all four have plain
+    //    `@relation(fields: [nodeId], references: [id])` with no
+    //    cascade clause. Settlement is the strictest (nodeId is
+    //    NOT NULL); the other three are nullable but Prisma still
+    //    blocks the parent delete on existence.
+    const delSettlements = await tx.settlement.deleteMany({
+      where: { nodeId: { in: nodeIds } },
+    })
+    console.log(`Deleted ${delSettlements.count} settlement rows (cascades to SettlementItems)`)
+
+    const delJobs = await tx.job.deleteMany({
+      where: { nodeId: { in: nodeIds } },
+    })
+    console.log(`Deleted ${delJobs.count} job rows`)
+
+    const delInfraCosts = await tx.infrastructureCost.deleteMany({
+      where: { nodeId: { in: nodeIds } },
+    })
+    console.log(`Deleted ${delInfraCosts.count} infrastructure cost rows`)
+
+    const delInstallations = await tx.nodeInstallation.deleteMany({
+      where: { nodeId: { in: nodeIds } },
+    })
+    console.log(`Deleted ${delInstallations.count} node installation rows`)
+
+    // 3. Seed nodes by id prefix. Cascades to: ExternalDeployment
     //    (nodeId FK cascade), Earning (nodeId FK cascade), Heartbeats,
-    //    Jobs, etc. Settled by schema cascade rules.
+    //    NodeMetrics, ComputeRequest (via cascade chain), etc.
     const delNodes = await tx.node.deleteMany({
       where: { id: { in: nodeIds } },
     })
-    console.log(`Deleted ${delNodes.count} seed node rows (cascades to related Earnings, ExternalDeployments, Jobs, Heartbeats)`)
+    console.log(`Deleted ${delNodes.count} seed node rows (cascades to related Earnings, ExternalDeployments, Heartbeats, NodeMetrics)`)
 
-    // 3. Seed users by email pattern. Cascades to: ComputeRequest,
+    // 4. Seed users by email pattern. Cascades to: ComputeRequest,
     //    BalanceTransaction, BuyerBalance, NodeRunner, ApiKey,
     //    PushSubscription, Notification, RefreshToken, etc.
     //    InternalSpend gets nuked via ComputeRequest cascade or
