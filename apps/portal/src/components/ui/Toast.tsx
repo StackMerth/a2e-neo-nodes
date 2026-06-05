@@ -115,7 +115,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
       role="alert"
       aria-live="polite"
       onClick={dismiss}
-      className="pointer-events-auto cursor-pointer w-full max-w-md rounded-xl shadow-2xl overflow-hidden flex items-stretch"
+      className="pointer-events-auto cursor-pointer w-full max-w-2xl rounded-xl shadow-2xl flex items-stretch"
       style={{
         background: 'rgba(15, 17, 22, 0.96)',
         border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -123,10 +123,15 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
         transform: leaving ? 'translateY(-12px)' : mounted ? 'translateY(0)' : 'translateY(-32px)',
         opacity: leaving ? 0 : mounted ? 1 : 0,
         transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), opacity 220ms ease-out',
+        // Removed overflow-hidden + max-w-md. Long unbroken strings
+        // (Solana signatures, URLs) were being clipped on the right
+        // edge instead of wrapping. Bumped max-w to 2xl (672px) so
+        // multi-line messages have room without ballooning past the
+        // viewport on mobile.
       }}
     >
-      <div className="shrink-0 w-1" style={{ background: meta.accent }} />
-      <div className="flex items-start gap-3 flex-1 px-4 py-3.5">
+      <div className="shrink-0 w-1 rounded-l-xl" style={{ background: meta.accent }} />
+      <div className="flex items-start gap-3 flex-1 px-4 py-3.5 min-w-0">
         <div
           className="shrink-0 mt-0.5 rounded-full p-1.5"
           style={{ background: `${meta.accent}1a`, color: meta.accent }}
@@ -137,7 +142,15 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
           <div className="text-[11px] uppercase tracking-[0.14em] font-mono opacity-70" style={{ color: meta.accent }}>
             {meta.label}
           </div>
-          <div className="text-sm leading-snug mt-0.5 text-white">
+          {/* break-words wraps long words at any character. Critical
+              for Solana signatures (88-char base58 strings) and URLs
+              that would otherwise overflow horizontally and get
+              clipped. whitespace-pre-wrap preserves user-inserted
+              line breaks in error messages. */}
+          <div
+            className="text-sm leading-snug mt-0.5 text-white break-words whitespace-pre-wrap"
+            style={{ wordBreak: 'break-word' }}
+          >
             {toast.message}
           </div>
         </div>
