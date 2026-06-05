@@ -187,19 +187,16 @@ async function runCleanSlate(dryRun: boolean): Promise<void> {
       await tx.computeRequest.deleteMany({})
       console.log(`Wiped ${counts.computeRequests} compute requests`)
 
-      // Balance ledger: admin's stays (typically empty anyway).
-      // BalanceTransaction + BuyerBalance both cascade-deletable
-      // via User cascade, but we delete non-admin manually to be
-      // safe even if the admin had test ledger entries.
-      await tx.balanceTransaction.deleteMany({
-        where: { userId: { not: adminUser.id } },
-      })
-      console.log(`Wiped non-admin balance transactions`)
-
-      await tx.buyerBalance.deleteMany({
-        where: { userId: { not: adminUser.id } },
-      })
-      console.log(`Wiped non-admin buyer balances`)
+      // Balance ledger: rely on cascade.
+      //   User -> BuyerBalance (onDelete: Cascade on userId)
+      //   BuyerBalance -> BalanceTransaction (onDelete: Cascade on balanceId)
+      // When we delete non-admin Users at the end of the transaction,
+      // their BuyerBalance + BalanceTransaction rows sweep automatically.
+      // Admin's stay because the admin User row stays.
+      //
+      // Previously this scoped BalanceTransaction by userId, which fails
+      // because BalanceTransaction has no userId column — it has
+      // balanceId pointing at BuyerBalance. Cascade is cleaner anyway.
 
       await tx.notification.deleteMany({})
       console.log(`Wiped ${counts.notifications} notifications`)

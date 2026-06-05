@@ -1413,15 +1413,55 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
 
   /**
    * PATCH /v1/buyer/settings
+   *
+   * Updates user.email and/or user.walletAddress. walletAddress goes
+   * through a sanity check that rejects well-known token mint pubkeys
+   * (USDC, USDT, etc.) — users sometimes copy a mint from a token
+   * detail page thinking it's the receiving address, which silently
+   * breaks future refund delivery (USDC sent to a mint address is
+   * effectively burned). Better to reject on input than discover the
+   * mistake when a refund is owed.
    */
   fastify.patch('/v1/buyer/settings', async (request, reply) => {
     const { email, walletAddress } = request.body as { email?: string; walletAddress?: string }
+
+    if (walletAddress) {
+      const trimmed = walletAddress.trim()
+
+      // Basic base58 + length check. Real Solana addresses are 32-44
+      // base58 chars; this is the first cheap gate before anything fancier.
+      if (trimmed.length < 32 || trimmed.length > 44 || !/^[1-9A-HJ-NP-Za-km-z]+$/.test(trimmed)) {
+        return reply.code(400).send({
+          error: 'invalid_wallet',
+          message: 'Wallet address must be a valid Solana base58 address (32-44 chars).',
+        })
+      }
+
+      // Blocklist of well-known SPL token MINT pubkeys. These are not
+      // wallets — sending USDC to them is a one-way trip. Users
+      // sometimes paste these from a Solscan token page or Phantom
+      // token detail screen by mistake.
+      const KNOWN_MINTS: Record<string, string> = {
+        'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 'USDC (mainnet mint)',
+        '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU': 'USDC (devnet mint)',
+        'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB': 'USDT (mainnet mint)',
+        'So11111111111111111111111111111111111111112': 'Wrapped SOL mint',
+      }
+      if (KNOWN_MINTS[trimmed]) {
+        return reply.code(400).send({
+          error: 'invalid_wallet',
+          message:
+            `That address is the ${KNOWN_MINTS[trimmed]}, not a wallet. ` +
+            `Open Phantom and copy YOUR wallet address (under your account name) instead.`,
+        })
+      }
+    }
 
     const updated = await fastify.prisma.user.update({
       where: { id: request.user!.userId },
       data: {
         ...(email ? { email } : {}),
-        ...(walletAddress ? { walletAddress } : {}),
+        ...(walletAddress ? { walletAddress: walletAddress.trim() } : {}),
       },
     })
 
