@@ -18,7 +18,7 @@
  */
 
 import { PrismaClient } from '@a2e/database'
-import { RunPodApi } from '../src/services/inbound/runpod-adapter.js'
+import { RunPodClient } from '../src/services/inbound/runpod-adapter.js'
 
 async function main(): Promise<void> {
   const reqIdOrPrefix = process.argv[2]
@@ -82,7 +82,7 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  const api = new RunPodApi(apiKey)
+  const api = new RunPodClient(apiKey)
   let raw: unknown
   try {
     // Hit the same endpoint getPod() uses, but bypass normalisation so
