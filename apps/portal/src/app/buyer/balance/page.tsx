@@ -555,9 +555,29 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
         >
           <X size={18} />
         </button>
-        <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
-          Top up balance
-        </h2>
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
+          <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+            Top up balance
+          </h2>
+          {/* Network indicator — surfaces what network the page is
+              actually using so a misconfigured env var doesn't fail
+              silently. If this shows 'DEVNET' on production, the
+              Vercel env vars aren't set correctly. Hidden on devnet
+              by default would defeat the purpose; we always show. */}
+          <span
+            className="text-[10px] font-mono uppercase tracking-[0.14em] px-2 py-0.5 rounded-full"
+            style={{
+              background: walletNetwork === 'mainnet' ? 'rgba(34,197,94,0.12)' : 'rgba(234,179,8,0.15)',
+              color: walletNetwork === 'mainnet' ? 'rgb(34,197,94)' : 'rgb(234,179,8)',
+              border: `1px solid ${walletNetwork === 'mainnet' ? 'rgba(34,197,94,0.3)' : 'rgba(234,179,8,0.35)'}`,
+            }}
+            title={walletNetwork === 'mainnet'
+              ? 'Real-money mainnet — payments use real USDC.'
+              : 'DEVNET detected. NEXT_PUBLIC_SOLANA_RPC_URL / NEXT_PUBLIC_SOLANA_NETWORK on the portal Vercel project is misconfigured. Real USDC payments will FAIL on devnet.'}
+          >
+            {walletNetwork}
+          </span>
+        </div>
         <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>
           {walletConnected
             ? 'Sign a USDC transfer in your wallet and your balance credits automatically.'
