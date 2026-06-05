@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Wallet, Plus, ArrowDownLeft, ArrowUpRight, RefreshCw, AlertCircle, Copy, Check, Zap, ExternalLink, Loader2, CreditCard } from 'lucide-react'
+import { Wallet, Plus, ArrowDownLeft, ArrowUpRight, RefreshCw, AlertCircle, Copy, Check, Zap, ExternalLink, Loader2, CreditCard, X } from 'lucide-react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { buyer } from '@/lib/api'
@@ -341,13 +341,29 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
       setCompletedTx(signature)
       onSuccess(result.balance)
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Payment failed'
-      // Common wallet-side rejection: surface a friendlier copy.
-      if (msg.toLowerCase().includes('user rejected')) {
-        toast('error', 'Cancelled in your wallet.')
-      } else {
-        toast('error', msg)
+      const raw = e instanceof Error ? e.message : 'Payment failed'
+      const lower = raw.toLowerCase()
+      // Map common SDK / wallet errors to human-readable copy. The raw
+      // Solana SDK messages are dev-facing and confuse buyers (see
+      // 'Attempt to debit an account but found no record of a prior
+      // credit' = empty USDC ATA).
+      let friendly = raw
+      if (lower.includes('user rejected') || lower.includes('user denied')) {
+        friendly = 'Cancelled in your wallet.'
+      } else if (lower.includes('no record of a prior credit') || lower.includes('insufficient funds')) {
+        friendly =
+          'Your wallet has no USDC to send. Buy USDC on an exchange ' +
+          '(Coinbase / Binance / Kraken) and send it to your Phantom ' +
+          'address first, or use the "Pay with card (Stripe)" option ' +
+          'below which charges your card directly.'
+      } else if (lower.includes('blockhash not found') || lower.includes('block height exceeded')) {
+        friendly =
+          'Network was congested when the transaction was sent. ' +
+          'Please try again — funds were NOT debited.'
+      } else if (lower.includes('simulation failed')) {
+        friendly = `Transaction simulation failed. ${raw}`
       }
+      toast('error', friendly)
       setPhase('idle')
     }
   }
@@ -493,7 +509,7 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
           }}
         >
       <div
-        className="w-full max-w-lg rounded-2xl p-6 sm:p-7 max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-lg rounded-2xl p-6 sm:p-7 max-h-[90vh] overflow-y-auto relative"
         style={{
           background: 'var(--bg-card)',
           border: '1px solid var(--border-color)',
@@ -501,6 +517,33 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
         }}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Upper-right close button. Disabled mid-flight so a user
+            can't bail out between sign + broadcast + confirm and end
+            up with an orphaned on-chain payment that never credits.
+            Replaces the old bottom-right "Cancel" button. */}
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={phase !== 'idle'}
+          aria-label="Close"
+          className="absolute top-3 right-3 p-1.5 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          style={{
+            color: 'var(--text-muted)',
+            background: 'transparent',
+          }}
+          onMouseEnter={(e) => {
+            if (phase === 'idle') {
+              e.currentTarget.style.background = 'var(--bg-elevated)'
+              e.currentTarget.style.color = 'var(--text-primary)'
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent'
+            e.currentTarget.style.color = 'var(--text-muted)'
+          }}
+        >
+          <X size={18} />
+        </button>
         <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
           Top up balance
         </h2>
@@ -712,16 +755,21 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
           )}
         </div>
 
-        <div className="flex justify-end mt-5">
-          <button
-            onClick={onClose}
-            disabled={phase !== 'idle'}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
-          >
-            {completedTx ? 'Done' : 'Cancel'}
-          </button>
-        </div>
+        {/* The bottom Cancel button is gone — the upper-right X handles
+            close. We keep a "Done" CTA only AFTER a successful credit
+            so users get a clear "great, you're finished" affordance
+            instead of having to hunt for the close X. */}
+        {completedTx && (
+          <div className="flex justify-end mt-5">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+              style={{ background: 'var(--primary)', color: 'white' }}
+            >
+              Done
+            </button>
+          </div>
+        )}
       </div>
         </div>,
         document.body, // card wrapper portal target
