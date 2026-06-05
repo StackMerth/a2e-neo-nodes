@@ -750,7 +750,16 @@ async function tryRunPodFallback(
     provisionResult = await provisionRunPodRental(prisma, cr.id, { cloudType: initialTier })
   } catch (err) {
     const message = (err as Error).message
-    const isCapacityShort = /no instances currently available/i.test(message)
+    // Match every error string that means "RunPod is out of stock for
+    // this SKU right now" — both the upstream wording ("no instances
+    // currently available", from createPod rejection) AND the wording
+    // our own provisionRunPodRental throws ("no current capacity",
+    // when listGpuTypes reports hasCurrentStock=false). The old regex
+    // only caught the first, so the COMMUNITY-empty -> SECURE
+    // escalation never fired for the second case, even though that
+    // case is what the local stock-check throws on the most-common
+    // empty-community path.
+    const isCapacityShort = /no (instances currently available|current capacity)/i.test(message)
     if (!isCapacityShort) {
       // eslint-disable-next-line no-console
       console.error(
