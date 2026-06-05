@@ -202,7 +202,7 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
         `+$${amountUsd.toFixed(2)} USDC credited`,
         verification.isDevMode
           ? `Dev-mode topup of $${amountUsd.toFixed(2)} confirmed. Balance: $${snapshot.balanceUsd.toFixed(2)}.`
-          : `Solana mainnet topup of $${amountUsd.toFixed(2)} confirmed. Balance: $${snapshot.balanceUsd.toFixed(2)}.`,
+          : `Topup of $${amountUsd.toFixed(2)} confirmed. Balance: $${snapshot.balanceUsd.toFixed(2)}.`,
         '/buyer/balance',
         {
           kind: 'BALANCE_TOPUP',
