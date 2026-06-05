@@ -136,8 +136,13 @@ const FLAG_DESCRIPTIONS: Record<string, { kind: 'hold' | 'pass' | 'info'; title:
   },
   WAITING_ON_CAPACITY: {
     kind: 'info',
+    title: 'Searching for capacity (legacy flag)',
+    desc: 'Legacy flag from before the capacity-first allocator rework. New requests use SEARCHING_CAPACITY instead. Same meaning: allocator is probing suppliers, no admin action required.',
+  },
+  SEARCHING_CAPACITY: {
+    kind: 'info',
     title: 'Searching for capacity',
-    desc: 'Allocator is searching across all configured suppliers (internal + external networks). Retries every 10s automatically. No admin action required — placement happens as soon as any supplier returns capacity for this tier.',
+    desc: 'Allocator is probing all configured suppliers in parallel and picking the cheapest with stock. Retries every 10s automatically. No admin action required — placement happens as soon as any supplier returns capacity for this tier.',
   },
   NO_REGION_CAPACITY: {
     kind: 'info',

@@ -65,6 +65,7 @@ import {
   fitsSingleVoltageGpuPod,
 } from '../services/inbound/voltagegpu-tier-mapping.js'
 import { provisionVoltageGpuRental } from '../services/inbound/voltagegpu-provision.js'
+import { probeAllProviders } from '../services/inbound/capacity-probe.js'
 
 type ComputeRequestWithUser = ComputeRequest & { user: User }
 
@@ -322,84 +323,72 @@ async function processRequest(
     .slice(0, cr.gpuCount)
 
   if (idleNodes.length < cr.gpuCount) {
+    // CAPACITY-FIRST CASCADE (2026-06-05 rework).
+    //
+    // The old version hardcoded the order Lambda -> RunPod -> Phala ->
+    // io.net -> VoltageGPU. That punished buyers whenever a more
+    // expensive provider happened to be tried first, AND it surfaced
+    // an admin-action-required signal when nobody had stock.
+    //
+    // New behavior:
+    //   1. probeAllProviders() runs each enabled provider's capacity
+    //      check in parallel (3s timeout each so a slow one can't
+    //      stall the tick).
+    //   2. Providers WITH capacity are sorted by price ascending.
+    //   3. We iterate in that order calling the matching tryXxxFallback
+    //      until one wins. First success returns.
+    //   4. If nobody had capacity, we leave the request in PENDING with
+    //      a SEARCHING_CAPACITY flag (renamed from WAITING_ON_CAPACITY
+    //      to communicate to admins + buyers that no manual action is
+    //      required — the next tick re-probes 10s later).
+    //
     // T7 confidential routing: when buyer asked for hardware-attested
-    // TEE compute, skip every supplier that doesn't provide it.
-    // Lambda / RunPod / internal-nodes have no TEE primitives so
-    // we go STRAIGHT to the confidential cascade (Phala -> io.net
-    // confidential -> VoltageGPU) and fall through to
-    // WAITING_ON_CAPACITY with a clear "no confidential supply"
-    // message rather than silently downgrading to unattested
-    // hardware. This protects buyers (mostly early testers and
-    // privacy-regulated workloads) from running on non-confidential
-    // GPUs without realizing.
+    // TEE compute, the probe filter (preferConfidential=true) only
+    // returns Phala + VoltageGPU candidates. Unattested providers
+    // never enter the sorted list, protecting buyers (mostly early
+    // testers + privacy-regulated workloads) from silent downgrade.
     const wantConfidential = (cr as { preferConfidential?: boolean }).preferConfidential === true
 
-    if (!wantConfidential) {
-      // T5b: try Lambda fallback before giving up. Falls through to
-      // legacy PENDING + WAITING_ON_CAPACITY behavior when Lambda is
-      // not configured, the tier isn't mapped, the request needs more
-      // GPUs than a single Lambda instance provides, or Lambda is out
-      // of capacity for the type. Lambda fallback also no-ops when
-      // SSH_KEY_ENCRYPTION_KEY isn't set — the provisioning service
-      // would throw otherwise.
-      const lambdaTook = await tryLambdaFallback(prisma, io, cr)
-      if (lambdaTook) {
-        return
+    const quotes = await probeAllProviders(cr.gpuTier, cr.gpuCount, {
+      preferConfidential: wantConfidential,
+    })
+
+    if (quotes.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[compute-allocator] capacity probe for ${cr.id} (${cr.gpuCount}x ${cr.gpuTier}` +
+        `${wantConfidential ? ', confidential' : ''}) -> ` +
+        quotes.map((q) => `${q.provider}@$${q.pricePerHourUsd.toFixed(2)}/h`).join(' ; '),
+      )
+    }
+
+    for (const quote of quotes) {
+      let took = false
+      switch (quote.provider) {
+        case 'LAMBDA':
+          took = await tryLambdaFallback(prisma, io, cr)
+          break
+        case 'RUNPOD':
+          took = await tryRunPodFallback(prisma, io, cr)
+          break
+        case 'PHALA':
+          took = await tryPhalaFallback(prisma, io, cr)
+          break
+        case 'IONET':
+          took = await tryIoNetFallback(prisma, io, cr)
+          break
+        case 'VOLTAGEGPU':
+          took = await tryVoltageGpuFallback(prisma, io, cr)
+          break
       }
-
-      // T5e: try RunPod as 2nd fallback after Lambda. Same no-op rules
-      // (env missing, tier unmapped, capacity short, etc.). RunPod
-      // covers SKUs Lambda doesn't (consumer RTX) AND has independent
-      // capacity windows from Lambda for high-density boxes (H100,
-      // H200, B200) — when Lambda's empty RunPod often isn't.
-      const runpodTook = await tryRunPodFallback(prisma, io, cr)
-      if (runpodTook) {
-        return
-      }
+      if (took) return
     }
 
-    // T5f: try Phala as 3rd fallback (confidential GPU compute,
-    // Intel TDX + AMD SEV-SNP). Currently H200-only on Phala's side
-    // so all non-H200 tiers no-op here automatically. Gated by
-    // PHALA_ALLOCATOR_ENABLED=true env until createCvm body schema
-    // has been verified empirically via phala-provision:test (the
-    // body shape in phala-adapter.ts is still best-guess; the first
-    // real call will return a 422 with required field names).
-    const phalaTook = await tryPhalaFallback(prisma, io, cr)
-    if (phalaTook) {
-      return
-    }
-
-    // T5g: try io.net as 4th fallback. Currently a standard
-    // (non-confidential) overflow supplier alongside Lambda/RunPod;
-    // adds a 3rd capacity pool with independent stock windows.
-    // Gated by IONET_ALLOCATOR_ENABLED=true env until tier mapping
-    // is populated with real hardware_ids (run ionet:inspect first,
-    // populate ionet-tier-mapping.ts, then flip the env).
-    const ionetTook = await tryIoNetFallback(prisma, io, cr)
-    if (ionetTook) {
-      return
-    }
-
-    // T5h: VoltageGPU as 5th-tier fallback. Confidential-only
-    // provider (TDX + NVIDIA H100/H200/B200 CC). Cheapest H100 CC
-    // in the market ($2.77/h vs Azure's $8.90/h). Gated by
-    // VOLTAGEGPU_ALLOCATOR_ENABLED=true env until the tier mapping
-    // is populated against the live catalog (voltagegpu:inspect
-    // first to verify offer ids; mappings are BEST-GUESS).
-    const voltageGpuTook = await tryVoltageGpuFallback(prisma, io, cr)
-    if (voltageGpuTook) {
-      return
-    }
-
-    // Insufficient supply + no Lambda fallback — stay in PENDING,
-    // retry next tick. We don't mark anything; the request stays
-    // exactly where it was. We do record an eligibility flag so
-    // admin can see the request is paid and waiting on capacity.
-    // M4.4: distinguish region-bound from generic capacity shortage
-    // so admin's Needs Review queue can see when a buyer asked for
-    // an unstocked region.
-    const capacityFlag = requiredRegion ? 'NO_REGION_CAPACITY' : 'WAITING_ON_CAPACITY'
+    // Every probed provider either had no capacity or refused at
+    // provision time. The request stays PENDING and the allocator
+    // re-probes every 10s. Flag is informational only — admins do
+    // NOT need to release anything.
+    const capacityFlag = requiredRegion ? 'NO_REGION_CAPACITY' : 'SEARCHING_CAPACITY'
     await prisma.computeRequest.updateMany({
       where: { id: cr.id, status: 'PENDING' },
       data: {
