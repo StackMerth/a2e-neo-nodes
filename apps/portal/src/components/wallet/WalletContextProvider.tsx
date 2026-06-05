@@ -34,13 +34,23 @@ import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare'
 import { clusterApiUrl } from '@solana/web3.js'
 
 function resolveEndpoint(): string {
+  // Priority: explicit RPC URL > network override > production default.
+  // Switched 2026-06-05: default is now MAINNET-BETA (was devnet).
+  // Without any env set, the portal used to talk to devnet, which means
+  // signed mainnet USDC txs got broadcast to devnet -> the mainnet USDC
+  // mint doesn't exist on devnet -> the SPL token program threw
+  // "Attempt to debit an account but found no record of a prior credit",
+  // producing a confusing failure for users with real mainnet USDC.
+  // Mainnet default matches useUsdcPayment's resolveNetwork() default.
   const explicit = process.env.NEXT_PUBLIC_SOLANA_RPC_URL?.trim()
   if (explicit) return explicit
-  const network = process.env.NEXT_PUBLIC_SOLANA_NETWORK?.trim()
-  if (network === 'mainnet' || network === 'mainnet-beta') {
-    return clusterApiUrl('mainnet-beta')
-  }
-  return clusterApiUrl('devnet')
+  const network = process.env.NEXT_PUBLIC_SOLANA_NETWORK?.trim().toLowerCase()
+  if (network === 'devnet') return clusterApiUrl('devnet')
+  // Solana's clusterApiUrl('mainnet-beta') is rate-limited to ~10 req/s
+  // and unsuitable for production load. Configure NEXT_PUBLIC_SOLANA_RPC_URL
+  // to a Helius / Triton / QuickNode mainnet endpoint for real traffic.
+  // This default at least makes a new dev environment functional.
+  return clusterApiUrl('mainnet-beta')
 }
 
 export function WalletContextProvider({ children }: { children: ReactNode }) {
