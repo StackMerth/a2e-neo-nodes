@@ -1530,7 +1530,7 @@ export const api = {
           gracePeriodSeconds: number
         }
         markets: Array<{
-          market: 'AKASH' | 'IONET' | 'VASTAI'
+          market: 'IONET' | 'LAMBDA' | 'RUNPOD' | 'PHALA'
           enabled: boolean
           healthy: boolean
           autoDisabled: boolean
@@ -1547,7 +1547,7 @@ export const api = {
         deployments: Array<{
           id: string
           nodeId: string
-          market: 'AKASH' | 'IONET' | 'VASTAI'
+          market: 'IONET' | 'LAMBDA' | 'RUNPOD' | 'PHALA'
           externalId: string
           status: 'PENDING' | 'ACTIVE' | 'TERMINATING' | 'TERMINATED' | 'FAILED'
           ratePerHour: number
@@ -1568,7 +1568,7 @@ export const api = {
         deployment: {
           id: string
           nodeId: string
-          market: 'AKASH' | 'IONET' | 'VASTAI'
+          market: 'IONET' | 'LAMBDA' | 'RUNPOD' | 'PHALA'
           externalId: string
           status: string
           ratePerHour: number
@@ -1593,7 +1593,7 @@ export const api = {
         deploymentId: string
         externalId: string
         status: string
-        market: 'AKASH' | 'IONET' | 'VASTAI'
+        market: 'IONET' | 'LAMBDA' | 'RUNPOD' | 'PHALA'
         ratePerHour: number
       }>(`/v1/external/list/${nodeId}`, {
         method: 'POST',
@@ -1609,7 +1609,12 @@ export const api = {
     earnings: (params?: { from?: string; to?: string; nodeId?: string; market?: string }) =>
       apiFetch<{
         totalUsd: number
-        byMarket: Record<'AKASH' | 'IONET' | 'VASTAI', number>
+        // byMarket carries one number per active external market. Type
+        // is a partial record so older keys (AKASH / VASTAI) the API
+        // may still surface for historical periods don't blow up
+        // existing-consumer destructuring; new keys (LAMBDA / RUNPOD
+        // / PHALA) get strong typing for the dashboard's chart code.
+        byMarket: Partial<Record<'IONET' | 'LAMBDA' | 'RUNPOD' | 'PHALA' | 'AKASH' | 'VASTAI', number>>
         byNode: Array<{ nodeId: string; walletAddress: string; totalUsd: number }>
         periodStart: string
         periodEnd: string
@@ -1625,7 +1630,7 @@ export const api = {
           demandThresholdPercent: number
           marginProtectionPercent: number
           gracePeriodSeconds: number
-          preferredMarkets: Array<'AKASH' | 'IONET' | 'VASTAI'>
+          preferredMarkets: Array<'IONET' | 'LAMBDA' | 'RUNPOD' | 'PHALA'>
           createdAt: string
           updatedAt: string
         }
@@ -1638,7 +1643,7 @@ export const api = {
       demandThresholdPercent: number
       marginProtectionPercent: number
       gracePeriodSeconds: number
-      preferredMarkets: Array<'AKASH' | 'IONET' | 'VASTAI'>
+      preferredMarkets: Array<'IONET' | 'LAMBDA' | 'RUNPOD' | 'PHALA'>
     }>) =>
       apiFetch<{
         config: {
@@ -1649,7 +1654,7 @@ export const api = {
           demandThresholdPercent: number
           marginProtectionPercent: number
           gracePeriodSeconds: number
-          preferredMarkets: Array<'AKASH' | 'IONET' | 'VASTAI'>
+          preferredMarkets: Array<'IONET' | 'LAMBDA' | 'RUNPOD' | 'PHALA'>
         }
       }>('/v1/external/config', {
         method: 'PATCH',
