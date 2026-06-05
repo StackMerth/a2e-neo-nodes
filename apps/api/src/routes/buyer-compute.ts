@@ -143,8 +143,55 @@ const requestSchema = z.object({
 // M3 pricing modifiers. ON_DEMAND = full price baseline. SPOT and
 // RESERVED apply discounts. Tunable so the operator can dial without
 // a redeploy when market prices shift.
-const SPOT_DISCOUNT_PCT = parseFloat(process.env.SPOT_DISCOUNT_PCT ?? '0.4')         // 40% off
-const RESERVED_DISCOUNT_PCT = parseFloat(process.env.RESERVED_DISCOUNT_PCT ?? '0.1') // 10% off
+//
+// Env values are read as DECIMAL fractions (0.4 = 40%, not 40). The
+// stripe-checkout path used to read the same env as a percent (line
+// 868-style `/ 100`) which made the two pricing paths diverge whenever
+// the env var was set — pick a single convention here and have the
+// helper functions below be the only place that consumes them.
+function parsePricingFraction(envValue: string | undefined, fallback: number): number {
+  if (!envValue) return fallback
+  const parsed = parseFloat(envValue)
+  if (!Number.isFinite(parsed)) return fallback
+  // Defensive normalisation: if someone sets `40` instead of `0.4`,
+  // interpret it as a percent and clamp into [0, 1] so we never
+  // produce a negative multiplier downstream.
+  const normalised = parsed > 1 ? parsed / 100 : parsed
+  return Math.min(Math.max(normalised, 0), 1)
+}
+const SPOT_DISCOUNT_PCT = parsePricingFraction(process.env.SPOT_DISCOUNT_PCT, 0.4)
+const RESERVED_DISCOUNT_PCT = parsePricingFraction(process.env.RESERVED_DISCOUNT_PCT, 0.1)
+
+// Per-tier minimum daily price floor. The buyer-side ratePerDay can
+// never go below this, regardless of how the SPOT / INFERENCE / future
+// discounts stack. Derived from the supplier-side STATIC_PRICES in
+// capacity-probe.ts (cheapest provider's per-hour cost × 24 × 1.25 for
+// a 25% minimum platform margin). When supplier prices shift, update
+// both this floor AND STATIC_PRICES together so the relationship holds.
+//
+// Why we need this: L40S full price $21/day = $0.875/h, but cheapest
+// supplier (RunPod) costs $0.79/h. A SPOT + INFERENCE stack (0.6 ×
+// 0.8 = 0.48) drops the buyer price to $0.42/h — below cost, every
+// minute is a guaranteed loss. The floor stops the stack before the
+// math goes underwater.
+const GPU_PRICE_FLOOR_DAILY: Record<string, number> = {
+  H100:     56.10, // supplier $1.87/h × 24 × 1.25
+  H200:    100.00, // supplier $3.29/h × 24 × 1.25 = $98.70
+  L40S:     23.70, // supplier $0.79/h × 24 × 1.25
+  B200:    165.00, // supplier $5.49/h × 24 × 1.25 = $164.70
+  B300:    200.00,
+  GB300:   240.00,
+  RTX_4090: 10.20, // supplier $0.34/h × 24 × 1.25
+  RTX_3090:  9.00, // supplier $0.30/h × 24 × 1.25 (RUNPOD STATIC_PRICES)
+  CONSUMER:  6.00,
+  OTHER:     6.00,
+}
+
+function applyPriceFloor(ratePerDay: number, gpuTier: string): number {
+  const floor = GPU_PRICE_FLOOR_DAILY[gpuTier]
+  if (floor && ratePerDay < floor) return floor
+  return ratePerDay
+}
 
 // Workload-type discount: INFERENCE workloads on datacenter tiers run
 // shorter, hit less VRAM, and use less power than TRAINING / MIXED on
@@ -338,9 +385,14 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     // (INFERENCE on datacenter tiers) compose multiplicatively. Both
     // ride on ratePerDay so totalCost, allocator-set ratePerMinute,
     // and refund math all inherit the final rate automatically.
-    const ratePerDay = baseRatePerDay
-      * tierPricingMultiplier(tier)
-      * workloadPricingMultiplier(workloadType, gpuTier)
+    // Floor enforced after composition so we never sell below
+    // supplier cost — see GPU_PRICE_FLOOR_DAILY for rationale.
+    const ratePerDay = applyPriceFloor(
+      baseRatePerDay
+        * tierPricingMultiplier(tier)
+        * workloadPricingMultiplier(workloadType, gpuTier),
+      gpuTier,
+    )
     // For RESERVED, the rental's effective duration is the commitment
     // period (always >= durationDays). Buyer locks in commitmentDays;
     // we overwrite durationDays so ACTIVE rentals' expiresAt is set
@@ -863,13 +915,18 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'unsupported_tier' })
     }
     const baseRatePerDay = config.retailRate
-    let ratePerDay = baseRatePerDay
-    if (body.tier === 'SPOT') {
-      const discount = parseFloat(process.env.SPOT_DISCOUNT_PCT ?? '40') / 100
-      ratePerDay = baseRatePerDay * (1 - discount)
-    } else if (body.tier === 'RESERVED') {
-      ratePerDay = baseRatePerDay * 0.9
-    }
+    // Reuse the shared multiplier helpers so this path can never
+    // diverge from the primary submit path again. Previously this
+    // block parsed SPOT_DISCOUNT_PCT differently (`/100`) which made
+    // the same env value mean different things in the two paths;
+    // the helper enforces a single convention. Floor applied after
+    // composition so Stripe-direct rentals respect the same minimum.
+    const ratePerDay = applyPriceFloor(
+      baseRatePerDay
+        * tierPricingMultiplier(body.tier)
+        * workloadPricingMultiplier(body.workloadType, body.gpuTier),
+      body.gpuTier,
+    )
     const totalCost = Number((ratePerDay * body.gpuCount * body.durationDays).toFixed(2))
     if (totalCost < 1) {
       return reply.code(400).send({ error: 'amount_too_small', message: 'Rental total must be at least $1.00.' })
