@@ -65,12 +65,19 @@ async function main(): Promise<void> {
     select: { id: true, email: true },
   })
 
-  // Discover seed nodes (by id prefix)
+  // Discover seed nodes (by id prefix). Select only fields we know
+  // exist on the Node model — see schema.prisma. The previous version
+  // referenced a non-existent nodeName column and crashed at runtime.
   const seedNodes = await prisma.node.findMany({
     where: {
       OR: SEED_NODE_PREFIXES.map((p) => ({ id: { startsWith: p } })),
     },
-    select: { id: true, nodeName: true },
+    select: {
+      id: true,
+      gpuTier: true,
+      status: true,
+      customGpuModel: true,
+    },
   })
 
   // Discover fake-market earnings (separate axis — may exist on real nodes
@@ -88,7 +95,10 @@ async function main(): Promise<void> {
 
   console.log(`Found ${seedNodes.length} seed nodes:`)
   for (const n of seedNodes) {
-    console.log(`  ${n.id.padEnd(40)} ${n.nodeName ?? '(no name)'}`)
+    const tier = n.gpuTier ?? '(no tier)'
+    const status = n.status ?? '(no status)'
+    const model = n.customGpuModel ?? ''
+    console.log(`  ${n.id.padEnd(40)} ${tier.padEnd(8)} ${status.padEnd(10)} ${model}`)
   }
   console.log()
 
@@ -108,60 +118,37 @@ async function main(): Promise<void> {
   const userIds = seedUsers.map((u) => u.id)
   const nodeIds = seedNodes.map((n) => n.id)
 
-  // Tx so partial deletes don't leave the DB inconsistent
+  // Most User/Node relations in schema.prisma use `onDelete: Cascade`,
+  // so deleting the parent row sweeps the related rows automatically.
+  // We only need to explicitly delete things that DON'T cascade or
+  // that exist independently of the seed users/nodes (fake-market
+  // earnings on REAL nodes, e.g.).
   await prisma.$transaction(async (tx) => {
-    // Earnings tied to seed nodes OR to fake markets
-    const delEarnings = await tx.earning.deleteMany({
-      where: {
-        OR: [
-          { nodeId: { in: nodeIds } },
-          { market: { in: [...FAKE_MARKETS] } },
-        ],
-      },
+    // 1. Fake-market Earnings (delete by market enum value, not by
+    //    node — covers stale rows on any node)
+    const delFakeEarnings = await tx.earning.deleteMany({
+      where: { market: { in: [...FAKE_MARKETS] } },
     })
-    console.log(`Deleted ${delEarnings.count} earnings rows`)
+    console.log(`Deleted ${delFakeEarnings.count} fake-market earnings rows (AKASH/VASTAI)`)
 
-    // External deployments tied to seed buyers
-    const delExternal = await tx.externalDeployment.deleteMany({
-      where: { userId: { in: userIds } },
-    })
-    console.log(`Deleted ${delExternal.count} external deployment rows`)
-
-    // Internal spend tied to seed buyers
-    const delSpend = await tx.internalSpend.deleteMany({
-      where: { userId: { in: userIds } },
-    })
-    console.log(`Deleted ${delSpend.count} internal spend rows`)
-
-    // Compute requests tied to seed buyers
-    const delRequests = await tx.computeRequest.deleteMany({
-      where: { userId: { in: userIds } },
-    })
-    console.log(`Deleted ${delRequests.count} compute request rows`)
-
-    // Balance transactions tied to seed buyers
-    const delBalanceTx = await tx.balanceTransaction.deleteMany({
-      where: { userId: { in: userIds } },
-    })
-    console.log(`Deleted ${delBalanceTx.count} balance transaction rows`)
-
-    // Buyer balances tied to seed buyers
-    const delBuyerBalances = await tx.buyerBalance.deleteMany({
-      where: { userId: { in: userIds } },
-    })
-    console.log(`Deleted ${delBuyerBalances.count} buyer balance rows`)
-
-    // Nodes
+    // 2. Seed nodes by id prefix. Cascades to: ExternalDeployment
+    //    (nodeId FK cascade), Earning (nodeId FK cascade), Heartbeats,
+    //    Jobs, etc. Settled by schema cascade rules.
     const delNodes = await tx.node.deleteMany({
       where: { id: { in: nodeIds } },
     })
-    console.log(`Deleted ${delNodes.count} node rows`)
+    console.log(`Deleted ${delNodes.count} seed node rows (cascades to related Earnings, ExternalDeployments, Jobs, Heartbeats)`)
 
-    // Seed users (after all their referencing data is gone)
+    // 3. Seed users by email pattern. Cascades to: ComputeRequest,
+    //    BalanceTransaction, BuyerBalance, NodeRunner, ApiKey,
+    //    PushSubscription, Notification, RefreshToken, etc.
+    //    InternalSpend gets nuked via ComputeRequest cascade or
+    //    NodeRunner cascade (since InternalSpend has nodeRunnerId +
+    //    computeRequestId FKs, both cascading).
     const delUsers = await tx.user.deleteMany({
       where: { id: { in: userIds } },
     })
-    console.log(`Deleted ${delUsers.count} user rows`)
+    console.log(`Deleted ${delUsers.count} seed user rows (cascades to related ComputeRequests, BalanceTransactions, BuyerBalances, NodeRunners, ApiKeys, etc.)`)
   })
 
   console.log()
