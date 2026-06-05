@@ -24,6 +24,9 @@ interface Tx {
   amountUsd: number
   description: string
   referenceId: string | null
+  // Populated for TOPUP_SOLANA + WITHDRAW_USDC. Used to build a
+  // Solscan link in the transactions list.
+  txHash: string | null
   balanceAfter: number
   createdAt: string
 }
@@ -61,12 +64,17 @@ const TX_TYPE_META: Record<string, { label: string; tone: 'credit' | 'debit'; ic
   SPEND_RENTAL: { label: 'Rental', tone: 'debit', icon: ArrowUpRight },
   REFUND_RENTAL: { label: 'Rental refund', tone: 'credit', icon: ArrowDownLeft },
   REFUND_FAILED: { label: 'Failed-allocation refund', tone: 'credit', icon: ArrowDownLeft },
+  WITHDRAW_USDC: { label: 'Withdrawal', tone: 'debit', icon: ArrowUpRight },
 }
 
 export default function BalancePage() {
   const { toast } = useToast()
   const [balance, setBalance] = useState<Balance | null>(null)
   const [txs, setTxs] = useState<Tx[]>([])
+  // Captured from the transactions endpoint so we point Solscan at the
+  // right cluster. Default mainnet (matches the live config); flipped
+  // to devnet by the response when PAYMENT_MODE is mock.
+  const [network, setNetwork] = useState<'mainnet' | 'devnet'>('mainnet')
   const [loading, setLoading] = useState(true)
   const [topupOpen, setTopupOpen] = useState(false)
   const [withdrawOpen, setWithdrawOpen] = useState(false)
@@ -77,6 +85,7 @@ export default function BalancePage() {
       const [b, t] = await Promise.all([buyer.balance.get(), buyer.balance.transactions(50)])
       setBalance(b)
       setTxs(t.transactions)
+      setNetwork(t.network)
     } catch (e) {
       toast('error', e instanceof Error ? e.message : 'Failed to load balance')
     } finally {
@@ -190,6 +199,9 @@ export default function BalancePage() {
               const meta = TX_TYPE_META[tx.type] ?? { label: tx.type, tone: 'debit' as const, icon: ArrowUpRight }
               const Icon = meta.icon
               const isCredit = meta.tone === 'credit'
+              const solscanUrl = tx.txHash
+                ? `https://solscan.io/tx/${tx.txHash}${network === 'devnet' ? '?cluster=devnet' : ''}`
+                : null
               return (
                 <div key={tx.id} className="px-5 py-3.5 flex items-center gap-3" style={{ borderColor: 'var(--border-color)' }}>
                   <div
@@ -202,11 +214,41 @@ export default function BalancePage() {
                     <Icon size={16} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                      {meta.label}
+                    <div className="text-sm font-medium truncate flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                      <span className="truncate">{meta.label}</span>
+                      {solscanUrl && (
+                        <a
+                          href={solscanUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          title="View on Solscan"
+                          className="shrink-0 inline-flex items-center justify-center w-5 h-5 rounded transition-colors hover:opacity-80"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          <ExternalLink size={11} />
+                        </a>
+                      )}
                     </div>
                     <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                      {tx.description}
+                      {solscanUrl ? (
+                        <a
+                          href={solscanUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-mono hover:underline"
+                          style={{ color: 'var(--text-muted)' }}
+                          title={tx.txHash ?? undefined}
+                        >
+                          {tx.description}
+                          <span className="ml-1 opacity-70">
+                            ({tx.txHash!.slice(0, 6)}…{tx.txHash!.slice(-4)})
+                          </span>
+                        </a>
+                      ) : (
+                        tx.description
+                      )}
                     </div>
                   </div>
                   <div className="text-right shrink-0">

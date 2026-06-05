@@ -107,6 +107,17 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
 
   /**
    * GET /v1/buyer/balance/transactions — paginated ledger
+   *
+   * Enriches each row with a `txHash` field so the portal can render a
+   * Solscan link. The hash lives in two places depending on the type:
+   *   - TOPUP_SOLANA: referenceId IS the on-chain signature.
+   *   - WITHDRAW_USDC: referenceId is the BuyerWithdrawal.id; the
+   *     real signature is on BuyerWithdrawal.txHash. We do a single
+   *     batch lookup so the page-load cost is one extra query per
+   *     transactions fetch regardless of how many withdrawals are in
+   *     the page.
+   * The response also includes `network` so the frontend knows which
+   * Solscan cluster to point at.
    */
   fastify.get('/v1/buyer/balance/transactions', async (request, reply) => {
     const parse = txQuerySchema.safeParse(request.query)
@@ -116,7 +127,34 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
     }
     const userId = request.user!.userId
     const rows = await getTransactions(fastify.prisma, userId, parse.data)
-    reply.send({ transactions: rows })
+
+    const withdrawalIds = rows
+      .filter((r) => r.type === 'WITHDRAW_USDC' && r.referenceId)
+      .map((r) => r.referenceId as string)
+    const withdrawalMap = new Map<string, string | null>()
+    if (withdrawalIds.length > 0) {
+      const withdrawals = await fastify.prisma.buyerWithdrawal.findMany({
+        where: { id: { in: withdrawalIds }, userId },
+        select: { id: true, txHash: true },
+      })
+      for (const w of withdrawals) withdrawalMap.set(w.id, w.txHash)
+    }
+
+    const enriched = rows.map((r) => {
+      let txHash: string | null = null
+      if (r.type === 'TOPUP_SOLANA' && r.referenceId) {
+        txHash = r.referenceId
+      } else if (r.type === 'WITHDRAW_USDC' && r.referenceId) {
+        txHash = withdrawalMap.get(r.referenceId) ?? null
+      }
+      return { ...r, txHash }
+    })
+
+    const config = await getSolanaConfig(fastify.prisma)
+    reply.send({
+      transactions: enriched,
+      network: config.devMode ? 'devnet' : 'mainnet',
+    })
   })
 
   /**
