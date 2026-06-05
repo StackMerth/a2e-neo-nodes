@@ -1176,6 +1176,31 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         refundError = err instanceof Error ? err.message : 'Internal spend rebate failed'
         fastify.log.error({ err, requestId: id }, 'InternalSpend rebate failed during terminate')
       }
+    } else if (cr.paymentSource === 'BUYER_BALANCE') {
+      // Money came FROM the buyer's portal balance at create-time
+      // (SPEND_RENTAL debit), so the refund MUST go back to the same
+      // balance — not via a Solana USDC send to their wallet. The
+      // wallet-on-file branch below would have sent USDC from the
+      // platform admin wallet to their Phantom, which both drains the
+      // wrong source (admin wallet, not the balance ledger that holds
+      // the rental's funds) and surprises the buyer by routing money
+      // through a different rail than they paid with.
+      // If the buyer wants the refund in their Phantom wallet, they
+      // can hit the existing Withdraw flow on /buyer/balance.
+      try {
+        await creditBalance(fastify.prisma, {
+          userId,
+          amountUsd: refundAmount,
+          type: 'REFUND_RENTAL',
+          description: `Refund for terminated rental (credited to balance — paid from balance originally)`,
+          referenceId: id,
+        })
+        refundStatus = 'CREDITED_TO_BALANCE'
+      } catch (err) {
+        refundStatus = 'FAILED'
+        refundError = err instanceof Error ? err.message : 'Balance credit failed'
+        fastify.log.error({ err, requestId: id }, 'BUYER_BALANCE terminate refund failed')
+      }
     } else if (!user?.walletAddress) {
       // No wallet on file -> credit the buyer's portal balance instead
       // of leaving the refund unpaid. Previously this returned
