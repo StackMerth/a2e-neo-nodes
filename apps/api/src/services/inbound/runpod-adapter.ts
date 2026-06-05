@@ -175,10 +175,33 @@ interface RawPodResponse {
     location?: string
     dataCenterId?: string
   }
+  // Top-level machineId is populated for COMMUNITY-tier pods even when
+  // the `machine` object is empty (RunPod returns `machine: {}` for
+  // community hosts; location + dataCenterId are unavailable there).
+  // We use it as a region-of-last-resort so the admin UI shows
+  // something meaningful instead of staying stuck at "(pending)".
+  machineId?: string
   gpuTypeId?: string
   gpuCount?: number
   costPerHr?: number | null
-  ports?: Array<{ ip?: string; isIpPublic?: boolean; privatePort?: number; publicPort?: number; type?: string }>
+  // RunPod's REST API exposes container-port -> host-port in two
+  // distinct fields. Both have to be parsed because either can be
+  // populated depending on the pod's tier (SECURE vs COMMUNITY) and
+  // RunPod's response shape has changed across rollouts.
+  //
+  // 1. portMappings: object form, container-port (string key) -> host
+  //    port (number). This is what COMMUNITY-tier pods actually
+  //    return as of 2026-06. Example:
+  //      "portMappings": { "22": 28204, "8888": 28205 }
+  //
+  // 2. ports: array form. Historically each entry was an object with
+  //    privatePort/publicPort fields (SECURE-tier). Newer API versions
+  //    sometimes return a plain string array like ["22/tcp"] which
+  //    only conveys "container exposes this port" with no mapping.
+  //    Parser below tolerates both shapes (TypeScript narrowing via
+  //    typeof check at runtime).
+  portMappings?: Record<string, number>
+  ports?: Array<{ ip?: string; isIpPublic?: boolean; privatePort?: number; publicPort?: number; type?: string } | string>
   uptimeSeconds?: number
   containerDiskInGb?: number
   volumeInGb?: number
@@ -410,40 +433,68 @@ export class RunPodClient {
 }
 
 function normalizePod(raw: RawPodResponse): RunPodPod {
-  // SSH port detection. RunPod's tier model affects how port 22 is
-  // exposed:
+  // SSH port detection across RunPod's three response shapes (in
+  // priority order):
   //
-  //   SECURE tier: container's port 22 maps to a dynamic public port
-  //     on the pod's host. We look for the entry with privatePort=22
-  //     and isIpPublic=true, then use its publicPort.
+  //   1. portMappings (object form). Current COMMUNITY-tier shape as
+  //      of 2026-06. Container-port string key -> host-port number.
+  //      The most authoritative source: explicit mapping, never
+  //      ambiguous. Example: { "22": 28204 } -> sshPort = 28204.
   //
-  //   COMMUNITY tier: peer hosts expose port 22 DIRECTLY on the public
-  //     IP (no NAT). RunPod's API may report this either as a port
-  //     entry with publicPort=22 / privatePort=22 / isIpPublic=true,
-  //     OR not include port 22 in the ports array at all (because
-  //     there's no translation to surface). When ports[] is empty but
-  //     publicIp is populated AND status is RUNNING, port 22 is the
-  //     correct fallback.
+  //   2. ports (object array). Historical SECURE-tier shape. Each
+  //      entry carries privatePort + publicPort + isIpPublic. Used
+  //      when portMappings is absent.
   //
-  // Both cases land on sshPort=22 for community tier, which matches
-  // the ExternalRental row's default (22) — so the buyer's SSH
-  // command `ssh root@<publicIp>` works without us writing the field.
+  //   3. ports (string array). Newer alternate shape. Entries are
+  //      strings like "22/tcp" that only indicate exposure, not
+  //      mapping. If this is all we get and publicIp is populated,
+  //      the pod is using direct port 22 exposure (rare; mostly
+  //      SECURE-tier private-network pods).
+  //
+  // The previous fallback "if nothing matched, assume 22" was wrong
+  // for the common community-tier case where the API returns the
+  // string-array form of ports[] AND portMappings — we were ignoring
+  // portMappings entirely and falling through to 22, which is the
+  // container-internal port, not the public host port.
   let sshPort: number | null = null
   let publicIp: string | null = raw.publicIp ?? null
-  if (Array.isArray(raw.ports)) {
-    const sshPortEntry = raw.ports.find(
-      (p) => p.privatePort === 22 && p.isIpPublic === true && typeof p.publicPort === 'number',
-    )
-    if (sshPortEntry) {
-      sshPort = sshPortEntry.publicPort ?? null
-      if (!publicIp && typeof sshPortEntry.ip === 'string') publicIp = sshPortEntry.ip
+
+  // 1. portMappings (preferred — explicit and unambiguous).
+  if (raw.portMappings && typeof raw.portMappings['22'] === 'number') {
+    sshPort = raw.portMappings['22']
+  }
+
+  // 2/3. ports[] (legacy / supplemental).
+  if (sshPort === null && Array.isArray(raw.ports)) {
+    for (const entry of raw.ports) {
+      if (typeof entry === 'object' && entry !== null) {
+        // SECURE-tier object form.
+        if (entry.privatePort === 22 && entry.isIpPublic === true && typeof entry.publicPort === 'number') {
+          sshPort = entry.publicPort
+          if (!publicIp && typeof entry.ip === 'string') publicIp = entry.ip
+          break
+        }
+      }
+      // String form ("22/tcp") carries no host-port info. We skip it
+      // here; the string-only case is handled by the fallback below.
     }
   }
-  // Community-tier fallback: pod is running with a public IP but
-  // ports[] didn't surface a 22 mapping → assume direct port 22.
-  // Only apply when the pod is actually RUNNING; PENDING pods might
-  // get their public port assigned a few ticks later.
-  if (sshPort === null && publicIp !== null && raw.desiredStatus === 'RUNNING') {
+
+  // 4. String-only ports[] fallback: pod is running with a public IP,
+  // ports[] is present but contains only strings (no mapping), and
+  // portMappings was also empty. Assume the container exposes 22
+  // directly. Narrow this to the exact "string-only ports, no
+  // portMappings" case so it doesn't silently mask the more common
+  // bug where we just missed a portMappings field.
+  if (
+    sshPort === null
+    && publicIp !== null
+    && raw.desiredStatus === 'RUNNING'
+    && Array.isArray(raw.ports)
+    && raw.ports.length > 0
+    && raw.ports.every((p) => typeof p === 'string')
+    && !raw.portMappings
+  ) {
     sshPort = 22
   }
   return {
@@ -452,7 +503,15 @@ function normalizePod(raw: RawPodResponse): RunPodPod {
     status: raw.desiredStatus ?? 'CREATED',
     gpuTypeId: raw.gpuTypeId ?? 'unknown',
     gpuCount: raw.gpuCount ?? 1,
-    region: raw.machine?.location ?? raw.machine?.dataCenterId ?? null,
+    // Region fallback chain. machine.location / machine.dataCenterId
+    // are populated for SECURE-tier pods (RunPod's owned hardware).
+    // COMMUNITY-tier pods return `machine: {}` with no location info,
+    // but the top-level machineId is set — surface a "community/<id>"
+    // pseudo-region so the admin UI shows the host identity instead
+    // of remaining stuck on "(pending)" forever.
+    region: raw.machine?.location
+      ?? raw.machine?.dataCenterId
+      ?? (raw.machineId ? `community/${raw.machineId.slice(0, 8)}` : null),
     publicIp,
     sshPort,
     pricePerHourUsd: typeof raw.costPerHr === 'number' ? raw.costPerHr : null,
