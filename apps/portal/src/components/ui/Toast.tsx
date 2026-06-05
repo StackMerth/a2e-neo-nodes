@@ -57,7 +57,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast: addToast }}>
       {children}
-      <div className="fixed top-4 inset-x-0 z-[9999] flex flex-col items-center gap-2 pointer-events-none px-4">
+      <div
+        className="fixed top-4 inset-x-0 flex flex-col items-center gap-2 pointer-events-none px-4"
+        style={{
+          // Inline max-int z-index instead of Tailwind arbitrary class.
+          // Tailwind's z-[9999] worked but the topup modal's card sits
+          // at z-150 in its own stacking context — in some browsers
+          // arbitrary classes have been observed to render at a lower
+          // effective layer than inline z-index when fighting nested
+          // stacking contexts. Inline wins unconditionally.
+          zIndex: 2147483647,
+        }}
+      >
         {toasts.map((t) => (
           <ToastItem key={t.id} toast={t} onDismiss={() => removeToast(t.id)} />
         ))}
