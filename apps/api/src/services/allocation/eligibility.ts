@@ -45,6 +45,16 @@ export type EligibilityFlag =
   | 'HOLD_DAILY_SPEND_EXCEEDED'
   | 'HOLD_CONCURRENT_LIMIT'
   | 'HOLD_UNVERIFIED_EMAIL'
+  // Informational flags. The request is paid and approved; the
+  // allocator is searching for capacity. NOT a hold — no admin
+  // action is required. The next allocator tick re-probes 10s later.
+  // SEARCHING_CAPACITY replaces the old WAITING_ON_CAPACITY (which
+  // implied "admin needs to release this" but was never actually a
+  // hold). Old rows may still carry WAITING_ON_CAPACITY; treat as
+  // synonyms in any UI that renders these.
+  | 'SEARCHING_CAPACITY'
+  | 'WAITING_ON_CAPACITY' // legacy, kept for backward compat on historical rows
+  | 'NO_REGION_CAPACITY'
 
 export interface EligibilityVerdict {
   approved: boolean
