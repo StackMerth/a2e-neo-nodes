@@ -12,6 +12,7 @@ import { getOperatorBalanceBreakdown } from '../services/settlement/engine.js'
 import {
   getOrCreateBalance,
   debitBalance,
+  creditBalance,
   InsufficientBalanceError,
 } from '../services/balance/balance-service.js'
 import { getConfidentialComputeUiMode } from './buyer-confidential-interest.js'
@@ -1003,7 +1004,18 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     })
 
     let refundTxHash: string | null = null
-    let refundStatus: 'SENT' | 'SKIPPED_NO_WALLET' | 'SKIPPED_ZERO' | 'SKIPPED_RESERVED' | 'INTERNAL_REBATED' | 'FAILED' = 'SKIPPED_ZERO'
+    // SKIPPED_NO_WALLET kept in the type union for backward compat with
+    // historical rows that already record this status. New terminations
+    // never produce it; the no-wallet path now auto-credits the buyer
+    // balance and reports CREDITED_TO_BALANCE.
+    let refundStatus:
+      | 'SENT'
+      | 'CREDITED_TO_BALANCE'
+      | 'SKIPPED_NO_WALLET'
+      | 'SKIPPED_ZERO'
+      | 'SKIPPED_RESERVED'
+      | 'INTERNAL_REBATED'
+      | 'FAILED' = 'SKIPPED_ZERO'
     let refundError: string | null = null
 
     if (cr.tier === 'RESERVED') {
@@ -1034,7 +1046,30 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         fastify.log.error({ err, requestId: id }, 'InternalSpend rebate failed during terminate')
       }
     } else if (!user?.walletAddress) {
-      refundStatus = 'SKIPPED_NO_WALLET'
+      // No wallet on file -> credit the buyer's portal balance instead
+      // of leaving the refund unpaid. Previously this returned
+      // SKIPPED_NO_WALLET and the money sat with the platform until an
+      // admin ran reissue-skipped-refunds.ts. Now the buyer sees the
+      // refund land in their balance immediately, and they can spend
+      // it on the next rental or withdraw later via a wallet flow.
+      try {
+        await creditBalance(fastify.prisma, {
+          userId,
+          amountUsd: refundAmount,
+          type: 'REFUND_RENTAL',
+          description: `Refund for terminated rental (no wallet on file — credited to balance)`,
+          referenceId: id,
+        })
+        refundStatus = 'CREDITED_TO_BALANCE'
+      } catch (err) {
+        // Credit failure is rare (DB constraint, duplicate referenceId)
+        // — fall through to FAILED so the admin sees it in the audit
+        // trail and the buyer-facing notification reflects the
+        // problem honestly instead of claiming "credited."
+        refundStatus = 'FAILED'
+        refundError = err instanceof Error ? err.message : 'Balance credit failed'
+        fastify.log.error({ err, requestId: id }, 'Refund balance credit failed during terminate')
+      }
     } else {
       try {
         const solanaConfig = await getSolanaConfig(fastify.prisma)
@@ -1043,8 +1078,25 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
           refundTxHash = result.txHash
           refundStatus = 'SENT'
         } else {
-          refundStatus = 'FAILED'
-          refundError = result.error ?? 'Unknown payment failure'
+          // On-chain send failed (RPC down, payer wallet empty, etc.)
+          // -> fall back to a balance credit instead of leaving the
+          // refund stranded as FAILED. Buyer gets their money one way
+          // or another.
+          try {
+            await creditBalance(fastify.prisma, {
+              userId,
+              amountUsd: refundAmount,
+              type: 'REFUND_RENTAL',
+              description: `Refund for terminated rental (USDC send failed: ${result.error ?? 'unknown'} — credited to balance)`,
+              referenceId: id,
+            })
+            refundStatus = 'CREDITED_TO_BALANCE'
+            refundError = result.error ?? 'USDC send failed; fell back to balance credit'
+          } catch (creditErr) {
+            refundStatus = 'FAILED'
+            refundError = `USDC send failed (${result.error}) AND balance credit failed (${creditErr instanceof Error ? creditErr.message : 'unknown'})`
+            fastify.log.error({ err: creditErr, requestId: id }, 'Both USDC refund and balance credit failed during terminate')
+          }
         }
       } catch (err) {
         refundStatus = 'FAILED'
@@ -1132,10 +1184,10 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       'Rental Ended',
       refundStatus === 'SENT'
         ? `Your rental ended. Refund of $${refundAmount.toFixed(2)} sent to your wallet.`
-        : refundStatus === 'INTERNAL_REBATED'
-          ? `Your rental ended. $${refundAmount.toFixed(2)} credited back to your operator balance.`
-          : refundStatus === 'SKIPPED_NO_WALLET'
-            ? `Your rental ended. Add a wallet address in settings to receive future refunds.`
+        : refundStatus === 'CREDITED_TO_BALANCE'
+          ? `Your rental ended. $${refundAmount.toFixed(2)} credited to your portal balance.`
+          : refundStatus === 'INTERNAL_REBATED'
+            ? `Your rental ended. $${refundAmount.toFixed(2)} credited back to your operator balance.`
             : refundStatus === 'SKIPPED_RESERVED'
               ? `Your RESERVED rental ended early. Per your ${cr.commitmentDays}-day commitment, no refund applies.`
               : `Your rental ended. ${refundStatus === 'SKIPPED_ZERO' ? 'No refund due.' : 'Refund failed — admin notified.'}`,

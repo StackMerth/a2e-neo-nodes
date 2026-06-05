@@ -82,7 +82,7 @@ const FAKE_MARKETS = ['AKASH', 'VASTAI'] as const
 // CLEAN SLATE MODE
 // =============================================================
 
-const ADMIN_USER_EMAIL = process.env.ADMIN_USER_EMAIL ?? 'upsumeguy@gmail.com'
+const ADMIN_USER_EMAIL = process.env.ADMIN_USER_EMAIL ?? 'emmanuelakolade5@gmail.com'
 
 async function runCleanSlate(dryRun: boolean): Promise<void> {
   if (dryRun) {
