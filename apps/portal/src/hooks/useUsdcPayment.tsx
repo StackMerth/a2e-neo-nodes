@@ -36,17 +36,40 @@ import {
 
 const USDC_DECIMALS = 6
 
-// Mainnet USDC mint vs devnet USDC mint. The portal flips on
-// NEXT_PUBLIC_SOLANA_NETWORK ('mainnet' or 'devnet'). Defaults to
-// devnet to match the API's PAYMENT_MODE=dev default.
+// Mainnet vs devnet USDC mint addresses. Same token on different
+// networks has different mint pubkeys, and the SPL ATA address is
+// derived deterministically from (owner, mint) — so using the WRONG
+// mint computes a different ATA address that has zero balance.
+// That's what produces the cryptic "Attempt to debit an account but
+// found no record of a prior credit" error when a user with real
+// mainnet USDC tries to pay: their mainnet USDC ATA has the funds,
+// but we built the tx with the devnet mint -> looked at a different
+// address -> empty -> Solana refuses to debit.
 const USDC_MINTS: Record<'mainnet' | 'devnet', string> = {
   mainnet: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
   devnet: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
 }
 
+// Resolution order, most-specific to most-permissive:
+//   1. NEXT_PUBLIC_SOLANA_NETWORK env if set ('mainnet' / 'devnet')
+//   2. Detect from NEXT_PUBLIC_SOLANA_RPC_URL ('devnet' substring)
+//   3. Default to MAINNET (production-safe). Old default was devnet
+//      which silently broke real-money topups when the env wasn't
+//      configured on Vercel.
 function resolveNetwork(): 'mainnet' | 'devnet' {
-  const n = process.env.NEXT_PUBLIC_SOLANA_NETWORK?.trim()
-  return n === 'mainnet' || n === 'mainnet-beta' ? 'mainnet' : 'devnet'
+  const explicit = process.env.NEXT_PUBLIC_SOLANA_NETWORK?.trim().toLowerCase()
+  if (explicit === 'mainnet' || explicit === 'mainnet-beta') return 'mainnet'
+  if (explicit === 'devnet') return 'devnet'
+
+  const rpc = process.env.NEXT_PUBLIC_SOLANA_RPC_URL?.toLowerCase() ?? ''
+  if (rpc.includes('devnet')) return 'devnet'
+
+  // Default mainnet: we're live. A Helius/Triton/QuickNode mainnet
+  // URL without the word 'devnet' falls through to here. A misconfig
+  // that puts a devnet RPC without the substring 'devnet' would
+  // mismatch — but that's a deliberate user choice with --rpc-url
+  // override, not a default.
+  return 'mainnet'
 }
 
 function resolveUsdcMint(): PublicKey {

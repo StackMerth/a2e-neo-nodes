@@ -67,15 +67,17 @@ const STATUS_FILTERS: ReadonlyArray<{ label: string; value: string | undefined }
 ]
 
 const MARKET_COLORS: Record<ExternalMarket, string> = {
-  AKASH: '#ef4444',
   IONET: '#8b5cf6',
-  VASTAI: '#22c55e',
+  LAMBDA: '#22c55e',
+  RUNPOD: '#3b82f6',
+  PHALA: '#a855f7',
 }
 
 const MARKET_LABELS: Record<ExternalMarket, string> = {
-  AKASH: 'Akash',
   IONET: 'IO.net',
-  VASTAI: 'Vast.ai',
+  LAMBDA: 'Lambda',
+  RUNPOD: 'RunPod',
+  PHALA: 'Phala',
 }
 
 interface OverflowConfigForm {
@@ -267,18 +269,25 @@ export default function ExternalMarketsPage() {
   // cards — consistent with the task brief's fallback instruction.
   const earningsChartData = useMemo(() => {
     if (!earnings) return []
+    // Markets reflect the active external networks. AKASH and VASTAI
+    // were removed when ExternalMarket was narrowed to currently-
+    // integrated providers; the byMarket object on the wire still
+    // returns numbers keyed by all enum values it knows about, but
+    // we only chart the active ones to keep the chart honest.
     return [
       {
         date: new Date(earnings.periodStart).toLocaleDateString(),
-        AKASH: earnings.byMarket.AKASH ?? 0,
         IONET: earnings.byMarket.IONET ?? 0,
-        VASTAI: earnings.byMarket.VASTAI ?? 0,
+        LAMBDA: earnings.byMarket.LAMBDA ?? 0,
+        RUNPOD: earnings.byMarket.RUNPOD ?? 0,
+        PHALA: earnings.byMarket.PHALA ?? 0,
       },
       {
         date: new Date(earnings.periodEnd).toLocaleDateString(),
-        AKASH: earnings.byMarket.AKASH ?? 0,
         IONET: earnings.byMarket.IONET ?? 0,
-        VASTAI: earnings.byMarket.VASTAI ?? 0,
+        LAMBDA: earnings.byMarket.LAMBDA ?? 0,
+        RUNPOD: earnings.byMarket.RUNPOD ?? 0,
+        PHALA: earnings.byMarket.PHALA ?? 0,
       },
     ]
   }, [earnings])
