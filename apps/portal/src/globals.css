@@ -1127,29 +1127,37 @@ textarea:focus {
   min-height: 100vh;
 }
 
-/* Hide page chrome (TopHeader, sidebar, page padding) when a
-   full-screen modal is open. Added by the TopupModal on mount,
-   removed on unmount. Z-index alone is unreliable because TopHeader
-   uses backdrop-filter which creates a stacking context that the
-   modal portal can lose to depending on layout nesting; display:none
-   takes the chrome out of the layout entirely so it can't bleed
-   through.
+/* When a full-screen modal is open, the modal portal sits at
+   z-index max with its own translucent backdrop. The TopHeader
+   stays visible but we need to neutralize its OWN backdrop-filter
+   blur, otherwise the top 64px strip ends up "double-glass" —
+   TopHeader's blur darkens the modal's blur which darkens the page
+   underneath. That's the "double layer" effect the user flagged.
 
-   Targets:
-   - header[class*="fixed top-0"] -> TopHeader (positioned fixed)
-   - .app-layout > aside           -> Sidebars (Buyer + NodeRunner)
-   - .app-layout                    -> remove pt-16 spacer (chrome is gone) */
+   Fix: when body has modal-open, the TopHeader keeps its position
+   and content but loses its glass styling. The result is the
+   TopHeader sitting transparently on top of the modal's uniform
+   backdrop, so the entire viewport reads as one consistent
+   translucent layer rather than two stacked panes of glass.
+
+   The sidebar is sticky below the TopHeader; the modal portal at
+   z-max covers it visually so no specific CSS is needed for it
+   beyond what z-index already does. */
 body.modal-open header {
-  display: none !important;
-}
-body.modal-open .app-layout > aside {
-  display: none !important;
-}
-body.modal-open .app-layout {
-  padding-top: 0 !important;
-}
-body.modal-open .main-content {
-  margin-left: 0 !important;
+  /* Bump TopHeader above the modal backdrop (z-50) so chrome
+     (bell, user menu, balance pill) remains visible during a
+     modal session. */
+  z-index: 100 !important;
+  /* Strip TopHeader's own glass styling. The modal backdrop sits
+     just behind the TopHeader at z-50; if TopHeader kept its own
+     backdrop-filter, the top 64px strip would visually double-blur
+     (TopHeader's glass + modal's glass). Transparent background +
+     no filter means the modal backdrop shows uniformly under the
+     TopHeader chrome. */
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom-color: transparent !important;
 }
 
 .main-content {
