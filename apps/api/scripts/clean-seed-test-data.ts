@@ -40,7 +40,13 @@ const SEED_EMAIL_PATTERNS = [
 ] as const
 
 const SEED_EMAIL_PREFIX = 'seed-'
-const SEED_NODE_PREFIXES = ['seed-node-', 'test-c2-']
+// Provision-test scripts (phala-provision-test.ts, voltagegpu-provision-
+// test.ts, lambda-provision-test.ts, runpod-provision-test.ts, ionet-
+// provision-test.ts, gcp-provision-test.ts) all create users with this
+// email domain. They leave WAITLISTED ComputeRequests behind that clog
+// the admin Compute queue. Sweep them by domain in one shot.
+const TEST_EMAIL_DOMAIN = '@system.tokenos.internal'
+const SEED_NODE_PREFIXES = ['seed-node-', 'test-c2-', 'test-']
 const FAKE_MARKETS = ['AKASH', 'VASTAI'] as const
 
 async function main(): Promise<void> {
@@ -54,12 +60,18 @@ async function main(): Promise<void> {
     console.log('=== APPLY MODE — deleting seed data ===\n')
   }
 
-  // Discover seed users (by email pattern)
+  // Discover seed users (by email pattern). Three matchers:
+  //   1. explicit buyer1@/buyer2@ test accounts
+  //   2. anything starting with seed- prefix (M2 seed-test-data.ts)
+  //   3. anything ending in @system.tokenos.internal (provision-test
+  //      scripts auto-create these and they leave WAITLISTED
+  //      ComputeRequests in the admin queue)
   const seedUsers = await prisma.user.findMany({
     where: {
       OR: [
         { email: { in: [...SEED_EMAIL_PATTERNS] } },
         { email: { startsWith: SEED_EMAIL_PREFIX } },
+        { email: { endsWith: TEST_EMAIL_DOMAIN } },
       ],
     },
     select: { id: true, email: true },

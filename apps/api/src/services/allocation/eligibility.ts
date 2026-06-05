@@ -87,9 +87,15 @@ export async function evaluateEligibility(
 
   const flags: EligibilityFlag[] = []
 
-  if (!user.emailVerified) {
-    flags.push('HOLD_UNVERIFIED_EMAIL')
-  }
+  // HOLD_UNVERIFIED_EMAIL was removed 2026-06-05 per product decision:
+  // unverified-email buyers should still be able to submit compute
+  // requests; the verification gate has been moved to higher-stakes
+  // surfaces (withdrawals, balance topup) and is communicated via
+  // the soft VerifyEmailBanner shown sitewide. Compute is the
+  // headline value-proposition — gating it on a verification flow
+  // produced a dead-end loop where new users hit WAITLISTED with
+  // no obvious path forward. The flag enum is preserved for audit
+  // record compatibility but is no longer ever pushed.
 
   // Concurrent rentals: count active+allocated rentals already in flight
   // for this user. We exclude the request being evaluated so a re-check
