@@ -2,34 +2,63 @@
  * Wipe seed/test data from production DB so admin dashboards (financial,
  * earnings, external markets, audit log) show ONLY real activity.
  *
- * What this targets:
- *   - Seed users: buyer1@/buyer2@/seed-*@tokenos.ai (created by seed-test-data.ts)
- *   - Seed nodes: id prefixed with 'seed-node-' or 'test-c2-'
- *   - Seed earnings: rows tied to seed nodes
- *   - Seed external deployments: rows tied to seed buyers
- *   - Seed compute requests + spend: rows tied to seed users
- *   - Stale "fake market" earnings: any Earning rows with market in
- *     ('AKASH', 'VASTAI') — these markets are not actually integrated;
- *     they were placeholders in seed-test-data.ts and skew the financial
- *     overview percentages.
+ * TWO MODES:
  *
- * What this DOES NOT touch:
- *   - Real users (anything that doesn't match the seed naming pattern)
- *   - Real nodes (anything that doesn't start with seed-node-/test-c2-)
- *   - Real earnings on INTERNAL / IONET / LAMBDA / RUNPOD / PHALA markets
- *   - Cost baselines, templates, system accounts (intentionally seeded)
+ * 1) Default seed-targeted mode (--apply):
+ *    Wipes only the rows matching seed/test naming patterns. Preserves
+ *    any "real" rows that don't match the pattern. Use this if you
+ *    have real users alongside the test data.
+ *
+ *    Targets:
+ *      - Seed users: buyer1@/buyer2@/seed-*@tokenos.ai
+ *      - Provision-test users: *@system.tokenos.internal (phala/voltagegpu/
+ *        lambda/runpod/ionet/gcp scripts)
+ *      - Seed nodes: id prefixed with 'seed-node-' / 'test-c2-' / 'test-'
+ *      - Stale fake-market earnings: market in ('AKASH', 'VASTAI')
+ *
+ *    Does NOT touch:
+ *      - Real users (anything not matching the seed pattern)
+ *      - Real nodes
+ *      - Real INTERNAL / IONET / LAMBDA / RUNPOD / PHALA earnings
+ *      - System config (CostBaseline, SettlementConfig, templates)
+ *
+ * 2) Pre-launch clean-slate mode (--clean-slate --apply):
+ *    Wipes EVERYTHING transactional regardless of pattern, preserving
+ *    only:
+ *      - ADMIN_USER_EMAIL user (env-driven; defaults to upsumeguy@gmail.com)
+ *        and their ApiKeys / BuyerBalance / RefreshTokens
+ *      - System config tables: GpuCostBaseline, SettlementConfig,
+ *        ProductTemplate, NotificationTemplate, OverflowConfig
+ *
+ *    Nukes:
+ *      - ALL ExternalDeployments, ExternalRentals, Earnings, Settlements,
+ *        Jobs, InfrastructureCosts, ProvisionJobs
+ *      - ALL ComputeRequests, Ratings, InternalSpend
+ *      - ALL Investments, WithdrawalRequests
+ *      - ALL non-admin BalanceTransactions, BuyerBalances
+ *      - ALL Notifications, PushSubscriptions, TokenUsage, Invoices
+ *      - ALL Nodes, NodeRunners
+ *      - ALL non-admin Users (and their ApiKeys, RefreshTokens via cascade)
+ *      - ALL ConfidentialInterest rows
+ *
+ *    Use this for a FRESH production launch where everything in the DB
+ *    is leftover test data from the build phase. The system payer wallet
+ *    on-chain is unaffected (this is just the DB ledger).
  *
  * Run from Render API shell:
  *   pnpm --filter @a2e/api exec tsx scripts/clean-seed-test-data.ts --dry
- *     -> dry-run. Prints what WOULD be deleted, no DB mutations.
+ *     -> seed-targeted dry-run
  *
  *   pnpm --filter @a2e/api exec tsx scripts/clean-seed-test-data.ts --apply
- *     -> actually deletes. Wrapped in a transaction; if anything errors
- *     mid-way, the whole thing rolls back.
+ *     -> seed-targeted apply
  *
- * After running with --apply, refresh /financial, /earnings, /external in
- * the admin dashboard. Numbers should reflect real production activity
- * only (which will likely be near-zero on a fresh production deploy).
+ *   pnpm --filter @a2e/api exec tsx scripts/clean-seed-test-data.ts --clean-slate --dry
+ *     -> full-wipe dry-run (shows row counts about to be nuked)
+ *
+ *   pnpm --filter @a2e/api exec tsx scripts/clean-seed-test-data.ts --clean-slate --apply
+ *     -> full-wipe apply. Wrapped in a transaction; rollback on any error.
+ *
+ * Set ADMIN_USER_EMAIL in env if your admin account isn't upsumeguy@gmail.com.
  */
 
 import { prisma } from '@a2e/database'
@@ -49,9 +78,182 @@ const TEST_EMAIL_DOMAIN = '@system.tokenos.internal'
 const SEED_NODE_PREFIXES = ['seed-node-', 'test-c2-', 'test-']
 const FAKE_MARKETS = ['AKASH', 'VASTAI'] as const
 
+// =============================================================
+// CLEAN SLATE MODE
+// =============================================================
+
+const ADMIN_USER_EMAIL = process.env.ADMIN_USER_EMAIL ?? 'upsumeguy@gmail.com'
+
+async function runCleanSlate(dryRun: boolean): Promise<void> {
+  if (dryRun) {
+    console.log('=== CLEAN-SLATE DRY RUN — counts only, no changes ===')
+    console.log(`Preserve admin: ${ADMIN_USER_EMAIL}\n`)
+  } else {
+    console.log('=== CLEAN-SLATE APPLY — nuking everything except admin ===')
+    console.log(`Preserve admin: ${ADMIN_USER_EMAIL}\n`)
+  }
+
+  const adminUser = await prisma.user.findUnique({
+    where: { email: ADMIN_USER_EMAIL },
+    select: { id: true, email: true, role: true },
+  })
+
+  if (!adminUser) {
+    console.error(
+      `ERROR: admin user '${ADMIN_USER_EMAIL}' not found in DB.\n` +
+      `Set ADMIN_USER_EMAIL env to the correct email and retry.\n` +
+      `Without an admin to preserve, this script refuses to nuke ` +
+      `everything (would leave you locked out of the dashboard).`,
+    )
+    process.exit(1)
+  }
+
+  console.log(`Admin preserved: ${adminUser.id} (${adminUser.email}, role=${adminUser.role})\n`)
+
+  // Count what's about to be nuked.
+  const counts = {
+    earnings: await prisma.earning.count(),
+    settlements: await prisma.settlement.count(),
+    jobs: await prisma.job.count(),
+    infraCosts: await prisma.infrastructureCost.count(),
+    provisionJobs: await prisma.provisionJob.count(),
+    externalDeployments: await prisma.externalDeployment.count(),
+    externalRentals: await prisma.externalRental.count(),
+    computeRequests: await prisma.computeRequest.count(),
+    ratings: await prisma.rating.count(),
+    internalSpend: await prisma.internalSpend.count(),
+    investments: await prisma.investment.count(),
+    withdrawals: await prisma.withdrawalRequest.count(),
+    balanceTx: await prisma.balanceTransaction.count(),
+    buyerBalances: await prisma.buyerBalance.count(),
+    notifications: await prisma.notification.count(),
+    pushSubs: await prisma.pushSubscription.count(),
+    confInterest: await prisma.confidentialInterest.count(),
+    nodes: await prisma.node.count(),
+    nodeRunners: await prisma.nodeRunner.count(),
+    nonAdminUsers: await prisma.user.count({ where: { id: { not: adminUser.id } } }),
+  }
+
+  console.log('Row counts to nuke:')
+  for (const [k, v] of Object.entries(counts)) {
+    console.log(`  ${k.padEnd(22)} ${v}`)
+  }
+  console.log()
+
+  if (dryRun) {
+    console.log('=== DRY RUN COMPLETE — pass --apply to actually nuke ===')
+    return
+  }
+
+  // Atomic wipe in dependency order. Same FK constraints as the
+  // seed-targeted path, just without the WHERE clauses.
+  await prisma.$transaction(
+    async (tx) => {
+      // Layer 1: row-level test data with no further dependents.
+      await tx.earning.deleteMany({})
+      console.log(`Wiped ${counts.earnings} earnings`)
+
+      await tx.settlement.deleteMany({})
+      console.log(`Wiped ${counts.settlements} settlements (cascade -> SettlementItems)`)
+
+      await tx.job.deleteMany({})
+      console.log(`Wiped ${counts.jobs} jobs`)
+
+      await tx.infrastructureCost.deleteMany({})
+      console.log(`Wiped ${counts.infraCosts} infrastructure cost rows`)
+
+      await tx.provisionJob.deleteMany({})
+      console.log(`Wiped ${counts.provisionJobs} provision jobs`)
+
+      await tx.externalDeployment.deleteMany({})
+      console.log(`Wiped ${counts.externalDeployments} external deployments`)
+
+      await tx.externalRental.deleteMany({})
+      console.log(`Wiped ${counts.externalRentals} external rentals`)
+
+      // Rating blocks ComputeRequest and NodeRunner.
+      await tx.rating.deleteMany({})
+      console.log(`Wiped ${counts.ratings} ratings`)
+
+      await tx.internalSpend.deleteMany({})
+      console.log(`Wiped ${counts.internalSpend} internal spend rows`)
+
+      await tx.investment.deleteMany({})
+      console.log(`Wiped ${counts.investments} investments`)
+
+      await tx.withdrawalRequest.deleteMany({})
+      console.log(`Wiped ${counts.withdrawals} withdrawal requests`)
+
+      await tx.computeRequest.deleteMany({})
+      console.log(`Wiped ${counts.computeRequests} compute requests`)
+
+      // Balance ledger: admin's stays (typically empty anyway).
+      // BalanceTransaction + BuyerBalance both cascade-deletable
+      // via User cascade, but we delete non-admin manually to be
+      // safe even if the admin had test ledger entries.
+      await tx.balanceTransaction.deleteMany({
+        where: { userId: { not: adminUser.id } },
+      })
+      console.log(`Wiped non-admin balance transactions`)
+
+      await tx.buyerBalance.deleteMany({
+        where: { userId: { not: adminUser.id } },
+      })
+      console.log(`Wiped non-admin buyer balances`)
+
+      await tx.notification.deleteMany({})
+      console.log(`Wiped ${counts.notifications} notifications`)
+
+      await tx.pushSubscription.deleteMany({})
+      console.log(`Wiped ${counts.pushSubs} push subscriptions`)
+
+      await tx.confidentialInterest.deleteMany({})
+      console.log(`Wiped ${counts.confInterest} confidential interest rows`)
+
+      // Detach all Node.nodeRunnerId so the NodeRunner sweep below
+      // doesn't block on FK. Then delete all nodes.
+      await tx.node.updateMany({
+        where: {},
+        data: { nodeRunnerId: null },
+      })
+      await tx.node.deleteMany({})
+      console.log(`Wiped ${counts.nodes} nodes`)
+
+      await tx.nodeRunner.deleteMany({})
+      console.log(`Wiped ${counts.nodeRunners} node runners`)
+
+      // Finally non-admin Users. Their remaining cascade-children
+      // (ApiKey, RefreshToken, PushSubscription, BuyerBalance, etc.)
+      // get swept by the schema's onDelete: Cascade rules.
+      await tx.user.deleteMany({
+        where: { id: { not: adminUser.id } },
+      })
+      console.log(`Wiped ${counts.nonAdminUsers} non-admin users`)
+    },
+    {
+      // Default Prisma tx timeout is 5s. A clean-slate wipe could
+      // touch thousands of rows; give it a generous ceiling.
+      timeout: 120_000,
+      maxWait: 10_000,
+    },
+  )
+
+  console.log()
+  console.log('=== CLEAN-SLATE COMPLETE ===')
+  console.log('Refresh /financial, /earnings, /external, /compute — all should be zero.')
+  console.log(`Admin user ${adminUser.email} preserved with role=${adminUser.role}.`)
+  console.log('System config (GpuCostBaseline, SettlementConfig, Templates) untouched.')
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2)
   const dryRun = args.includes('--dry') || !args.includes('--apply')
+  const cleanSlate = args.includes('--clean-slate')
+
+  if (cleanSlate) {
+    await runCleanSlate(dryRun)
+    return
+  }
 
   if (dryRun) {
     console.log('=== DRY RUN — no changes will be made ===')
