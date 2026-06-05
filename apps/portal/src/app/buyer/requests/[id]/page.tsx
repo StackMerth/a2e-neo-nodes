@@ -726,7 +726,7 @@ export default function RequestDetailPage() {
               <div className="py-2">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                    Private key (PKCS#8 PEM)
+                    Private key (OpenSSH PEM)
                   </span>
                   <div className="flex items-center gap-2">
                     <button
