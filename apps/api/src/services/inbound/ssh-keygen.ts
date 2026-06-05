@@ -14,18 +14,22 @@
  *     <comment>"). This is what Lambda's /ssh-keys endpoint expects
  *     and what gets dropped verbatim into the new instance's
  *     authorized_keys at boot.
- *   - Private key -> PKCS#8 PEM ("-----BEGIN PRIVATE KEY-----\n...").
- *     Modern openssh clients (8.0+) accept PKCS#8 PEM for ed25519 via
- *     `ssh -i <file>`. Saves us writing the OpenSSH-format binary
- *     encoder by hand; if we ever see a client that requires the
- *     OpenSSH wrapper, we can add a converter then.
+ *   - Private key -> OpenSSH "openssh-key-v1" PEM
+ *     ("-----BEGIN OPENSSH PRIVATE KEY-----\n..."). Originally PKCS#8
+ *     PEM, but OpenSSH-for-Windows 9.5p2 (built against LibreSSL
+ *     3.8.2) ships a PKCS#8 Ed25519 parser bug that rejects valid
+ *     keys with "invalid format" — even after `Format-Hex` confirms
+ *     the file is structurally correct. OpenSSH's own native format
+ *     is always parsed by the openssh internal code path (never
+ *     LibreSSL/OpenSSL), so it works on every platform regardless of
+ *     the bundled libcrypto.
  *
  * Key name uniqueness: Lambda enforces unique name across the
  * account. We use `rental-${shortId}-${ts}` so collisions are
  * practically impossible across concurrent provisions.
  */
 
-import { generateKeyPairSync, type KeyObject } from 'crypto'
+import { generateKeyPairSync, type KeyObject, randomBytes } from 'crypto'
 
 export interface EphemeralKeypair {
   /**
@@ -36,7 +40,13 @@ export interface EphemeralKeypair {
   keyName: string
   /** OpenSSH single-line format. Passed to addSshKey as public_key. */
   publicKeyOpenssh: string
-  /** PKCS#8 PEM. Encrypted at rest before persisting to ExternalRental. */
+  /**
+   * OpenSSH "openssh-key-v1" PEM. Encrypted at rest before persisting
+   * to ExternalRental. Field name kept as `privateKeyPem` for backward
+   * compatibility with existing callers + DB rows that still hold
+   * PKCS#8 PEM strings — the column is just a PEM string, the format
+   * is whichever generateRentalKeypair was emitting at write time.
+   */
   privateKeyPem: string
 }
 
@@ -46,10 +56,7 @@ export function generateRentalKeypair(rentalId: string): EphemeralKeypair {
   const { publicKey, privateKey } = generateKeyPairSync('ed25519')
 
   const publicKeyOpenssh = ed25519PublicKeyToOpenssh(publicKey, rentalId)
-  const privateKeyPem = privateKey.export({
-    type: 'pkcs8',
-    format: 'pem',
-  }).toString()
+  const privateKeyPem = ed25519PrivateKeyToOpensshPem(publicKey, privateKey, rentalId)
 
   // Short id + ms timestamp keeps the name under Lambda's 64-char
   // limit while staying unique across concurrent provisions.
@@ -102,4 +109,106 @@ function writeString(value: string | Buffer): Buffer {
   const length = Buffer.alloc(4)
   length.writeUInt32BE(payload.length, 0)
   return Buffer.concat([length, payload])
+}
+
+/**
+ * Encode an Ed25519 keypair into OpenSSH's native "openssh-key-v1" PEM.
+ * Spec: https://github.com/openssh/openssh-portable/blob/master/PROTOCOL.key
+ *
+ * Format:
+ *   "openssh-key-v1\0"                     // magic
+ *   string ciphername                      // "none"
+ *   string kdfname                         // "none"
+ *   string kdfoptions                      // ""
+ *   uint32 num_keys                        // 1
+ *   string pubkey_blob                     // ssh-ed25519 wire encoding
+ *   string encrypted_section               // for unencrypted, just the
+ *                                          // raw private section + padding
+ *
+ * The private section (unencrypted) is:
+ *   uint32 checkint                        // random
+ *   uint32 checkint                        // same as above (acts as
+ *                                          // integrity check after decrypt)
+ *   string keyname                         // "ssh-ed25519"
+ *   string pubkey                          // 32-byte ed25519 pubkey
+ *   string privkey                         // 64 bytes: 32-byte seed
+ *                                          // concatenated with 32-byte pubkey
+ *   string comment
+ *   bytes pad                              // 1,2,3... to make the section
+ *                                          // a multiple of the cipher block
+ *                                          // size (8 for "none")
+ *
+ * Then the entire outer blob is base64-encoded, wrapped to 70 chars,
+ * and wrapped in BEGIN/END markers. OpenSSH parses this with its own
+ * code path (NOT LibreSSL/OpenSSL), so it works on every client
+ * version regardless of which libcrypto is bundled.
+ */
+function ed25519PrivateKeyToOpensshPem(
+  publicKey: KeyObject,
+  privateKey: KeyObject,
+  comment: string,
+): string {
+  // Extract the raw 32-byte seed from the private key. JWK 'd' is the
+  // base64url-encoded seed; 'x' is the base64url-encoded pubkey.
+  const privJwk = privateKey.export({ format: 'jwk' }) as { d?: string; x?: string }
+  if (!privJwk.d || !privJwk.x) {
+    throw new Error('ed25519 private key export missing jwk.d or jwk.x')
+  }
+  const seed = Buffer.from(privJwk.d, 'base64url')
+  const pub = Buffer.from(privJwk.x, 'base64url')
+  if (seed.length !== 32 || pub.length !== 32) {
+    throw new Error(`expected 32+32 byte seed+pub, got ${seed.length}+${pub.length}`)
+  }
+  // Sanity-check the public key matches the one we'd derive from the
+  // public KeyObject — protects against a future Node refactor changing
+  // jwk export semantics.
+  const pubJwk = publicKey.export({ format: 'jwk' }) as { x?: string }
+  if (pubJwk.x && Buffer.from(pubJwk.x, 'base64url').compare(pub) !== 0) {
+    throw new Error('ed25519 jwk.x mismatch between public + private exports')
+  }
+
+  // Public key wire encoding: ssh-ed25519 || 32-byte pubkey.
+  const pubkeyBlob = Buffer.concat([
+    writeString(OPENSSH_PREFIX),
+    writeString(pub),
+  ])
+
+  // Random checkint. Two copies act as a simple integrity check that
+  // catches wrong-password decrypts (n/a here since we're unencrypted,
+  // but the format requires the field).
+  const checkint = randomBytes(4)
+  const privateSection = Buffer.concat([
+    checkint,
+    checkint,
+    writeString(OPENSSH_PREFIX),
+    writeString(pub),
+    // OpenSSH stores the private key as the 32-byte seed concatenated
+    // with the 32-byte public key (64 bytes total). This is the same
+    // layout libsodium's crypto_sign_keypair uses internally.
+    writeString(Buffer.concat([seed, pub])),
+    writeString(comment),
+  ])
+  // Pad to a multiple of 8 (cipher block size for "none"). Padding
+  // bytes are 1, 2, 3, ... so the parser can verify by checking the
+  // last byte equals the padding length.
+  const blockSize = 8
+  const padLen = (blockSize - (privateSection.length % blockSize)) % blockSize
+  const padding = Buffer.alloc(padLen)
+  for (let i = 0; i < padLen; i++) padding[i] = i + 1
+  const paddedPrivate = Buffer.concat([privateSection, padding])
+
+  const outer = Buffer.concat([
+    Buffer.from('openssh-key-v1\0', 'utf8'),
+    writeString('none'),     // cipher
+    writeString('none'),     // kdf
+    writeString(''),         // kdf options
+    Buffer.from([0, 0, 0, 1]), // num_keys = 1
+    writeString(pubkeyBlob),
+    writeString(paddedPrivate),
+  ])
+
+  // Base64 and wrap at 70 chars per OpenSSH convention.
+  const b64 = outer.toString('base64')
+  const wrapped = b64.match(/.{1,70}/g)?.join('\n') ?? b64
+  return `-----BEGIN OPENSSH PRIVATE KEY-----\n${wrapped}\n-----END OPENSSH PRIVATE KEY-----\n`
 }
