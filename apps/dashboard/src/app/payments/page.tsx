@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { CreditCard, CircleCheck, Loader2, ExternalLink, RefreshCw, Download, Receipt, XCircle, Code, DollarSign, Wallet, ShieldCheck, Clock, Search, List } from 'lucide-react'
+import { CreditCard, CircleCheck, Loader2, ExternalLink, RefreshCw, Download, Receipt, XCircle, Code, DollarSign, Wallet, Clock, Search, List } from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/Modal'
@@ -249,34 +249,17 @@ export default function PaymentsPage() {
         </div>
       </motion.div>
 
-      {/* Mode Banner */}
-      {stats && (
-        <div className={`p-4 rounded-2xl border flex items-center gap-4 ${
-          stats.currentMode === 'dev'
-            ? 'bg-gradient-to-r from-warning/10 to-orange-500/5 border-warning/30'
-            : 'bg-gradient-to-r from-accent/10 to-emerald-500/5 border-accent/30'
-        }`}>
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-            stats.currentMode === 'dev' ? 'bg-warning/20' : 'bg-accent/20'
-          }`}>
-            {stats.currentMode === 'dev' ? (
-              <Code className="w-6 h-6 text-warning" />
-            ) : (
-              <ShieldCheck className="w-6 h-6 text-accent" />
-            )}
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-3">
-              <span className={`px-3 py-1 rounded-full text-sm font-bold ${
-                stats.currentMode === 'dev'
-                  ? 'bg-warning/20 text-warning'
-                  : 'bg-accent/20 text-accent'
-              }`}>
-                {stats.currentMode.toUpperCase()} MODE
-              </span>
-            </div>
-            <p className="text-sm text-text-secondary mt-1">{stats.modeDescription}</p>
-          </div>
+      {/* Mode banner removed 2026-06-05. LIVE MODE on production was
+          just chrome — repeated the same info shown by the small mode
+          pill in Settings, ate vertical real estate, and added zero
+          actionable signal. If the API ever returns currentMode='dev'
+          on production that's a config error worth surfacing, but the
+          fix belongs as a single yellow warning row, not a full-width
+          banner. For now, omit entirely. */}
+      {stats?.currentMode === 'dev' && (
+        <div className="p-3 rounded-xl border border-warning/30 bg-warning/5 text-sm text-warning flex items-center gap-2">
+          <Code className="w-4 h-4 shrink-0" />
+          <span><strong>DEV MODE</strong> — payments are simulated, no real funds will be transferred.</span>
         </div>
       )}
 
