@@ -784,14 +784,24 @@ export default function FinancialPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="p-4 bg-surface/50 rounded-xl border border-border/50">
               <p className="text-xs text-text-muted uppercase mb-1 font-medium">RPC Endpoint</p>
-              <p className="text-sm font-mono text-text-primary truncate">
-                {settlementConfig?.solanaRpcUrl || 'Not configured (using devnet)'}
+              <p className="text-sm text-text-primary">
+                {paymentMode?.rpcConfigured ? (
+                  <span className="text-accent flex items-center gap-2">
+                    <Check className="w-4 h-4" /> Mainnet (env)
+                  </span>
+                ) : (
+                  <span className="text-warning flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" /> Not configured (using devnet)
+                  </span>
+                )}
               </p>
             </div>
             <div className="p-4 bg-surface/50 rounded-xl border border-border/50">
               <p className="text-xs text-text-muted uppercase mb-1 font-medium">USDC Mint</p>
-              <p className="text-sm font-mono text-text-primary truncate">
-                {settlementConfig?.usdcMint || 'Default (mainnet USDC)'}
+              <p className="text-sm text-text-primary">
+                <span className="text-accent flex items-center gap-2">
+                  <Check className="w-4 h-4" /> Default (mainnet USDC)
+                </span>
               </p>
             </div>
             <div className="p-4 bg-surface/50 rounded-xl border border-border/50">
