@@ -48,6 +48,13 @@ interface ComputeRequestDetail {
   activatedAt?: string
   completedAt?: string
   expiresAt?: string
+  // Allocator-set flags that explain WHY a PENDING request is sitting
+  // there. SEARCHING_CAPACITY = probing every 10s, no admin action
+  // needed; NO_REGION_CAPACITY = constrained by requiredRegion; the
+  // HOLD_* family only fires when status is WAITLISTED. Drives the
+  // header banner copy so we don't lie about "admin team is reviewing"
+  // when actually the queue is searching for stock.
+  eligibilityFlags?: string[]
   sshHost?: string
   sshPort?: number
   sshUsername?: string
@@ -125,7 +132,7 @@ const STEP_LABELS: Record<string, string> = {
 }
 
 const STATUS_MESSAGES: Record<string, { title: string; desc: string; color: string }> = {
-  PENDING: { title: 'Waiting for Approval', desc: 'Your request is being reviewed by the admin team.', color: '#f59e0b' },
+  PENDING: { title: 'Searching for capacity', desc: 'No admin action needed. The allocator re-probes suppliers every 10 seconds; provisioning starts the moment a supplier reports stock.', color: '#f59e0b' },
   APPROVED: { title: 'Request Approved', desc: 'Your request has been approved and resources are being prepared.', color: '#3b82f6' },
   ALLOCATED: { title: 'Resources Allocated', desc: 'GPUs have been allocated and are being configured for you.', color: '#8b5cf6' },
   ACTIVE: { title: 'Active, Connect via SSH', desc: 'Your compute resources are ready. Use the SSH details below to connect.', color: '#22c55e' },
@@ -138,6 +145,10 @@ const STATUS_MESSAGES: Record<string, { title: string; desc: string; color: stri
   COMPLETED: { title: 'Completed', desc: 'This compute allocation has ended.', color: '#71717a' },
   CANCELLED: { title: 'Cancelled', desc: 'This request was cancelled.', color: '#71717a' },
   REJECTED: { title: 'Rejected', desc: 'This request was not approved.', color: '#ef4444' },
+  // WAITLISTED is the only buyer-visible state that genuinely means
+  // "admin must look at this" — eligibility flagged the request
+  // (first-time-over-ceiling, daily-spend, concurrent-limit, etc.).
+  WAITLISTED: { title: 'Held for review', desc: 'Eligibility flagged this request. The team will get to it shortly; you can cancel and resubmit smaller if you do not want to wait.', color: '#f59e0b' },
 }
 
 const formatCurrency = (n: number) =>
@@ -472,7 +483,38 @@ export default function RequestDetailPage() {
     )
   }
 
-  const statusInfo = STATUS_MESSAGES[data.status] ?? STATUS_MESSAGES.PENDING
+  // PENDING is a multi-state status: eligibility is being checked, OR
+  // it passed and the allocator is searching for capacity, OR the
+  // buyer asked for a region we can't satisfy. Pick the most-specific
+  // copy by inspecting eligibilityFlags. WAITLISTED is the only state
+  // that actually means "admin must look at this".
+  const statusInfo = (() => {
+    const flags = data.eligibilityFlags ?? []
+    if (data.status === 'PENDING') {
+      if (flags.includes('NO_REGION_CAPACITY')) {
+        return {
+          title: 'No capacity in your requested region',
+          desc: 'The allocator keeps trying every 10 seconds. You can also cancel this request and resubmit without a region constraint to widen the supplier pool.',
+          color: '#f59e0b',
+        }
+      }
+      if (flags.includes('SEARCHING_CAPACITY') || flags.includes('WAITING_ON_CAPACITY')) {
+        return {
+          title: 'Searching for capacity',
+          desc: 'No admin action needed. The allocator re-probes suppliers every 10 seconds; provisioning starts the moment a supplier reports stock.',
+          color: '#f59e0b',
+        }
+      }
+      // Brand new PENDING (first tick hasn't run yet) — eligibility is
+      // still being evaluated. ~10s window.
+      return {
+        title: 'Queued',
+        desc: 'Eligibility check in progress. The allocator picks this up within ~10 seconds.',
+        color: '#f59e0b',
+      }
+    }
+    return STATUS_MESSAGES[data.status] ?? STATUS_MESSAGES.PENDING
+  })()
   const currentStepIndex = STEPS.indexOf(data.status as typeof STEPS[number])
   const canCancel = data.status === 'PENDING' || data.status === 'APPROVED'
 
