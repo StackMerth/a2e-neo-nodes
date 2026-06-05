@@ -23,6 +23,7 @@ export type BalanceTxType =
   | 'REFUND_DEPLOYMENT'
   | 'REFUND_INFERENCE'
   | 'REFUND_FAILED'
+  | 'WITHDRAW_USDC'
   // Track 5 / M0.2: 3-way revenue split destinations. STAKING_POOL_SHARE
   // and TREASURY_SHARE credit the virtual system users (UserRole values
   // SYSTEM_STAKING_POOL / SYSTEM_TREASURY) created by seed-system-accounts.

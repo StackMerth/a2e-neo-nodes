@@ -654,9 +654,14 @@ export const buyer = {
           amountUsd: number
           description: string
           referenceId: string | null
+          // Populated for TOPUP_SOLANA (referenceId IS the signature)
+          // and WITHDRAW_USDC (looked up from BuyerWithdrawal). Null
+          // for stripe / admin / spend rows that have no on-chain hash.
+          txHash: string | null
           balanceAfter: number
           createdAt: string
         }>
+        network: 'mainnet' | 'devnet'
       }>(
         `/v1/buyer/balance/transactions?limit=${limit}${cursor ? `&cursor=${cursor}` : ''}`,
       ),
