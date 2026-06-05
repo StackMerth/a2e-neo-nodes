@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Wallet, Plus, ArrowDownLeft, ArrowUpRight, RefreshCw, AlertCircle, Copy, Check, Zap, ExternalLink, Loader2, CreditCard } from 'lucide-react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
@@ -417,17 +418,29 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
   // sides read from the same env var) so it never fired anyway.
   // Re-introduce only if we add a real wallet-side network probe.
 
-  return (
+  // Render via React Portal to document.body so the modal escapes any
+  // parent stacking context (page wrapper, sidebar transforms, etc).
+  // Without the portal, the TopHeader's backdrop-filter creates a
+  // sibling stacking context that the modal's z-index can lose to
+  // depending on layout nesting. SSR-safe: typeof document guard.
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      className="fixed inset-0 flex items-center justify-center p-4"
       style={{
-        // Backdrop fully obscures the TopHeader (z-30) so the modal
-        // reads as a single focused layer. Earlier rgba(0,0,0,0.6) +
-        // 4px blur let the TopHeader's backdrop-blur bleed through,
-        // creating the "two layers visible at top" effect.
-        background: 'rgba(0,0,0,0.85)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
+        // z-index 9999 is intentionally absurd: guarantees the modal
+        // wins against any other fixed/portal layer (TopHeader z-30,
+        // toasts z-9999 from the Toast provider — toasts will still
+        // win because they share this z + render later, which is the
+        // intended UX).
+        zIndex: 9999,
+        // 95% opacity backdrop + 16px blur completely obscures
+        // anything behind so the TopHeader, sidebar, and page content
+        // all disappear behind the modal.
+        background: 'rgba(0,0,0,0.95)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
       }}
       onClick={onClose}
     >
@@ -658,6 +671,7 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body, // portal target
   )
 }
