@@ -698,6 +698,33 @@ export const buyer = {
         '/v1/buyer/balance/topup-stripe/checkout',
         { method: 'POST', body: data },
       ),
+
+    // Withdraw unused balance back to the buyer's Solana wallet as
+    // USDC. v1 is SOLANA-only and synchronous: the API blocks until
+    // the on-chain send returns. Failure paths refund the debit
+    // automatically (see buyer-balance.ts POST /withdraw).
+    withdraw: (data: { amountUsd: number }) =>
+      apiFetch<{
+        id: string
+        status: 'COMPLETED'
+        txHash: string
+        amountUsd: number
+      }>('/v1/buyer/balance/withdraw', { method: 'POST', body: data }),
+
+    withdrawals: () =>
+      apiFetch<{
+        withdrawals: Array<{
+          id: string
+          amountUsd: number
+          method: 'SOLANA'
+          status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+          walletAddress: string
+          txHash: string | null
+          error: string | null
+          requestedAt: string
+          processedAt: string | null
+        }>
+      }>('/v1/buyer/balance/withdrawals'),
   },
   // Invoice route returns HTML. Bearer-token auth means we can't use a
   // plain <a href> — browsers don't attach the token to new-tab opens.

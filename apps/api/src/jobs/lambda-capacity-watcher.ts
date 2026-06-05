@@ -67,11 +67,15 @@ export function createLambdaCapacityWatcherQueue(connection: ConnectionOptions):
 }
 
 export function createLambdaCapacityWatcherWorker(deps: WatcherDeps): Worker {
-  // Single shared Redis client for the dedupe-key reads / writes.
-  // The BullMQ worker's own connection is configured separately for
-  // queue mechanics; using a dedicated client keeps the two concerns
-  // independent.
-  const redis = new Redis(deps.redis as never)
+  // Dedicated Redis client for dedupe SET/GET. Reuses REDIS_URL the
+  // same way the redis plugin does. The old `new Redis(deps.redis as
+  // never)` passed the existing ioredis instance as constructor arg
+  // — ioredis can't parse a Redis object and silently fell back to
+  // localhost:6379, producing the ECONNREFUSED log spam every tick.
+  const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+  })
 
   return new Worker(
     QUEUE_NAME,

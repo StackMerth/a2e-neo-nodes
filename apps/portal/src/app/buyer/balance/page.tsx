@@ -69,6 +69,7 @@ export default function BalancePage() {
   const [txs, setTxs] = useState<Tx[]>([])
   const [loading, setLoading] = useState(true)
   const [topupOpen, setTopupOpen] = useState(false)
+  const [withdrawOpen, setWithdrawOpen] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -123,6 +124,16 @@ export default function BalancePage() {
             title="Refresh"
           >
             <RefreshCw size={16} style={{ color: 'var(--text-secondary)' }} />
+          </button>
+          <button
+            onClick={() => setWithdrawOpen(true)}
+            className="px-4 py-2 rounded-lg font-semibold text-sm transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+            disabled={!balance || balance.balanceUsd <= 0}
+            title={!balance || balance.balanceUsd <= 0 ? 'No balance to withdraw' : 'Withdraw to your Solana wallet'}
+          >
+            <ArrowUpRight size={16} className="inline mr-1.5 -mt-0.5" />
+            Withdraw
           </button>
           <button
             onClick={() => setTopupOpen(true)}
@@ -214,6 +225,13 @@ export default function BalancePage() {
       </div>
 
       {topupOpen && <TopupModal onClose={() => setTopupOpen(false)} onSuccess={handleTopupSuccess} />}
+      {withdrawOpen && balance && (
+        <WithdrawModal
+          available={balance.balanceUsd}
+          onClose={() => setWithdrawOpen(false)}
+          onSuccess={(b) => { setBalance(b); setWithdrawOpen(false); load() }}
+        />
+      )}
     </div>
   )
 }
@@ -838,6 +856,249 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
       </div>
         </div>,
         document.body, // card wrapper portal target
+      )}
+    </>
+  )
+}
+
+/**
+ * WithdrawModal — send unused buyer balance back to the buyer's own
+ * Solana wallet as USDC. Mirrors TopupModal's structure (two portals,
+ * z-50 backdrop + z-150 card, body.modal-open class so TopHeader
+ * doesn't double-glass).
+ */
+function WithdrawModal({
+  available,
+  onClose,
+  onSuccess,
+}: {
+  available: number
+  onClose: () => void
+  onSuccess: (balance: Balance) => void
+}) {
+  const { toast } = useToast()
+  const [amount, setAmount] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [lastError, setLastError] = useState<string | null>(null)
+  const [linkedWallet, setLinkedWallet] = useState<string | null>(null)
+
+  useEffect(() => {
+    buyer.settings({})
+      .then((s) => setLinkedWallet((s as { walletAddress?: string | null }).walletAddress ?? null))
+      .catch(() => setLinkedWallet(null))
+  }, [])
+
+  useEffect(() => {
+    document.body.classList.add('modal-open')
+    return () => { document.body.classList.remove('modal-open') }
+  }, [])
+
+  const amountNumber = Number(amount)
+  const amountValid = Number.isFinite(amountNumber) && amountNumber > 0 && amountNumber <= available
+  const reasonInvalid =
+    !Number.isFinite(amountNumber) ? null :
+    amountNumber <= 0 ? 'Enter an amount greater than zero.' :
+    amountNumber > available ? `Maximum is $${available.toFixed(2)} (your available balance).` :
+    null
+
+  async function handleWithdraw() {
+    if (!linkedWallet) {
+      toast('error', 'Link a Solana wallet in Settings first. Withdrawals are sent there.')
+      return
+    }
+    if (!amountValid) {
+      toast('error', reasonInvalid ?? 'Enter a valid amount.')
+      return
+    }
+    setSubmitting(true)
+    setLastError(null)
+    try {
+      const result = await buyer.balance.withdraw({ amountUsd: amountNumber })
+      toast('success', `Sent $${amountNumber.toFixed(2)} to your wallet. Tx: ${result.txHash.slice(0, 12)}…`)
+      const fresh = await buyer.balance.get()
+      onSuccess(fresh as unknown as Balance)
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : 'Withdrawal failed'
+      const lower = raw.toLowerCase()
+      const friendly = lower.includes('insufficient_balance')
+        ? `Available balance is only $${available.toFixed(2)}.`
+        : lower.includes('no_wallet')
+          ? 'Link a Solana wallet in Settings first.'
+          : lower.includes('send_failed')
+            ? `${raw} (your balance was restored).`
+            : raw
+      toast('error', friendly)
+      setLastError(friendly)
+      setSubmitting(false)
+    }
+  }
+
+  if (typeof document === 'undefined') return null
+
+  return (
+    <>
+      {createPortal(
+        <div
+          key="withdraw-backdrop"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+          }}
+          onClick={submitting ? undefined : onClose}
+        />,
+        document.body,
+      )}
+      {createPortal(
+        <div
+          key="withdraw-card-wrapper"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 150,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl p-6 sm:p-7 max-h-[90vh] overflow-y-auto relative"
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              pointerEvents: 'auto',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              aria-label="Close"
+              className="absolute top-3 right-3 p-1.5 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              style={{ color: 'var(--text-muted)', background: 'transparent' }}
+            >
+              <X size={18} />
+            </button>
+
+            <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
+              Withdraw to wallet
+            </h2>
+            <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>
+              USDC is sent to your linked Solana wallet. Arrives within a minute, no fees on our side.
+            </p>
+
+            {linkedWallet ? (
+              <div
+                className="rounded-xl p-3 mb-5 text-sm font-mono break-all"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}
+              >
+                Destination: {linkedWallet}
+              </div>
+            ) : (
+              <div
+                className="rounded-xl p-4 mb-5 flex items-start gap-3"
+                style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)' }}
+              >
+                <AlertCircle size={18} className="shrink-0 mt-0.5" style={{ color: 'rgb(234,179,8)' }} />
+                <div className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                  No wallet linked. Open <a href="/buyer/settings" className="underline">Settings</a> to add your Solana wallet address before withdrawing.
+                </div>
+              </div>
+            )}
+
+            {lastError && (
+              <div
+                className="rounded-xl p-4 mb-5 flex items-start gap-3"
+                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)' }}
+              >
+                <AlertCircle size={18} className="shrink-0 mt-0.5" style={{ color: 'rgb(239,68,68)' }} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs uppercase tracking-[0.14em] font-mono mb-1" style={{ color: 'rgb(239,68,68)' }}>
+                    Withdrawal failed
+                  </div>
+                  <div className="text-sm leading-snug" style={{ color: 'var(--text-primary)' }}>{lastError}</div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-4 mb-5">
+              <div>
+                <label className="block text-xs font-mono uppercase tracking-[0.16em] mb-1.5" style={{ color: 'var(--text-muted)' }}>
+                  USD amount
+                </label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  max={available}
+                  step="0.01"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder={available.toFixed(2)}
+                  disabled={submitting}
+                  className="w-full rounded-lg px-3 py-2.5 text-lg font-mono font-semibold"
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                />
+                <p className="text-xs mt-1.5" style={{ color: reasonInvalid ? 'rgb(239,68,68)' : 'var(--text-muted)' }}>
+                  {reasonInvalid ?? `Available: $${available.toFixed(2)}`}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                {[25, 50, 100].map((pct) => {
+                  const v = Math.floor(available * pct) / 100
+                  return (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => setAmount(v.toFixed(2))}
+                      disabled={submitting || available <= 0}
+                      className="flex-1 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors disabled:opacity-50"
+                      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}
+                    >
+                      {pct}% (${v.toFixed(2)})
+                    </button>
+                  )
+                })}
+                <button
+                  type="button"
+                  onClick={() => setAmount(available.toFixed(2))}
+                  disabled={submitting || available <= 0}
+                  className="flex-1 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors disabled:opacity-50"
+                  style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}
+                >
+                  Max
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleWithdraw}
+              disabled={submitting || !linkedWallet || !amountValid}
+              className="w-full h-12 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ background: 'var(--primary)', color: '#fff' }}
+            >
+              {submitting ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Sending USDC…
+                </>
+              ) : (
+                <>
+                  <ArrowUpRight size={16} />
+                  Withdraw {amountValid ? `$${amountNumber.toFixed(2)}` : ''}
+                </>
+              )}
+            </button>
+          </div>
+        </div>,
+        document.body,
       )}
     </>
   )
