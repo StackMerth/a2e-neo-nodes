@@ -136,8 +136,13 @@ const FLAG_DESCRIPTIONS: Record<string, { kind: 'hold' | 'pass' | 'info'; title:
   },
   WAITING_ON_CAPACITY: {
     kind: 'info',
-    title: 'Waiting on capacity',
-    desc: 'Allocator ran but found no idle nodes matching the requested GPU tier. The request stays PENDING and retries on the next 10s tick. Will allocate as soon as a matching node frees up.',
+    title: 'Searching for capacity',
+    desc: 'Allocator is searching across all configured suppliers (internal + external networks). Retries every 10s automatically. No admin action required — placement happens as soon as any supplier returns capacity for this tier.',
+  },
+  NO_REGION_CAPACITY: {
+    kind: 'info',
+    title: 'Searching in requested region',
+    desc: 'Buyer requested a specific region. Allocator retries every 10s while suppliers in that region cycle inventory. No admin action required.',
   },
 }
 

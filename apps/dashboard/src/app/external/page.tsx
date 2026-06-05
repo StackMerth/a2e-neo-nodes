@@ -48,10 +48,15 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 }
 
-type ExternalMarket = 'AKASH' | 'IONET' | 'VASTAI'
+// Active external markets only. AKASH and VASTAI were never integrated
+// (they were seed-test-data placeholders) — removed so the admin
+// dashboard reflects real supply paths. Cleanup script
+// scripts/clean-seed-test-data.ts removes any residual rows from those
+// market values.
+type ExternalMarket = 'IONET' | 'LAMBDA' | 'RUNPOD' | 'PHALA'
 type DeploymentStatus = 'PENDING' | 'ACTIVE' | 'TERMINATING' | 'TERMINATED' | 'FAILED'
 
-const MARKETS: ReadonlyArray<ExternalMarket> = ['AKASH', 'IONET', 'VASTAI']
+const MARKETS: ReadonlyArray<ExternalMarket> = ['IONET', 'LAMBDA', 'RUNPOD', 'PHALA']
 const GPU_TIERS = ['H100', 'H200', 'B200']
 
 const STATUS_FILTERS: ReadonlyArray<{ label: string; value: string | undefined }> = [

@@ -514,9 +514,14 @@ export default function EarningsPage() {
                   >
                     <option value="">All Markets</option>
                     <option value="INTERNAL">Internal</option>
-                    <option value="AKASH">Akash</option>
-                    <option value="IONET">IO.net</option>
-                    <option value="VASTAI">Vast.ai</option>
+                    <option value="IONET">io.net</option>
+                    <option value="LAMBDA">Lambda</option>
+                    <option value="RUNPOD">RunPod</option>
+                    <option value="PHALA">Phala</option>
+                    {/* AKASH and VASTAI are removed — never integrated;
+                        seed-test-data placeholders. Cleanup script
+                        scripts/clean-seed-test-data.ts removes any
+                        residual rows with those market values. */}
                   </select>
                 </div>
                 <Button onClick={loadRecords} variant="outline" size="sm" className="mt-5">

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { User, Bell, Shield, Lock, KeyRound, Wallet } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { User, Bell, Shield, Lock, KeyRound, Wallet, Zap } from 'lucide-react'
+import { useWallet } from '@solana/wallet-adapter-react'
 import { useAuth } from '@/hooks/useAuth'
 import { buyer } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
@@ -34,6 +35,22 @@ export default function BuyerSettingsPage() {
   const [currentWallet, setCurrentWallet] = useState<string | null>(user?.walletAddress ?? null)
   const [walletInput, setWalletInput] = useState('')
   const [savingWallet, setSavingWallet] = useState(false)
+
+  // Read the address from the wallet-adapter context. When a buyer has
+  // already connected Phantom via the top-bar Connect Wallet button but
+  // hasn't LINKED it to their account row yet, we can offer a one-click
+  // "use connected wallet" action so they don't have to copy/paste.
+  const { publicKey, connected: walletConnected } = useWallet()
+  const connectedAddress = publicKey?.toBase58() ?? null
+
+  // Auto-populate the input with the connected wallet address whenever
+  // the wallet is connected AND the user hasn't already linked one AND
+  // the input is empty. The buyer can still edit or clear before saving.
+  useEffect(() => {
+    if (connectedAddress && !currentWallet && !walletInput) {
+      setWalletInput(connectedAddress)
+    }
+  }, [connectedAddress, currentWallet, walletInput])
 
   const togglePref = (key: keyof typeof prefs) => {
     setPrefs(prev => ({ ...prev, [key]: !prev[key] }))
@@ -100,19 +117,54 @@ export default function BuyerSettingsPage() {
           <FormSection>
             <div className="py-2" style={{ borderBottom: '1px solid var(--border-color)' }}>
               <div className="flex items-center justify-between">
-                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Current</span>
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Linked for refunds</span>
                 <span className="font-mono text-xs" style={{ color: currentWallet ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                   {currentWallet
                     ? `${currentWallet.slice(0, 6)}...${currentWallet.slice(-6)}`
-                    : 'Not connected'}
+                    : 'Not linked'}
                 </span>
               </div>
             </div>
 
-            <div className="flex gap-2">
+            {/* Connected vs Linked status. When wallet is connected via
+                the top-bar adapter but not yet linked to the account
+                row, show a one-click "Use connected wallet" action so
+                the buyer doesn't have to manually copy/paste. */}
+            {walletConnected && connectedAddress && connectedAddress !== currentWallet && (
+              <div
+                className="rounded-md p-3 mt-2 flex items-center justify-between gap-3"
+                style={{
+                  background: 'rgba(34, 197, 94, 0.08)',
+                  border: '1px solid rgba(34, 197, 94, 0.25)',
+                }}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Zap size={14} style={{ color: 'rgb(34, 197, 94)' }} className="shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-xs" style={{ color: 'var(--text-primary)' }}>
+                      Phantom wallet detected
+                    </div>
+                    <div className="font-mono text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+                      {connectedAddress.slice(0, 8)}...{connectedAddress.slice(-6)}
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setWalletInput(connectedAddress)}
+                  disabled={savingWallet}
+                  className="shrink-0"
+                >
+                  Use this address
+                </Button>
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-3">
               <input
                 type="text"
-                placeholder="Paste your Solana wallet address"
+                placeholder={connectedAddress ?? 'Paste your Solana wallet address'}
                 value={walletInput}
                 onChange={(e) => setWalletInput(e.target.value)}
                 disabled={savingWallet}
@@ -135,7 +187,9 @@ export default function BuyerSettingsPage() {
               </Button>
             </div>
             <p className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>
-              Tip: 32-44 characters, starts with a letter or digit. Valid Solana addresses are base58-encoded.
+              {walletConnected
+                ? 'Click "Use this address" above to link your connected Phantom wallet, or paste a different address manually. Saving links the address to your account for refund delivery.'
+                : 'Tip: connect Phantom via the top-bar button to auto-fill, or paste any valid Solana address (32-44 base58 chars).'}
             </p>
           </FormSection>
         </FormCard>
