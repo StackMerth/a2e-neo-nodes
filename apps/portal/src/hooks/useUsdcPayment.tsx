@@ -68,12 +68,12 @@ export interface UsdcPaymentResult {
 
 export function useUsdcPayment() {
   const { connection } = useConnection()
-  const { publicKey, sendTransaction } = useWallet()
+  const { publicKey, signTransaction } = useWallet()
   const [submitting, setSubmitting] = useState(false)
 
   const pay = useCallback(
     async (args: UsdcPaymentArgs): Promise<UsdcPaymentResult> => {
-      if (!publicKey || !sendTransaction) {
+      if (!publicKey || !signTransaction) {
         throw new Error('No wallet connected. Click Connect Wallet first.')
       }
       if (args.amountUsd <= 0) {
@@ -151,19 +151,43 @@ export function useUsdcPayment() {
           ),
         )
 
-        // wallet-adapter sets the blockhash + fee payer internally
-        // when sendTransaction is invoked, then prompts the wallet
-        // for a signature, then forwards to the connection.
-        const signature = await sendTransaction(tx, connection)
+        // CRITICAL: do NOT use wallet-adapter's sendTransaction here.
+        // For Phantom, that routes to phantom.signAndSendTransaction
+        // which internally awaits confirmation with a HARDCODED ~30s
+        // timeout. That timeout fires BEFORE any polling code we add
+        // downstream, producing the "Transaction was not confirmed in
+        // 30.00 seconds" error users were seeing. The fix is to do
+        // sign + broadcast in two separate steps so we own the entire
+        // post-broadcast lifecycle.
+        //
+        // Step 1: set blockhash + fee payer ourselves (wallet-adapter
+        // would do this inside sendTransaction; since we're not calling
+        // it, we do it explicitly).
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+        tx.recentBlockhash = blockhash
+        tx.lastValidBlockHeight = lastValidBlockHeight
+        tx.feePayer = publicKey
 
-        // Active polling for confirmation. Replaces
-        // connection.confirmTransaction(signature, commitment) which
-        // uses the connection's confirmTransactionInitialTimeout (~30s
-        // default) and gives terrible feedback on timeout. We poll
-        // getSignatureStatus on a 2s interval for up to 90s. Returns
-        // as soon as the tx is confirmed/finalized, throws explicitly
-        // on rejection, and on timeout surfaces the signature so the
-        // user can verify on Solana Explorer.
+        // Step 2: ask the wallet to SIGN ONLY. Phantom's signTransaction
+        // returns the signed transaction without broadcasting or
+        // confirming, so no 30s timer starts here.
+        const signedTx = await signTransaction(tx)
+
+        // Step 3: broadcast the signed transaction ourselves via the
+        // connection. sendRawTransaction is a plain JSON-RPC POST with
+        // no built-in confirmation timeout — it returns the signature
+        // immediately after the RPC accepts the bytes.
+        const signature = await connection.sendRawTransaction(signedTx.serialize(), {
+          skipPreflight: false,
+          preflightCommitment: 'confirmed',
+          maxRetries: 3,
+        })
+
+        // Step 4: own the confirmation loop. Poll getSignatureStatus on
+        // a 2s interval for up to 90s. Returns as soon as the tx is
+        // confirmed/finalized, throws explicitly on on-chain rejection,
+        // and on timeout surfaces the signature so the user can verify
+        // on Solana Explorer.
         const POLL_INTERVAL_MS = 2_000
         const POLL_TIMEOUT_MS = parseInt(
           process.env.NEXT_PUBLIC_SOLANA_CONFIRM_TIMEOUT_MS ?? '90000',
@@ -206,7 +230,7 @@ export function useUsdcPayment() {
         setSubmitting(false)
       }
     },
-    [connection, publicKey, sendTransaction],
+    [connection, publicKey, signTransaction],
   )
 
   return {
