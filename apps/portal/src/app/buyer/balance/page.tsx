@@ -559,24 +559,25 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
           <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
             Top up balance
           </h2>
-          {/* Network indicator — surfaces what network the page is
-              actually using so a misconfigured env var doesn't fail
-              silently. If this shows 'DEVNET' on production, the
-              Vercel env vars aren't set correctly. Hidden on devnet
-              by default would defeat the purpose; we always show. */}
-          <span
-            className="text-[10px] font-mono uppercase tracking-[0.14em] px-2 py-0.5 rounded-full"
-            style={{
-              background: walletNetwork === 'mainnet' ? 'rgba(34,197,94,0.12)' : 'rgba(234,179,8,0.15)',
-              color: walletNetwork === 'mainnet' ? 'rgb(34,197,94)' : 'rgb(234,179,8)',
-              border: `1px solid ${walletNetwork === 'mainnet' ? 'rgba(34,197,94,0.3)' : 'rgba(234,179,8,0.35)'}`,
-            }}
-            title={walletNetwork === 'mainnet'
-              ? 'Real-money mainnet — payments use real USDC.'
-              : 'DEVNET detected. NEXT_PUBLIC_SOLANA_RPC_URL / NEXT_PUBLIC_SOLANA_NETWORK on the portal Vercel project is misconfigured. Real USDC payments will FAIL on devnet.'}
-          >
-            {walletNetwork}
-          </span>
+          {/* Misconfig warning. The pill is intentionally only shown
+              when the resolved network is devnet so end users on
+              mainnet get a clean header. The diagnostic value
+              (catching misconfigured Vercel env vars before users
+              lose money to dropped txs) is preserved on the failure
+              path. Hover surfaces what action to take. */}
+          {walletNetwork === 'devnet' && (
+            <span
+              className="text-[10px] font-mono uppercase tracking-[0.14em] px-2 py-0.5 rounded-full"
+              style={{
+                background: 'rgba(234,179,8,0.15)',
+                color: 'rgb(234,179,8)',
+                border: '1px solid rgba(234,179,8,0.35)',
+              }}
+              title="DEVNET detected. NEXT_PUBLIC_SOLANA_RPC_URL / NEXT_PUBLIC_SOLANA_NETWORK on the portal Vercel project is misconfigured. Real USDC payments will FAIL on devnet."
+            >
+              devnet
+            </span>
+          )}
         </div>
         <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>
           {walletConnected
