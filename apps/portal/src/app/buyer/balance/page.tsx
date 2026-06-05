@@ -250,6 +250,12 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
   // Wallet-pay state
   const [phase, setPhase] = useState<Phase>('idle')
   const [completedTx, setCompletedTx] = useState<string | null>(null)
+  // Persistent inline error display. The toast is a transient signal
+  // (auto-dismiss after 5s) — buyers need to scroll up or alt-tab to
+  // catch it. The inline error stays on the card until the user
+  // either clicks Pay again or closes the modal, so they can re-read
+  // the guidance while picking what to do next.
+  const [lastError, setLastError] = useState<string | null>(null)
 
   // Manual-paste fallback (collapsed by default when a wallet is
   // connected; shown by default when no wallet is present).
@@ -312,6 +318,7 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
     }
 
     setCompletedTx(null)
+    setLastError(null)
     try {
       setPhase('awaiting-signature')
       // The hook fires onProgress at each step. We map those to our
@@ -364,6 +371,10 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
         friendly = `Transaction simulation failed. ${raw}`
       }
       toast('error', friendly)
+      // Mirror the friendly message to the inline banner on the
+      // modal card so it doesn't disappear when the toast auto-
+      // dismisses 5s in.
+      setLastError(friendly)
       setPhase('idle')
     }
   }
@@ -575,6 +586,37 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
                 <ExternalLink size={11} />
               </a>
             </div>
+          </div>
+        )}
+
+        {/* Inline error banner. Stays visible on the card until the
+            user retries or closes — the floating toast auto-dismisses
+            in 5s which isn't long enough to read "buy USDC, send to
+            Phantom, retry" and act on it. The X dismisses just the
+            inline banner; the modal stays open. */}
+        {lastError && !completedTx && (
+          <div
+            className="rounded-xl p-4 mb-5 flex items-start gap-3"
+            style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)' }}
+          >
+            <AlertCircle size={18} className="shrink-0 mt-0.5" style={{ color: 'rgb(239,68,68)' }} />
+            <div className="flex-1 min-w-0">
+              <div className="text-xs uppercase tracking-[0.14em] font-mono mb-1" style={{ color: 'rgb(239,68,68)' }}>
+                Payment failed
+              </div>
+              <div className="text-sm leading-snug" style={{ color: 'var(--text-primary)' }}>
+                {lastError}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setLastError(null)}
+              aria-label="Dismiss error"
+              className="shrink-0 p-1 rounded transition-colors"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <X size={14} />
+            </button>
           </div>
         )}
 
