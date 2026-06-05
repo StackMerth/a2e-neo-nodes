@@ -274,34 +274,44 @@ export default function FinancialPage() {
         </div>
       </motion.div>
 
-      {/* KPI Stat Blocks */}
+      {/* KPI Stat Blocks.
+          Labels reflect what the underlying data ACTUALLY sums to.
+          Earning.earnings holds the operator's slice from the 3-way
+          revenue split (rental-credit.ts:197), so the green block is
+          operator earnings paid out, NOT platform gross revenue from
+          buyers. Costs is admin-entered infrastructure spend. Net is
+          their difference — useful as an operator-flow vs infra-spend
+          read, but NOT platform net profit (which would also need
+          buyer-side gross and staking/treasury slices). Replace with
+          a buyer-side gross widget when the BalanceTransaction roll-up
+          ships. */}
       <motion.div variants={item} className="stat-blocks">
         <div className="stat-block green">
           <div className="stat-icon"><DollarSign size={20} /></div>
           <div className="stat-content">
             <span className="stat-value">{formatCurrency(summary?.revenue.total ?? 0)}</span>
-            <span className="stat-label">Total Revenue</span>
+            <span className="stat-label">Operator Earnings</span>
           </div>
         </div>
         <div className="stat-block red">
           <div className="stat-icon"><Receipt size={20} /></div>
           <div className="stat-content">
             <span className="stat-value">{formatCurrency(summary?.costs.total ?? 0)}</span>
-            <span className="stat-label">Total Costs</span>
+            <span className="stat-label">Infrastructure Costs</span>
           </div>
         </div>
         <div className="stat-block blue">
           <div className="stat-icon"><TrendingUp size={20} /></div>
           <div className="stat-content">
             <span className="stat-value">{formatCurrency(summary?.profit.gross ?? 0)}</span>
-            <span className="stat-label">Net Profit</span>
+            <span className="stat-label">Net (Earnings &minus; Infra)</span>
           </div>
         </div>
         <div className="stat-block purple">
           <div className="stat-icon"><BarChart3 size={20} /></div>
           <div className="stat-content">
             <span className="stat-value">{formatPercent(summary?.profit.margin ?? 0)}</span>
-            <span className="stat-label">Profit Margin</span>
+            <span className="stat-label">Margin</span>
           </div>
         </div>
       </motion.div>
@@ -341,28 +351,30 @@ export default function FinancialPage() {
         )}
       </div>
 
-      {/* Key Metrics */}
+      {/* Key Metrics. Mirror of the KPI Stat Blocks above with the
+          same labels, kept in sync so the two widget grids tell the
+          same story. */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
-          label="Total Revenue"
+          label="Operator Earnings"
           value={formatCurrency(summary?.revenue.total ?? 0)}
           variant="accent"
           icon={<TrendingUp className="w-4 h-4" />}
         />
         <StatCard
-          label="Total Costs"
+          label="Infrastructure Costs"
           value={formatCurrency(summary?.costs.total ?? 0)}
           variant="default"
           icon={<TrendingDown className="w-4 h-4" />}
         />
         <StatCard
-          label="Gross Profit"
+          label="Net (Earnings − Infra)"
           value={formatCurrency(summary?.profit.gross ?? 0)}
           variant={summary?.profit.gross && summary.profit.gross > 0 ? 'accent' : 'default'}
           icon={<DollarSign className="w-4 h-4" />}
         />
         <StatCard
-          label="Profit Margin"
+          label="Margin"
           value={formatPercent(summary?.profit.margin ?? 0)}
           variant="purple"
           icon={<BarChart3 className="w-4 h-4" />}
@@ -371,8 +383,9 @@ export default function FinancialPage() {
 
       {/* Revenue and Costs Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Revenue by Market */}
-        <Card variant="glass" title="Revenue by Market" description="Distribution across markets">
+        {/* Operator earnings by market (same Earning.earnings source
+            as the KPI green block). */}
+        <Card variant="glass" title="Operator Earnings by Market" description="Distribution across markets">
           {earningsByMarket && Object.keys(earningsByMarket.byMarket).length > 0 ? (
             <div className="space-y-6 mt-4">
               <DistributionBar segments={revenueDistribution} size="lg" showLegend />
