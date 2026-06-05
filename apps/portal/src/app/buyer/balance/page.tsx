@@ -264,6 +264,21 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
       .catch((e) => toast('error', e instanceof Error ? e.message : 'Failed to load topup destination'))
   }, [toast])
 
+  // Hide the page chrome (TopHeader, sidebar) while the modal is
+  // mounted. Z-index alone is unreliable: the TopHeader sets
+  // backdrop-filter which creates a stacking context, and in some
+  // browser/devicePixelRatio combos the portal still renders behind
+  // it. display:none on the chrome is uncompromisable — it removes
+  // the elements from the layout entirely. We add a class to <body>
+  // and the global stylesheet handles the rest. Cleanup runs on
+  // unmount so the chrome reappears when the modal closes.
+  useEffect(() => {
+    document.body.classList.add('modal-open')
+    return () => {
+      document.body.classList.remove('modal-open')
+    }
+  }, [])
+
   // If no wallet is connected, manual paste becomes the primary path
   // (the Connect Wallet CTA still shows above it but the paste form
   // is expanded so first-time visitors see the fallback immediately).
@@ -429,15 +444,15 @@ function TopupModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (b
     <div
       className="fixed inset-0 flex items-center justify-center p-4"
       style={{
-        // z-index 9999 is intentionally absurd: guarantees the modal
-        // wins against any other fixed/portal layer (TopHeader z-30,
-        // toasts z-9999 from the Toast provider — toasts will still
-        // win because they share this z + render later, which is the
-        // intended UX).
-        zIndex: 9999,
-        // 95% opacity backdrop + 16px blur completely obscures
-        // anything behind so the TopHeader, sidebar, and page content
-        // all disappear behind the modal.
+        // Max signed-32-bit int. Belt-and-suspenders: the body.modal-open
+        // CSS class already hides the TopHeader and sidebar entirely
+        // (display:none), so technically any z-index works. We keep a
+        // huge value as a safety net in case the CSS rule ever gets
+        // dropped or a new fixed-positioned element appears.
+        zIndex: 2147483647,
+        // 95% opacity backdrop + 16px blur. With the TopHeader hidden
+        // by display:none, there's nothing left to bleed through, but
+        // the dark backdrop still provides visual focus on the modal.
         background: 'rgba(0,0,0,0.95)',
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',

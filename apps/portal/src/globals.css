@@ -1127,6 +1127,31 @@ textarea:focus {
   min-height: 100vh;
 }
 
+/* Hide page chrome (TopHeader, sidebar, page padding) when a
+   full-screen modal is open. Added by the TopupModal on mount,
+   removed on unmount. Z-index alone is unreliable because TopHeader
+   uses backdrop-filter which creates a stacking context that the
+   modal portal can lose to depending on layout nesting; display:none
+   takes the chrome out of the layout entirely so it can't bleed
+   through.
+
+   Targets:
+   - header[class*="fixed top-0"] -> TopHeader (positioned fixed)
+   - .app-layout > aside           -> Sidebars (Buyer + NodeRunner)
+   - .app-layout                    -> remove pt-16 spacer (chrome is gone) */
+body.modal-open header {
+  display: none !important;
+}
+body.modal-open .app-layout > aside {
+  display: none !important;
+}
+body.modal-open .app-layout {
+  padding-top: 0 !important;
+}
+body.modal-open .main-content {
+  margin-left: 0 !important;
+}
+
 .main-content {
   flex: 1;
   padding: var(--space-xl);
