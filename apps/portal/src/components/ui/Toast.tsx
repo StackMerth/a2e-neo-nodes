@@ -128,17 +128,15 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
       onClick={dismiss}
       className="pointer-events-auto cursor-pointer w-full max-w-2xl rounded-xl shadow-2xl flex items-stretch"
       style={{
-        background: 'rgba(15, 17, 22, 0.96)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        backdropFilter: 'blur(20px)',
+        // Solid opaque background — no glassy frosted blur. The text
+        // panel should be crisply readable, not visually compete with
+        // whatever's behind it. backdrop-filter removed; background
+        // alpha bumped to 1.0.
+        background: 'rgb(15, 17, 22)',
+        border: '1px solid rgba(255, 255, 255, 0.12)',
         transform: leaving ? 'translateY(-12px)' : mounted ? 'translateY(0)' : 'translateY(-32px)',
         opacity: leaving ? 0 : mounted ? 1 : 0,
         transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), opacity 220ms ease-out',
-        // Removed overflow-hidden + max-w-md. Long unbroken strings
-        // (Solana signatures, URLs) were being clipped on the right
-        // edge instead of wrapping. Bumped max-w to 2xl (672px) so
-        // multi-line messages have room without ballooning past the
-        // viewport on mobile.
       }}
     >
       <div className="shrink-0 w-1 rounded-l-xl" style={{ background: meta.accent }} />
