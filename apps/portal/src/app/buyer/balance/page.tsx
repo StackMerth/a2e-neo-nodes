@@ -1,5 +1,7 @@
 'use client'
 
+// Cache-bust marker: 2026-06-05. Forced Vercel rebuild to ship 9ab8b07
+// (MAINNET pill removal) which had been stuck on a stale deploy at 51b3d6b.
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Wallet, Plus, ArrowDownLeft, ArrowUpRight, RefreshCw, AlertCircle, Copy, Check, Zap, ExternalLink, Loader2, CreditCard, X } from 'lucide-react'
