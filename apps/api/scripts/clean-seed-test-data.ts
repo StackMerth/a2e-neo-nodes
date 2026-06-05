@@ -168,16 +168,109 @@ async function main(): Promise<void> {
     })
     console.log(`Deleted ${delNodes.count} seed node rows (cascades to related Earnings, ExternalDeployments, Heartbeats, NodeMetrics)`)
 
-    // 4. Seed users by email pattern. Cascades to: ComputeRequest,
-    //    BalanceTransaction, BuyerBalance, NodeRunner, ApiKey,
-    //    PushSubscription, Notification, RefreshToken, etc.
-    //    InternalSpend gets nuked via ComputeRequest cascade or
-    //    NodeRunner cascade (since InternalSpend has nodeRunnerId +
-    //    computeRequestId FKs, both cascading).
+    // 4. Pre-delete rows that reference seed Users via FKs WITHOUT
+    //    onDelete: Cascade. Full schema audit of User relations:
+    //
+    //      CASCADE (auto-handled by User delete):
+    //        ApiKey (233), RefreshToken (252), BalanceTransaction (272),
+    //        BuyerBalance (1741), PushSubscription (1923)
+    //
+    //      NO CASCADE (blocks User delete):
+    //        NodeRunner.userId       (290, nullable + unique)
+    //        ComputeRequest.userId   (1311, non-null)
+    //        Rating.buyerId          (1612, non-null)
+    //        ConfidentialInterest.userId (2334, nullable)
+    //
+    //    AND Rating itself blocks ComputeRequest AND NodeRunner
+    //    (Rating has computeRequestId + nodeRunnerId FKs, neither
+    //    cascading). So delete Rating first, then ComputeRequest +
+    //    NodeRunner can go in any order, then User.
+    //
+    //    For NodeRunner, also need to clear its non-cascading
+    //    children: Investment (565), WithdrawalRequest (1677),
+    //    and Node.nodeRunnerId (632, nullable - just null it).
+
+    // First: collect the user's compute requests and node runners
+    // by id so we can scope the dependent deletes precisely (not
+    // accidentally nuking another user's Ratings).
+    const userComputeRequests = await tx.computeRequest.findMany({
+      where: { userId: { in: userIds } },
+      select: { id: true },
+    })
+    const userComputeRequestIds = userComputeRequests.map((c) => c.id)
+
+    const userNodeRunners = await tx.nodeRunner.findMany({
+      where: { userId: { in: userIds } },
+      select: { id: true },
+    })
+    const userNodeRunnerIds = userNodeRunners.map((n) => n.id)
+
+    // Rating: tied via buyerId OR computeRequestId OR nodeRunnerId.
+    // Must die before any of those parents can be deleted.
+    const delRatings = await tx.rating.deleteMany({
+      where: {
+        OR: [
+          { buyerId: { in: userIds } },
+          ...(userComputeRequestIds.length
+            ? [{ computeRequestId: { in: userComputeRequestIds } }]
+            : []),
+          ...(userNodeRunnerIds.length
+            ? [{ nodeRunnerId: { in: userNodeRunnerIds } }]
+            : []),
+        ],
+      },
+    })
+    console.log(`Deleted ${delRatings.count} rating rows`)
+
+    // NodeRunner-dependent rows: Investment + WithdrawalRequest
+    // (both non-cascading FKs to NodeRunner). Skip if seed user
+    // has no NodeRunner (the common case for a buyer-only seed).
+    if (userNodeRunnerIds.length) {
+      const delInvestments = await tx.investment.deleteMany({
+        where: { nodeRunnerId: { in: userNodeRunnerIds } },
+      })
+      console.log(`Deleted ${delInvestments.count} investment rows`)
+
+      const delWithdrawals = await tx.withdrawalRequest.deleteMany({
+        where: { nodeRunnerId: { in: userNodeRunnerIds } },
+      })
+      console.log(`Deleted ${delWithdrawals.count} withdrawal request rows`)
+
+      // Node.nodeRunnerId is nullable; null it instead of cascading
+      // a real production node into deletion just because its owner
+      // is a seed account (defensive).
+      const orphanedNodes = await tx.node.updateMany({
+        where: { nodeRunnerId: { in: userNodeRunnerIds } },
+        data: { nodeRunnerId: null },
+      })
+      console.log(`Orphaned ${orphanedNodes.count} nodes (cleared nodeRunnerId)`)
+    }
+
+    // Now delete the User's direct non-cascading children.
+    const delComputeRequests = await tx.computeRequest.deleteMany({
+      where: { userId: { in: userIds } },
+    })
+    console.log(`Deleted ${delComputeRequests.count} compute request rows`)
+
+    if (userNodeRunnerIds.length) {
+      const delNodeRunners = await tx.nodeRunner.deleteMany({
+        where: { userId: { in: userIds } },
+      })
+      console.log(`Deleted ${delNodeRunners.count} node runner rows`)
+    }
+
+    const delConfInterest = await tx.confidentialInterest.deleteMany({
+      where: { userId: { in: userIds } },
+    })
+    console.log(`Deleted ${delConfInterest.count} confidential interest rows`)
+
+    // 5. Finally the User itself. Cascades sweep ApiKey,
+    //    RefreshToken, BalanceTransaction, BuyerBalance,
+    //    PushSubscription, Notification, etc.
     const delUsers = await tx.user.deleteMany({
       where: { id: { in: userIds } },
     })
-    console.log(`Deleted ${delUsers.count} seed user rows (cascades to related ComputeRequests, BalanceTransactions, BuyerBalances, NodeRunners, ApiKeys, etc.)`)
+    console.log(`Deleted ${delUsers.count} seed user rows (cascades to ApiKeys, BalanceTransactions, BuyerBalances, RefreshTokens, etc.)`)
   })
 
   console.log()
