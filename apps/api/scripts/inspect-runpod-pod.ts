@@ -21,9 +21,9 @@ import { PrismaClient } from '@a2e/database'
 import { RunPodApi } from '../src/services/inbound/runpod-adapter.js'
 
 async function main(): Promise<void> {
-  const reqId = process.argv[2]
-  if (!reqId) {
-    console.error('Usage: inspect-runpod-pod.ts <computeRequestId>')
+  const reqIdOrPrefix = process.argv[2]
+  if (!reqIdOrPrefix) {
+    console.error('Usage: inspect-runpod-pod.ts <computeRequestId | id-prefix>')
     process.exit(1)
   }
 
@@ -34,6 +34,23 @@ async function main(): Promise<void> {
   }
 
   const prisma = new PrismaClient()
+  // Resolve the slug-or-full-id to a real ComputeRequest id (same
+  // pattern as inspect-rental.ts) so the .pem filename slug works.
+  const candidates = await prisma.computeRequest.findMany({
+    where: { id: { startsWith: reqIdOrPrefix } },
+    select: { id: true },
+    take: 5,
+  })
+  if (candidates.length === 0) {
+    console.error(`No ComputeRequest matching id prefix "${reqIdOrPrefix}"`)
+    process.exit(1)
+  }
+  if (candidates.length > 1) {
+    console.error(`Ambiguous prefix "${reqIdOrPrefix}" — matches multiple rows. Use a longer prefix.`)
+    process.exit(1)
+  }
+  const reqId = candidates[0]!.id
+
   const ext = await prisma.externalRental.findFirst({
     where: { computeRequestId: reqId, provider: 'RUNPOD' },
     select: {
