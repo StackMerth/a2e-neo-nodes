@@ -292,15 +292,18 @@ async function probeRunPod(
   try {
     const client = new RunPodClient()
     const gpus = await client.listGpuTypes()
-    // RunPod's catalog uses `id` (the SKU id) and `displayName`; our
-    // mapping stores the displayName-flavored string in gpuTypeId.
-    // Match against displayName for clarity.
-    const match = gpus.find((g) => g.displayName === mapping.gpuTypeId)
+    // mapping.gpuTypeId is the RunPod SKU id (NOT displayName) per
+    // runpod-tier-mapping.ts's contract — runpod-provision.ts also
+    // matches on .id. Previous version of this probe matched on
+    // displayName and silently failed for every tier.
+    const match = gpus.find((g) => g.id === mapping.gpuTypeId)
     if (!match) return noCapacity('RUNPOD', 'gpu_type_missing')
-    // listGpuTypes doesn't expose direct availability counts via REST;
-    // a missing match is the strongest "out of stock" signal we have.
-    // The actual create-pod call may still reject if stock depleted
-    // between probe and provision — handled by retry on next tick.
+    // Check the same stock signals provisioning uses, otherwise the
+    // probe reports capacity that the actual createPod call rejects
+    // within ms.
+    if (!match.hasCurrentStock || match.lowestPricePerHourUsd === null) {
+      return noCapacity('RUNPOD', 'no_current_stock')
+    }
     return {
       provider: 'RUNPOD',
       pricePerHourUsd: match.lowestPricePerHourUsd ?? price,
