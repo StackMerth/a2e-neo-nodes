@@ -201,6 +201,16 @@ export async function provisionRunPodRental(
       providerRegion: '(pending)',
       status: 'PENDING',
       sshHost: null,
+      // RunPod's default pytorch / cuda images run as root and install
+      // PUBLIC_KEY into /root/.ssh/authorized_keys (the image entry-
+      // point script does `mkdir -p /root/.ssh && echo $PUBLIC_KEY >
+      // /root/.ssh/authorized_keys`). The ExternalRental column
+      // defaults to "ubuntu" which is correct for Lambda / GCP / Azure
+      // but WRONG for RunPod — every RunPod rental ended up showing
+      // ubuntu@<ip> on the rental page, and `ssh ubuntu@...` got
+      // 'permission denied (publickey)' because the key wasn't in
+      // ubuntu's authorized_keys.
+      sshUsername: 'root',
       sshPublicKey: keypair.publicKeyOpenssh,
       sshPrivateKeyEnc: encryptedPrivKey,
       providerPricePerHourUsd: match.lowestPricePerHourUsd,
