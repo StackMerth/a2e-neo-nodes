@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { DollarSign, TrendingUp, TrendingDown, BarChart3, RefreshCw, AlertTriangle, FlaskConical, ShieldCheck, Pencil, Briefcase, Clock, Download, Banknote, Receipt, Check } from 'lucide-react'
+import { DollarSign, TrendingUp, TrendingDown, BarChart3, RefreshCw, AlertTriangle, Pencil, Briefcase, Clock, Download, Banknote, Receipt, Check } from 'lucide-react'
 import { Card, StatCard } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { DistributionBar } from '@/components/ui/ProgressBar'
@@ -306,41 +306,13 @@ export default function FinancialPage() {
         </div>
       </motion.div>
 
-      {/* Payment Mode & Wallet Balance */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Payment Mode Banner */}
-        {paymentMode && (
-          <div className={`p-5 rounded-xl border ${
-            paymentMode.devMode
-              ? 'bg-warning/5 border-warning/30'
-              : 'bg-accent/5 border-accent/30'
-          }`}>
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                paymentMode.devMode ? 'bg-warning/10' : 'bg-accent/10'
-              }`}>
-                {paymentMode.devMode ? (
-                  <FlaskConical className="w-6 h-6 text-warning" />
-                ) : (
-                  <ShieldCheck className="w-6 h-6 text-accent" />
-                )}
-              </div>
-              <div>
-                <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                  paymentMode.devMode
-                    ? 'bg-warning/20 text-warning'
-                    : 'bg-accent/20 text-accent'
-                }`}>
-                  {paymentMode.mode.toUpperCase()} MODE
-                </span>
-                <p className={`text-sm mt-1 ${paymentMode.devMode ? 'text-warning/80' : 'text-accent/80'}`}>
-                  {paymentMode.description}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
+      {/* Wallet Balance. The full-width "LIVE MODE" banner was removed —
+          its description was redundant with the small mode pill that
+          already appears in Settings, and it ate screen real estate
+          without adding actionable info. The payment-mode signal is
+          still surfaced via the "Live payments enabled" line in the
+          Settings section below. */}
+      <div className="grid grid-cols-1 gap-4">
         {/* Payer Wallet Balance */}
         {walletBalance && (
           <Card variant="glass" className="p-5">
