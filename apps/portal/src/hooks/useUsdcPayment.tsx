@@ -207,9 +207,16 @@ export function useUsdcPayment() {
             )
           }
           const status = value?.confirmationStatus
+          // 'finalized' satisfies any commitment level we'd ever ask for.
+          // 'confirmed' satisfies a 'confirmed' (default) target.
+          // The redundant `|| status === 'finalized'` inside the AND was
+          // tripping TS narrowing — once both top-level branches exclude
+          // 'finalized', TS narrows status to 'processed' | 'confirmed'
+          // | undefined and the inner finalized check becomes
+          // unreachable type. Simplified to the two cases that matter.
           if (
             status === 'finalized' ||
-            (targetCommitment === 'confirmed' && (status === 'confirmed' || status === 'finalized'))
+            (targetCommitment === 'confirmed' && status === 'confirmed')
           ) {
             return { signature, network: resolveNetwork() }
           }
