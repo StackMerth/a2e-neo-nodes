@@ -681,23 +681,97 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
 
   /**
    * PATCH /v1/buyer/compute/requests/:id/cancel
+   *
+   * Buyer-initiated cancellation of a PENDING request. Nothing was
+   * provisioned yet so the refund is the full totalCost, routed back
+   * to the payment source:
+   *
+   *   - BUYER_BALANCE: a REFUND_RENTAL credit reverses the SPEND_RENTAL
+   *     debit. Idempotent via (type, referenceId=cancel:<id>).
+   *   - USDC: the buyer's USDC payment landed in the platform admin
+   *     wallet at topup time, so we owe them an equivalent credit. We
+   *     credit to the buyer's internal balance (REFUND_RENTAL) instead
+   *     of sending USDC back on-chain — same payout shape as terminate's
+   *     INTERNAL_BALANCE fallback, and the buyer can withdraw it to
+   *     Phantom via /buyer/balance when they want.
+   *   - INTERNAL_BALANCE: reverse the InternalSpend row so the
+   *     node-runner's spend ledger is consistent.
+   *   - STRIPE_DIRECT: deferred — needs the Stripe refund API. For now
+   *     we still credit balance so the buyer is whole; an admin can
+   *     issue the Stripe refund + zero the balance credit if needed.
+   *
+   * Idempotent: status guard on the UPDATE prevents a double-refund if
+   * two cancel clicks race, AND the BalanceTransaction unique on
+   * (type, referenceId) prevents a credit double-write even if the
+   * status transition somehow re-fires.
    */
   fastify.patch('/v1/buyer/compute/requests/:id/cancel', async (request, reply) => {
     const { id } = request.params as { id: string }
+    const userId = request.user!.userId
 
     const cr = await fastify.prisma.computeRequest.findFirst({
-      where: { id, userId: request.user!.userId },
+      where: { id, userId },
     })
     if (!cr) return reply.code(404).send({ error: 'Request not found' })
     if (cr.status !== 'PENDING') {
       return reply.code(400).send({ error: 'Can only cancel PENDING requests' })
     }
 
-    await fastify.prisma.computeRequest.update({
-      where: { id }, data: { status: 'CANCELLED' },
+    // Status-guarded transition. If a concurrent cancel beat us here,
+    // updated.count is 0 and we skip the refund — the other request is
+    // responsible for it.
+    const updated = await fastify.prisma.computeRequest.updateMany({
+      where: { id, status: 'PENDING' },
+      data: { status: 'CANCELLED' },
     })
+    if (updated.count === 0) {
+      return reply.send({ id, status: 'CANCELLED', alreadyCancelled: true })
+    }
 
-    reply.send({ id, status: 'CANCELLED' })
+    // Refund routing. Catches and logs but does NOT roll back the
+    // CANCELLED status — the row is still cancelled, and a separate
+    // operator action can recover money if the refund leg fails.
+    let refundIssued = false
+    let refundDestination: 'balance' | 'internal_spend_reverted' | 'none' = 'none'
+    try {
+      if (cr.paymentSource === 'BUYER_BALANCE' || cr.paymentSource === 'USDC' || cr.paymentSource === 'STRIPE_DIRECT') {
+        await creditBalance(fastify.prisma, {
+          userId,
+          amountUsd: cr.totalCost,
+          type: 'REFUND_RENTAL',
+          description: `Refund for cancelled ${cr.gpuCount}x ${cr.gpuTier} rental`,
+          referenceId: `cancel:${id}`,
+        })
+        refundIssued = true
+        refundDestination = 'balance'
+      } else if (cr.paymentSource === 'INTERNAL_BALANCE') {
+        await fastify.prisma.internalSpend.deleteMany({
+          where: { computeRequestId: id },
+        })
+        refundIssued = true
+        refundDestination = 'internal_spend_reverted'
+      }
+    } catch (err) {
+      // Duplicate ref means the refund already landed (idempotent retry).
+      const isDuplicate = err instanceof Error && err.name === 'DuplicateTransactionError'
+      if (!isDuplicate) {
+        fastify.log.error(
+          { err, id, paymentSource: cr.paymentSource, totalCost: cr.totalCost },
+          'cancel refund failed; row is CANCELLED but money still owed to buyer',
+        )
+      } else {
+        refundIssued = true
+        refundDestination = 'balance'
+      }
+    }
+
+    reply.send({
+      id,
+      status: 'CANCELLED',
+      refundIssued,
+      refundDestination,
+      refundAmountUsd: refundIssued ? cr.totalCost : 0,
+    })
   })
 
   /**
