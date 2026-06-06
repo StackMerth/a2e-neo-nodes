@@ -63,26 +63,28 @@ async function main(): Promise<void> {
         continue
       }
 
-      // Three filter levels.
-      //   1. our prod filter: verified + reliability >= 0.95
-      //   2. just verified: verified hosts but any reliability
-      //   3. all: any host at all (including unverified)
-      const [prod, verifiedOnly, all] = await Promise.all([
-        client.listOffers({
-          gpu_name: { eq: mapping.gpuName },
-          num_gpus: { eq: mapping.gpusPerHost },
-          reliability2: { gte: 0.95 },
-        }),
-        client.listOffers({
-          gpu_name: { eq: mapping.gpuName },
-          num_gpus: { eq: mapping.gpusPerHost },
-        }),
-        client.listOffers({
-          gpu_name: { eq: mapping.gpuName },
-          num_gpus: { eq: mapping.gpusPerHost },
-          verified: { eq: false }, // explicitly DON'T filter to verified
-        }),
-      ])
+      // Three filter levels — sequential with 2.5s sleeps between
+      // calls. Vast.ai's REST API rate-limits aggressively (5 reqs
+      // per ~10s window, observed 2026-06-06 with a 429 storm during
+      // an earlier parallel fan-out). Sequential keeps us under it
+      // while still walking the entire tier matrix in ~2 minutes.
+      const prod = await client.listOffers({
+        gpu_name: { eq: mapping.gpuName },
+        num_gpus: { eq: mapping.gpusPerHost },
+        reliability2: { gte: 0.95 },
+      })
+      await sleep(2500)
+      const verifiedOnly = await client.listOffers({
+        gpu_name: { eq: mapping.gpuName },
+        num_gpus: { eq: mapping.gpusPerHost },
+      })
+      await sleep(2500)
+      const all = await client.listOffers({
+        gpu_name: { eq: mapping.gpuName },
+        num_gpus: { eq: mapping.gpusPerHost },
+        verified: { eq: false }, // explicitly DON'T filter to verified
+      })
+      await sleep(2500)
 
       const cheapestAll = all[0]?.dphTotal
       const cheapestStr = typeof cheapestAll === 'number'
@@ -110,6 +112,10 @@ async function main(): Promise<void> {
   console.log('  all=0           : tier mapping uses wrong gpu_name string — fix vastai-tier-mapping.ts')
   console.log('  all>0, none=0   : reliability filter too strict — lower minReliability in provision')
   console.log('  all>>verified   : large unverified pool; verified subset legitimately small for this SKU')
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
 }
 
 main().catch((err) => {
