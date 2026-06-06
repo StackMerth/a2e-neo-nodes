@@ -26,7 +26,16 @@ const corsPlugin: FastifyPluginCallback = async (fastify: FastifyInstance) => {
   await fastify.register(cors, {
     origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'X-API-Key', 'Authorization'],
+    // Note: 'solana-client' is added because @solana/web3.js Connection
+    // sets that header on every JSON-RPC POST (its way of self-identifying
+    // version/runtime to RPC endpoints). Without it in this allowlist
+    // the preflight returns 204 but the browser refuses to send the
+    // actual POST since its required headers aren't sanctioned by the
+    // preflight response — manifesting as "CORS error" in DevTools and
+    // "TypeError: Failed to fetch" inside the wallet adapter. Hitting
+    // Helius directly worked because Helius returns Access-Control-Allow-
+    // Headers: *; our own proxy needs the explicit allowance.
+    allowedHeaders: ['Content-Type', 'X-API-Key', 'Authorization', 'solana-client'],
     credentials: true,
   })
 }
