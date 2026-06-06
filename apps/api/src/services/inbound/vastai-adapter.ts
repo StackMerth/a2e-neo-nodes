@@ -53,18 +53,19 @@
 
 const DEFAULT_BASE_URL = 'https://console.vast.ai/api/v0'
 
-// Default container image for Vast.ai instances. Same family as the
-// RunPod default (pytorch + cuda + openssh-server preinstalled) so the
-// SSH bootstrap behaves identically across providers from the buyer's
-// perspective. The PyTorch official image ships sshd disabled by
-// default; we layer on Vast.ai's recommended startup_script in the
-// provision call to enable it.
+// Default container image for Vast.ai instances. We use the OFFICIAL
+// PyTorch image (pytorch/pytorch) rather than the RunPod variant we use
+// elsewhere, because RunPod's image has a custom entrypoint that
+// expects RunPod-specific env vars (PUBLIC_KEY, etc.) and Vast.ai's
+// Dockerfile generator fails on it with "docker_build() error writing
+// dockerfile" (observed 2026-06-06 on rental cmq2tzyj4000 / instance
+// 39780814). The official pytorch/pytorch image has a plain /bin/bash
+// entrypoint that Vast.ai's templating handles cleanly.
 //
-// Pin the same image hub as RunPod (runpod/pytorch) because we've
-// already verified it works end-to-end on community-tier hosts. If
-// Vast.ai's network can't pull from RunPod's Docker Hub org for some
-// reason, swap to pytorch/pytorch:2.4.0-cuda12.4-cudnn9-devel.
-export const DEFAULT_VASTAI_IMAGE = 'runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04'
+// devel variant chosen over runtime because our buyers commonly
+// compile CUDA kernels and need nvcc available. Pulls are ~3GB which
+// most verified hosts cache.
+export const DEFAULT_VASTAI_IMAGE = 'pytorch/pytorch:2.4.0-cuda12.4-cudnn9-devel'
 
 export class VastAiApiError extends Error {
   constructor(
@@ -274,15 +275,32 @@ export class VastAiClient {
       client_id: 'me',
       image: args.imageName ?? DEFAULT_VASTAI_IMAGE,
       disk: args.diskGb ?? 50,
-      // Vast.ai's onstart script runs once at container start. We use
-      // it to install the buyer's pubkey into root's authorized_keys
-      // (the default user on most pytorch images) and start sshd.
+      // runtype=ssh tells Vast.ai's startup machinery to expose the
+      // container's SSH port via their proxy (ssh1.vast.ai) AND to
+      // generate the host SSH keys before our onstart runs. Without
+      // this, Vast.ai may default to 'jupyter' mode where SSH is never
+      // configured. Vast.ai sometimes infers ssh from the onstart but
+      // we set it explicitly to be safe.
+      runtype: 'ssh',
+      // Vast.ai's onstart script runs once at container start, BEFORE
+      // their runtype=ssh machinery kicks in. The official pytorch
+      // image does NOT ship openssh-server, so we apt-get install it
+      // first (no-op if Vast.ai already installed it). Then write the
+      // buyer's ephemeral pubkey (APPEND so we keep any account-level
+      // keys Vast.ai pre-installed). Finally try to (re)start sshd; if
+      // Vast.ai already started it via runtype=ssh, the restart is a
+      // safe no-op. Every step has || true so a flaky apt mirror or
+      // already-running sshd can't kill the whole boot. We do NOT
+      // block on wait; Vast.ai's entrypoint takes over after onstart
+      // returns and keeps the container alive.
       onstart: [
-        'mkdir -p /root/.ssh',
-        `echo '${args.sshPublicKey.trim()}' > /root/.ssh/authorized_keys`,
+        'apt-get update >/dev/null 2>&1 || true',
+        'apt-get install -y --no-install-recommends openssh-server >/dev/null 2>&1 || true',
+        'mkdir -p /root/.ssh /var/run/sshd',
+        `echo '${args.sshPublicKey.trim()}' >> /root/.ssh/authorized_keys`,
         'chmod 700 /root/.ssh',
         'chmod 600 /root/.ssh/authorized_keys',
-        'service ssh start 2>/dev/null || /usr/sbin/sshd',
+        'service ssh restart >/dev/null 2>&1 || /usr/sbin/sshd >/dev/null 2>&1 || true',
       ].join(' && '),
     }
     const res = await this.request<{ new_contract?: number; success?: boolean }>(
