@@ -52,23 +52,21 @@ const USDC_MINTS: Record<'mainnet' | 'devnet', string> = {
 
 // Resolution order, most-specific to most-permissive:
 //   1. NEXT_PUBLIC_SOLANA_NETWORK env if set ('mainnet' / 'devnet')
-//   2. Detect from NEXT_PUBLIC_SOLANA_RPC_URL ('devnet' substring)
-//   3. Default to MAINNET (production-safe). Old default was devnet
-//      which silently broke real-money topups when the env wasn't
-//      configured on Vercel.
+//   2. Default to MAINNET (production-safe).
+//
+// We deliberately do NOT read NEXT_PUBLIC_SOLANA_RPC_URL here even as
+// a fallback heuristic. Next.js inlines every NEXT_PUBLIC_* env value
+// that's REFERENCED in the source into the client bundle at build
+// time, regardless of whether the code path executes in production.
+// A single `process.env.NEXT_PUBLIC_SOLANA_RPC_URL` reference would
+// pull the (Helius-with-api-key) URL right back into the bundle even
+// though WalletContextProvider no longer uses it in prod. So the
+// reference is removed entirely — devnet vs mainnet is now driven
+// exclusively by the network env var, which carries no secret.
 function resolveNetwork(): 'mainnet' | 'devnet' {
   const explicit = process.env.NEXT_PUBLIC_SOLANA_NETWORK?.trim().toLowerCase()
   if (explicit === 'mainnet' || explicit === 'mainnet-beta') return 'mainnet'
   if (explicit === 'devnet') return 'devnet'
-
-  const rpc = process.env.NEXT_PUBLIC_SOLANA_RPC_URL?.toLowerCase() ?? ''
-  if (rpc.includes('devnet')) return 'devnet'
-
-  // Default mainnet: we're live. A Helius/Triton/QuickNode mainnet
-  // URL without the word 'devnet' falls through to here. A misconfig
-  // that puts a devnet RPC without the substring 'devnet' would
-  // mismatch — but that's a deliberate user choice with --rpc-url
-  // override, not a default.
   return 'mainnet'
 }
 
