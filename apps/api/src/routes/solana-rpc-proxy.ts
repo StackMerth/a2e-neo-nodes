@@ -79,6 +79,19 @@ export async function solanaRpcProxyRoutes(fastify: FastifyInstance): Promise<vo
   }, 60_000)
   gcTimer.unref()
 
+  // Explicit OPTIONS handler for CORS preflight. The @fastify/cors
+  // plugin SHOULD intercept preflight via its onRequest hook, but the
+  // observed behavior (2026-06-06) is Render's edge returning 502 on
+  // OPTIONS /v1/rpc specifically — possibly because the plugin's hook
+  // doesn't fire fast enough during OOM-thrash, or because some
+  // upstream layer is reaching the route handler with no body and
+  // throwing. Explicit handler makes the preflight response
+  // deterministic: 204 No Content, no upstream Helius call, no body
+  // allocation, no chance to fail.
+  fastify.options('/v1/rpc', async (_request, reply) => {
+    return reply.code(204).send()
+  })
+
   fastify.post('/v1/rpc', async (request, reply) => {
     const ip = request.ip
     if (!checkRate(ip)) {
