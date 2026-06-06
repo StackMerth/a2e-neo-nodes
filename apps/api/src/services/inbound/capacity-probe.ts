@@ -49,6 +49,15 @@ import {
   voltageGpuTypeForTier,
   fitsSingleVoltageGpuPod,
 } from './voltagegpu-tier-mapping.js'
+import {
+  VastAiClient,
+  isVastAiConfigured,
+  isVastAiAllocatorEnabled,
+} from './vastai-adapter.js'
+import {
+  vastAiTypeForTier,
+  fitsSingleVastAiHost,
+} from './vastai-tier-mapping.js'
 
 export type ProviderKey =
   | 'LAMBDA'
@@ -56,6 +65,7 @@ export type ProviderKey =
   | 'PHALA'
   | 'IONET'
   | 'VOLTAGEGPU'
+  | 'VASTAI'
 
 export interface CapacityQuote {
   provider: ProviderKey
@@ -109,6 +119,17 @@ const STATIC_PRICES: Record<ProviderKey, Partial<Record<GpuTier, number>>> = {
     H200: 3.99,
     B200: 5.79,
   },
+  VASTAI: {
+    // Peer-marketplace pricing — consumer cards are the headline; H100
+    // and L40S are secondary. Numbers from console.vast.ai live catalog
+    // snapshot 2026-06; verified-host filter applied. These are
+    // baseline static guidance — the live listOffers call returns the
+    // actual cheapest-verified host's dph_total which overrides.
+    RTX_4090: 0.32,
+    RTX_3090: 0.20,
+    L40S: 0.85,
+    H100: 1.79,
+  },
 }
 
 interface ProbeOptions {
@@ -136,9 +157,16 @@ export async function probeAllProviders(
 
   // Build the candidate set. Confidential filter trims early so we
   // don't waste probe budget on providers we'd reject anyway.
+  // VASTAI is included in the non-confidential candidate set ONLY when
+  // the operator has explicitly enabled it via VASTAI_ALLOCATOR_ENABLED.
+  // The probe still no-ops cheaply via isVastAiAllocatorEnabled() if
+  // the flag is off, but skipping it here avoids the Vast.ai HTTP
+  // round-trip entirely until rollout is approved.
   const candidates: ProviderKey[] = opts.preferConfidential
     ? ['PHALA', 'VOLTAGEGPU']
-    : ['LAMBDA', 'RUNPOD', 'PHALA', 'IONET', 'VOLTAGEGPU']
+    : isVastAiAllocatorEnabled()
+      ? ['LAMBDA', 'RUNPOD', 'PHALA', 'IONET', 'VOLTAGEGPU', 'VASTAI']
+      : ['LAMBDA', 'RUNPOD', 'PHALA', 'IONET', 'VOLTAGEGPU']
 
   // Parallel kickoff. Promise.allSettled so one slow / failed probe
   // doesn't take the whole batch down.
@@ -185,9 +213,16 @@ export async function probeAllProvidersDebug(
   opts: ProbeOptions,
 ): Promise<CapacityQuote[]> {
   const timeoutMs = opts.timeoutMs ?? PROBE_TIMEOUT_MS
+  // VASTAI is included in the non-confidential candidate set ONLY when
+  // the operator has explicitly enabled it via VASTAI_ALLOCATOR_ENABLED.
+  // The probe still no-ops cheaply via isVastAiAllocatorEnabled() if
+  // the flag is off, but skipping it here avoids the Vast.ai HTTP
+  // round-trip entirely until rollout is approved.
   const candidates: ProviderKey[] = opts.preferConfidential
     ? ['PHALA', 'VOLTAGEGPU']
-    : ['LAMBDA', 'RUNPOD', 'PHALA', 'IONET', 'VOLTAGEGPU']
+    : isVastAiAllocatorEnabled()
+      ? ['LAMBDA', 'RUNPOD', 'PHALA', 'IONET', 'VOLTAGEGPU', 'VASTAI']
+      : ['LAMBDA', 'RUNPOD', 'PHALA', 'IONET', 'VOLTAGEGPU']
 
   const settled = await Promise.allSettled(
     candidates.map((p) =>
@@ -241,6 +276,8 @@ async function probeOne(
       return probeIoNet(tier, gpuCount, price)
     case 'VOLTAGEGPU':
       return probeVoltageGpu(tier, gpuCount, price)
+    case 'VASTAI':
+      return probeVastAi(tier, gpuCount, price)
   }
 }
 
@@ -377,6 +414,49 @@ async function probeVoltageGpu(
     provider: 'VOLTAGEGPU',
     pricePerHourUsd: price,
     hasCapacity: true,
+  }
+}
+
+async function probeVastAi(
+  tier: GpuTier,
+  gpuCount: number,
+  price: number,
+): Promise<CapacityQuote> {
+  // Two gates: API key present AND operator explicitly enabled.
+  if (!isVastAiConfigured()) return noCapacity('VASTAI', 'not_configured')
+  if (!isVastAiAllocatorEnabled()) return noCapacity('VASTAI', 'allocator_disabled')
+  const mapping = vastAiTypeForTier(tier, gpuCount)
+  if (!mapping) return noCapacity('VASTAI', 'tier_unmapped')
+  if (!fitsSingleVastAiHost(tier, gpuCount)) {
+    return noCapacity('VASTAI', 'exceeds_per_host_max')
+  }
+  // Live catalog query. Vast.ai's /bundles/ search is fast (<200ms in
+  // testing) and gives us a real "is there a verified host with this
+  // SKU right now" signal — much stronger than the static-config
+  // signal Phala / io.net / VoltageGPU use. The trade-off is one extra
+  // HTTP round-trip per probe; well within the 3s budget.
+  try {
+    const client = new VastAiClient()
+    const offers = await client.listOffers({
+      gpu_name: { eq: mapping.gpuName },
+      num_gpus: { eq: mapping.gpusPerHost },
+      // Reliability filter: only consider verified hosts with >0.95
+      // uptime score. Vast.ai's score includes successful job
+      // completion rate; below 0.95 we've seen high churn / sudden
+      // disconnects.
+      reliability2: { gte: 0.95 },
+    })
+    if (offers.length === 0) {
+      return noCapacity('VASTAI', 'no_verified_offers')
+    }
+    // listOffers sorts by dph_total ascending so offers[0] is cheapest.
+    return {
+      provider: 'VASTAI',
+      pricePerHourUsd: offers[0]?.dphTotal ?? price,
+      hasCapacity: true,
+    }
+  } catch (err) {
+    return noCapacity('VASTAI', err instanceof Error ? err.message : 'probe_throw')
   }
 }
 
