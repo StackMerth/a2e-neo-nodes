@@ -1,11 +1,17 @@
 /**
  * Internal GpuTier -> Vast.ai gpu_name + per-pod GPU count mapping.
  *
- * Vast.ai's GPU model strings are uppercase with underscores (e.g.
- * 'RTX_4090', 'H100_NVL', 'H100_SXM5'). We map every GpuTier our
- * platform exposes to the EXACT string Vast.ai's /bundles/ search
- * accepts. Tiers not present here are intentionally NOT carried by
- * Vast.ai in our cascade — the probe returns hasCapacity=false with
+ * Vast.ai's GPU model strings are SPACE-SEPARATED with conventional
+ * SKU naming (e.g. 'RTX 4090', 'A100 PCIE' (uppercase E!), 'A100 SXM4',
+ * 'H100 SXM5'). Confirmed against a live catalog snapshot 2026-06-06
+ * via scripts/inspect-vastai-gpu-names.ts. The /bundles/ search's `eq`
+ * operator does exact-string match so the casing + spacing have to be
+ * EXACT — earlier '_'-separated values returned 0 offers because the
+ * stored field uses spaces. Re-run inspect-vastai-gpu-names if Vast.ai
+ * ever renames a SKU (their format has shifted before).
+ *
+ * Tiers not present here are intentionally NOT carried by Vast.ai in
+ * our cascade — the probe returns hasCapacity=false with
  * reasonNoCapacity='tier_unmapped' for those, allowing other
  * providers to take precedence.
  *
@@ -48,25 +54,25 @@ const MAPPING: Partial<Record<GpuTier, Partial<Record<number, VastAiTierMapping>
   // community typically.
   RTX_4090: {
     1: {
-      gpuName: 'RTX_4090',
+      gpuName: 'RTX 4090',
       label: 'RTX 4090 24GB (1x)',
       gpusPerHost: 1,
       approxPricePerHourUsd: 0.32,
     },
     2: {
-      gpuName: 'RTX_4090',
+      gpuName: 'RTX 4090',
       label: 'RTX 4090 24GB (2x)',
       gpusPerHost: 2,
       approxPricePerHourUsd: 0.62,
     },
     4: {
-      gpuName: 'RTX_4090',
+      gpuName: 'RTX 4090',
       label: 'RTX 4090 24GB (4x)',
       gpusPerHost: 4,
       approxPricePerHourUsd: 1.20,
     },
     8: {
-      gpuName: 'RTX_4090',
+      gpuName: 'RTX 4090',
       label: 'RTX 4090 24GB (8x)',
       gpusPerHost: 8,
       approxPricePerHourUsd: 2.40,
@@ -74,25 +80,25 @@ const MAPPING: Partial<Record<GpuTier, Partial<Record<number, VastAiTierMapping>
   },
   RTX_3090: {
     1: {
-      gpuName: 'RTX_3090',
+      gpuName: 'RTX 3090',
       label: 'RTX 3090 24GB (1x)',
       gpusPerHost: 1,
       approxPricePerHourUsd: 0.20,
     },
     2: {
-      gpuName: 'RTX_3090',
+      gpuName: 'RTX 3090',
       label: 'RTX 3090 24GB (2x)',
       gpusPerHost: 2,
       approxPricePerHourUsd: 0.38,
     },
     4: {
-      gpuName: 'RTX_3090',
+      gpuName: 'RTX 3090',
       label: 'RTX 3090 24GB (4x)',
       gpusPerHost: 4,
       approxPricePerHourUsd: 0.72,
     },
     8: {
-      gpuName: 'RTX_3090',
+      gpuName: 'RTX 3090',
       label: 'RTX 3090 24GB (8x)',
       gpusPerHost: 8,
       approxPricePerHourUsd: 1.40,
@@ -116,15 +122,17 @@ const MAPPING: Partial<Record<GpuTier, Partial<Record<number, VastAiTierMapping>
   },
   H100: {
     1: {
-      // Vast.ai distinguishes H100 PCIe vs SXM5. Default to PCIe for
-      // 1-GPU SKU since SXM is typically only in 8x server bundles.
-      gpuName: 'H100_PCIE',
+      // Vast.ai distinguishes H100 PCIE (uppercase E, matching their
+      // 'A100 PCIE' convention seen in the live catalog) vs H100 SXM5.
+      // Default to PCIE for 1-GPU SKU since SXM is typically only in
+      // 8x server bundles.
+      gpuName: 'H100 PCIE',
       label: 'H100 PCIe 80GB (1x)',
       gpusPerHost: 1,
       approxPricePerHourUsd: 1.79,
     },
     8: {
-      gpuName: 'H100_SXM5',
+      gpuName: 'H100 SXM5',
       label: 'H100 SXM5 80GB (8x)',
       gpusPerHost: 8,
       approxPricePerHourUsd: 13.20,

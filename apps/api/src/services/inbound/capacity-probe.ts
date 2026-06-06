@@ -440,11 +440,14 @@ async function probeVastAi(
     const offers = await client.listOffers({
       gpu_name: { eq: mapping.gpuName },
       num_gpus: { eq: mapping.gpusPerHost },
-      // Reliability filter: only consider verified hosts with >0.95
-      // uptime score. Vast.ai's score includes successful job
-      // completion rate; below 0.95 we've seen high churn / sudden
-      // disconnects.
-      reliability2: { gte: 0.95 },
+      // Reliability filter: 0.85 keeps the legitimately churn-prone
+      // hosts out while accepting most of the verified pool. Earlier
+      // 0.95 cutoff was empirically too strict — live snapshot
+      // 2026-06-06 showed it zeroing the entire 1x RTX 4090 pool.
+      // The verified filter (set in listOffers' defaults) already
+      // anchors quality at the host level; reliability is the second
+      // line of defense rather than the primary gate.
+      reliability2: { gte: 0.85 },
     })
     if (offers.length === 0) {
       return noCapacity('VASTAI', 'no_verified_offers')

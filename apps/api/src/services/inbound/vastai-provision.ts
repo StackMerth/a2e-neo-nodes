@@ -73,7 +73,7 @@ export interface VastAiProvisionOptions {
   client?: VastAiClient
   /** Override the container image. Defaults to DEFAULT_VASTAI_IMAGE. */
   imageOverride?: string
-  /** Minimum host reliability score. Defaults to 0.95. */
+  /** Minimum host reliability score. Defaults to 0.85 (matches probe filter). */
   minReliability?: number
   /** Container disk allocation in GB. Default 50. */
   diskGb?: number
@@ -128,8 +128,11 @@ export async function provisionVastAiRental(
   const api = options.client ?? new VastAiClient()
 
   // Step 2: query /bundles/ for verified-host offers matching the SKU.
-  // Filter on reliability so we don't pick a churn-prone host.
-  const minReliability = options.minReliability ?? 0.95
+  // Reliability filter at 0.85 matches the probe's gate so the
+  // provision path doesn't see a more-permissive offer set than what
+  // the probe scored. (Earlier 0.95 was too strict — see capacity-
+  // probe.ts probeVastAi comment for the live-snapshot evidence.)
+  const minReliability = options.minReliability ?? 0.85
   const offers = await api.listOffers({
     gpu_name: { eq: mapping.gpuName },
     num_gpus: { eq: mapping.gpusPerHost },
