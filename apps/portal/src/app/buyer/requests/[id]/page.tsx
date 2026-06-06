@@ -516,7 +516,13 @@ export default function RequestDetailPage() {
     return STATUS_MESSAGES[data.status] ?? STATUS_MESSAGES.PENDING
   })()
   const currentStepIndex = STEPS.indexOf(data.status as typeof STEPS[number])
-  const canCancel = data.status === 'PENDING' || data.status === 'APPROVED'
+  // PROVISIONING_EXTERNAL belongs here: the meter only starts when
+  // status flips to ACTIVE, so cancelling during provisioning is a
+  // full refund — same semantics as cancelling at PENDING. Was
+  // missing before, which trapped buyers whose external pod failed
+  // to boot. Server cancel route now accepts both states (paired
+  // change in apps/api/src/routes/buyer-compute.ts).
+  const canCancel = data.status === 'PENDING' || data.status === 'APPROVED' || data.status === 'PROVISIONING_EXTERNAL'
 
   return (
     <DashboardShell
