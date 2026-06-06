@@ -65,6 +65,15 @@ import {
   fitsSingleVoltageGpuPod,
 } from '../services/inbound/voltagegpu-tier-mapping.js'
 import { provisionVoltageGpuRental } from '../services/inbound/voltagegpu-provision.js'
+import {
+  isVastAiConfigured,
+  isVastAiAllocatorEnabled,
+} from '../services/inbound/vastai-adapter.js'
+import {
+  vastAiTypeForTier,
+  fitsSingleVastAiHost,
+} from '../services/inbound/vastai-tier-mapping.js'
+import { provisionVastAiRental } from '../services/inbound/vastai-provision.js'
 import { probeAllProviders } from '../services/inbound/capacity-probe.js'
 
 type ComputeRequestWithUser = ComputeRequest & { user: User }
@@ -379,6 +388,9 @@ async function processRequest(
           break
         case 'VOLTAGEGPU':
           took = await tryVoltageGpuFallback(prisma, io, cr)
+          break
+        case 'VASTAI':
+          took = await tryVastAiFallback(prisma, io, cr)
           break
       }
       if (took) return
@@ -1168,6 +1180,117 @@ async function tryVoltageGpuFallback(
     requestId: cr.id,
     userId: cr.userId,
     provider: 'VOLTAGE_GPU',
+    instanceType: provisionResult.providerInstanceType,
+    region: provisionResult.providerRegion,
+    timestamp: now.toISOString(),
+  })
+
+  return true
+}
+
+/**
+ * Vast.ai sixth-supplier fallback. Peer-to-peer GPU marketplace with
+ * dramatically larger inventory of consumer cards (RTX 4090 / 3090)
+ * than RunPod COMMUNITY, plus a healthy secondary supply of L40S and
+ * H100. Verified-host filter at probe time + provision time ensures we
+ * only book reliable hosts (reliability >= 0.95).
+ *
+ * Same shape as the other tryXxxFallback functions: returns true on
+ * successful provision (request transitions to PROVISIONING_EXTERNAL);
+ * returns false on any pre-condition fail, mapping miss, or upstream
+ * error so the cascade continues.
+ *
+ * Two gates beyond the standard configured-check ensure rollout
+ * control:
+ *   1. VASTAI_API_KEY must be set on the server (isVastAiConfigured)
+ *   2. VASTAI_ALLOCATOR_ENABLED=true must be explicitly opted-in
+ *      (isVastAiAllocatorEnabled). Without this, even a fully-keyed
+ *      deployment skips Vast.ai entirely.
+ *
+ * The probe-side guard (capacity-probe.ts) also short-circuits the
+ * Vast.ai candidate when the allocator-enabled flag is off — so this
+ * function should never be called with the flag false; the
+ * defense-in-depth check below is just belt-and-suspenders.
+ */
+async function tryVastAiFallback(
+  prisma: PrismaClient,
+  io: SocketServer,
+  cr: ComputeRequestWithUser,
+): Promise<boolean> {
+  if (!isVastAiConfigured()) return false
+  if (!isVastAiAllocatorEnabled()) return false
+  if (!isKeyEncryptionConfigured()) return false
+  if (!vastAiTypeForTier(cr.gpuTier, cr.gpuCount)) return false
+  if (!fitsSingleVastAiHost(cr.gpuTier, cr.gpuCount)) return false
+  // Confidential routing: Vast.ai's verified-host network is NOT
+  // TEE/SEV-SNP attested. preferConfidential requests must skip
+  // Vast.ai entirely; they continue to Phala / VoltageGPU.
+  const wantConfidential = (cr as { preferConfidential?: boolean }).preferConfidential === true
+  if (wantConfidential) return false
+
+  const session = mintSshSession(cr.durationDays)
+  const ratePerMinute = (cr.ratePerDay * cr.gpuCount) / (24 * 60)
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + cr.durationDays * 86400000)
+
+  let provisionResult
+  try {
+    provisionResult = await provisionVastAiRental(prisma, cr.id)
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[compute-allocator] Vast.ai fallback failed for ${cr.id} (tier ${cr.gpuTier} x${cr.gpuCount}):`,
+      (err as Error).message,
+    )
+    return false
+  }
+
+  const transitioned = await prisma.computeRequest.updateMany({
+    where: { id: cr.id, status: 'PENDING' },
+    data: {
+      status: 'PROVISIONING_EXTERNAL',
+      ratePerMinute,
+      expiresAt,
+      sshSessionToken: session.token,
+      sshSessionTokenExpiresAt: session.expiresAt,
+      sshSessionStatus: 'PROVISIONING',
+    },
+  })
+  if (transitioned.count === 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[compute-allocator] race on ${cr.id} after Vast.ai provision; rolling back`,
+    )
+    const { terminateVastAiRental } = await import('../services/inbound/vastai-provision.js')
+    await terminateVastAiRental(
+      prisma,
+      provisionResult.externalRentalId,
+      'allocator race: another path won the request',
+    ).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(`[compute-allocator] Vast.ai rollback failed for ${provisionResult.externalRentalId}:`, err)
+    })
+    return false
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[compute-allocator] Vast.ai fallback OK for ${cr.id}: provisioned gpu=${provisionResult.providerInstanceType} ` +
+    `(externalRentalId=${provisionResult.externalRentalId}, region=${provisionResult.providerRegion})`,
+  )
+
+  void createNotification(
+    cr.userId,
+    'COMPUTE_REQUEST_APPROVED',
+    'Compute is Provisioning',
+    `Your ${cr.gpuCount}x ${cr.gpuTier} rental is being prepared. SSH credentials appear in your dashboard within ~60-90s.`,
+    `/buyer/requests/${cr.id}`,
+  )
+
+  io.emit('compute:provisioning-external', {
+    requestId: cr.id,
+    userId: cr.userId,
+    provider: 'VASTAI',
     instanceType: provisionResult.providerInstanceType,
     region: provisionResult.providerRegion,
     timestamp: now.toISOString(),
