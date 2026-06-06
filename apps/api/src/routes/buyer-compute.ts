@@ -765,15 +765,27 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       where: { id, userId },
     })
     if (!cr) return reply.code(404).send({ error: 'Request not found' })
-    if (cr.status !== 'PENDING') {
-      return reply.code(400).send({ error: 'Can only cancel PENDING requests' })
+    // PROVISIONING_EXTERNAL was previously NOT cancellable, which
+    // created a trap state: once the cascade picked up a request and
+    // a pod was created on the upstream provider, the buyer had no
+    // way out until either (a) the pod finished booting (which on
+    // slow community hosts can take 10+ minutes or never resolve) or
+    // (b) the 1-day duration expired. Real money was locked the
+    // whole time. Treat it as cancellable here too; the refund leg
+    // is the same as PENDING since no usage has accrued yet (the
+    // meter only starts when status flips to ACTIVE).
+    const cancellableStates = new Set(['PENDING', 'PROVISIONING_EXTERNAL'])
+    if (!cancellableStates.has(cr.status)) {
+      return reply.code(400).send({
+        error: `Can only cancel PENDING or PROVISIONING_EXTERNAL requests (current: ${cr.status})`,
+      })
     }
 
     // Status-guarded transition. If a concurrent cancel beat us here,
     // updated.count is 0 and we skip the refund — the other request is
     // responsible for it.
     const updated = await fastify.prisma.computeRequest.updateMany({
-      where: { id, status: 'PENDING' },
+      where: { id, status: { in: ['PENDING', 'PROVISIONING_EXTERNAL'] } },
       data: { status: 'CANCELLED' },
     })
     if (updated.count === 0) {
@@ -815,6 +827,28 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         refundIssued = true
         refundDestination = 'balance'
       }
+    }
+
+    // PROVISIONING_EXTERNAL cancellations need to also close out the
+    // upstream pod so we don't keep paying the supplier for hardware
+    // the buyer just gave up on. Best-effort: log + continue if the
+    // terminate call fails — the buyer is already refunded; an admin
+    // can clean up any phantom pods later via the same dispatcher.
+    if (cr.status === 'PROVISIONING_EXTERNAL') {
+      try {
+        await terminateExternalRentalForRequest(fastify.prisma, id, 'BUYER_CANCEL_DURING_PROVISIONING')
+      } catch (err) {
+        if (!(err instanceof UnknownProviderError)) {
+          fastify.log.error(
+            { err, id },
+            'upstream pod terminate failed during PROVISIONING_EXTERNAL cancel',
+          )
+        }
+      }
+      await fastify.prisma.externalRental.updateMany({
+        where: { computeRequestId: id, terminatedAt: null },
+        data: { status: 'CLOSED', terminatedAt: new Date() },
+      })
     }
 
     reply.send({
