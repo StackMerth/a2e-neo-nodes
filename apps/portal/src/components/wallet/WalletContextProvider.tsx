@@ -34,23 +34,43 @@ import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare'
 import { clusterApiUrl } from '@solana/web3.js'
 
 function resolveEndpoint(): string {
-  // Priority: explicit RPC URL > network override > production default.
-  // Switched 2026-06-05: default is now MAINNET-BETA (was devnet).
-  // Without any env set, the portal used to talk to devnet, which means
-  // signed mainnet USDC txs got broadcast to devnet -> the mainnet USDC
-  // mint doesn't exist on devnet -> the SPL token program threw
-  // "Attempt to debit an account but found no record of a prior credit",
-  // producing a confusing failure for users with real mainnet USDC.
-  // Mainnet default matches useUsdcPayment's resolveNetwork() default.
-  const explicit = process.env.NEXT_PUBLIC_SOLANA_RPC_URL?.trim()
-  if (explicit) return explicit
+  // Production (and any non-localhost host): ALWAYS use the server-side
+  // /v1/rpc proxy on the API. Never read NEXT_PUBLIC_SOLANA_RPC_URL in
+  // production — that env var is inlined into the client bundle at
+  // build time, which makes any upstream URL placed there (Helius,
+  // Triton, QuickNode) publicly readable in DevTools alongside its
+  // query-string API key. Hardcoding the proxy URL here removes the
+  // entire leak surface: there is no env var to misconfigure.
+  //
+  // The proxy itself (apps/api/src/routes/solana-rpc-proxy.ts) reads
+  // SOLANA_RPC_URL from the API server's env (server-only, never in
+  // any client bundle) and forwards JSON-RPC bodies. From the wallet
+  // adapter's perspective the proxy URL is a plain JSON-RPC endpoint,
+  // no Helius-specific protocol.
+  //
+  // localhost dev paths still respect env vars so a developer can
+  // point at a local API, a devnet RPC, etc.
+  const isLocalhost =
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  if (!isLocalhost) {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL?.trim() || 'https://a2e-api.onrender.com'
+    return `${apiBase}/v1/rpc`
+  }
+  // Local development: NEXT_PUBLIC_SOLANA_RPC_URL is deliberately NOT
+  // read here either. Any reference to that env in any code path —
+  // even guarded by a runtime check — causes Next.js to inline the
+  // build-time value into the bundle, which is exactly the leak we
+  // are closing. For local upstream override, point NEXT_PUBLIC_API_URL
+  // at a local API instance and configure SOLANA_RPC_URL on that
+  // API (server-side, no client exposure).
   const network = process.env.NEXT_PUBLIC_SOLANA_NETWORK?.trim().toLowerCase()
   if (network === 'devnet') return clusterApiUrl('devnet')
-  // Solana's clusterApiUrl('mainnet-beta') is rate-limited to ~10 req/s
-  // and unsuitable for production load. Configure NEXT_PUBLIC_SOLANA_RPC_URL
-  // to a Helius / Triton / QuickNode mainnet endpoint for real traffic.
-  // This default at least makes a new dev environment functional.
-  return clusterApiUrl('mainnet-beta')
+  // Default local: proxy via the configured (or default localhost) API.
+  // clusterApiUrl('mainnet-beta') is reserved for the no-API-configured
+  // fallback so a fresh checkout still wakes up in mainnet mode.
+  const localApi = process.env.NEXT_PUBLIC_API_URL?.trim()
+  return localApi ? `${localApi}/v1/rpc` : clusterApiUrl('mainnet-beta')
 }
 
 export function WalletContextProvider({ children }: { children: ReactNode }) {
