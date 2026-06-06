@@ -48,6 +48,22 @@ export async function solanaRpcProxyRoutes(fastify: FastifyInstance): Promise<vo
     )
     return
   }
+  // Loop guard. Hard-fail at startup if SOLANA_RPC_URL points at our
+  // own /v1/rpc — the proxy would forward to itself recursively, every
+  // request looping until Render kills the connection, with each
+  // iteration buffering response bodies and consuming memory. (Caused
+  // a real OOM crash 2026-06-06 when the env var was misconfigured to
+  // the proxy URL instead of the upstream Helius URL.) Refuse to start
+  // rather than silently melt the API process.
+  if (/\/v1\/rpc\b/.test(upstreamUrl)) {
+    fastify.log.error(
+      '[solana-rpc-proxy] SOLANA_RPC_URL points at /v1/rpc — that is the proxy URL, ' +
+      'not an upstream. Set SOLANA_RPC_URL to the upstream Helius URL (with api-key) so ' +
+      'the proxy has something to forward TO. Refusing to register /v1/rpc to prevent ' +
+      'recursive call storms.',
+    )
+    return
+  }
 
   // Per-IP request-per-second cap. Default 20 r/s tolerates a real
   // page worth of wallet-adapter activity (Connection makes 2-3 calls
