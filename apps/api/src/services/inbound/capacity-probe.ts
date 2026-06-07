@@ -42,7 +42,7 @@ import {
 import { runPodTypeForTier, fitsSingleRunPodPod } from './runpod-tier-mapping.js'
 import { isPhalaConfigured } from './phala-adapter.js'
 import { phalaTypeForTier, fitsSinglePhalaCvm } from './phala-tier-mapping.js'
-import { isIoNetConfigured } from './ionet-adapter.js'
+import { isIoNetConfigured, isIoNetAllocatorEnabled } from './ionet-adapter.js'
 import { ioNetTypeForTier, fitsSingleIoNetVm } from './ionet-tier-mapping.js'
 import { isVoltageGpuConfigured } from './voltagegpu-adapter.js'
 import {
@@ -384,6 +384,15 @@ async function probeIoNet(
 ): Promise<CapacityQuote> {
   if (!isIoNetConfigured()) {
     return noCapacity('IONET', 'not_configured')
+  }
+  // Operator-level allocator gate. Mirrors VASTAI_ALLOCATOR_ENABLED:
+  // even with a valid API key, the operator can exclude io.net from
+  // new-rental allocation via IONET_ALLOCATOR_ENABLED=false. Default
+  // true (preserves prior behavior). Useful for head-to-head provider
+  // testing or temporary outage exclusion without invalidating
+  // existing rentals' API auth.
+  if (!isIoNetAllocatorEnabled()) {
+    return noCapacity('IONET', 'allocator_disabled')
   }
   const mapping = ioNetTypeForTier(tier, gpuCount)
   if (!mapping) return noCapacity('IONET', 'tier_unmapped')

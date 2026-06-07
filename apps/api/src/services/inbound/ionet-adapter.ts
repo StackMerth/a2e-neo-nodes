@@ -187,6 +187,26 @@ export function isIoNetConfigured(): boolean {
   return Boolean(process.env.IONET_API_KEY?.trim())
 }
 
+/**
+ * Separate gate from isIoNetConfigured: even with a valid API key,
+ * the operator can exclude io.net from new-rental allocation by
+ * setting IONET_ALLOCATOR_ENABLED=false. Existing rentals continue
+ * to be polled, terminated, and reconciled normally (those paths
+ * still use the API key).
+ *
+ * Default true (preserves prior behavior; io.net has been in the
+ * cascade unconditionally up to this point).
+ *
+ * Mirrors VASTAI_ALLOCATOR_ENABLED and VOLTAGEGPU_ALLOCATOR_ENABLED.
+ * Useful for: (1) operator wants to test other providers
+ * head-to-head without io.net winning on price, (2) io.net is
+ * having an outage but we don't want to invalidate API auth for
+ * existing rentals.
+ */
+export function isIoNetAllocatorEnabled(): boolean {
+  return process.env.IONET_ALLOCATOR_ENABLED?.toLowerCase() !== 'false'
+}
+
 export class IoNetClient {
   private readonly base: string
   private readonly apiKey: string
