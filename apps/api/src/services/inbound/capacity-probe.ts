@@ -121,15 +121,17 @@ const STATIC_PRICES: Record<ProviderKey, Partial<Record<GpuTier, number>>> = {
     B200: 5.79,
   },
   VASTAI: {
-    // Peer-marketplace pricing — consumer cards are the headline; H100
-    // and L40S are secondary. Numbers from console.vast.ai live catalog
-    // snapshot 2026-06; verified-host filter applied. These are
-    // baseline static guidance — the live listOffers call returns the
-    // actual cheapest-verified host's dph_total which overrides.
+    // Peer-marketplace pricing. Consumer cards are the headline; H100 /
+    // H200 / B200 secondary. Numbers from inspect-vastai-datacenter-skus
+    // snapshot 2026-06-07; verified-host filter applied. These are
+    // baseline static guidance only; live listOffers returns the actual
+    // cheapest-verified host's dph_total which overrides at probe time.
     RTX_4090: 0.32,
     RTX_3090: 0.20,
     L40S: 0.85,
-    H100: 1.79,
+    H100: 2.58,
+    H200: 3.66,
+    B200: 4.38,
   },
 }
 

@@ -15,19 +15,27 @@
  * reasonNoCapacity='tier_unmapped' for those, allowing other
  * providers to take precedence.
  *
- * As of 2026-06-06, Vast.ai's catalog (verified by browsing
- * console.vast.ai/create) actively carries:
- *   - RTX 4090: hundreds of listings, very reliable supply (the gap-
- *     filler that justifies adding Vast.ai)
- *   - RTX 3090: even more listings than 4090
- *   - L40S: moderate inventory
- *   - L40: occasional inventory (we don't expose this tier internally)
- *   - A100 80GB SXM: moderate, both single and 8x bundles
- *   - H100 SXM5: moderate, mostly 8x bundles
- *   - H100 PCIe: occasional
- *   - H100 NVL: occasional
- * Tiers Vast.ai does NOT typically carry: H200 (extremely rare),
- * B200, B300, GB300. Those keep going to RunPod / Lambda / Phala.
+ * As of 2026-06-07 (verified via scripts/inspect-vastai-datacenter-skus.ts):
+ *   - RTX 4090: 96 listings catalog-wide, 64 verified+reliable (1x cheapest)
+ *   - RTX 3090: 83 listings, 37 verified+reliable
+ *   - L40S: 12 listings, 7 verified+reliable at 1x, 1 at 8x
+ *   - A100 PCIE: 3 verified; A100 SXM4: 5 verified (NOT exposed as internal
+ *     tier today; add to GpuTier enum if buyer demand emerges)
+ *   - H100 NVL: 2 verified (1x AND 2x) at $2.58/h - canonical 1x SKU
+ *   - H100 SXM: 2 verified (1x, 2x) at $2.67/h - mapped to 8x slot for when
+ *     server bundles appear (no current 8x supply)
+ *   - H200 NVL: 2 verified (1x) at $3.66/h - canonical 1x H200
+ *   - H200: 2 verified (1x) at $3.75/h - mapped to 8x slot for SXM bundles
+ *   - B200: 1 verified (1x) at $4.38/h
+ * Tiers Vast.ai does NOT carry as of this snapshot: B300, GB300 (still
+ * route to Lambda / RunPod / Phala).
+ *
+ * Naming quirk: Vast.ai's `eq` operator on gpu_name is exact-match, and
+ * the strings differ subtly from datacenter conventions. EARLIER WRONG
+ * STRINGS (pre-2026-06-07) that returned all=0: 'H100 PCIE', 'H100 SXM5'.
+ * CORRECT STRINGS verified via the datacenter inspector: 'H100 NVL',
+ * 'H100 SXM', 'H200 NVL', 'H200', 'B200'. Re-run inspect-vastai-
+ * datacenter-skus.ts quarterly to catch Vast.ai renames.
  *
  * Multi-GPU mappings: Vast.ai offers come with a fixed num_gpus per
  * host; we filter on num_gpus={eq:N} at search time. If Vast.ai has
@@ -122,25 +130,69 @@ const MAPPING: Partial<Record<GpuTier, Partial<Record<number, VastAiTierMapping>
   },
   H100: {
     1: {
-      // Vast.ai distinguishes H100 PCIE (uppercase E, matching their
-      // 'A100 PCIE' convention seen in the live catalog) vs H100 SXM5.
-      // Default to PCIE for 1-GPU SKU since SXM is typically only in
-      // 8x server bundles.
-      gpuName: 'H100 PCIE',
-      label: 'H100 PCIe 80GB (1x)',
+      // Vast.ai's catalog (verified 2026-06-07) carries 'H100 NVL' as
+      // the dominant 1x H100 SKU, NOT 'H100 PCIE' as previously mapped.
+      // H100 NVL = NVLink-bridged H100 with 94GB HBM3, performance
+      // between PCIe and SXM5. Earlier 'H100 PCIE' string returned
+      // all=0 because the form-factor isn't currently in the catalog.
+      gpuName: 'H100 NVL',
+      label: 'H100 NVL 94GB (1x)',
       gpusPerHost: 1,
-      approxPricePerHourUsd: 1.79,
+      approxPricePerHourUsd: 2.58,
+    },
+    2: {
+      // 2x H100 NVL supply confirmed in the catalog snapshot 2026-06-07.
+      gpuName: 'H100 NVL',
+      label: 'H100 NVL 94GB (2x)',
+      gpusPerHost: 2,
+      approxPricePerHourUsd: 5.0,
     },
     8: {
-      gpuName: 'H100 SXM5',
-      label: 'H100 SXM5 80GB (8x)',
+      // 'H100 SXM' not 'H100 SXM5'. Vast.ai's string omits the
+      // generation suffix. No 8x supply in current snapshot but mapped
+      // so the probe catches future 8x server bundles when they
+      // appear (Vast.ai does carry occasional 8x H100 SXM stations).
+      gpuName: 'H100 SXM',
+      label: 'H100 SXM 80GB (8x)',
       gpusPerHost: 8,
       approxPricePerHourUsd: 13.20,
     },
   },
-  // H200 / B200 / B300 / GB300 / CONSUMER / OTHER deliberately omitted.
+  H200: {
+    1: {
+      // Two SKUs with 1x H200 supply in the 2026-06-07 snapshot:
+      // 'H200 NVL' at $3.66/h (2 verified) and raw 'H200' at $3.75/h
+      // (2 verified). NVL is cheaper so it wins the price-ascending
+      // sort; map 1x to NVL.
+      gpuName: 'H200 NVL',
+      label: 'H200 NVL 141GB (1x)',
+      gpusPerHost: 1,
+      approxPricePerHourUsd: 3.66,
+    },
+    8: {
+      // 8x H200 server bundles are typically SXM (the raw 'H200'
+      // string Vast.ai uses for SXM form factor). No 8x supply yet
+      // but mapped for when bundles appear.
+      gpuName: 'H200',
+      label: 'H200 SXM 141GB (8x)',
+      gpusPerHost: 8,
+      approxPricePerHourUsd: 28.0,
+    },
+  },
+  B200: {
+    1: {
+      // 1 verified 1x B200 at $4.38/h in the 2026-06-07 snapshot.
+      // Genuinely rare on Vast.ai today but mapped so we catch it
+      // when supply expands.
+      gpuName: 'B200',
+      label: 'B200 192GB (1x)',
+      gpusPerHost: 1,
+      approxPricePerHourUsd: 4.38,
+    },
+  },
+  // B300 / GB300 / CONSUMER / OTHER deliberately omitted.
   // Allocator skips Vast.ai for those tiers and falls through to the
-  // next provider in the cascade (probably RunPod or Phala).
+  // next provider in the cascade (probably RunPod / Lambda / Phala).
 }
 
 /**
