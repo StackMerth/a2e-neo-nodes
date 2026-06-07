@@ -166,6 +166,11 @@ import {
   scheduleIoNetCapacityWatcher,
 } from './jobs/ionet-capacity-watcher'
 import {
+  createCascadeCapacitySnapshotQueue,
+  createCascadeCapacitySnapshotWorker,
+  scheduleCascadeCapacitySnapshot,
+} from './jobs/cascade-capacity-snapshot'
+import {
   createRunPodPollQueue,
   createRunPodPollWorker,
   scheduleRunPodPoll,
@@ -550,6 +555,17 @@ async function start() {
     createIoNetCapacityWatcherWorker({ redis: redisConnection })
     await scheduleIoNetCapacityWatcher(ionetCapacityWatcherQueue)
     server.log.info('io.net capacity watcher initialized (5min tick, env-driven SKU list)')
+
+    // Cascade-wide capacity snapshot: complements the per-provider
+    // change-trigger watchers above with a periodic FULL matrix of
+    // every (provider, tier, count) cell. Daily by default, emails a
+    // single HTML digest with green/red/gray cells per availability.
+    // Useful for "show me the marketplace" reporting; per-provider
+    // alerters above are still the tool for state-transition alerts.
+    const cascadeSnapshotQueue = createCascadeCapacitySnapshotQueue(redisConnection)
+    createCascadeCapacitySnapshotWorker({ redis: redisConnection })
+    await scheduleCascadeCapacitySnapshot(cascadeSnapshotQueue)
+    server.log.info('Cascade capacity snapshot watcher initialized (24h tick, full matrix digest)')
 
     // Launch-blocker #2: SSH session reaper. Failsafe for agent-confirmed
     // teardown — force-releases nodes stuck on TERMINATING rentals after
