@@ -136,6 +136,11 @@ import {
   scheduleRentalExpiry,
 } from './jobs/rental-expiry'
 import {
+  createProvisioningTimeoutQueue,
+  createProvisioningTimeoutWorker,
+  scheduleProvisioningTimeout,
+} from './jobs/provisioning-timeout'
+import {
   createLambdaPollQueue,
   createLambdaPollWorker,
   scheduleLambdaPoll,
@@ -407,6 +412,16 @@ async function start() {
     createRentalExpiryWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleRentalExpiry(rentalExpiryQueue)
     server.log.info('Rental expiry worker initialized (60s tick)')
+
+    // Provisioning timeout worker: auto-cancels + refunds requests
+    // stuck in PROVISIONING_EXTERNAL past PROVISIONING_TIMEOUT_MS
+    // (default 10 min). Prevents the cmq2vq1nu000-style 15-hour burn
+    // pattern where an upstream provider stalls on image pull or
+    // network setup and nobody notices. 60s tick.
+    const provisioningTimeoutQueue = createProvisioningTimeoutQueue(redisConnection)
+    createProvisioningTimeoutWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
+    await scheduleProvisioningTimeout(provisioningTimeoutQueue)
+    server.log.info('Provisioning timeout worker initialized (60s tick, 10min cutoff)')
 
     // T5b: Lambda status poller. Watches ExternalRental rows the
     // allocator created via the inbound-supply fallback and flips the
