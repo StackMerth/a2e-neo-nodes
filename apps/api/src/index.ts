@@ -141,6 +141,11 @@ import {
   scheduleProvisioningTimeout,
 } from './jobs/provisioning-timeout'
 import {
+  createCapacitySearchTimeoutQueue,
+  createCapacitySearchTimeoutWorker,
+  scheduleCapacitySearchTimeout,
+} from './jobs/capacity-search-timeout'
+import {
   createLambdaPollQueue,
   createLambdaPollWorker,
   scheduleLambdaPoll,
@@ -427,6 +432,19 @@ async function start() {
     createProvisioningTimeoutWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleProvisioningTimeout(provisioningTimeoutQueue)
     server.log.info('Provisioning timeout worker initialized (60s tick, 20min no-progress cutoff)')
+
+    // Capacity-search timeout worker: cancels + refunds rentals stuck
+    // in PENDING with SEARCHING_CAPACITY / NO_REGION_CAPACITY flags
+    // past CAPACITY_SEARCH_TIMEOUT_MS (default 15 min). Without this,
+    // a buyer requesting a SKU with zero supply anywhere in the
+    // cascade would have their money locked indefinitely on the
+    // "Looking for available capacity" screen. Buyer notification
+    // includes a per-case reason (region constraint, confidential
+    // requirement, no supplier at all).
+    const capacitySearchTimeoutQueue = createCapacitySearchTimeoutQueue(redisConnection)
+    createCapacitySearchTimeoutWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
+    await scheduleCapacitySearchTimeout(capacitySearchTimeoutQueue)
+    server.log.info('Capacity-search timeout worker initialized (60s tick, 15min cutoff)')
 
     // T5b: Lambda status poller. Watches ExternalRental rows the
     // allocator created via the inbound-supply fallback and flips the
