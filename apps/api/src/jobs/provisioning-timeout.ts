@@ -9,21 +9,33 @@
  * forward, but ANY upstream failure mode that leaves a rental wedged
  * in PROVISIONING_EXTERNAL needs an automatic exit ramp.
  *
- * Behavior: every 60s, find every ComputeRequest in
- * PROVISIONING_EXTERNAL whose ComputeRequest.updatedAt is older than
- * PROVISIONING_TIMEOUT_MS (default 10 min). For each, atomic transition
- * to CANCELLED, refund per the same routing as the buyer-cancel route,
- * destroy the upstream instance via terminate-dispatcher, and mark the
- * ExternalRental rows CLOSED.
+ * Behavior: every 60s, find every ExternalRental in PENDING whose
+ * updatedAt is older than PROVISIONING_TIMEOUT_MS (default 20 min) AND
+ * whose parent ComputeRequest is still in PROVISIONING_EXTERNAL. For
+ * each, atomic transition to CANCELLED, refund per the same routing as
+ * the buyer-cancel route, destroy the upstream instance via
+ * terminate-dispatcher, and mark the ExternalRental rows CLOSED.
  *
- * Why ExternalRental.launchRequestedAt is the right signal: the
- * allocator creates the ExternalRental row at the moment it books the
- * upstream pod (and only then does it flip ComputeRequest into
- * PROVISIONING_EXTERNAL). launchRequestedAt is set to now() on row
- * creation and is never touched again, so it captures the exact start
- * of the wait window. A 10-minute idle between launchRequestedAt and
- * ExternalRental.status flipping from PENDING is a strong "stuck"
- * signal.
+ * Why ExternalRental.updatedAt is the right signal (PROGRESS-AWARE):
+ * Prisma's @updatedAt directive auto-bumps the column on every write,
+ * so every poll-worker tick that touches status, sshHost, sshPort,
+ * lastError, providerRegion, etc. moves updatedAt forward. A rental
+ * whose poll worker is actively reporting progress will never trigger
+ * this timeout regardless of how slow the host is. A rental that has
+ * had NO writes for 20 minutes is genuinely stuck (poll worker
+ * crashing, provider unreachable, instance dropped without notice).
+ *
+ * The 20-minute default (raised from 10 min on 2026-06-07) covers the
+ * long tail of legitimate slow boots: Phala TEE attestation (8-15
+ * min), Lambda 8x bare-metal cold boot (5-15 min), Vast.ai cold image
+ * pull on a remote host (5-12 min). Worst-case burn on an undetected
+ * failure stays bounded: 20 min × $0.20/h = $0.07.
+ *
+ * Pre-requisite: a poll worker MUST exist for each provider, otherwise
+ * its rentals will all false-cancel at the 20-min mark because nothing
+ * writes to the row. As of 2026-06-07 all six provider poll workers
+ * are wired in bootstrap (lambda-poll, runpod-poll, ionet-poll,
+ * phala-poll, voltagegpu-poll, vastai-poll).
  *
  * Idempotency: status-guarded UPDATE ensures two ticks (or a tick
  * racing the buyer's cancel button) can't double-cancel. Refund credit
@@ -53,7 +65,7 @@ const TICK_INTERVAL_MS = parseInt(
   10,
 )
 const TIMEOUT_MS = parseInt(
-  process.env.PROVISIONING_TIMEOUT_MS ?? `${10 * 60 * 1000}`,
+  process.env.PROVISIONING_TIMEOUT_MS ?? `${20 * 60 * 1000}`,
   10,
 )
 const BATCH_SIZE = 50
@@ -110,14 +122,22 @@ export async function runProvisioningTimeoutTick(
   io: SocketServer,
 ): Promise<void> {
   const cutoff = new Date(Date.now() - TIMEOUT_MS)
-  // Step 1: find ExternalRental rows still in PENDING past the cutoff.
-  // ExternalRental → ComputeRequest is FK-only in the schema (no Prisma
-  // relation field), so we resolve the parent ComputeRequest with a
-  // second query rather than a join.
+  // Step 1: find ExternalRental rows still in PENDING whose updatedAt
+  // has not moved in TIMEOUT_MS. Prisma's @updatedAt directive bumps
+  // updatedAt on every write, so a healthy provider poll worker
+  // (lambda-poll, runpod-poll, vastai-poll, etc.) will keep updatedAt
+  // fresh as it pulls fresh status snapshots from the upstream API.
+  // updatedAt going stale therefore means the poll worker hasn't been
+  // able to make any progress on this row -- genuine stuck state, not
+  // just slow-but-progressing boot.
+  //
+  // ExternalRental -> ComputeRequest is FK-only in the schema (no
+  // Prisma relation field), so we resolve the parent ComputeRequest
+  // with a second query rather than a join.
   const stuckRentals = await prisma.externalRental.findMany({
     where: {
       status: 'PENDING',
-      launchRequestedAt: { lte: cutoff },
+      updatedAt: { lte: cutoff },
     },
     take: BATCH_SIZE,
     select: { computeRequestId: true },

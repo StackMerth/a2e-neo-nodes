@@ -156,6 +156,11 @@ import {
   scheduleRunPodPoll,
 } from './jobs/runpod-poll'
 import {
+  createVastAiPollQueue,
+  createVastAiPollWorker,
+  scheduleVastAiPoll,
+} from './jobs/vastai-poll'
+import {
   createPhalaPollQueue,
   createPhalaPollWorker,
   schedulePhalaPoll,
@@ -421,7 +426,7 @@ async function start() {
     const provisioningTimeoutQueue = createProvisioningTimeoutQueue(redisConnection)
     createProvisioningTimeoutWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleProvisioningTimeout(provisioningTimeoutQueue)
-    server.log.info('Provisioning timeout worker initialized (60s tick, 10min cutoff)')
+    server.log.info('Provisioning timeout worker initialized (60s tick, 20min no-progress cutoff)')
 
     // T5b: Lambda status poller. Watches ExternalRental rows the
     // allocator created via the inbound-supply fallback and flips the
@@ -442,6 +447,18 @@ async function start() {
     createRunPodPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleRunPodPoll(runpodPollQueue)
     server.log.info('RunPod poll worker initialized (10s tick)')
+
+    // Vast.ai status poller. Parallel of T5e for Vast.ai-provisioned
+    // peer-marketplace instances. 30s tick (vs RunPod's 10s) to stay
+    // under Vast.ai's 5-req/10s API rate limit. Without this worker,
+    // Vast.ai rentals could NEVER transition out of
+    // PROVISIONING_EXTERNAL on their own (root cause of cmq2vq1nu000's
+    // 15-hour PROVISIONING_EXTERNAL hang on 2026-06-07). Gated on
+    // BOTH VASTAI_API_KEY and VASTAI_ALLOCATOR_ENABLED.
+    const vastaiPollQueue = createVastAiPollQueue(redisConnection)
+    createVastAiPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
+    await scheduleVastAiPoll(vastaiPollQueue)
+    server.log.info('Vast.ai poll worker initialized (30s tick)')
 
     // T5f: Phala status poller. Parallel of T5e for Phala-provisioned
     // confidential CVMs. 15s tick (slightly slower than RunPod's 10s
