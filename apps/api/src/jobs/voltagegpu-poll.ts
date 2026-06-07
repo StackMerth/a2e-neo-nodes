@@ -15,6 +15,10 @@ import { pollVoltageGpuRentalStatus } from '../services/inbound/voltagegpu-provi
 import { isVoltageGpuConfigured } from '../services/inbound/voltagegpu-adapter.js'
 import { createNotification } from '../services/notification/service.js'
 import { creditBalance } from '../services/balance/balance-service.js'
+import {
+  cleanupRentalTenantState,
+  CLEANUP_SUCCESS_NOTE,
+} from '../services/inbound/tenant-cleanup.js'
 
 const QUEUE_NAME = 'voltagegpu-poll'
 const TICK_INTERVAL_MS = parseInt(process.env.VOLTAGEGPU_POLL_TICK_MS ?? '10000', 10)
@@ -100,11 +104,23 @@ async function pollOne(
 
   const fresh = await prisma.externalRental.findUnique({
     where: { id: r.id },
-    select: { id: true, status: true, sshHost: true, computeRequestId: true },
+    select: { id: true, status: true, sshHost: true, computeRequestId: true, lastNote: true },
   })
   if (!fresh) return
 
   if (fresh.status === 'ACTIVE' && fresh.sshHost) {
+    // Tenant cleanup before surfacing credentials. Fails open, idempotent.
+    if (fresh.lastNote !== CLEANUP_SUCCESS_NOTE) {
+      const cleanup = await cleanupRentalTenantState(prisma, fresh.id)
+      if (!cleanup.ok) {
+        console.error(
+          `[voltagegpu-poll] tenant cleanup failed for ${fresh.id} after ${cleanup.durationMs}ms: ${cleanup.error}`,
+        )
+      } else {
+        console.log(`[voltagegpu-poll] tenant cleanup OK for ${fresh.id} in ${cleanup.durationMs}ms`)
+      }
+    }
+
     const promoted = await prisma.computeRequest.updateMany({
       where: { id: fresh.computeRequestId, status: 'PROVISIONING_EXTERNAL' },
       data: {

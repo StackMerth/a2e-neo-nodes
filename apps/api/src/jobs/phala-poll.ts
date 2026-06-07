@@ -32,6 +32,10 @@ import { pollPhalaRentalStatus } from '../services/inbound/phala-provision.js'
 import { isPhalaConfigured } from '../services/inbound/phala-adapter.js'
 import { createNotification } from '../services/notification/service.js'
 import { creditBalance } from '../services/balance/balance-service.js'
+import {
+  cleanupRentalTenantState,
+  CLEANUP_SUCCESS_NOTE,
+} from '../services/inbound/tenant-cleanup.js'
 
 const QUEUE_NAME = 'phala-poll'
 const TICK_INTERVAL_MS = parseInt(process.env.PHALA_POLL_TICK_MS ?? '15000', 10)
@@ -138,6 +142,7 @@ async function pollOne(
       status: true,
       sshHost: true,
       computeRequestId: true,
+      lastNote: true,
     },
   })
   if (!fresh) return
@@ -146,6 +151,18 @@ async function pollOne(
   // Guard on the request's current status so admin manual interventions
   // (terminate, etc.) can't be silently overwritten.
   if (fresh.status === 'ACTIVE' && fresh.sshHost) {
+    // Tenant cleanup before surfacing credentials. Fails open, idempotent.
+    if (fresh.lastNote !== CLEANUP_SUCCESS_NOTE) {
+      const cleanup = await cleanupRentalTenantState(prisma, fresh.id)
+      if (!cleanup.ok) {
+        console.error(
+          `[phala-poll] tenant cleanup failed for ${fresh.id} after ${cleanup.durationMs}ms: ${cleanup.error}`,
+        )
+      } else {
+        console.log(`[phala-poll] tenant cleanup OK for ${fresh.id} in ${cleanup.durationMs}ms`)
+      }
+    }
+
     const promoted = await prisma.computeRequest.updateMany({
       where: { id: fresh.computeRequestId, status: 'PROVISIONING_EXTERNAL' },
       data: {

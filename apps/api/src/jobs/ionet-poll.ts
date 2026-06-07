@@ -30,9 +30,9 @@ import { isIoNetConfigured } from '../services/inbound/ionet-adapter.js'
 import { createNotification } from '../services/notification/service.js'
 import { creditBalance } from '../services/balance/balance-service.js'
 import {
-  cleanupIoNetTenant,
+  cleanupRentalTenantState,
   CLEANUP_SUCCESS_NOTE,
-} from '../services/inbound/ionet-tenant-cleanup.js'
+} from '../services/inbound/tenant-cleanup.js'
 
 const QUEUE_NAME = 'ionet-poll'
 const TICK_INTERVAL_MS = parseInt(process.env.IONET_POLL_TICK_MS ?? '10000', 10)
@@ -133,7 +133,7 @@ async function pollOne(
     // Idempotency: cleanupIoNetTenant skips the SSH round-trip when
     // lastNote already shows CLEANUP_SUCCESS_NOTE.
     if (fresh.lastNote !== CLEANUP_SUCCESS_NOTE) {
-      const result = await cleanupIoNetTenant(prisma, fresh.id)
+      const result = await cleanupRentalTenantState(prisma, fresh.id)
       if (!result.ok) {
         console.error(
           `[ionet-poll] tenant cleanup FAILED for ${fresh.id} after ${result.durationMs}ms: ${result.error}`,

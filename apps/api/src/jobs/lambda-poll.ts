@@ -31,6 +31,10 @@ import { pollLambdaRentalStatus } from '../services/inbound/lambda-provision.js'
 import { isLambdaConfigured } from '../services/inbound/lambda-adapter.js'
 import { createNotification } from '../services/notification/service.js'
 import { creditBalance } from '../services/balance/balance-service.js'
+import {
+  cleanupRentalTenantState,
+  CLEANUP_SUCCESS_NOTE,
+} from '../services/inbound/tenant-cleanup.js'
 
 const QUEUE_NAME = 'lambda-poll'
 const TICK_INTERVAL_MS = parseInt(process.env.LAMBDA_POLL_TICK_MS ?? '10000', 10)
@@ -141,6 +145,7 @@ async function pollOne(
       status: true,
       sshHost: true,
       computeRequestId: true,
+      lastNote: true,
     },
   })
   if (!fresh) return
@@ -150,6 +155,21 @@ async function pollOne(
   // on the request's current status so a manual admin intervention
   // (terminate, etc.) can't be silently overwritten.
   if (fresh.status === 'ACTIVE' && fresh.sshHost) {
+    // Tenant cleanup before surfacing credentials. Wipes any prior
+    // tenant residue (histories, cloud creds, lastlog). Fails open:
+    // a cleanup error doesn't block the buyer. Idempotent via the
+    // lastNote check inside cleanupRentalTenantState.
+    if (fresh.lastNote !== CLEANUP_SUCCESS_NOTE) {
+      const cleanup = await cleanupRentalTenantState(prisma, fresh.id)
+      if (!cleanup.ok) {
+        console.error(
+          `[lambda-poll] tenant cleanup failed for ${fresh.id} after ${cleanup.durationMs}ms: ${cleanup.error}`,
+        )
+      } else {
+        console.log(`[lambda-poll] tenant cleanup OK for ${fresh.id} in ${cleanup.durationMs}ms`)
+      }
+    }
+
     const promoted = await prisma.computeRequest.updateMany({
       where: { id: fresh.computeRequestId, status: 'PROVISIONING_EXTERNAL' },
       data: {

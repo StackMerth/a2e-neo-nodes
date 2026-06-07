@@ -1,24 +1,32 @@
 /**
- * io.net post-provision tenant-isolation cleanup.
+ * Provider-agnostic post-provision tenant-isolation cleanup.
  *
- * Real-world failure mode that motivated this (rental cmq3p1gt0000,
- * 2026-06-07): an io.net H100 1x rental landed on a SHARED host where
+ * Real-world failure mode that motivated this (rental cmq3p1gt0000 on
+ * io.net, 2026-06-07): an H100 1x rental landed on a SHARED host where
  * the home directory was NOT wiped between tenants. SSH'ing in showed:
  *
  *   Last login: Fri Jan 16 18:18:49 2026 from 71.62.8.247
  *
  * That's the previous tenant's source IP visible to the next renter.
  * Worse, .bash_history, ~/.aws/credentials, ~/.gcp/, ~/.docker/config,
- * etc. from prior tenants would likely also persist. This is a hard
- * launch blocker: a buyer's competitor could rent the same host after
- * them and read their command history, env files, and possibly
- * credentials.
+ * etc. from prior tenants would likely also persist. Hard launch
+ * blocker: a buyer's competitor could rent the same host after them
+ * and read their command history, env files, possibly credentials.
  *
- * Fix: after io.net reports the deployment ACTIVE + sshHost populated,
- * SSH in WITH OUR EPHEMERAL KEY (which io.net injected at deploy time)
- * and run a cleanup script that wipes prior-tenant residue. This must
- * happen BEFORE we promote the ComputeRequest to ACTIVE in the portal,
- * so the buyer's first login sees a clean machine.
+ * Fix: after the provider reports the rental ACTIVE + sshHost
+ * populated, SSH in WITH OUR EPHEMERAL KEY (which the provider
+ * injected at deploy/onstart time) and run a cleanup script that
+ * wipes prior-tenant residue. Happens BEFORE we promote the
+ * ComputeRequest to ACTIVE in the portal, so the buyer's first
+ * login sees a clean machine.
+ *
+ * Generalized 2026-06-07 from io.net-only to ALL providers (Lambda,
+ * RunPod, io.net, Phala, VoltageGPU, Vast.ai) as defense-in-depth.
+ * Most providers give fresh VMs / containers per rental and the
+ * cleanup is a no-op (rm -f silently no-ops on missing files), but
+ * we run unconditionally so any future provider regression OR any
+ * undiscovered residual-state path is caught. The 5-10s SSH cost is
+ * negligible against the symmetric tenant-isolation guarantee.
  *
  * What gets wiped:
  *   - Shell histories (.bash_history / .zsh_history / .python_history /
@@ -120,7 +128,7 @@ export interface CleanupResult {
   durationMs: number
 }
 
-export async function cleanupIoNetTenant(
+export async function cleanupRentalTenantState(
   prisma: PrismaClient,
   externalRentalId: string,
 ): Promise<CleanupResult> {
@@ -142,14 +150,6 @@ export async function cleanupIoNetTenant(
       ok: false,
       successMarker: null,
       error: `ExternalRental ${externalRentalId} not found`,
-      durationMs: Date.now() - t0,
-    }
-  }
-  if (row.provider !== 'IONET') {
-    return {
-      ok: false,
-      successMarker: null,
-      error: `Provider ${row.provider} is not IONET; cleanup is io.net-specific`,
       durationMs: Date.now() - t0,
     }
   }
