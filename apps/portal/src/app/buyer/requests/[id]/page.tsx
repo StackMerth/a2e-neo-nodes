@@ -686,9 +686,17 @@ export default function RequestDetailPage() {
         )}
 
         {/* SSH access for externally-provisioned rentals. Same
-            key-based auth flow as internal nodes — but with the
-            supplier name abstracted away to keep TokenOS unified. */}
-        {externalCreds && (data.status === 'ACTIVE' || data.status === 'PROVISIONING_EXTERNAL') && (
+            key-based auth flow as internal nodes but with the
+            supplier name abstracted away to keep TokenOS unified.
+            Only render when ComputeRequest.status === 'ACTIVE'. The
+            old condition also allowed PROVISIONING_EXTERNAL, which
+            caused credentials to display while the rental was still
+            building (Vast.ai's proxy host is assigned at booking time
+            but the container isn't reachable until the build/onstart
+            finishes). The backend already gates the API response on
+            both sshHost AND launchedAt; this is the matching
+            frontend-side guard. */}
+        {externalCreds && data.status === 'ACTIVE' && (
           <SectionCard
             title="SSH Access"
             icon={Cloud}

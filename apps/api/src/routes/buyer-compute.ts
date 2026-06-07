@@ -1079,7 +1079,17 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     })
     if (!ext) return reply.code(404).send({ error: 'No external rental for this request' })
 
-    if (!ext.sshHost) {
+    // Gate on BOTH sshHost populated AND launchedAt set. sshHost
+    // alone is insufficient: providers like Vast.ai assign the proxy
+    // host immediately at booking time, but the container is still
+    // building (image pull, docker buildx, onstart). The buyer's SSH
+    // attempt during that window would hit a connection-refused
+    // because sshd inside the container isn't running yet. launchedAt
+    // is set by the per-provider poll worker only after the upstream
+    // status flips to 'running' AND the row is promoted to ACTIVE.
+    // Treating it as the "truly ready" signal ensures the portal's
+    // SSH credentials only surface when the buyer can actually connect.
+    if (!ext.sshHost || !ext.launchedAt) {
       return reply.code(409).send({
         error: 'External rental is still provisioning',
         status: ext.status,
