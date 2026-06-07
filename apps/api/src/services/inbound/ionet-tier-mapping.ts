@@ -142,6 +142,13 @@ const MAPPING: Partial<Record<GpuTier, Partial<Record<number, IoNetTierMapping>>
       approxPricePerHourUsd: 63.86,
     },
   },
+  // A100 is in our internal tier system (added 2026-06-07) but io.net's
+  // hardware_id for A100 isn't documented and requires `scripts/
+  // ionet-inspect.ts` to discover the canonical string before we
+  // can map it. Once verified, add an entry here using the same
+  // shape as L40S below (likely '1A100.20V' for 1x, 'A100x8' for 8x,
+  // following io.net's observed naming convention). Until then the
+  // allocator silently skips io.net for A100 requests.
   L40S: {
     1: {
       // SKU rotation churn observed 2026-06-03: 1L40S.20V (FI, $1.73)

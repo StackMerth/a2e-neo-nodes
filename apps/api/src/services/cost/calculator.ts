@@ -67,13 +67,15 @@ export async function calculateJobCost(
   const defaultRates: Record<GpuTier, number> = {
     H100: 3.46,
     H200: 4.38,
+    // A100: 24/day = $1.00/hr, matches GPU_TIER_CONFIG retailRate.
+    A100: 1.00,
     // L40S: 21/day = 0.875/hr, matches GPU_TIER_CONFIG retailRate.
     L40S: 0.88,
     B200: 7.08,
     B300: 10.0,
     GB300: 15.0,
     OTHER: 5.0, // Custom tier uses fallback or node-specific rate
-    // C2 wave 2: consumer / prosumer fallbacks — match GPU_TIER_CONFIG
+    // C2 wave 2: consumer / prosumer fallbacks; match GPU_TIER_CONFIG
     // retailRate / 24 in @a2e/shared so internal cost math lines up
     // with what buyers see on the request form.
     RTX_4090: 0.58,

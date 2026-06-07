@@ -114,6 +114,37 @@ const MAPPING: Partial<Record<GpuTier, Partial<Record<number, VastAiTierMapping>
   },
   // DATACENTER TIER — secondary source. Lambda + RunPod cover these
   // well today but Vast.ai gives us a third option for resilience.
+  A100: {
+    1: {
+      // A100 PCIE 80GB - 3 verified hosts in 2026-06-07 snapshot at
+      // $0.563/h. Vast.ai's cheapest verified A100 SKU.
+      gpuName: 'A100 PCIE',
+      label: 'A100 PCIe 80GB (1x)',
+      gpusPerHost: 1,
+      approxPricePerHourUsd: 0.56,
+    },
+    2: {
+      // A100 PCIE 2x: appears in catalog occasionally; price ~linear.
+      gpuName: 'A100 PCIE',
+      label: 'A100 PCIe 80GB (2x)',
+      gpusPerHost: 2,
+      approxPricePerHourUsd: 1.12,
+    },
+    4: {
+      // 4x A100 SXM4 (server bundles); occasional supply.
+      gpuName: 'A100 SXM4',
+      label: 'A100 SXM4 80GB (4x)',
+      gpusPerHost: 4,
+      approxPricePerHourUsd: 4.66,
+    },
+    8: {
+      // 8x A100 SXM4 server bundles; 5 verified hosts at $1.16/GPU.
+      gpuName: 'A100 SXM4',
+      label: 'A100 SXM4 80GB (8x)',
+      gpusPerHost: 8,
+      approxPricePerHourUsd: 9.30,
+    },
+  },
   L40S: {
     1: {
       gpuName: 'L40S',

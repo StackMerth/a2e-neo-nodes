@@ -31,6 +31,10 @@ const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'https://user.tokenos.a
 const GPU_META: Record<string, { architecture: string; vram: string; accent: string; popular?: boolean }> = {
   H100:  { architecture: 'Hopper',    vram: '80GB HBM3',   accent: '#22c55e' },
   H200:  { architecture: 'Hopper',    vram: '141GB HBM3e', accent: '#3b82f6' },
+  // A100: NVIDIA Ampere data-center workhorse. Common training/inference
+  // card across hyperscalers. Sits between L40S (mid) and H100 (high).
+  // Added 2026-06-07 after Vast.ai catalog showed active supply.
+  A100:  { architecture: 'Ampere',    vram: '80GB HBM2e',  accent: '#10b981' },
   // L40S: Ada-Lovelace datacenter card; cyan accent keeps it distinct
   // from the consumer-tier teal cluster below.
   L40S:  { architecture: 'Ada Lovelace', vram: '48GB GDDR6', accent: '#06b6d4' },
@@ -77,7 +81,7 @@ export function RentGrid({ stats, analytics }: { stats: StatsResponse; analytics
   // consumer/prosumer at the bottom. This puts the highest-margin
   // inventory above the fold and groups the cheaper supply for
   // inference / dev workloads beneath.
-  const tiers = (['H100', 'H200', 'B200', 'B300', 'GB300', 'L40S', 'RTX_4090', 'RTX_3090', 'CONSUMER'] as const).filter(t => GPU_META[t])
+  const tiers = (['H100', 'H200', 'B200', 'B300', 'GB300', 'A100', 'L40S', 'RTX_4090', 'RTX_3090', 'CONSUMER'] as const).filter(t => GPU_META[t])
 
   return (
     <>

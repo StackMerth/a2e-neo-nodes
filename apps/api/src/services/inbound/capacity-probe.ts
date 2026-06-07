@@ -95,12 +95,14 @@ const STATIC_PRICES: Record<ProviderKey, Partial<Record<GpuTier, number>>> = {
   LAMBDA: {
     H100: 2.49,
     H200: 3.49,
+    A100: 1.29,    // Lambda A100 80GB SXM4 reference rate
     B200: 5.99,
     L40S: 1.10,
   },
   RUNPOD: {
     H100: 1.99,
     H200: 3.99,
+    A100: 1.69,    // RunPod A100 80GB SXM secure tier
     B200: 5.49,
     L40S: 0.99,
     RTX_4090: 0.44,
@@ -113,6 +115,7 @@ const STATIC_PRICES: Record<ProviderKey, Partial<Record<GpuTier, number>>> = {
   IONET: {
     H100: 1.87,
     H200: 3.29,
+    A100: 1.55,    // io.net A100 80GB internal cloud
     L40S: 0.95,
     RTX_4090: 0.40,
   },
@@ -130,6 +133,7 @@ const STATIC_PRICES: Record<ProviderKey, Partial<Record<GpuTier, number>>> = {
     // cheapest-verified host's dph_total which overrides at probe time.
     RTX_4090: 0.32,
     RTX_3090: 0.20,
+    A100: 0.56,    // Vast.ai A100 PCIE 80GB verified, often cheapest
     L40S: 0.85,
     H100: 2.58,
     H200: 3.66,

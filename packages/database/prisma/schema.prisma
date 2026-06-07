@@ -17,9 +17,16 @@ datasource db {
 enum GpuTier {
   H100
   H200
+  // A100: NVIDIA data-center training/inference workhorse. Sits between
+  // L40S (mid) and H100 (high). Common in 40GB PCIe, 80GB PCIe, 80GB
+  // SXM4 form factors. Added 2026-06-07 after inspect-vastai-
+  // datacenter-skus.ts showed verified A100 PCIE (3 hosts) + A100 SXM4
+  // (5 hosts) supply on Vast.ai at $0.56-$1.16/h. Counts as data-center
+  // tier; eligible for all workload types.
+  A100
   // L40S: NVIDIA data-center inference / mid-training card. Mid-tier
   // datacenter SKU (between consumer RTX and the H/B-series). Counts
-  // as a data-center tier for allocator routing — eligible for every
+  // as a data-center tier for allocator routing - eligible for every
   // workload type, NOT subject to the consumer inference-only filter.
   L40S
   B200

@@ -55,6 +55,15 @@ const MAPPING: Partial<Record<GpuTier, RunPodTierMapping>> = {
     label: 'H200 NVL',
     maxGpusPerPod: 8,
   },
+  A100: {
+    // RunPod's canonical A100 SKU. Both PCIe and SXM variants exist;
+    // SXM is the high-performance one (NVLink between GPUs at full
+    // bandwidth). Verified id format via RunPod's GraphQL gpuTypes
+    // catalog conventions.
+    gpuTypeId: 'NVIDIA A100 80GB PCIe',
+    label: 'A100 80GB PCIe',
+    maxGpusPerPod: 8,
+  },
   B200: {
     gpuTypeId: 'NVIDIA B200',
     label: 'B200',

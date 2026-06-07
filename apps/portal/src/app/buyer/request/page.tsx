@@ -32,6 +32,9 @@ const GPU_TIERS: GpuTier[] = [
   { id: 'B200', name: 'B200', dailyRate: 13.38 },
   { id: 'B300', name: 'B300', dailyRate: 17.99 },
   { id: 'GB300', name: 'GB300', dailyRate: 20.81 },
+  // A100: NVIDIA Ampere data-center workhorse. Added 2026-06-07.
+  // $24/day = $1.00/hr retail. Vast.ai + Lambda + RunPod all carry it.
+  { id: 'A100', name: 'A100', dailyRate: 1.00 },
   // L40S: NVIDIA Ada-Lovelace datacenter card. $21/day = $0.88/hr retail.
   { id: 'L40S', name: 'L40S', dailyRate: 0.88 },
   // C2 wave 2: consumer / prosumer tiers. Lower price, inference-only.
@@ -43,6 +46,7 @@ const GPU_TIERS: GpuTier[] = [
 const HOURLY_RATES: Record<string, number> = {
   H100: 5.84,
   H200: 7.49,
+  A100: 24 / 24,
   // L40S: $21/day = $0.875/hr retail.
   L40S: 21 / 24,
   B200: 13.38,

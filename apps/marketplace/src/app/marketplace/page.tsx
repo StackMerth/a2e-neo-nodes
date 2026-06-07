@@ -61,7 +61,7 @@ interface ListingsResponse {
 // tiers so the dropdown reads top-down by capability. They're inference-
 // only when actually rented, which the request page enforces via the
 // workloadType picker.
-const GPU_TIERS = ['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'RTX_4090', 'RTX_3090', 'CONSUMER'] as const
+const GPU_TIERS = ['H100', 'H200', 'A100', 'L40S', 'B200', 'B300', 'GB300', 'RTX_4090', 'RTX_3090', 'CONSUMER'] as const
 
 // C2 wave 2: tier IDs that the buyer-compute zod refine treats as
 // inference-only. Marketplace surfaces this as a small "Inference"

@@ -18,15 +18,15 @@ import {
 import { getConfidentialComputeUiMode } from './buyer-confidential-interest.js'
 
 const GPU_DAILY_RATES: Record<string, number> = {
-  H100: 140.15, H200: 179.85, L40S: 21, B200: 321.10, B300: 431.75, GB300: 499.35,
+  H100: 140.15, H200: 179.85, A100: 24, L40S: 21, B200: 321.10, B300: 431.75, GB300: 499.35,
   // C2 wave 2: consumer / prosumer tier pricing (market-standard,
   // tunable via YieldFloor per-tier in admin /rates). Allocator
-  // gates these to workloadType=INFERENCE only — see compute-allocator.ts.
+  // gates these to workloadType=INFERENCE only - see compute-allocator.ts.
   RTX_4090: 14, RTX_3090: 9, CONSUMER: 7,
 }
 
 const requestSchema = z.object({
-  gpuTier: z.enum(['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
+  gpuTier: z.enum(['H100', 'H200', 'A100', 'L40S', 'B200', 'B300', 'GB300', 'CONSUMER', 'RTX_4090', 'RTX_3090']),
   // gpuCount cap: 64 covers single-rack NVL72 / NVL36 cluster requests
   // with headroom. >64 requires an admin-side enterprise quote — keeps
   // a single self-serve buyer from accidentally requesting half the

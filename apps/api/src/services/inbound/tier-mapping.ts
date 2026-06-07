@@ -54,6 +54,14 @@ const MAPPING: Partial<Record<GpuTier, TierMapping>> = {
     label: '8x H200',
     gpusPerInstance: 8,
   },
+  A100: {
+    // Lambda's canonical A100 SKU is the 8x A100 80GB SXM4 server.
+    // 1x A100 also available (gpu_1x_a100); allocator picks based on
+    // gpuCount via fitsSingleLambdaInstance check.
+    instanceTypeName: 'gpu_8x_a100',
+    label: '8x A100 80GB SXM4',
+    gpusPerInstance: 8,
+  },
   B200: {
     instanceTypeName: 'gpu_8x_b200',
     label: '8x B200',

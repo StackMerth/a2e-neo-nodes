@@ -4,7 +4,7 @@
 // RTX_3090 — these are inference-only at the allocator level (see
 // WorkloadType + compute-allocator.ts). L40S is a datacenter mid-tier
 // (ada-lovelace), eligible for every workload type just like H/B-series.
-export type GpuTier = 'H100' | 'H200' | 'L40S' | 'B200' | 'B300' | 'GB300' | 'OTHER' | 'CONSUMER' | 'RTX_4090' | 'RTX_3090'
+export type GpuTier = 'H100' | 'H200' | 'A100' | 'L40S' | 'B200' | 'B300' | 'GB300' | 'OTHER' | 'CONSUMER' | 'RTX_4090' | 'RTX_3090'
 
 // Buyer-declared workload type — drives the allocator's consumer-tier
 // eligibility filter. INFERENCE matches all tiers; TRAINING/MIXED
@@ -44,9 +44,16 @@ export const GPU_TIER_CONFIG: Record<
 > = {
   H100: { retailRate: 140.15, costFloor: 83, vram: 80, tier: 1 },
   H200: { retailRate: 179.85, costFloor: 105, vram: 141, tier: 2 },
+  // A100: NVIDIA Ampere data-center workhorse. 80GB (PCIe + SXM4)
+  // dominant form factor. Market reference: Lambda $1.10-$1.29/h,
+  // RunPod $1.69/h, Vast.ai verified $0.56-$1.16/h. Internal retail
+  // $24/day = $1.00/h is the sweet spot vs the cascade's blended
+  // cost. Cost floor leaves room for operator margin. Tier 2.25 puts
+  // it between H200 (high-end Hopper) and L40S (mid-tier Ada).
+  A100: { retailRate: 24, costFloor: 14, vram: 80, tier: 2.25 },
   // L40S: datacenter Ada-Lovelace card. Mid-tier between H100 and
   // consumer RTX. Market reference ~$0.88/hr (Vast.ai, RunPod, AITECH).
-  // $21/day ≈ $0.875/hr. Cost floor leaves room for operator margin.
+  // $21/day = ~$0.875/hr. Cost floor leaves room for operator margin.
   L40S: { retailRate: 21, costFloor: 12, vram: 48, tier: 2.5 },
   B200: { retailRate: 321.1, costFloor: 170, vram: 192, tier: 3 },
   B300: { retailRate: 431.75, costFloor: 250, vram: 288, tier: 4 },
