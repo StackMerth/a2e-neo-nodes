@@ -3,7 +3,23 @@ import type { PrismaClient, GpuTier, Market } from '@a2e/database'
 import { IONetAdapter, VastAiAdapter } from '@a2e/core'
 import type { Server as SocketServer } from 'socket.io'
 
-const GPU_TIERS: GpuTier[] = ['H100', 'H200', 'B200', 'B300', 'GB300']
+// Every tier the marketplace renders a rent tile for needs a row in
+// MarketRateHistory or the sparkline stays stuck on "Not enough history
+// yet". Adding A100 / L40S / RTX_4090 / RTX_3090 / CONSUMER here means
+// the next 60s tick starts seeding history for them; sparkline begins
+// rendering after two ticks and gains shape over the next few hours.
+const GPU_TIERS: GpuTier[] = [
+  'H100',
+  'H200',
+  'A100',
+  'L40S',
+  'B200',
+  'B300',
+  'GB300',
+  'RTX_4090',
+  'RTX_3090',
+  'CONSUMER',
+]
 const QUEUE_NAME = 'rate-fetcher'
 
 export interface RateFetcherDeps {
