@@ -156,6 +156,16 @@ import {
   scheduleLambdaCapacityWatcher,
 } from './jobs/lambda-capacity-watcher'
 import {
+  createVastAiCapacityWatcherQueue,
+  createVastAiCapacityWatcherWorker,
+  scheduleVastAiCapacityWatcher,
+} from './jobs/vastai-capacity-watcher'
+import {
+  createIoNetCapacityWatcherQueue,
+  createIoNetCapacityWatcherWorker,
+  scheduleIoNetCapacityWatcher,
+} from './jobs/ionet-capacity-watcher'
+import {
   createRunPodPollQueue,
   createRunPodPollWorker,
   scheduleRunPodPoll,
@@ -522,6 +532,24 @@ async function start() {
     createLambdaCapacityWatcherWorker({ redis: redisConnection })
     await scheduleLambdaCapacityWatcher(lambdaCapacityWatcherQueue)
     server.log.info('Lambda capacity watcher initialized (5min tick, env-driven SKU list)')
+
+    // Vast.ai capacity watcher: emails admin when watched (gpu_name,
+    // num_gpus) SKUs have verified+reliable supply on Vast.ai. Driven
+    // by VASTAI_CAPACITY_WATCH_SKUS env (format: 'H100 NVL|1,B200|1');
+    // no-op when unset.
+    const vastaiCapacityWatcherQueue = createVastAiCapacityWatcherQueue(redisConnection)
+    createVastAiCapacityWatcherWorker({ redis: redisConnection })
+    await scheduleVastAiCapacityWatcher(vastaiCapacityWatcherQueue)
+    server.log.info('Vast.ai capacity watcher initialized (5min tick, env-driven SKU list)')
+
+    // io.net capacity watcher: emails admin when watched hardware_id
+    // SKUs surface in io.net's catalog. Driven by
+    // IONET_CAPACITY_WATCH_SKUS env (format: '8H100.80S.176V,8B200.240V');
+    // no-op when unset.
+    const ionetCapacityWatcherQueue = createIoNetCapacityWatcherQueue(redisConnection)
+    createIoNetCapacityWatcherWorker({ redis: redisConnection })
+    await scheduleIoNetCapacityWatcher(ionetCapacityWatcherQueue)
+    server.log.info('io.net capacity watcher initialized (5min tick, env-driven SKU list)')
 
     // Launch-blocker #2: SSH session reaper. Failsafe for agent-confirmed
     // teardown — force-releases nodes stuck on TERMINATING rentals after
