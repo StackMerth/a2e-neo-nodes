@@ -44,6 +44,7 @@ import type { ConnectionOptions } from 'bullmq'
 import type { GpuTier } from '@a2e/database'
 import { probeAllProvidersDebug, type CapacityQuote, type ProviderKey } from '../services/inbound/capacity-probe.js'
 import { sendEmail, isEmailConfigured } from '../services/email/sender.js'
+import { resolveCapacityWatchRecipient } from '../services/email/capacity-recipient.js'
 
 const QUEUE_NAME = 'cascade-capacity-snapshot'
 const TICK_INTERVAL_MS = parseInt(
@@ -182,7 +183,7 @@ async function sendSnapshotDigest(cells: CellSnapshot[]): Promise<boolean> {
   }
   const recipient = (
     process.env.CASCADE_SNAPSHOT_EMAIL?.trim()
-    || process.env.LAMBDA_CAPACITY_WATCH_EMAIL?.trim()
+    || resolveCapacityWatchRecipient()
   )
   if (!recipient) {
     console.log('[cascade-capacity-snapshot] no recipient set; skipping digest send.')

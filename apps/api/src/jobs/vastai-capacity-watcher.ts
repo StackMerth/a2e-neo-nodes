@@ -38,6 +38,7 @@ import {
   isVastAiHostExcluded,
 } from '../services/inbound/vastai-adapter.js'
 import { sendEmail, isEmailConfigured } from '../services/email/sender.js'
+import { resolveCapacityWatchRecipient } from '../services/email/capacity-recipient.js'
 
 const QUEUE_NAME = 'vastai-capacity-watcher'
 const TICK_INTERVAL_MS = parseInt(process.env.VASTAI_CAPACITY_WATCH_TICK_MS ?? '300000', 10)
@@ -213,7 +214,7 @@ async function sendVastAiCapacityAlert(
 
   const recipient = (
     process.env.VASTAI_CAPACITY_WATCH_EMAIL?.trim()
-    || process.env.LAMBDA_CAPACITY_WATCH_EMAIL?.trim()
+    || resolveCapacityWatchRecipient()
   )
   if (!recipient) {
     console.log(

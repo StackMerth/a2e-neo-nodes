@@ -41,6 +41,7 @@ import type { ConnectionOptions } from 'bullmq'
 import { Redis } from 'ioredis'
 import { RunPodClient, isRunPodConfigured } from '../services/inbound/runpod-adapter.js'
 import { sendEmail, isEmailConfigured } from '../services/email/sender.js'
+import { resolveCapacityWatchRecipient } from '../services/email/capacity-recipient.js'
 
 const QUEUE_NAME = 'runpod-capacity-watcher'
 const TICK_INTERVAL_MS = parseInt(process.env.RUNPOD_CAPACITY_WATCH_TICK_MS ?? '300000', 10)
@@ -173,11 +174,11 @@ async function sendCapacityAlertEmail(
     return
   }
 
-  // Default to the Lambda watcher's recipient when the RunPod-specific
-  // env var isn't set, so only one address is needed for both.
+  // Falls back to the shared CAPACITY_WATCH_EMAIL (or legacy
+  // LAMBDA_CAPACITY_WATCH_EMAIL) so one address covers every watcher.
   const recipient = (
     process.env.RUNPOD_CAPACITY_WATCH_EMAIL?.trim() ||
-    process.env.LAMBDA_CAPACITY_WATCH_EMAIL?.trim() ||
+    resolveCapacityWatchRecipient() ||
     ''
   )
   if (!recipient) {

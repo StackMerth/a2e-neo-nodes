@@ -171,6 +171,11 @@ import {
   scheduleCascadeCapacitySnapshot,
 } from './jobs/cascade-capacity-snapshot'
 import {
+  createCascadeCapacityWatcherQueue,
+  createCascadeCapacityWatcherWorker,
+  scheduleCascadeCapacityWatcher,
+} from './jobs/cascade-capacity-watcher'
+import {
   createRunPodPollQueue,
   createRunPodPollWorker,
   scheduleRunPodPoll,
@@ -566,6 +571,16 @@ async function start() {
     createCascadeCapacitySnapshotWorker({ redis: redisConnection })
     await scheduleCascadeCapacitySnapshot(cascadeSnapshotQueue)
     server.log.info('Cascade capacity snapshot watcher initialized (24h tick, full matrix digest)')
+
+    // Cascade-wide capacity TRANSITION watcher. One master env
+    // (CASCADE_WATCH_ENABLED, default 'true') drives state-change
+    // alerts across every plugged-in provider; the per-provider
+    // watchers above remain for surgical SKU watches outside the
+    // default tier x count matrix.
+    const cascadeWatcherQueue = createCascadeCapacityWatcherQueue(redisConnection)
+    createCascadeCapacityWatcherWorker({ redis: redisConnection })
+    await scheduleCascadeCapacityWatcher(cascadeWatcherQueue)
+    server.log.info('Cascade capacity transition watcher initialized (5m tick, master switch via CASCADE_WATCH_ENABLED)')
 
     // Launch-blocker #2: SSH session reaper. Failsafe for agent-confirmed
     // teardown — force-releases nodes stuck on TERMINATING rentals after

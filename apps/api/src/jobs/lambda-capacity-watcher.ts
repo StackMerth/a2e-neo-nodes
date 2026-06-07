@@ -43,6 +43,7 @@ import type { ConnectionOptions } from 'bullmq'
 import { Redis } from 'ioredis'
 import { LambdaClient, isLambdaConfigured } from '../services/inbound/lambda-adapter.js'
 import { sendEmail, isEmailConfigured } from '../services/email/sender.js'
+import { resolveCapacityWatchRecipient } from '../services/email/capacity-recipient.js'
 
 const QUEUE_NAME = 'lambda-capacity-watcher'
 const TICK_INTERVAL_MS = parseInt(process.env.LAMBDA_CAPACITY_WATCH_TICK_MS ?? '300000', 10)
@@ -182,10 +183,14 @@ async function sendCapacityAlertEmail(
     return
   }
 
+  // Provider-specific override still wins; falls back to the shared
+  // CAPACITY_WATCH_EMAIL (or legacy LAMBDA_CAPACITY_WATCH_EMAIL) so one
+  // address covers every watcher.
   const recipient = process.env.LAMBDA_CAPACITY_WATCH_EMAIL?.trim()
+    || resolveCapacityWatchRecipient()
   if (!recipient) {
     // eslint-disable-next-line no-console
-    console.log(`[lambda-capacity-watcher] capacity opened for ${newlyAvailable.join(', ')} but LAMBDA_CAPACITY_WATCH_EMAIL is unset.`)
+    console.log(`[lambda-capacity-watcher] capacity opened for ${newlyAvailable.join(', ')} but no recipient set (CAPACITY_WATCH_EMAIL).`)
     return
   }
 
