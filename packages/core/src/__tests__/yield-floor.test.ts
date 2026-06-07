@@ -18,6 +18,7 @@ describe('DefaultYieldFloorConfig', () => {
       const expectedFloors: Record<GpuTier, number> = {
         H100: 83,
         H200: 105,
+        A100: 14,
         L40S: 12,
         B200: 170,
         B300: 250,

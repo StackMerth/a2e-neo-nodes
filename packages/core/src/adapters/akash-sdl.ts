@@ -38,6 +38,7 @@ export interface SdlInput {
 const GPU_TIER_TO_AKASH_MODEL: Record<GpuTier, string> = {
   H100: 'h100',
   H200: 'h200',
+  A100: 'a100',
   L40S: 'l40s',
   B200: 'b200',
   B300: 'b300',
@@ -63,6 +64,8 @@ const GPU_TIER_TO_AKASH_MODEL: Record<GpuTier, string> = {
 const DEFAULT_MAX_BID_UAKT: Record<GpuTier, number> = {
   H100: 5000,
   H200: 8000,
+  // A100: ~$1.00/hr retail. 2000 uakt/block leaves headroom over market.
+  A100: 2000,
   // L40S: ~$0.88/hr retail. 1800 uakt/block ≈ $3.78/hr cap leaves
   // generous headroom over market without overpaying for an overflow.
   L40S: 1800,

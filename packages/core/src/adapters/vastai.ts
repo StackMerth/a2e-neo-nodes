@@ -61,8 +61,15 @@ const DEFAULT_DEPLOY_IMAGE = 'pytorch/pytorch:latest'
 const DEFAULT_DISK_GB = 10
 
 const GPU_TIER_TO_VASTAI: Record<GpuTier, string[]> = {
-  H100: ['H100', 'H100 SXM', 'H100 PCIE'],
-  H200: ['H200'],
+  // Vast.ai catalog string conventions verified 2026-06-07 via
+  // inspect-vastai-datacenter-skus. H100 PCIE not currently in
+  // catalog; the live SKUs are H100 NVL and H100 SXM (without
+  // generation suffix).
+  H100: ['H100', 'H100 NVL', 'H100 SXM'],
+  H200: ['H200', 'H200 NVL'],
+  // A100: catalog shows 'A100 PCIE' (3 verified) and 'A100 SXM4'
+  // (5 verified) on 2026-06-07.
+  A100: ['A100 PCIE', 'A100 SXM4', 'A100'],
   // L40S: Vast.ai lists these as a distinct SKU; PCIE is the only
   // current form factor for the L40S.
   L40S: ['L40S', 'L40S PCIE'],

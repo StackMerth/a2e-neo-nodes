@@ -40,6 +40,9 @@ import type { GpuTier } from '@a2e/shared'
 export const GPU_TDP_WATTS: Record<GpuTier, number> = {
   H100: 700,
   H200: 700,
+  // A100 80GB SXM4: 400W TDP per NVIDIA spec. PCIe variant is 300W but
+  // 400W is the higher-bound conservative number for carbon math.
+  A100: 400,
   // L40S: NVIDIA Ada-Lovelace datacenter card, 350W TGP from spec sheet.
   L40S: 350,
   B200: 1000,
