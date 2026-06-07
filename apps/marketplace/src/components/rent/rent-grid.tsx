@@ -129,13 +129,13 @@ function RentTile({
   onRent: () => void
 }) {
   const meta = GPU_META[tier]!
-  // Supply is never truly zero from a buyer's perspective: when no
-  // internal operator is online the allocator cascades to plugged-in
-  // decentralized providers (Vast.ai, io.net, Lambda, RunPod, Phala,
-  // VoltageGPU). Internal count drives the chip, but a missing
-  // internal node falls back to "External" rather than "None".
-  const supply: { label: string; level: 1 | 2 | 3 } =
-    count === 0 ? { label: 'External', level: 2 }
+  // Supply chip + footer only render when internal nodes are online.
+  // When count === 0 we stay silent rather than making any claim
+  // about external supply — the allocator still cascades to plugged-in
+  // decentralized providers when the buyer clicks Rent, but we don't
+  // surface that on the tile.
+  const supply: { label: string; level: 1 | 2 | 3 } | null =
+    count === 0 ? null
     : count < 5 ? { label: 'Low',  level: 1 }
     : count < 20 ? { label: 'Med', level: 2 }
     : { label: 'High', level: 3 }
@@ -208,23 +208,26 @@ function RentTile({
           </div>
         </div>
 
-        {/* Supply 3-dot indicator */}
-        <div className="flex flex-col items-end gap-1.5 shrink-0">
-          <div className="flex items-center gap-0.5">
-            {[1, 2, 3].map(i => (
-              <span
-                key={i}
-                className="w-2 h-2 rounded-full"
-                style={{
-                  background: supply.level >= i ? '#22c55e' : 'var(--border)',
-                }}
-              />
-            ))}
+        {/* Supply 3-dot indicator — only shown when at least one
+            internal node is online; cascade fallback is silent. */}
+        {supply && (
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <div className="flex items-center gap-0.5">
+              {[1, 2, 3].map(i => (
+                <span
+                  key={i}
+                  className="w-2 h-2 rounded-full"
+                  style={{
+                    background: supply.level >= i ? '#22c55e' : 'var(--border)',
+                  }}
+                />
+              ))}
+            </div>
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              {supply.label}
+            </span>
           </div>
-          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-            {supply.label}
-          </span>
-        </div>
+        )}
       </div>
 
       {/* Sparkline (always 80px tall so cards stay aligned even when
@@ -266,13 +269,15 @@ function RentTile({
         </button>
       </div>
 
-      {/* Operators link footer */}
-      <a
-        href={`/marketplace?gpuTier=${tier}`}
-        className="font-mono text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-      >
-        {count > 0 ? `${count} ${count === 1 ? 'node' : 'nodes'} across operators` : 'Routed via decentralized supply'}
-      </a>
+      {/* Operators link footer — only when internal nodes exist. */}
+      {count > 0 && (
+        <a
+          href={`/marketplace?gpuTier=${tier}`}
+          className="font-mono text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {count} {count === 1 ? 'node' : 'nodes'} across operators
+        </a>
+      )}
     </div>
   )
 }
