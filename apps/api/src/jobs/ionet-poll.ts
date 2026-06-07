@@ -29,6 +29,10 @@ import { pollIoNetRentalStatus } from '../services/inbound/ionet-provision.js'
 import { isIoNetConfigured } from '../services/inbound/ionet-adapter.js'
 import { createNotification } from '../services/notification/service.js'
 import { creditBalance } from '../services/balance/balance-service.js'
+import {
+  cleanupIoNetTenant,
+  CLEANUP_SUCCESS_NOTE,
+} from '../services/inbound/ionet-tenant-cleanup.js'
 
 const QUEUE_NAME = 'ionet-poll'
 const TICK_INTERVAL_MS = parseInt(process.env.IONET_POLL_TICK_MS ?? '10000', 10)
@@ -114,11 +118,37 @@ async function pollOne(
 
   const fresh = await prisma.externalRental.findUnique({
     where: { id: r.id },
-    select: { id: true, status: true, sshHost: true, computeRequestId: true },
+    select: { id: true, status: true, sshHost: true, computeRequestId: true, lastNote: true },
   })
   if (!fresh) return
 
   if (fresh.status === 'ACTIVE' && fresh.sshHost) {
+    // Tenant cleanup runs ONCE before we promote the ComputeRequest to
+    // ACTIVE. Without this, the buyer's first login can see the
+    // previous tenant's bash_history, .aws/credentials, etc. (real
+    // failure observed on rental cmq3p1gt0000 2026-06-07). Fails open
+    // so a flaky cleanup doesn't block the buyer indefinitely; the
+    // lastNote field records the outcome for ops triage.
+    //
+    // Idempotency: cleanupIoNetTenant skips the SSH round-trip when
+    // lastNote already shows CLEANUP_SUCCESS_NOTE.
+    if (fresh.lastNote !== CLEANUP_SUCCESS_NOTE) {
+      const result = await cleanupIoNetTenant(prisma, fresh.id)
+      if (!result.ok) {
+        console.error(
+          `[ionet-poll] tenant cleanup FAILED for ${fresh.id} after ${result.durationMs}ms: ${result.error}`,
+        )
+        // Fail open: still promote to ACTIVE. The lastNote captures
+        // the failure for follow-up. Future hardening: retry N times
+        // before promoting, OR fail closed when a strict-isolation
+        // buyer flag is set.
+      } else {
+        console.log(
+          `[ionet-poll] tenant cleanup OK for ${fresh.id} in ${result.durationMs}ms`,
+        )
+      }
+    }
+
     const promoted = await prisma.computeRequest.updateMany({
       where: { id: fresh.computeRequestId, status: 'PROVISIONING_EXTERNAL' },
       data: {
