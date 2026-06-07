@@ -157,6 +157,21 @@ export function isLambdaConfigured(): boolean {
   return Boolean(process.env.LAMBDA_API_KEY?.trim())
 }
 
+/**
+ * Operator gate: even with a valid API key, exclude Lambda from
+ * new-rental allocation by setting LAMBDA_ALLOCATOR_ENABLED=false.
+ * Existing rentals continue to poll/terminate normally (they use
+ * the API key directly). Default true.
+ *
+ * Mirrors VASTAI_ALLOCATOR_ENABLED / VOLTAGEGPU_ALLOCATOR_ENABLED /
+ * IONET_ALLOCATOR_ENABLED. Useful for head-to-head provider tests,
+ * outage exclusion, or temporary cost-control reroutes without
+ * invalidating API auth.
+ */
+export function isLambdaAllocatorEnabled(): boolean {
+  return process.env.LAMBDA_ALLOCATOR_ENABLED?.toLowerCase() !== 'false'
+}
+
 export class LambdaClient {
   private readonly base: string
   private readonly authHeader: string

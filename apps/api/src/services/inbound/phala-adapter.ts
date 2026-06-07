@@ -158,6 +158,20 @@ export function isPhalaConfigured(): boolean {
   return Boolean(process.env.PHALA_API_KEY?.trim())
 }
 
+/**
+ * Operator gate: exclude Phala from new-rental allocation by
+ * setting PHALA_ALLOCATOR_ENABLED=false. Existing CVMs continue
+ * to poll/terminate normally. Default true.
+ *
+ * Useful when Phala's GPU TEE supply is intermittent and the
+ * operator wants to force confidential rentals to VoltageGPU
+ * instead, OR for non-confidential tests where Phala shouldn't
+ * win the race.
+ */
+export function isPhalaAllocatorEnabled(): boolean {
+  return process.env.PHALA_ALLOCATOR_ENABLED?.toLowerCase() !== 'false'
+}
+
 export class PhalaClient {
   private readonly base: string
   private readonly apiKey: string

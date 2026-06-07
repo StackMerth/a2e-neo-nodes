@@ -214,6 +214,17 @@ export function isRunPodConfigured(): boolean {
   return Boolean(process.env.RUNPOD_API_KEY?.trim())
 }
 
+/**
+ * Operator gate: exclude RunPod from new-rental allocation by
+ * setting RUNPOD_ALLOCATOR_ENABLED=false. Existing rentals
+ * continue to poll/terminate normally. Default true.
+ *
+ * Same pattern as other providers' _ALLOCATOR_ENABLED flags.
+ */
+export function isRunPodAllocatorEnabled(): boolean {
+  return process.env.RUNPOD_ALLOCATOR_ENABLED?.toLowerCase() !== 'false'
+}
+
 export class RunPodClient {
   private readonly base: string
   private readonly authHeader: string

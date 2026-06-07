@@ -33,14 +33,16 @@ import type { GpuTier } from '@a2e/database'
 import {
   LambdaClient,
   isLambdaConfigured,
+  isLambdaAllocatorEnabled,
 } from './lambda-adapter.js'
 import { lambdaTypeForTier, fitsSingleLambdaInstance } from './tier-mapping.js'
 import {
   RunPodClient,
   isRunPodConfigured,
+  isRunPodAllocatorEnabled,
 } from './runpod-adapter.js'
 import { runPodTypeForTier, fitsSingleRunPodPod } from './runpod-tier-mapping.js'
-import { isPhalaConfigured } from './phala-adapter.js'
+import { isPhalaConfigured, isPhalaAllocatorEnabled } from './phala-adapter.js'
 import { phalaTypeForTier, fitsSinglePhalaCvm } from './phala-tier-mapping.js'
 import { isIoNetConfigured, isIoNetAllocatorEnabled } from './ionet-adapter.js'
 import { ioNetTypeForTier, fitsSingleIoNetVm } from './ionet-tier-mapping.js'
@@ -292,6 +294,9 @@ async function probeLambda(
   if (!isLambdaConfigured()) {
     return noCapacity('LAMBDA', 'not_configured')
   }
+  if (!isLambdaAllocatorEnabled()) {
+    return noCapacity('LAMBDA', 'allocator_disabled')
+  }
   const mapping = lambdaTypeForTier(tier)
   if (!mapping) return noCapacity('LAMBDA', 'tier_unmapped')
   if (!fitsSingleLambdaInstance(tier, gpuCount)) {
@@ -323,6 +328,9 @@ async function probeRunPod(
 ): Promise<CapacityQuote> {
   if (!isRunPodConfigured()) {
     return noCapacity('RUNPOD', 'not_configured')
+  }
+  if (!isRunPodAllocatorEnabled()) {
+    return noCapacity('RUNPOD', 'allocator_disabled')
   }
   const mapping = runPodTypeForTier(tier)
   if (!mapping) return noCapacity('RUNPOD', 'tier_unmapped')
@@ -361,6 +369,9 @@ async function probePhala(
 ): Promise<CapacityQuote> {
   if (!isPhalaConfigured()) {
     return noCapacity('PHALA', 'not_configured')
+  }
+  if (!isPhalaAllocatorEnabled()) {
+    return noCapacity('PHALA', 'allocator_disabled')
   }
   const mapping = phalaTypeForTier(tier, gpuCount)
   if (!mapping) return noCapacity('PHALA', 'tier_unmapped')
