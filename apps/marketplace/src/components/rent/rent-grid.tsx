@@ -129,8 +129,13 @@ function RentTile({
   onRent: () => void
 }) {
   const meta = GPU_META[tier]!
-  const supply: { label: string; level: 0 | 1 | 2 | 3 } =
-    count === 0 ? { label: 'None', level: 0 }
+  // Supply is never truly zero from a buyer's perspective: when no
+  // internal operator is online the allocator cascades to plugged-in
+  // decentralized providers (Vast.ai, io.net, Lambda, RunPod, Phala,
+  // VoltageGPU). Internal count drives the chip, but a missing
+  // internal node falls back to "External" rather than "None".
+  const supply: { label: string; level: 1 | 2 | 3 } =
+    count === 0 ? { label: 'External', level: 2 }
     : count < 5 ? { label: 'Low',  level: 1 }
     : count < 20 ? { label: 'Med', level: 2 }
     : { label: 'High', level: 3 }
@@ -251,14 +256,13 @@ function RentTile({
         <button
           type="button"
           onClick={onRent}
-          disabled={count === 0}
-          className="inline-flex items-center justify-center px-4 h-10 rounded-md font-mono text-xs uppercase tracking-[0.14em] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center justify-center px-4 h-10 rounded-md font-mono text-xs uppercase tracking-[0.14em] transition-colors"
           style={{
-            background: count === 0 ? 'var(--muted)' : meta.accent,
-            color: count === 0 ? 'var(--muted-foreground)' : '#0a0a0a',
+            background: meta.accent,
+            color: '#0a0a0a',
           }}
         >
-          {count === 0 ? 'No supply' : 'Rent'}
+          Rent
         </button>
       </div>
 
@@ -267,7 +271,7 @@ function RentTile({
         href={`/marketplace?gpuTier=${tier}`}
         className="font-mono text-[11px] text-muted-foreground hover:text-foreground transition-colors"
       >
-        {count > 0 ? `${count} ${count === 1 ? 'node' : 'nodes'} across operators` : 'No operators online'}
+        {count > 0 ? `${count} ${count === 1 ? 'node' : 'nodes'} across operators` : 'Routed via decentralized supply'}
       </a>
     </div>
   )

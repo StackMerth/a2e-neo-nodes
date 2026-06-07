@@ -142,13 +142,43 @@ const MAPPING: Partial<Record<GpuTier, Partial<Record<number, IoNetTierMapping>>
       approxPricePerHourUsd: 63.86,
     },
   },
-  // A100 is in our internal tier system (added 2026-06-07) but io.net's
-  // hardware_id for A100 isn't documented and requires `scripts/
-  // ionet-inspect.ts` to discover the canonical string before we
-  // can map it. Once verified, add an entry here using the same
-  // shape as L40S below (likely '1A100.20V' for 1x, 'A100x8' for 8x,
-  // following io.net's observed naming convention). Until then the
-  // allocator silently skips io.net for A100 requests.
+  A100: {
+    // Discovered via ionet-inspect.ts on 2026-06-07. io.net's A100
+    // catalog has 6 SKUs spread across US/IN/FI. Cheapest per count
+    // selected; US preferred where available to keep latency low for
+    // the US-heavy buyer base.
+    1: {
+      hardwareId: 'gpu_1x_DGX_A100',
+      label: 'DGX A100 80GB (1x)',
+      gpusPerVm: 1,
+      defaultLocation: 'US',
+      approxPricePerHourUsd: 1.31,
+    },
+    2: {
+      // GDC3 Delhi SKU is the only 2x A100 in catalog. Delhi region
+      // adds latency for US buyers but it's the only mapped path
+      // shy of routing two separate 1x VMs (out of scope for T5g).
+      hardwareId: 'GDC3-32vCPU-230RAM-250DISK-GDC3.2xA10080-32.230GB_Ubuntu22-Delhi',
+      label: 'A100 80GB (2x, Delhi)',
+      gpusPerVm: 2,
+      defaultLocation: 'IN',
+      approxPricePerHourUsd: 4.20,
+    },
+    4: {
+      hardwareId: '4A100.88V',
+      label: 'A100 80GB (4x, 88 vCPU)',
+      gpusPerVm: 4,
+      defaultLocation: 'FI',
+      approxPricePerHourUsd: 7.95,
+    },
+    8: {
+      hardwareId: '8A100.176V',
+      label: 'A100 80GB (8x, 176 vCPU)',
+      gpusPerVm: 8,
+      defaultLocation: 'FI',
+      approxPricePerHourUsd: 15.47,
+    },
+  },
   L40S: {
     1: {
       // SKU rotation churn observed 2026-06-03: 1L40S.20V (FI, $1.73)

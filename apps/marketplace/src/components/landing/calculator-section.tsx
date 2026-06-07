@@ -35,6 +35,11 @@ const TIERS: TierComparison[] = [
   // datacenter inventory.
   { id: "H100", label: "NVIDIA H100", tokenosHourly: 140.15 / 24, awsHourly: 12.29, azureHourly: 12.25, gcpHourly: 11.06 },
   { id: "H200", label: "NVIDIA H200", tokenosHourly: 179.85 / 24, awsHourly: 13.5, azureHourly: 13.75, gcpHourly: 12.5 },
+  // A100 80GB: hyperscaler list prices are AWS p4de.24xlarge ($4.10
+  // per GPU-hr), Azure ND96amsr A100 v4 ($3.67 per GPU-hr), GCP
+  // a2-ultragpu-1g ($3.67 per GPU-hr). TokenOS $24/day published rate
+  // = $1.00/hr.
+  { id: "A100", label: "NVIDIA A100", tokenosHourly: 24 / 24, awsHourly: 4.10, azureHourly: 3.67, gcpHourly: 3.67 },
   { id: "L40S", label: "NVIDIA L40S", tokenosHourly: 21 / 24, awsHourly: 1.86, azureHourly: 1.05, gcpHourly: 0.95 },
   { id: "B200", label: "NVIDIA B200", tokenosHourly: 321.1 / 24, awsHourly: null, azureHourly: null, gcpHourly: null },
   { id: "B300", label: "NVIDIA B300", tokenosHourly: 431.75 / 24, awsHourly: null, azureHourly: null, gcpHourly: null },
