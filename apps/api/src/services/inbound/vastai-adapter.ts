@@ -170,6 +170,7 @@ interface RawInstanceResponse {
   gpu_name?: string
   num_gpus?: number
   public_ipaddr?: string | null
+  ssh_host?: string | null
   ssh_port?: number | null
   dph_total?: number
   image?: string | null
@@ -422,12 +423,25 @@ function normalizeInstance(raw: RawInstanceResponse): VastAiInstance {
     rawStatus === 'running' || rawStatus === 'loading' || rawStatus === 'exited' || rawStatus === 'stopping'
       ? rawStatus
       : 'created'
+  // SSH hostname selection: with runtype='ssh' (our default), Vast.ai
+  // routes SSH through their proxy at `ssh_host:ssh_port` (e.g.
+  // ssh9.vast.ai:19676). The host's `public_ipaddr` is the bare
+  // machine IP, but the container's port 22 is NOT exposed there
+  // unless the buyer requested direct-port mapping (runtype='ssh_
+  // direct' + opened direct_ports). Mapping `public_ipaddr` into
+  // publicIpaddr (which the rental UI displays as the SSH host)
+  // produces a broken command like `ssh root@76.65.105.169 -p 19676`
+  // that mixes the host's direct IP with the proxy's port. Prefer
+  // ssh_host, fall back to public_ipaddr only when ssh_host is missing
+  // (rare; happens transiently during early boot before Vast.ai has
+  // assigned a proxy slot).
+  const sshHost = raw.ssh_host ?? raw.public_ipaddr ?? null
   return {
     id: raw.id,
     status,
     gpuName: raw.gpu_name ?? 'UNKNOWN',
     numGpus: raw.num_gpus ?? 1,
-    publicIpaddr: raw.public_ipaddr ?? null,
+    publicIpaddr: sshHost,
     sshPort: typeof raw.ssh_port === 'number' ? raw.ssh_port : null,
     dphTotal: raw.dph_total ?? 0,
     imageName: raw.image ?? null,
