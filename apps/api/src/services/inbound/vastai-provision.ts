@@ -48,6 +48,7 @@ import type { PrismaClient } from '@a2e/database'
 import {
   VastAiClient,
   VastAiApiError,
+  isVastAiHostExcluded,
   type VastAiInstance,
 } from './vastai-adapter.js'
 import { vastAiTypeForTier, fitsSingleVastAiHost } from './vastai-tier-mapping.js'
@@ -145,11 +146,24 @@ export async function provisionVastAiRental(
     )
   }
 
-  // listOffers sorts dph_total ASC so the first is cheapest.
-  const cheapest = offers[0]
+  // Geo filter (defense in depth, matches capacity-probe.ts). Drops
+  // hosts in sanctioned / Great-Firewall-throttled regions where
+  // Docker Hub access is unreliable. Default excludes CN/RU/IR/KP.
+  // Configurable via VASTAI_REGION_EXCLUDE env var.
+  const usableOffers = offers.filter((o) => !isVastAiHostExcluded(o.geolocation))
+  if (usableOffers.length === 0) {
+    throw new VastAiProvisionError(
+      `Vast.ai has ${offers.length} verified offers for ${mapping.label} but ` +
+      'all are in excluded regions (VASTAI_REGION_EXCLUDE). Falling back to next provider.',
+    )
+  }
+
+  // listOffers sorts dph_total ASC; first usable offer post-geo-filter
+  // is the cheapest legitimate option.
+  const cheapest = usableOffers[0]
   if (!cheapest) {
     throw new VastAiProvisionError(
-      `Vast.ai returned an empty offer list after filtering ${mapping.label} — shouldn't reach here.`,
+      `Vast.ai returned an empty offer list after geo-filter ${mapping.label}; shouldn't reach here.`,
     )
   }
 

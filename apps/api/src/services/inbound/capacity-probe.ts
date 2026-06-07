@@ -53,6 +53,7 @@ import {
   VastAiClient,
   isVastAiConfigured,
   isVastAiAllocatorEnabled,
+  isVastAiHostExcluded,
 } from './vastai-adapter.js'
 import {
   vastAiTypeForTier,
@@ -442,20 +443,31 @@ async function probeVastAi(
       num_gpus: { eq: mapping.gpusPerHost },
       // Reliability filter: 0.85 keeps the legitimately churn-prone
       // hosts out while accepting most of the verified pool. Earlier
-      // 0.95 cutoff was empirically too strict — live snapshot
-      // 2026-06-06 showed it zeroing the entire 1x RTX 4090 pool.
+      // 0.95 cutoff was empirically too strict (live snapshot
+      // 2026-06-06 showed it zeroing the entire 1x RTX 4090 pool).
       // The verified filter (set in listOffers' defaults) already
       // anchors quality at the host level; reliability is the second
       // line of defense rather than the primary gate.
       reliability2: { gte: 0.85 },
     })
-    if (offers.length === 0) {
-      return noCapacity('VASTAI', 'no_verified_offers')
+    // Geo filter (client-side after the API call because Vast.ai's
+    // /bundles/ geolocation query operator is finicky). Default
+    // excludes CN/RU/IR/KP where Docker Hub access is unreliable.
+    // Rental cmq2vq1nu000 burned 15 hours on a CN host whose layer
+    // pull never completed; this filter ensures the probe never picks
+    // such a host as the cheapest-with-capacity winner.
+    const usableOffers = offers.filter((o) => !isVastAiHostExcluded(o.geolocation))
+    if (usableOffers.length === 0) {
+      return noCapacity(
+        'VASTAI',
+        offers.length > 0 ? 'all_offers_in_excluded_regions' : 'no_verified_offers',
+      )
     }
-    // listOffers sorts by dph_total ascending so offers[0] is cheapest.
+    // listOffers sorts by dph_total ascending; the first usable offer
+    // post-geo-filter is the cheapest legitimate option.
     return {
       provider: 'VASTAI',
-      pricePerHourUsd: offers[0]?.dphTotal ?? price,
+      pricePerHourUsd: usableOffers[0]?.dphTotal ?? price,
       hasCapacity: true,
     }
   } catch (err) {

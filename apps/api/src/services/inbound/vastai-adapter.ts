@@ -180,11 +180,69 @@ interface RawInstanceResponse {
  * Cheap sync check. The allocator calls this BEFORE building a request
  * and before any network round trip. Used to short-circuit the Vast.ai
  * fallback when the env isn't fully set, so misconfigured deployments
- * don't show a confusing "Vast.ai didn't respond" error to buyers —
- * they just never see Vast.ai in the cascade.
+ * don't show a confusing "Vast.ai didn't respond" error to buyers (they
+ * just never see Vast.ai in the cascade).
  */
 export function isVastAiConfigured(): boolean {
   return !!process.env.VASTAI_API_KEY?.trim()
+}
+
+/**
+ * Country codes whose hosts we refuse to book. Driven by VASTAI_REGION_EXCLUDE
+ * env var (comma-separated ISO-2 codes, e.g. "CN,RU,IR,KP"). Defaults
+ * to the four sanctioned / Great-Firewall-throttled regions where
+ * Docker Hub access is unreliable enough to ruin the buyer experience.
+ *
+ * Real-world failure that motivates this list: rental cmq2vq1nu000 hit
+ * a CN host on 2026-06-06 and sat in PROVISIONING_EXTERNAL for 15 HOURS
+ * because the Great Firewall stalled the Docker Hub layer pull
+ * indefinitely. We burned $2.60 of admin wallet on a dead instance.
+ *
+ * Filter runs CLIENT-SIDE after listOffers because Vast.ai's /bundles/
+ * geolocation query is finicky (their search field is "City, CC" and
+ * the `eq` / `nin` operators behave inconsistently across regions).
+ * Filtering after the fact is cheap and reliable.
+ */
+const DEFAULT_EXCLUDED_REGIONS = ['CN', 'RU', 'IR', 'KP']
+
+export function getVastAiExcludedRegions(): string[] {
+  const raw = process.env.VASTAI_REGION_EXCLUDE
+  if (raw === undefined) return DEFAULT_EXCLUDED_REGIONS
+  // Empty string = explicit "disable the filter" override for the
+  // operator who wants to accept any verified host.
+  if (raw.trim() === '') return []
+  return raw
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean)
+}
+
+/**
+ * Extract the two-letter country code from Vast.ai's geolocation string.
+ * Vast.ai stores it as "City, CC" or ", CC" so we take the substring
+ * after the last comma and uppercase it. Returns null when the field
+ * is null / empty / malformed; caller treats null as "unknown region"
+ * and lets it through (don't block on missing data).
+ */
+export function vastAiCountryCode(geolocation: string | null): string | null {
+  if (!geolocation) return null
+  const cc = geolocation.split(',').pop()?.trim().toUpperCase()
+  if (!cc || cc.length !== 2) return null
+  return cc
+}
+
+/**
+ * True when this host is in a region we refuse to book. Falls through
+ * (returns false) when the country code is missing or unknown so a
+ * single malformed geolocation can't kill an otherwise-good offer.
+ */
+export function isVastAiHostExcluded(
+  geolocation: string | null,
+  excludedRegions: string[] = getVastAiExcludedRegions(),
+): boolean {
+  const cc = vastAiCountryCode(geolocation)
+  if (!cc) return false
+  return excludedRegions.includes(cc)
 }
 
 /**
