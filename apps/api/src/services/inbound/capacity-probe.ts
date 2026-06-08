@@ -388,7 +388,17 @@ async function probeTensorDock(
     // is the per-host pool for this model; we need a single host with
     // >= gpuCount cards installed.
     const candidates = flat.filter(
-      (r) => r.online && stockMatchesTier(r.gpu_model, tier) && r.amount >= gpuCount,
+      (r) =>
+        r.online
+        && stockMatchesTier(r.gpu_model, tier)
+        && r.amount >= gpuCount
+        // Host must have at least one free external port; the
+        // /client/deploy/single endpoint allocates external_ports from
+        // host.networking.ports and 500s when the pool is empty. Some
+        // TensorDock hosts are fully booked on ports even when GPU
+        // cards show available (observed 2026-06-08 on
+        // 04200c8a-... geforcertx3090).
+        && r.availableExternalPorts.length > 0,
     )
     if (candidates.length === 0) {
       return noCapacity('TENSORDOCK', 'no_supply_at_count')

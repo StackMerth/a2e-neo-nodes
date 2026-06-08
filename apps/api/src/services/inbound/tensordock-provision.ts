@@ -125,6 +125,10 @@ export async function provisionTensorDockRental(
     .filter((r) => r.online)
     .filter((r) => stockMatchesTier(r.gpu_model, cr.gpuTier))
     .filter((r) => r.amount >= cr.gpuCount)
+    // Defense-in-depth: skip hosts with no free external ports. The
+    // capacity probe also filters these out but rentals racing the
+    // probe could land on a host that just exhausted its pool.
+    .filter((r) => r.availableExternalPorts.length > 0)
 
   if (candidates.length === 0) {
     throw new TensorDockProvisionError(
