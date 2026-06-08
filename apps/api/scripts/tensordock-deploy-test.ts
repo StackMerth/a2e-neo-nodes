@@ -46,6 +46,12 @@ interface Args {
   keep: boolean
   os: string
   noCloudinit: boolean
+  storage: number
+  vcpus: number
+  ram: number
+  /** Cloud-init format: 'header' = standard #cloud-config, 'alx' = bare YAML
+   * matching the alx_tensordock_deploy sample, 'bash' = raw bash script. */
+  cloudInitFormat: 'header' | 'alx' | 'bash'
 }
 
 function parseArgs(): Args {
@@ -54,6 +60,12 @@ function parseArgs(): Args {
     keep: false,
     os: 'Ubuntu 22.04 LTS',
     noCloudinit: false,
+    // alx default is 70 GB storage; was 50 which triggered a deeper
+    // provision-time failure on the rtxa4000 host (3.5s slow-fail).
+    storage: 70,
+    vcpus: 4,
+    ram: 16,
+    cloudInitFormat: 'alx',
   }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
@@ -62,6 +74,13 @@ function parseArgs(): Args {
     else if (a === '--os') out.os = argv[++i]!
     else if (a === '--keep') out.keep = true
     else if (a === '--no-cloudinit') out.noCloudinit = true
+    else if (a === '--storage') out.storage = parseInt(argv[++i]!, 10)
+    else if (a === '--vcpus') out.vcpus = parseInt(argv[++i]!, 10)
+    else if (a === '--ram') out.ram = parseInt(argv[++i]!, 10)
+    else if (a === '--cloudinit') {
+      const v = argv[++i]
+      if (v === 'header' || v === 'alx' || v === 'bash') out.cloudInitFormat = v
+    }
   }
   return out
 }

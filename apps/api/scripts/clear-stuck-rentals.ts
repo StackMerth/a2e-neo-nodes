@@ -1,25 +1,33 @@
 /**
- * Force-cancel stuck PENDING ComputeRequests.
+ * Force-cancel stuck PENDING ComputeRequests, with refund.
  *
  * The portal cancel button has been observed leaving requests in
  * PENDING when the cascade kept retrying them. This script bypasses
- * the portal flow and updates the DB row directly.
+ * the portal flow and updates the DB row directly. Critically, it ALSO
+ * issues a REFUND_RENTAL credit so the buyer doesn't lose the
+ * pre-debited rental cost (which the portal cancel route normally
+ * handles inline).
  *
  *   pnpm --filter @a2e/api exec tsx scripts/clear-stuck-rentals.ts
  *     -> list all PENDING ComputeRequests + ExternalRentals.
  *
  *   pnpm --filter @a2e/api exec tsx scripts/clear-stuck-rentals.ts --cancel-all
- *     -> cancel EVERY pending ComputeRequest (queue flush).
+ *     -> cancel + refund EVERY pending ComputeRequest (queue flush).
  *
  *   pnpm --filter @a2e/api exec tsx scripts/clear-stuck-rentals.ts --cancel <id>
- *     -> cancel one specific request id (full id or 12-char prefix).
+ *     -> cancel + refund one (full id or 12-char prefix).
  *
- * Also prints the script version so the operator can confirm which
- * build of the api this matches.
+ *   pnpm --filter @a2e/api exec tsx scripts/clear-stuck-rentals.ts --cancel-all --no-refund
+ *     -> skip refund (rare; e.g. when totalCost was never debited).
+ *
+ * Refunds are idempotent via the (type, referenceId) BalanceTransaction
+ * unique constraint with referenceId='cancel:<crId>', matching the
+ * portal cancel route's contract.
  */
 import { PrismaClient } from '@a2e/database'
+import { creditBalance } from '../src/services/balance/balance-service.js'
 
-const SCRIPT_VERSION = '2026-06-08-47822e0-plus'
+const SCRIPT_VERSION = '2026-06-08-e0c8214-plus'
 
 const prisma = new PrismaClient()
 
@@ -29,6 +37,7 @@ async function main(): Promise<void> {
 
   const args = process.argv.slice(2)
   const cancelAll = args.includes('--cancel-all')
+  const noRefund = args.includes('--no-refund')
   const cancelIdx = args.indexOf('--cancel')
   const cancelArg = cancelIdx >= 0 ? args[cancelIdx + 1] : undefined
 
@@ -42,6 +51,8 @@ async function main(): Promise<void> {
       requestedAt: true,
       userId: true,
       workloadType: true,
+      totalCost: true,
+      paymentSource: true,
     },
   })
 
@@ -75,29 +86,61 @@ async function main(): Promise<void> {
   }
   console.log()
 
-  if (cancelAll) {
-    const result = await prisma.computeRequest.updateMany({
-      where: { status: 'PENDING' },
+  async function cancelOne(cr: typeof pending[number]): Promise<void> {
+    await prisma.computeRequest.update({
+      where: { id: cr.id },
       data: { status: 'CANCELLED' },
     })
-    console.log(`CANCELLED ${result.count} PENDING rental(s).`)
+    console.log(`  CANCELLED ${cr.id}`)
+    if (noRefund) {
+      console.log(`    (--no-refund: skipping refund)`)
+      return
+    }
+    if (cr.totalCost <= 0) {
+      console.log(`    (totalCost=0: nothing to refund)`)
+      return
+    }
+    if (cr.paymentSource === 'INTERNAL_BALANCE') {
+      // Internal-balance path doesn't credit; unwinds InternalSpend instead.
+      // Out of scope for this script; recommend the portal cancel route.
+      console.log(`    (paymentSource=INTERNAL_BALANCE: refund handled differently; skip)`)
+      return
+    }
+    try {
+      await creditBalance(prisma, {
+        userId: cr.userId,
+        amountUsd: cr.totalCost,
+        type: 'REFUND_RENTAL',
+        description: `Refund for cancelled ${cr.gpuCount}x ${cr.gpuTier} rental (clear-stuck-rentals)`,
+        referenceId: `cancel:${cr.id}`,
+      })
+      console.log(`    REFUNDED $${cr.totalCost.toFixed(2)} to user ${cr.userId}`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('Unique constraint') || msg.includes('already exists')) {
+        console.log(`    (already refunded, idempotent skip)`)
+      } else {
+        console.log(`    REFUND FAILED: ${msg}`)
+      }
+    }
+  }
+
+  if (cancelAll) {
+    console.log(`Cancelling ${pending.length} pending rental(s):`)
+    for (const cr of pending) {
+      await cancelOne(cr)
+    }
     return
   }
 
   if (cancelArg) {
-    // Accept either a full cuid or a 12-char prefix (matches what the
-    // portal shows). Translate to a startsWith match.
     const target = cancelArg.toLowerCase()
     const match = pending.find((r) => r.id === target || r.id.startsWith(target))
     if (!match) {
       console.log(`No PENDING request matching "${cancelArg}". Nothing to cancel.`)
       return
     }
-    const result = await prisma.computeRequest.update({
-      where: { id: match.id },
-      data: { status: 'CANCELLED' },
-    })
-    console.log(`CANCELLED ${result.id}.`)
+    await cancelOne(match)
     return
   }
 
