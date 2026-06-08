@@ -159,26 +159,12 @@ export async function provisionTensorDockRental(
   const keypair = generateRentalKeypair(cr.id)
   const rootPassword = randomBytes(24).toString('base64url')
 
-  // Step 5: cloud-init that installs pubkey + ensures sshd is up.
-  // The alx deploy script sends cloudinit_script with newlines
-  // escaped as the literal two-char sequence \n (not actual newline).
-  // We do the same to avoid triggering TensorDock's server-side parser
-  // edge case where form-encoded raw newlines 500 the request.
-  const cloudInit = [
-    '#cloud-config',
-    'ssh_pwauth: false',
-    'users:',
-    '  - name: root',
-    '    lock_passwd: false',
-    '    ssh_authorized_keys:',
-    `      - ${keypair.publicKeyOpenssh.trim()}`,
-    'runcmd:',
-    '  - [ mkdir, -p, /root/.ssh ]',
-    `  - bash -c "echo '${keypair.publicKeyOpenssh.trim()}' >> /root/.ssh/authorized_keys"`,
-    '  - [ chmod, "600", /root/.ssh/authorized_keys ]',
-    '  - [ chmod, "700", /root/.ssh ]',
-    '  - [ systemctl, restart, sshd ]',
-  ].join('\\n')
+  // Step 5: pass SSH pubkey via TensorDock's native ssh_key field.
+  // Every cloud-init format we tried (#cloud-config, bare alx-style
+  // YAML, bash) triggered a server-side 500 on deploy/single. The
+  // ryan-huang1/tensordock-python-sdk source shows ssh_key is the
+  // first-class way to inject keys at provision time; bypasses
+  // cloud-init entirely.
 
   // Step 6: pick external ports from the host's pre-allocated pool.
   // TensorDock will 500 if external_ports contains values outside
@@ -198,6 +184,7 @@ export async function provisionTensorDockRental(
     deployResp = await api.deployServer({
       name: `a2e-${cr.id.slice(0, 12)}`,
       password: rootPassword,
+      ssh_key: keypair.publicKeyOpenssh.trim(),
       hostnode: cheapest.hostId,
       gpu_model: cheapest.gpu_model,
       gpu_count: cr.gpuCount,
@@ -207,7 +194,6 @@ export async function provisionTensorDockRental(
       operating_system: options.operatingSystem ?? DEFAULT_OS,
       internal_ports: internalPorts,
       external_ports: externalPorts,
-      cloudinit_script: cloudInit,
     })
   } catch (err) {
     const msg = err instanceof TensorDockApiError ? err.message : (err as Error).message

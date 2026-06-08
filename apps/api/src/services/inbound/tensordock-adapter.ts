@@ -127,8 +127,15 @@ export interface TensorDockGetServerResponse extends TensorDockApiResponse {
 export interface TensorDockDeployRequest {
   /** Hostname inside the VM (Linux only). */
   name: string
-  /** Root password the deploy API needs to accept the request. */
+  /** Root password. Required even when ssh_key is set; some hosts force a password regardless. */
   password: string
+  /**
+   * SSH public key (openssh format). TensorDock's native field for key
+   * injection at provision time. Use this instead of cloudinit_script
+   * for SSH; cloud-init parsing has been observed to silently 500 on
+   * standard formats.
+   */
+  ssh_key?: string
   /** Host UUID from /client/deploy/hostnodes (hostnodes[uuid]). */
   hostnode: string
   /** GPU model slug as it appears under specs.gpu of the host, e.g. "rtx3090". */
@@ -147,7 +154,7 @@ export interface TensorDockDeployRequest {
   internal_ports?: number[]
   /** External ports the host exposes; must be a subset of host.networking.ports. */
   external_ports?: number[]
-  /** Optional cloud-init script content. */
+  /** Optional cloud-init script content. Prefer ssh_key field for SSH access. */
   cloudinit_script?: string
 }
 
@@ -292,6 +299,7 @@ export class TensorDockClient {
       storage: req.storage,
       operating_system: req.operating_system,
     }
+    if (req.ssh_key) fields.ssh_key = req.ssh_key
     // TensorDock expects external_ports and internal_ports as
     // python-set string repr like "{22, 8888}". The deploy script
     // sends literally `str(set([22, 8888]))`; we emulate that by

@@ -38,7 +38,7 @@ import {
 } from '../src/services/inbound/tensordock-adapter.js'
 import { generateRentalKeypair } from '../src/services/inbound/ssh-keygen.js'
 
-const SCRIPT_VERSION = '2026-06-08-headers-and-alnum-pass'
+const SCRIPT_VERSION = '2026-06-08-native-ssh-key-field'
 
 interface Args {
   gpu?: string
@@ -232,11 +232,19 @@ async function main(): Promise<void> {
     }
   }
 
+  // TensorDock supports a native ssh_key form field (per the
+  // ryan-huang1/tensordock-python-sdk source) that injects the public
+  // key into the VM at provision time. Using it instead of
+  // cloudinit_script bypasses TensorDock's cloud-init parser entirely,
+  // which had been silently 500ing on every YAML format we tried.
+  // password is optional when ssh_key is set; we keep both for
+  // belt-and-suspenders (some hosts force a root password regardless).
   const body: Record<string, string> = {
     api_key: apiKey,
     api_token: apiToken,
     name: `a2e-probe-${randomBytes(4).toString('hex')}`,
     password,
+    ssh_key: keypair.publicKeyOpenssh.trim(),
     hostnode: chosen.hostId,
     gpu_model: chosen.gpu_model,
     gpu_count: '1',
@@ -247,13 +255,22 @@ async function main(): Promise<void> {
     internal_ports: `{${internalPort}}`,
     external_ports: `{${externalPort}}`,
   }
-  if (cloudInit) body.cloudinit_script = cloudInit
+  // Only include cloudinit_script if user explicitly requested header
+  // or bash format. Default 'alx' format has been replaced by the
+  // native ssh_key field, so the alx branch is now a no-op for default
+  // runs (we keep --cloudinit header / --cloudinit bash for testing).
+  if (cloudInit && args.cloudInitFormat !== 'alx') {
+    body.cloudinit_script = cloudInit
+  }
 
   // Log body shape (redact secrets).
   const bodyForLog = { ...body }
   bodyForLog.api_key = `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`
   bodyForLog.api_token = `${apiToken.slice(0, 4)}...${apiToken.slice(-4)}`
   bodyForLog.password = '<redacted>'
+  if (bodyForLog.ssh_key) {
+    bodyForLog.ssh_key = `<${body.ssh_key.length} chars: ${body.ssh_key.slice(0, 20)}...${body.ssh_key.slice(-12)}>`
+  }
   if (bodyForLog.cloudinit_script) {
     bodyForLog.cloudinit_script = `<${(cloudInit as string).length} chars: ${(cloudInit as string).slice(0, 80)}...>`
   }
