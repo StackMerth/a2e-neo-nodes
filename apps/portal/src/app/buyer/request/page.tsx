@@ -19,28 +19,27 @@ import {
 interface GpuTier {
   id: string
   name: string
-  dailyRate: number
   // C2 wave 2: consumer-class GPUs are inference-only. When the buyer
   // picks TRAINING or MIXED, these cards grey out with an explanatory
   // tooltip and become non-selectable.
   inferenceOnly?: boolean
 }
 
+// Pricing for these tiers lives in HOURLY_RATES below; this array only
+// drives the selectable card list and inference-only gating. Prior
+// versions carried a dailyRate field that mis-stored hourly values and
+// was never read; removed to avoid the misleading "daily $5.84" look.
 const GPU_TIERS: GpuTier[] = [
-  { id: 'H100', name: 'H100', dailyRate: 5.84 },
-  { id: 'H200', name: 'H200', dailyRate: 7.49 },
-  { id: 'B200', name: 'B200', dailyRate: 13.38 },
-  { id: 'B300', name: 'B300', dailyRate: 17.99 },
-  { id: 'GB300', name: 'GB300', dailyRate: 20.81 },
-  // A100: NVIDIA Ampere data-center workhorse. Added 2026-06-07.
-  // $24/day = $1.00/hr retail. Vast.ai + Lambda + RunPod all carry it.
-  { id: 'A100', name: 'A100', dailyRate: 1.00 },
-  // L40S: NVIDIA Ada-Lovelace datacenter card. $21/day = $0.88/hr retail.
-  { id: 'L40S', name: 'L40S', dailyRate: 0.88 },
-  // C2 wave 2: consumer / prosumer tiers. Lower price, inference-only.
-  { id: 'RTX_4090', name: 'RTX 4090', dailyRate: 0.58, inferenceOnly: true },
-  { id: 'RTX_3090', name: 'RTX 3090', dailyRate: 0.37, inferenceOnly: true },
-  { id: 'CONSUMER', name: 'Consumer', dailyRate: 0.29, inferenceOnly: true },
+  { id: 'H100', name: 'H100' },
+  { id: 'H200', name: 'H200' },
+  { id: 'B200', name: 'B200' },
+  { id: 'B300', name: 'B300' },
+  { id: 'GB300', name: 'GB300' },
+  { id: 'A100', name: 'A100' },
+  { id: 'L40S', name: 'L40S' },
+  { id: 'RTX_4090', name: 'RTX 4090', inferenceOnly: true },
+  { id: 'RTX_3090', name: 'RTX 3090', inferenceOnly: true },
+  { id: 'CONSUMER', name: 'Consumer', inferenceOnly: true },
 ]
 
 const HOURLY_RATES: Record<string, number> = {
@@ -103,6 +102,15 @@ const TIER_STYLES: Record<string, { border: string; bg: string; text: string; gl
     text: 'var(--danger)',
     glow: '0 0 20px rgba(239,68,68,0.1)',
     ring: 'rgba(239,68,68,0.5)',
+  },
+  // A100: amber accent. Ampere generation is older than Hopper/Blackwell
+  // but still the most-rented data-center GPU on every aggregator.
+  A100: {
+    border: 'rgba(251,191,36,0.4)',
+    bg: 'rgba(251,191,36,0.05)',
+    text: '#fbbf24',
+    glow: '0 0 20px rgba(251,191,36,0.1)',
+    ring: 'rgba(251,191,36,0.5)',
   },
   // L40S: cyan accent — distinct from datacenter purples/reds and from
   // the consumer-tier teal cluster below.
