@@ -34,7 +34,7 @@
 import { randomBytes } from 'node:crypto'
 import { generateRentalKeypair } from '../src/services/inbound/ssh-keygen.js'
 
-const SCRIPT_VERSION = '2026-06-08-v2-default-image-nvidia-570'
+const SCRIPT_VERSION = '2026-06-08-v2-prefer-port-forwarding-list-mode'
 const BASE_URL = 'https://dashboard.tensordock.com/api/v2'
 
 interface Args {
@@ -45,6 +45,10 @@ interface Args {
   ram: number
   storage: number
   image: string
+  /** --list-only: dump viable hosts without deploying. */
+  listOnly: boolean
+  /** --port-only: skip dedicated-IP hosts (they consistently fail). */
+  portOnly: boolean
 }
 
 function parseArgs(): Args {
@@ -68,6 +72,8 @@ function parseArgs(): Args {
     //   ubuntu2404_ml_tensorflow, ubuntu2204_base, ubuntu2404_base,
     //   windows10
     image: 'ubuntu2404_nvidia_570',
+    listOnly: false,
+    portOnly: false,
   }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
@@ -78,6 +84,8 @@ function parseArgs(): Args {
     else if (a === '--ram') out.ram = parseInt(argv[++i]!, 10)
     else if (a === '--storage') out.storage = parseInt(argv[++i]!, 10)
     else if (a === '--image') out.image = argv[++i]!
+    else if (a === '--list-only') out.listOnly = true
+    else if (a === '--port-only') out.portOnly = true
   }
   return out
 }
@@ -182,7 +190,46 @@ async function main(): Promise<void> {
     console.log('No hosts with capacity + viable network mode right now. Try again in a moment or pick a different --gpu.')
     process.exit(1)
   }
-  candidates.sort((a, b) => a.pricePerHr - b.pricePerHr)
+  // Sort: port-forwarding hosts first (proven to work in legacy API,
+  // dedicated-IP hosts consistently fail with "unexpected error" at
+  // 8-12s timing — suggests dedicated IP requires opt-in/quota that's
+  // not on by default). Within same mode, cheaper first.
+  candidates.sort((a, b) => {
+    if (a.usePortForward !== b.usePortForward) {
+      return a.usePortForward ? -1 : 1
+    }
+    return a.pricePerHr - b.pricePerHr
+  })
+
+  if (args.portOnly) {
+    const before = candidates.length
+    const after = candidates.filter((c) => c.usePortForward)
+    console.log(`  -> --port-only: ${before - after.length} dedicated-IP host(s) excluded.`)
+    if (after.length === 0) {
+      console.log('No port-forwarding hosts available right now. Try without --port-only.')
+      process.exit(1)
+    }
+    candidates.length = 0
+    candidates.push(...after)
+  }
+
+  if (args.listOnly) {
+    console.log()
+    console.log(`All viable hosts (${candidates.length}):`)
+    console.log()
+    for (const c of candidates) {
+      const portCount = c.usePortForward ? '(port_forward)' : '(dedicated_ip)'
+      console.log(
+        `  ${c.gpuModel.padEnd(28)} ${c.city.padEnd(20)} ${c.country.padEnd(20)} $${c.pricePerHr.toFixed(2).padStart(5)}/h  ${portCount}`,
+      )
+      console.log(`    host=${c.hostId}`)
+      console.log(`    location_id=${c.locationId}`)
+    }
+    console.log()
+    console.log('Re-run without --list-only to deploy on the first matching host.')
+    process.exit(0)
+  }
+
   const chosen = args.location
     ? candidates.find((c) => c.locationId === args.location) ?? candidates[0]!
     : candidates[0]!
