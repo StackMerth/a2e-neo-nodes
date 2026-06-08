@@ -51,8 +51,28 @@ export interface HyperstackFlavor {
   cpu?: number
   ram?: number
   disk?: number
-  /** Hyperstack reports hourly price in USD as a string ("1.95") or number. */
+  /** Flavor in-stock indicator from the catalog. We only allocate against
+   *  stock_available === true; false means the catalog row exists but
+   *  Hyperstack has no inventory to back a fresh provision. */
+  stock_available?: boolean
+  /** Hyperstack does NOT surface cost_per_hour on /core/flavors; this
+   *  field is kept for future compatibility (other endpoints may join
+   *  pricing in). Adapter falls back to the capacity probe's
+   *  STATIC_PRICES['HYPERSTACK'] table when null. */
   cost_per_hour?: string | number
+}
+
+/**
+ * Hyperstack's /core/flavors response groups by (gpu_type, region),
+ * with a nested flavors[] array of the actual selectable instance
+ * sizes per group. This interface describes the group row; we
+ * flatten it in listFlavors() so callers see one row per actual
+ * flavor.
+ */
+interface HyperstackFlavorGroup {
+  gpu?: string
+  region_name?: string
+  flavors?: HyperstackFlavor[]
 }
 
 export interface HyperstackEnvironment {
@@ -237,15 +257,26 @@ export class HyperstackClient {
   async listFlavors(opts?: { region?: string }): Promise<HyperstackFlavor[]> {
     const query: Record<string, string> = {}
     if (opts?.region) query.region = opts.region
-    const res = await this.request<{ data?: HyperstackFlavor[]; flavors?: HyperstackFlavor[] }>(
-      '/core/flavors',
-      'GET',
-      undefined,
-      query,
-    )
-    // Hyperstack has shipped both `data` and `flavors` keys at various
-    // points; accept either so we don't crash on a backend rename.
-    return res.data ?? res.flavors ?? []
+    const res = await this.request<{
+      data?: HyperstackFlavorGroup[]
+      flavors?: HyperstackFlavorGroup[]
+    }>('/core/flavors', 'GET', undefined, query)
+    // /core/flavors returns groups keyed by (gpu_type, region) with a
+    // nested flavors[] array per group. Flatten so callers see one row
+    // per actual selectable flavor and inherit the parent group's gpu +
+    // region_name when the child doesn't set them.
+    const groups = res.data ?? res.flavors ?? []
+    const flat: HyperstackFlavor[] = []
+    for (const g of groups) {
+      for (const f of g.flavors ?? []) {
+        flat.push({
+          ...f,
+          gpu: f.gpu ?? g.gpu,
+          region_name: f.region_name ?? g.region_name,
+        })
+      }
+    }
+    return flat
   }
 
   async listEnvironments(): Promise<HyperstackEnvironment[]> {
@@ -322,8 +353,16 @@ export class HyperstackClient {
 
 /**
  * Pick the cheapest Hyperstack flavor matching the requested (tier,
- * gpuCount). Filters by GPU name substring + GPU count match, then
- * sorts ascending by cost_per_hour. Returns null when nothing matches.
+ * gpuCount). Filters by GPU type substring + gpu_count + stock_available,
+ * then sorts ascending by cost_per_hour. When cost_per_hour isn't
+ * surfaced (the /core/flavors catalog observed 2026-06-08 returns null
+ * for every flavor's price), all matching rows tie at 0 and the first
+ * stock_available row wins; the allocator's static price table is the
+ * authoritative price in that case.
+ *
+ * Avoids 'spot' variants by default since the cascade can't honor
+ * preemption semantics from a buyer rental's perspective without
+ * explicit opt-in. Toggle via HYPERSTACK_ALLOW_SPOT=true.
  */
 export async function findCheapestHyperstackFlavor(
   client: HyperstackClient,
@@ -341,38 +380,32 @@ export async function findCheapestHyperstackFlavor(
   }
 
   const tokenUpper = token.toUpperCase()
+  const allowSpot = process.env.HYPERSTACK_ALLOW_SPOT?.toLowerCase() === 'true'
   const matching = flavors.filter((f) => {
-    const gpuLabel = (f.gpu ?? f.name ?? '').toUpperCase()
+    if (f.stock_available === false) return false
+    const gpuLabel = (f.gpu ?? '').toUpperCase()
+    // Hyperstack catalogs gpu types like "H100-80G-PCIe", "A100-80G-SXM4",
+    // "L40", "B200-SXM". Match the leading tier token; that catches every
+    // PCIe / SXM / NVLink variant for a given tier.
     if (!gpuLabel.includes(tokenUpper)) return false
-    // Hyperstack flavor names embed the gpu_count as "...-Nx"; some rows
-    // also surface gpu_count as a numeric field. Accept either.
-    const count = f.gpu_count
-      ?? extractGpuCountFromFlavorName(f.name)
-      ?? 0
-    return count === gpuCount
+    if (!allowSpot && gpuLabel.endsWith('-SPOT')) return false
+    return (f.gpu_count ?? 0) === gpuCount
   })
 
   if (matching.length === 0) return null
 
-  const sorted = matching
+  // Prefer rows that aren't 'api-only / no-snapshot' (the *-bigroot
+  // variants) when a stock standard flavor exists at the same count —
+  // those are usually api-only with unusual disk shapes that break
+  // user expectations.
+  const standard = matching.filter((f) => !/-bigroot$/i.test(f.name))
+  const candidates = standard.length > 0 ? standard : matching
+
+  const sorted = candidates
     .map((f) => ({ flavor: f, pricePerHourUsd: hyperstackPriceUsd(f.cost_per_hour) }))
-    .filter((x) => x.pricePerHourUsd > 0)
     .sort((a, b) => a.pricePerHourUsd - b.pricePerHourUsd)
 
   return sorted[0] ?? null
-}
-
-/**
- * Parse "n3-h100-PCIe-80GB-1x" -> 1, "n3-h100-SXM5-80GB-8x" -> 8. Returns
- * null when the trailing -Nx token isn't present. Defensive: Hyperstack
- * has shipped flavor names with and without the suffix.
- */
-function extractGpuCountFromFlavorName(name: string | undefined): number | null {
-  if (!name) return null
-  const match = /-(\d+)x$/i.exec(name)
-  if (!match) return null
-  const parsed = parseInt(match[1] ?? '', 10)
-  return Number.isFinite(parsed) ? parsed : null
 }
 
 /**

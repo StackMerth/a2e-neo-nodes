@@ -69,7 +69,10 @@ async function main(): Promise<void> {
     process.exit(0)
   }
 
-  // Pretty-print sorted by hourly cost
+  // /core/flavors does NOT surface cost_per_hour as of 2026-06-08, so
+  // every row's `cost` falls back to 0. The cascade's STATIC_PRICES
+  // table is the authoritative price. Print stock_available so the
+  // operator can see what's actually rentable right now.
   const rows = flavors
     .map((f) => ({
       name: f.name,
@@ -79,13 +82,20 @@ async function main(): Promise<void> {
       cpu: f.cpu ?? 0,
       ram: f.ram ?? 0,
       disk: f.disk ?? 0,
+      stock: f.stock_available === false ? 'OUT' : 'OK',
       cost: hyperstackPriceUsd(f.cost_per_hour),
     }))
-    .sort((a, b) => a.cost - b.cost)
+    .sort((a, b) => {
+      // Sort in-stock first, then by GPU type, then by count
+      if (a.stock !== b.stock) return a.stock === 'OK' ? -1 : 1
+      if (a.gpu !== b.gpu) return a.gpu.localeCompare(b.gpu)
+      return a.gpu_count - b.gpu_count
+    })
 
   for (const r of rows) {
+    const priceCol = r.cost > 0 ? `$${r.cost.toFixed(2)}/h` : '(price: static)'
     console.log(
-      `  $${r.cost.toFixed(2)}/h  ${r.name.padEnd(40)} gpu=${r.gpu} x${r.gpu_count}  region=${r.region}  cpu=${r.cpu} ram=${r.ram}GB disk=${r.disk}GB`,
+      `  [${r.stock}]  ${priceCol.padEnd(15)}  ${r.name.padEnd(28)} gpu=${r.gpu.padEnd(22)} x${r.gpu_count}  region=${r.region}  cpu=${r.cpu} ram=${r.ram}GB disk=${r.disk}GB`,
     )
   }
 
