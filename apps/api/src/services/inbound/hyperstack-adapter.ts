@@ -409,11 +409,15 @@ export async function findCheapestHyperstackFlavor(
 }
 
 /**
- * Pick the first environment where the given flavor is provisionable.
- * If HYPERSTACK_ENVIRONMENT is set we honor it; otherwise we ask
- * Hyperstack which environments are returned in the flavor row's
- * region_name field. Falls back to the first listed environment when
- * none surface explicitly.
+ * Pick the environment_name to pass to createVm. The flavor row carries
+ * the raw region ("CANADA-1") but Hyperstack's createVm body needs the
+ * full environment_name ("default-CANADA-1"). We resolve by listing
+ * environments and matching environment.region === flavor.region_name.
+ *
+ * Override hierarchy:
+ *   1. HYPERSTACK_ENVIRONMENT env var (full name, e.g. "default-CANADA-1")
+ *   2. environment whose .region matches flavor.region_name
+ *   3. first listed environment when no match found
  */
 export async function pickHyperstackEnvironment(
   client: HyperstackClient,
@@ -421,11 +425,16 @@ export async function pickHyperstackEnvironment(
 ): Promise<string | null> {
   const preferred = preferredHyperstackEnvironment()
   if (preferred) return preferred
-  if (flavor.region_name) return flavor.region_name
+  let envs: HyperstackEnvironment[]
   try {
-    const envs = await client.listEnvironments()
-    return envs[0]?.name ?? null
+    envs = await client.listEnvironments()
   } catch {
-    return null
+    return flavor.region_name ?? null
   }
+  if (envs.length === 0) return flavor.region_name ?? null
+  if (flavor.region_name) {
+    const matched = envs.find((e) => e.region === flavor.region_name)
+    if (matched) return matched.name
+  }
+  return envs[0]?.name ?? null
 }
