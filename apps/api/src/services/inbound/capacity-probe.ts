@@ -72,7 +72,7 @@ import {
   TensorDockClient,
   isTensorDockConfigured,
   isTensorDockAllocatorEnabled,
-  flattenStock,
+  flattenHostNodes,
 } from './tensordock-adapter.js'
 import {
   tensorDockTypeForTier,
@@ -381,28 +381,28 @@ async function probeTensorDock(
   }
   try {
     const client = new TensorDockClient()
-    const stockResp = await client.listStock()
-    if (!stockResp.success) {
-      return noCapacity('TENSORDOCK', stockResp.error ?? 'stock_list_failed')
-    }
-    const flat = flattenStock(stockResp)
-    // Match rows whose model string maps to the requested tier AND
-    // whose location has at least gpuCount cards available right now.
-    // available_now is the per-card pool on a host; for a request of
-    // gpuCount we need >= gpuCount available cards in that one row.
+    const resp = await client.listHostNodes()
+    const flat = flattenHostNodes(resp)
+    // Match rows whose GPU model string maps to the requested tier
+    // AND whose host is online AND has at least gpuCount cards. amount
+    // is the per-host pool for this model; we need a single host with
+    // >= gpuCount cards installed.
     const candidates = flat.filter(
-      (r) => stockMatchesTier(r.gpu_model, tier) && r.available_now >= gpuCount,
+      (r) => r.online && stockMatchesTier(r.gpu_model, tier) && r.amount >= gpuCount,
     )
     if (candidates.length === 0) {
       return noCapacity('TENSORDOCK', 'no_supply_at_count')
     }
-    // /stock/list doesn't include price (TensorDock's pricing is per-
-    // host-and-config and is computed at deploy time). Use the
-    // tier-mapping reference price as the probe quote; refinement to
-    // live pricing comes when we add a /stock/pricing query later.
+    // Per-host price (when surfaced) overrides the static reference.
+    const cheapest = candidates
+      .filter((c) => typeof c.price === 'number')
+      .sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity))[0]
+    const livePrice = cheapest?.price
     return {
       provider: 'TENSORDOCK',
-      pricePerHourUsd: mapping.approxPricePerGpuHourUsd * gpuCount,
+      pricePerHourUsd: livePrice !== undefined
+        ? livePrice * gpuCount
+        : mapping.approxPricePerGpuHourUsd * gpuCount,
       hasCapacity: true,
     }
   } catch (err) {
