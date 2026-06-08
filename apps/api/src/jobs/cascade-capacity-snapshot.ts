@@ -73,6 +73,7 @@ const PROVIDER_ORDER: ProviderKey[] = [
   'VOLTAGEGPU',
   'VASTAI',
   'SHADEFORM',
+  'TENSORDOCK',
 ]
 
 interface WatcherDeps {

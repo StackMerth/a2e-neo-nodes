@@ -68,6 +68,17 @@ import {
   shadeFormTokenForTier,
   findCheapestShadeFormType,
 } from './shadeform-adapter.js'
+import {
+  TensorDockClient,
+  isTensorDockConfigured,
+  isTensorDockAllocatorEnabled,
+  flattenStock,
+} from './tensordock-adapter.js'
+import {
+  tensorDockTypeForTier,
+  fitsSingleTensorDockHost,
+  stockMatchesTier,
+} from './tensordock-tier-mapping.js'
 
 export type ProviderKey =
   | 'LAMBDA'
@@ -77,6 +88,7 @@ export type ProviderKey =
   | 'VOLTAGEGPU'
   | 'VASTAI'
   | 'SHADEFORM'
+  | 'TENSORDOCK'
 
 export interface CapacityQuote {
   provider: ProviderKey
@@ -162,6 +174,20 @@ const STATIC_PRICES: Record<ProviderKey, Partial<Record<GpuTier, number>>> = {
     RTX_4090: 0.32, // consumer prices not yet observed in catalog; mirror Vast.ai
     RTX_3090: 0.20,
   },
+  TENSORDOCK: {
+    // Peer-to-peer datacenter+consumer marketplace. Static prices are
+    // tier-mapping defaults; the probe overrides with the cheapest live
+    // /stock/list match. /stock/list is unauthenticated, so this probe
+    // is cheap.
+    H100: 2.50,
+    H200: 3.50,
+    A100: 1.50,
+    L40S: 1.10,
+    B200: 6.00,
+    RTX_4090: 0.40,
+    RTX_3090: 0.30,
+    CONSUMER: 0.30,
+  },
 }
 
 interface ProbeOptions {
@@ -201,6 +227,12 @@ export async function probeAllProviders(
   // probe doesn't waste a slot on it when SHADEFORM_API_KEY is unset.
   if (isShadeFormConfigured() && isShadeFormAllocatorEnabled()) {
     baseCandidates.push('SHADEFORM')
+  }
+  // TensorDock probe is /stock/list (no auth) so we only gate on the
+  // allocator switch, not on configuration. But still skip when key is
+  // unset to avoid surfacing supply we can't actually rent.
+  if (isTensorDockConfigured() && isTensorDockAllocatorEnabled()) {
+    baseCandidates.push('TENSORDOCK')
   }
   const candidates: ProviderKey[] = opts.preferConfidential
     ? ['PHALA', 'VOLTAGEGPU']
@@ -264,6 +296,12 @@ export async function probeAllProvidersDebug(
   if (isShadeFormConfigured() && isShadeFormAllocatorEnabled()) {
     baseCandidates.push('SHADEFORM')
   }
+  // TensorDock probe is /stock/list (no auth) so we only gate on the
+  // allocator switch, not on configuration. But still skip when key is
+  // unset to avoid surfacing supply we can't actually rent.
+  if (isTensorDockConfigured() && isTensorDockAllocatorEnabled()) {
+    baseCandidates.push('TENSORDOCK')
+  }
   const candidates: ProviderKey[] = opts.preferConfidential
     ? ['PHALA', 'VOLTAGEGPU']
     : baseCandidates
@@ -324,6 +362,51 @@ async function probeOne(
       return probeVastAi(tier, gpuCount, price)
     case 'SHADEFORM':
       return probeShadeForm(tier, gpuCount, price)
+    case 'TENSORDOCK':
+      return probeTensorDock(tier, gpuCount, price)
+  }
+}
+
+async function probeTensorDock(
+  tier: GpuTier,
+  gpuCount: number,
+  price: number,
+): Promise<CapacityQuote> {
+  if (!isTensorDockConfigured()) return noCapacity('TENSORDOCK', 'not_configured')
+  if (!isTensorDockAllocatorEnabled()) return noCapacity('TENSORDOCK', 'allocator_disabled')
+  const mapping = tensorDockTypeForTier(tier)
+  if (!mapping) return noCapacity('TENSORDOCK', 'tier_unmapped')
+  if (!fitsSingleTensorDockHost(tier, gpuCount)) {
+    return noCapacity('TENSORDOCK', 'exceeds_per_host_max')
+  }
+  try {
+    const client = new TensorDockClient()
+    const stockResp = await client.listStock()
+    if (!stockResp.success) {
+      return noCapacity('TENSORDOCK', stockResp.error ?? 'stock_list_failed')
+    }
+    const flat = flattenStock(stockResp)
+    // Match rows whose model string maps to the requested tier AND
+    // whose location has at least gpuCount cards available right now.
+    // available_now is the per-card pool on a host; for a request of
+    // gpuCount we need >= gpuCount available cards in that one row.
+    const candidates = flat.filter(
+      (r) => stockMatchesTier(r.gpu_model, tier) && r.available_now >= gpuCount,
+    )
+    if (candidates.length === 0) {
+      return noCapacity('TENSORDOCK', 'no_supply_at_count')
+    }
+    // /stock/list doesn't include price (TensorDock's pricing is per-
+    // host-and-config and is computed at deploy time). Use the
+    // tier-mapping reference price as the probe quote; refinement to
+    // live pricing comes when we add a /stock/pricing query later.
+    return {
+      provider: 'TENSORDOCK',
+      pricePerHourUsd: mapping.approxPricePerGpuHourUsd * gpuCount,
+      hasCapacity: true,
+    }
+  } catch (err) {
+    return noCapacity('TENSORDOCK', err instanceof Error ? err.message : 'probe_throw')
   }
 }
 

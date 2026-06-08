@@ -1,215 +1,186 @@
 /**
- * TensorDock read-only inspector / API discovery tool.
+ * TensorDock read-only inspector.
  *
- * TensorDock historically had multiple API shapes:
- *   - Newer Core Cloud:   dashboard.tensordock.com/api/v0 (Bearer)
- *   - Legacy Marketplace: marketplace.tensordock.com/api/v0
- *                         (api_key + api_token form fields)
- *
- * On 2026-06-07 the first inspector hit HTTP 400 against both shapes
- * with the user's key, so we don't know which API generation it
- * targets. This version probes many candidate endpoint paths against
- * BOTH bases, dumps the raw response body for failed attempts so we
- * can see exactly what TensorDock expects, and picks the first 2xx as
- * the working configuration.
- *
- *   pnpm --filter @a2e/api exec tsx scripts/tensordock-inspect.ts --probe
- *     -> probe every candidate path. Most useful command right now.
+ * After the 2026-06-08 endpoint-discovery probe (commit b7f71e9) we
+ * confirmed the API lives at marketplace.tensordock.com/api/v0 with
+ * api_key + api_token query/form auth. Endpoint set was recovered from
+ * the caguiclajmg/tensordock-cli Go source. This rewrite hits the real
+ * endpoints rather than guessing.
  *
  *   pnpm --filter @a2e/api exec tsx scripts/tensordock-inspect.ts
- *     -> after --probe finds a working path, this lists hosts via that
- *        path. If --probe failed, this short-circuits.
+ *     -> auth check + live inventory across all locations, sorted by
+ *        priority GPUs (H100 / H200 / A100 / L40S / B200).
  *
- *   pnpm --filter @a2e/api exec tsx scripts/tensordock-inspect.ts --vms
- *     -> list account virtual machines via the working path.
+ *   pnpm --filter @a2e/api exec tsx scripts/tensordock-inspect.ts --raw
+ *     -> full /stock/list output including consumer cards.
  *
- * Aborts cleanly if TENSORDOCK_API_KEY is not set.
+ *   pnpm --filter @a2e/api exec tsx scripts/tensordock-inspect.ts --gpu H100
+ *     -> filter inventory by GPU substring.
+ *
+ *   pnpm --filter @a2e/api exec tsx scripts/tensordock-inspect.ts --servers
+ *     -> list account servers via /list.
+ *
+ *   pnpm --filter @a2e/api exec tsx scripts/tensordock-inspect.ts --billing
+ *     -> account balance via /billing.
+ *
+ * Env vars:
+ *   TENSORDOCK_API_KEY    = Authorization ID (UUID, returned at auth
+ *                            creation in the dashboard)
+ *   TENSORDOCK_API_TOKEN  = API Token (alphanumeric, shown once at
+ *                            auth creation; rotate if leaked)
  */
 
-const NEW_BASE = 'https://dashboard.tensordock.com/api/v0'
-const LEGACY_BASE = 'https://marketplace.tensordock.com/api/v0'
+import {
+  TensorDockClient,
+  isTensorDockConfigured,
+  flattenStock,
+} from '../src/services/inbound/tensordock-adapter.js'
 
-interface ProbeResult {
-  base: string
-  path: string
-  method: string
-  authStyle: 'bearer' | 'form' | 'query'
-  status: number
-  ok: boolean
-  bodyPreview: string
-}
-
-async function tryRequest(
-  base: string,
-  path: string,
-  method: 'GET' | 'POST',
-  authStyle: 'bearer' | 'form' | 'query',
-  apiKey: string,
-  apiToken: string | null,
-): Promise<ProbeResult> {
-  const headers: Record<string, string> = {}
-  let body: string | undefined
-  let url = `${base}${path}`
-
-  if (authStyle === 'bearer') {
-    headers.Authorization = `Bearer ${apiKey}`
-  } else if (authStyle === 'form') {
-    headers['Content-Type'] = 'application/x-www-form-urlencoded'
-    body = new URLSearchParams({
-      api_key: apiKey,
-      ...(apiToken ? { api_token: apiToken } : {}),
-    }).toString()
-  } else {
-    const q = new URLSearchParams({
-      api_key: apiKey,
-      ...(apiToken ? { api_token: apiToken } : {}),
-    })
-    url = `${url}?${q.toString()}`
-  }
-
-  let status = 0
-  let ok = false
-  let bodyPreview = ''
-  try {
-    const res = await fetch(url, { method, headers, body })
-    status = res.status
-    ok = res.ok
-    bodyPreview = (await res.text()).slice(0, 400)
-  } catch (err) {
-    bodyPreview = `network error: ${err instanceof Error ? err.message : err}`
-  }
-
-  return { base, path, method, authStyle, status, ok, bodyPreview }
-}
-
-const NEWER_CANDIDATES: Array<{ path: string; method: 'GET' | 'POST' }> = [
-  { path: '/hosts/list', method: 'GET' },
-  { path: '/hosts', method: 'GET' },
-  { path: '/billing', method: 'GET' },
-  { path: '/billing/list', method: 'GET' },
-  { path: '/account', method: 'GET' },
-  { path: '/account/balance', method: 'GET' },
-  { path: '/virtualmachines/list', method: 'GET' },
-  { path: '/virtualmachines', method: 'GET' },
-  { path: '/inventory', method: 'GET' },
-  { path: '/inventory/list', method: 'GET' },
-]
-
-const LEGACY_CANDIDATES: Array<{ path: string; method: 'GET' | 'POST' }> = [
-  // Auth + account probes — known working endpoints on legacy API.
-  { path: '/auth/test', method: 'POST' },
-  { path: '/auth/list', method: 'POST' },
-  { path: '/billing/balance', method: 'POST' },
-  { path: '/billing/list', method: 'POST' },
-  { path: '/client/list', method: 'POST' },
-  // Host-listing candidates — every plausible naming we've seen in
-  // TensorDock community SDKs and GitHub examples.
-  { path: '/host/list', method: 'POST' },
-  { path: '/list-hosts', method: 'POST' },
-  { path: '/list_hosts', method: 'POST' },
-  { path: '/listhosts', method: 'POST' },
-  { path: '/hosts/list', method: 'POST' },
-  { path: '/storefront/list', method: 'POST' },
-  { path: '/marketplace/list', method: 'POST' },
-  // Deployments / VMs.
-  { path: '/deploy/list', method: 'POST' },
-  { path: '/client/deploy/list', method: 'POST' },
-  { path: '/list', method: 'POST' },
-]
-
-async function runProbe(apiKey: string, apiToken: string | null): Promise<void> {
-  console.log(`Probing TensorDock authentication ...`)
-  console.log(`  TENSORDOCK_API_KEY:   ${apiKey.slice(0, 4)}...${apiKey.slice(-4)} (${apiKey.length} chars)`)
-  console.log(`  TENSORDOCK_API_TOKEN: ${apiToken ? `${apiToken.slice(0, 4)}...${apiToken.slice(-4)} (${apiToken.length} chars)` : '(unset)'}`)
-  console.log()
-
-  const results: ProbeResult[] = []
-
-  console.log(`--- Newer Core Cloud (Bearer): ${NEW_BASE} ---`)
-  for (const c of NEWER_CANDIDATES) {
-    const r = await tryRequest(NEW_BASE, c.path, c.method, 'bearer', apiKey, apiToken)
-    results.push(r)
-    const mark = r.ok ? 'OK' : 'XX'
-    console.log(`  [${mark}] ${c.method.padEnd(4)} ${c.path.padEnd(28)} HTTP ${r.status}`)
-    if (!r.ok && r.bodyPreview) {
-      console.log(`         body: ${r.bodyPreview.replace(/\s+/g, ' ').slice(0, 200)}`)
-    }
-  }
-
-  if (apiToken) {
-    console.log()
-    console.log(`--- Legacy Marketplace (api_key + api_token form): ${LEGACY_BASE} ---`)
-    for (const c of LEGACY_CANDIDATES) {
-      const r = await tryRequest(LEGACY_BASE, c.path, c.method, 'form', apiKey, apiToken)
-      results.push(r)
-      const mark = r.ok ? 'OK' : 'XX'
-      console.log(`  [${mark}] ${c.method.padEnd(4)} ${c.path.padEnd(28)} HTTP ${r.status}`)
-      if (!r.ok && r.bodyPreview) {
-        console.log(`         body: ${r.bodyPreview.replace(/\s+/g, ' ').slice(0, 200)}`)
-      }
-    }
-  }
-
-  // Also try newer base with query-string auth in case TensorDock kept
-  // the form-shaped key but moved the endpoints to /api/v0.
-  console.log()
-  console.log(`--- Newer Core Cloud (api_key+api_token in query): ${NEW_BASE} ---`)
-  for (const c of LEGACY_CANDIDATES.slice(0, 3)) {
-    const r = await tryRequest(NEW_BASE, c.path, c.method, 'query', apiKey, apiToken)
-    results.push(r)
-    const mark = r.ok ? 'OK' : 'XX'
-    console.log(`  [${mark}] ${c.method.padEnd(4)} ${c.path.padEnd(28)} HTTP ${r.status}`)
-    if (!r.ok && r.bodyPreview) {
-      console.log(`         body: ${r.bodyPreview.replace(/\s+/g, ' ').slice(0, 200)}`)
-    }
-  }
-
-  console.log()
-  const winners = results.filter((r) => r.ok)
-  if (winners.length > 0) {
-    console.log(`Working paths found:`)
-    for (const w of winners) {
-      console.log(`  ${w.method} ${w.base}${w.path} (auth=${w.authStyle})`)
-    }
-    console.log()
-    console.log('Paste this output back so the adapter can be wired against the working shape.')
-  } else {
-    console.log(`No working paths found across ${results.length} attempts.`)
-    console.log('Most common 4xx body patterns reveal what TensorDock expects.')
-    console.log('Common patterns:')
-    console.log('  - "Invalid API key" -> the key string itself is wrong or revoked')
-    console.log('  - "Missing field X" -> the API expects an additional form field')
-    console.log('  - "Method not allowed" -> the path moved; check TensorDock changelog')
-    console.log('Paste this output back; we will adjust the candidate list.')
-  }
-}
+const PRIORITY_TOKENS = ['H100', 'H200', 'A100', 'L40S', 'B200']
 
 async function main(): Promise<void> {
-  const apiKey = (process.env.TENSORDOCK_API_KEY ?? '').trim()
-  const apiToken = (process.env.TENSORDOCK_API_TOKEN ?? '').trim() || null
-
-  if (!apiKey) {
-    console.log('TENSORDOCK_API_KEY is not set. Add it to Render API env:')
+  if (!isTensorDockConfigured()) {
+    console.log('TENSORDOCK_API_KEY and/or TENSORDOCK_API_TOKEN are not set. Add them to Render API env:')
     console.log('  1) Sign up at https://dashboard.tensordock.com')
-    console.log('  2) Developer Settings -> generate API token')
-    console.log('  3) Render -> a2e-api -> Environment -> add TENSORDOCK_API_KEY=<key>')
-    console.log('  4) (legacy keys only) also add TENSORDOCK_API_TOKEN=<token>')
-    console.log('  5) Save, wait for redeploy, re-run this script')
+    console.log('  2) Developer Settings -> Create Authorization')
+    console.log('  3) Render -> a2e-api -> Environment ->')
+    console.log('       TENSORDOCK_API_KEY   = <Authorization ID (the UUID)>')
+    console.log('       TENSORDOCK_API_TOKEN = <API Token (the alphanumeric secret)>')
+    console.log('  4) Save, wait for redeploy, re-run this script')
     process.exit(1)
   }
 
   const args = process.argv.slice(2)
-  const wantProbe = args.includes('--probe')
-  const wantVms = args.includes('--vms')
+  const wantRaw = args.includes('--raw')
+  const wantServers = args.includes('--servers')
+  const wantBilling = args.includes('--billing')
+  const gpuIdx = args.indexOf('--gpu')
+  const gpuArg = gpuIdx >= 0 ? args[gpuIdx + 1] : undefined
 
-  if (wantProbe || (!wantVms && !args.length)) {
-    // No args, or --probe explicitly: run the discovery probe.
-    await runProbe(apiKey, apiToken)
+  const client = new TensorDockClient()
+
+  // Always confirm credentials work before doing anything else. The
+  // /auth/test endpoint is cheap (~50ms) and tells us up-front whether
+  // the api_key/api_token pair is valid; if not, every other call will
+  // 400 too so abort here with a clear message.
+  console.log('Validating credentials via /auth/test ...')
+  try {
+    const auth = await client.authTest()
+    if (!auth.success) {
+      console.log(`  -> auth test failed: ${auth.error ?? '(no error message)'}`)
+      console.log()
+      console.log('Common causes:')
+      console.log('  - TENSORDOCK_API_KEY holds the API Token alphanumeric')
+      console.log('    instead of the Authorization ID UUID (they are SWAPPED)')
+      console.log('  - The authorization was revoked or expired')
+      console.log('  - The token was leaked and needs to be regenerated')
+      process.exit(1)
+    }
+    console.log(`  -> auth ok.`)
+  } catch (err) {
+    console.log(`  -> auth test threw: ${err instanceof Error ? err.message : err}`)
+    process.exit(1)
+  }
+  console.log()
+
+  if (wantBilling) {
+    console.log('Account billing:')
+    const bill = await client.getBilling()
+    console.log(`  raw: ${JSON.stringify(bill)}`)
     return
   }
 
-  console.log('After running --probe and confirming a working path, set up the adapter.')
-  console.log('This branch is reserved for the post-probe listing flow.')
+  if (wantServers) {
+    console.log('Account servers:')
+    const resp = await client.listServers()
+    const servers = resp.servers ?? {}
+    const ids = Object.keys(servers)
+    if (ids.length === 0) {
+      console.log('  (none deployed)')
+      return
+    }
+    for (const id of ids) {
+      const s = servers[id]!
+      const gpu = `${s.gpu_count ?? '?'}x ${s.gpu_model ?? '?'}`
+      console.log(
+        `  ${id.padEnd(24)} ${(s.status ?? '?').padEnd(14)} ${gpu.padEnd(36)} ${(s.location ?? '?').padEnd(16)} ${(s.ip ?? '-').padEnd(16)}`,
+      )
+    }
+    return
+  }
+
+  console.log('Fetching live inventory via /stock/list (unauthenticated)...')
+  const stockResp = await client.listStock()
+  if (!stockResp.success) {
+    console.log(`  -> /stock/list failed: ${stockResp.error ?? '(no error)'}`)
+    process.exit(1)
+  }
+  const rows = flattenStock(stockResp)
+  console.log(`  -> ${rows.length} (location, gpu_model) rows total.`)
+  console.log()
+
+  let filtered = rows
+  if (gpuArg) {
+    filtered = rows.filter((r) => r.gpu_model.toLowerCase().includes(gpuArg.toLowerCase()))
+    console.log(`Filtered to ${filtered.length} rows matching --gpu ${gpuArg}:`)
+  } else if (wantRaw) {
+    console.log(`Full catalog (${filtered.length} rows):`)
+  } else {
+    filtered = rows.filter((r) =>
+      PRIORITY_TOKENS.some((tok) => r.gpu_model.toLowerCase().includes(tok.toLowerCase())),
+    )
+    console.log(`Priority datacenter GPUs (${filtered.length} of ${rows.length} rows):`)
+  }
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (a.gpu_model !== b.gpu_model) return a.gpu_model.localeCompare(b.gpu_model)
+    return b.available_now - a.available_now
+  })
+
+  console.log()
+  console.log(
+    '  location'.padEnd(22)
+    + 'gpu_model'.padEnd(36)
+    + 'available_now'.padStart(15)
+    + 'available_reserve'.padStart(20),
+  )
+  for (const r of sorted) {
+    console.log(
+      `  ${r.location.padEnd(20)}  ${r.gpu_model.padEnd(34)}  ${String(r.available_now).padStart(13)}  ${String(r.available_reserve).padStart(17)}`,
+    )
+  }
+  console.log()
+
+  // Summarize total cards available per model across all locations.
+  const totalsByModel = new Map<string, { now: number; reserve: number; locs: number }>()
+  for (const r of rows) {
+    const t = totalsByModel.get(r.gpu_model) ?? { now: 0, reserve: 0, locs: 0 }
+    t.now += r.available_now
+    t.reserve += r.available_reserve
+    t.locs += 1
+    totalsByModel.set(r.gpu_model, t)
+  }
+  const summary = [...totalsByModel.entries()]
+    .filter(([m]) =>
+      wantRaw || gpuArg
+        ? gpuArg ? m.toLowerCase().includes(gpuArg.toLowerCase()) : true
+        : PRIORITY_TOKENS.some((tok) => m.toLowerCase().includes(tok.toLowerCase())),
+    )
+    .sort(([, a], [, b]) => b.now - a.now)
+
+  console.log('Totals by GPU model (across all locations):')
+  console.log()
+  console.log('  gpu_model'.padEnd(38) + 'total_now'.padStart(10) + 'total_reserve'.padStart(16) + 'locations'.padStart(12))
+  for (const [model, t] of summary) {
+    console.log(
+      `  ${model.padEnd(36)}  ${String(t.now).padStart(8)}  ${String(t.reserve).padStart(14)}  ${String(t.locs).padStart(10)}`,
+    )
+  }
+  console.log()
+  console.log('Re-run with --raw to see consumer + non-priority tiers.')
+  console.log('Re-run with --gpu <token> to filter by GPU substring (e.g. --gpu h100).')
+  console.log('Re-run with --servers to list account deployments.')
+  console.log('Re-run with --billing to see account balance.')
 }
 
 main().catch((err) => {
