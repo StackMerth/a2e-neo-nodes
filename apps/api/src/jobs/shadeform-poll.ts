@@ -206,20 +206,16 @@ async function pollOne(
   if (!fresh) return
 
   if (fresh.status === 'ACTIVE' && fresh.sshHost) {
-    // Tenant cleanup before surfacing credentials. Shadeform creates a
-    // fresh VM via Shade Cloud accounts per booking, so this is mostly
-    // a no-op; kept for defense-in-depth parity with the other poll
-    // workers.
-    if (fresh.lastNote !== CLEANUP_SUCCESS_NOTE) {
-      const cleanup = await cleanupRentalTenantState(prisma, fresh.id)
-      if (!cleanup.ok) {
-        console.error(
-          `[shadeform-poll] tenant cleanup failed for ${fresh.id} after ${cleanup.durationMs}ms: ${cleanup.error}`,
-        )
-      } else {
-        console.log(`[shadeform-poll] tenant cleanup OK for ${fresh.id} in ${cleanup.durationMs}ms`)
-      }
-    }
+    // SKIP tenant cleanup for Shadeform: every underlying cloud
+    // (massedcompute, latitude, crusoe, hyperstack, etc.) provisions a
+    // fresh VM per rental via Shade Cloud accounts, so there is no
+    // prior-tenant residue. Attempting cleanup triggered a fatal SSH
+    // auth crash on 2026-06-08: ssh2 library's socket emits an
+    // unhandled 'error' event when our ephemeral key doesn't match the
+    // VM's authorized_keys (Shadeform's ssh_key field may not always
+    // propagate cleanly through massedcompute's provisioning). That
+    // unhandled emit took down the API every minute. Skipping cleanup
+    // here removes both the unnecessary work AND the crash vector.
 
     const promoted = await prisma.computeRequest.updateMany({
       where: { id: fresh.computeRequestId, status: 'PROVISIONING_EXTERNAL' },

@@ -704,4 +704,32 @@ const shutdown = async (signal: string) => {
 process.on('SIGTERM', () => shutdown('SIGTERM'))
 process.on('SIGINT', () => shutdown('SIGINT'))
 
+// Process-level safety net: Node 15+ terminates on unhandledRejection
+// by default. Background BullMQ workers' fire-and-forget calls (e.g.
+// `void createNotification(...)`, `void emit(...)` patterns in
+// shadeform-poll / vastai-poll / etc.) can leak rejections that
+// otherwise crash the API every couple of minutes (cmq5f1gvw000 demo).
+// Log loudly, keep the process alive. The worker still surfaces the
+// failure via its own try/catch logs; this is just the floor under it.
+process.on('unhandledRejection', (reason, promise) => {
+  // eslint-disable-next-line no-console
+  console.error(
+    '[unhandled-rejection]',
+    reason instanceof Error ? `${reason.message}\n${reason.stack}` : reason,
+    'promise:',
+    promise,
+  )
+})
+
+process.on('uncaughtException', (err) => {
+  // Synchronous errors that escape all callers. Same policy: log,
+  // don't crash. Render still does a health-check-driven restart
+  // if subsequent requests fail.
+  // eslint-disable-next-line no-console
+  console.error(
+    '[uncaught-exception]',
+    err instanceof Error ? `${err.message}\n${err.stack}` : err,
+  )
+})
+
 start()
