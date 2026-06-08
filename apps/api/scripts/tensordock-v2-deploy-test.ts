@@ -34,7 +34,7 @@
 import { randomBytes } from 'node:crypto'
 import { generateRentalKeypair } from '../src/services/inbound/ssh-keygen.js'
 
-const SCRIPT_VERSION = '2026-06-08-v2-default-storage-200-match-docs'
+const SCRIPT_VERSION = '2026-06-08-v2-default-image-nvidia-570'
 const BASE_URL = 'https://dashboard.tensordock.com/api/v2'
 
 interface Args {
@@ -58,7 +58,16 @@ function parseArgs(): Args {
     // "unexpected error". 200 matches what TensorDock's docs show
     // works.
     storage: 200,
-    image: 'ubuntu2404',
+    // ubuntu2404 (no driver) deploys took ~9s then failed with
+    // "unexpected error during deployment" — the GPU couldn't bind
+    // without NVIDIA drivers. Use the _nvidia_570 variant: Ubuntu
+    // 24.04 with drivers pre-installed. Valid enum from API docs:
+    //   ubuntu2204, ubuntu2404, ubuntu2204_nvidia_550, _570
+    //   ubuntu2404_nvidia_550, _570
+    //   ubuntu2404_ml_everything, ubuntu2404_ml_pytorch,
+    //   ubuntu2404_ml_tensorflow, ubuntu2204_base, ubuntu2404_base,
+    //   windows10
+    image: 'ubuntu2404_nvidia_570',
   }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
