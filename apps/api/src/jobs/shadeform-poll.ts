@@ -67,16 +67,46 @@ export function createShadeFormPollQueue(connection: ConnectionOptions): Queue {
 }
 
 export function createShadeFormPollWorker(deps: PollDeps): Worker {
-  return new Worker(
+  const worker = new Worker(
     QUEUE_NAME,
     async () => {
-      await runShadeFormPollTick(deps.prisma, deps.io)
+      // Top-level try/catch: anything escaping runShadeFormPollTick
+      // must NOT crash the API process. The worker LOGS and moves on.
+      // Render observed 3 process-level crashes within 5 minutes after
+      // this poll worker first deployed; the cause was an exception
+      // leaking past the per-rental try/catch into the tick promise.
+      // Surrounding the whole tick in another catch removes that
+      // failure mode regardless of which line throws.
+      try {
+        await runShadeFormPollTick(deps.prisma, deps.io)
+      } catch (err) {
+        console.error(
+          '[shadeform-poll] tick crashed (caught at worker level):',
+          err instanceof Error ? `${err.message}\n${err.stack}` : err,
+        )
+      }
     },
     {
       connection: deps.redis,
       concurrency: 1,
     },
   )
+  // BullMQ surfaces some failures via .on('error') instead of throwing
+  // from the job handler. Catch those too so a Redis/queue blip doesn't
+  // crash the process.
+  worker.on('error', (err) => {
+    console.error(
+      '[shadeform-poll] worker error event:',
+      err instanceof Error ? `${err.message}\n${err.stack}` : err,
+    )
+  })
+  worker.on('failed', (job, err) => {
+    console.error(
+      `[shadeform-poll] job ${job?.id ?? '?'} failed:`,
+      err instanceof Error ? `${err.message}\n${err.stack}` : err,
+    )
+  })
+  return worker
 }
 
 export async function scheduleShadeFormPoll(queue: Queue): Promise<void> {
@@ -95,20 +125,38 @@ export async function runShadeFormPollTick(
     return
   }
 
-  const rentals = await prisma.externalRental.findMany({
-    where: {
-      provider: 'SHADEFORM',
-      status: { in: ['PENDING', 'ACTIVE', 'CLOSING'] },
-    },
-    orderBy: { launchRequestedAt: 'asc' },
-    take: BATCH_SIZE,
-    select: {
-      id: true,
-      status: true,
-      computeRequestId: true,
-      sshHost: true,
-    },
-  })
+  let rentals: Array<{
+    id: string
+    status: string
+    computeRequestId: string
+    sshHost: string | null
+  }> = []
+  try {
+    rentals = await prisma.externalRental.findMany({
+      where: {
+        provider: 'SHADEFORM',
+        status: { in: ['PENDING', 'ACTIVE', 'CLOSING'] },
+      },
+      // Use createdAt instead of launchRequestedAt because the column
+      // name may differ from vastai-poll's assumption depending on the
+      // current Prisma schema; createdAt is always present on any cuid
+      // model. Either ordering picks oldest first which is what we want.
+      orderBy: { createdAt: 'asc' },
+      take: BATCH_SIZE,
+      select: {
+        id: true,
+        status: true,
+        computeRequestId: true,
+        sshHost: true,
+      },
+    })
+  } catch (err) {
+    console.error(
+      '[shadeform-poll] findMany failed:',
+      err instanceof Error ? `${err.message}\n${err.stack}` : err,
+    )
+    return
+  }
 
   for (const r of rentals) {
     try {
@@ -116,7 +164,7 @@ export async function runShadeFormPollTick(
     } catch (err) {
       console.error(
         `[shadeform-poll] failed on rental ${r.id}:`,
-        err instanceof Error ? err.message : err,
+        err instanceof Error ? `${err.message}\n${err.stack}` : err,
       )
     }
   }
