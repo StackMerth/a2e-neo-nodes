@@ -34,7 +34,7 @@
 import { randomBytes } from 'node:crypto'
 import { generateRentalKeypair } from '../src/services/inbound/ssh-keygen.js'
 
-const SCRIPT_VERSION = '2026-06-08-v2-port-forwards-array'
+const SCRIPT_VERSION = '2026-06-08-v2-port-forwards-objects'
 const BASE_URL = 'https://dashboard.tensordock.com/api/v2'
 
 interface Args {
@@ -153,11 +153,29 @@ async function main(): Promise<void> {
   const keypair = generateRentalKeypair(`v2-probe-${Date.now()}`)
   const name = `a2e-v2-probe-${randomBytes(4).toString('hex')}`
 
-  // port_forwards is required when useDedicatedIp=false. The API
-  // explicitly validates "SSH port (22) must be forwarded for Ubuntu
-  // VMs". Format inferred as an array of INTERNAL ports we want
-  // exposed; TensorDock allocates external ports from the host's
-  // available_ports pool.
+  // port_forwards is required when useDedicatedIp=false. Iteration 2:
+  // The API rejected port_forwards: [22] with "Expected object,
+  // received number" so each entry needs to be an object. Trying
+  // { internal: 22, external: <host_port> } based on the legacy API's
+  // response shape. Pre-discover the host's first available external
+  // port via /hostnodes so this works on any location.
+  let externalPort = 0
+  try {
+    const hostnodesResp = await req<{
+      data?: { hostnodes?: Array<{ id: string; location_id: string; available_resources?: { available_ports?: number[] } }> }
+    }>('/hostnodes', 'GET', token)
+    if (hostnodesResp.ok && hostnodesResp.json?.data?.hostnodes) {
+      const match = hostnodesResp.json.data.hostnodes.find((h) => h.location_id === locationId)
+      const ports = match?.available_resources?.available_ports ?? []
+      if (ports.length > 0) externalPort = ports[0]!
+    }
+  } catch { /* fall through; let server error tell us */ }
+  if (externalPort === 0) {
+    console.log('Warning: could not pre-discover external port; using 0 (server may auto-allocate).')
+  } else {
+    console.log(`Using external port ${externalPort} from host's available_ports pool.`)
+    console.log()
+  }
   const deployBody = {
     data: {
       type: 'virtualmachine',
@@ -175,7 +193,7 @@ async function main(): Promise<void> {
         },
         location_id: locationId!,
         useDedicatedIp: false,
-        port_forwards: [22],
+        port_forwards: [{ internal: 22, external: externalPort }],
         ssh_key: keypair.publicKeyOpenssh.trim(),
       },
     },
