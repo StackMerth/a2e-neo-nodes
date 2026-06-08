@@ -83,6 +83,12 @@ import {
   fitsSingleTensorDockHost,
 } from '../services/inbound/tensordock-tier-mapping.js'
 import { provisionTensorDockRental } from '../services/inbound/tensordock-provision.js'
+import {
+  isShadeFormConfigured,
+  isShadeFormAllocatorEnabled,
+  shadeFormTokenForTier,
+} from '../services/inbound/shadeform-adapter.js'
+import { provisionShadeFormRental } from '../services/inbound/shadeform-provision.js'
 import { probeAllProviders } from '../services/inbound/capacity-probe.js'
 
 type ComputeRequestWithUser = ComputeRequest & { user: User }
@@ -403,6 +409,9 @@ async function processRequest(
           break
         case 'TENSORDOCK':
           took = await tryTensorDockFallback(prisma, io, cr)
+          break
+        case 'SHADEFORM':
+          took = await tryShadeFormFallback(prisma, io, cr)
           break
       }
       if (took) return
@@ -1403,6 +1412,104 @@ async function tryTensorDockFallback(
     requestId: cr.id,
     userId: cr.userId,
     provider: 'TENSORDOCK',
+    instanceType: provisionResult.providerInstanceType,
+    region: provisionResult.providerRegion,
+    timestamp: now.toISOString(),
+  })
+
+  return true
+}
+
+/**
+ * Shadeform eighth-supplier fallback. Aggregator over ~18 underlying
+ * clouds (Crusoe, Lambda, Hyperstack, Latitude, Verda, Massedcompute,
+ * Nebius, Vultr, Paperspace, Scaleway, etc.) at prices that often beat
+ * direct providers. Plug-once, get all underlying networks.
+ *
+ * Gates:
+ *   1. SHADEFORM_API_KEY set (isShadeFormConfigured)
+ *   2. SHADEFORM_ALLOCATOR_ENABLED defaults true
+ *   3. tier mapped (Shadeform's GPU type tokens)
+ *
+ * Confidential routes never fall through to Shadeform: aggregator
+ * clouds aren't attested. preferConfidential stays on direct
+ * Phala / VoltageGPU paths.
+ */
+async function tryShadeFormFallback(
+  prisma: PrismaClient,
+  io: SocketServer,
+  cr: ComputeRequestWithUser,
+): Promise<boolean> {
+  if (!isShadeFormConfigured()) return false
+  if (!isShadeFormAllocatorEnabled()) return false
+  if (!isKeyEncryptionConfigured()) return false
+  if (!shadeFormTokenForTier(cr.gpuTier)) return false
+  const wantConfidential = (cr as { preferConfidential?: boolean }).preferConfidential === true
+  if (wantConfidential) return false
+
+  const session = mintSshSession(cr.durationDays)
+  const ratePerMinute = (cr.ratePerDay * cr.gpuCount) / (24 * 60)
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + cr.durationDays * 86400000)
+
+  let provisionResult
+  try {
+    provisionResult = await provisionShadeFormRental(prisma, cr.id)
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[compute-allocator] Shadeform fallback failed for ${cr.id} (tier ${cr.gpuTier} x${cr.gpuCount}):`,
+      (err as Error).message,
+    )
+    return false
+  }
+
+  const transitioned = await prisma.computeRequest.updateMany({
+    where: { id: cr.id, status: 'PENDING' },
+    data: {
+      status: 'PROVISIONING_EXTERNAL',
+      ratePerMinute,
+      expiresAt,
+      sshSessionToken: session.token,
+      sshSessionTokenExpiresAt: session.expiresAt,
+      sshSessionStatus: 'PROVISIONING',
+    },
+  })
+  if (transitioned.count === 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[compute-allocator] race on ${cr.id} after Shadeform provision; rolling back`,
+    )
+    const { terminateShadeFormRental } = await import('../services/inbound/shadeform-provision.js')
+    await terminateShadeFormRental(
+      prisma,
+      provisionResult.externalRentalId,
+      'allocator race: another path won the request',
+    ).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(`[compute-allocator] Shadeform rollback failed for ${provisionResult.externalRentalId}:`, err)
+    })
+    return false
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[compute-allocator] Shadeform fallback OK for ${cr.id}: provisioned gpu=${provisionResult.providerInstanceType} ` +
+    `(externalRentalId=${provisionResult.externalRentalId}, region=${provisionResult.providerRegion})`,
+  )
+
+  void createNotification(
+    cr.userId,
+    'COMPUTE_REQUEST_APPROVED',
+    'Compute is Provisioning',
+    `Your ${cr.gpuCount}x ${cr.gpuTier} rental is being prepared. SSH credentials appear in your dashboard within ~60-90s.`,
+    `/buyer/requests/${cr.id}`,
+  )
+
+  io.emit('compute:provisioning-external', {
+    requestId: cr.id,
+    userId: cr.userId,
+    provider: 'SHADEFORM',
     instanceType: provisionResult.providerInstanceType,
     region: provisionResult.providerRegion,
     timestamp: now.toISOString(),

@@ -264,6 +264,25 @@ export class ShadeFormClient {
   async deleteInstance(id: string): Promise<void> {
     await this.request<unknown>(`/instances/${id}/delete`, 'POST')
   }
+
+  /**
+   * Register an SSH public key with Shadeform; returns the key id we
+   * pass to /instances/create as ssh_key_id. Per their docs:
+   *   POST /sshkeys/add  body: { name, public_key }  -> { id }
+   * Shadeform's managed SSH key is the system default; we add our
+   * per-rental key alongside it.
+   */
+  async addSshKey(req: { name: string; public_key: string }): Promise<{ id: string }> {
+    return await this.request<{ id: string }>('/sshkeys/add', 'POST', req)
+  }
+
+  /**
+   * Idempotent: Shadeform requires unique key names. We pass the
+   * computeRequestId-derived label so the same rental never collides.
+   */
+  async deleteSshKey(id: string): Promise<void> {
+    await this.request<unknown>(`/sshkeys/${id}/delete`, 'POST')
+  }
 }
 
 /**
