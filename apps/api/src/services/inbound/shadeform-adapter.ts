@@ -226,7 +226,14 @@ export class ShadeFormClient {
       }
       throw new ShadeFormApiError(res.status, path, parsed)
     }
-    return (await res.json()) as T
+    // Some Shadeform endpoints (e.g. /instances/{id}/delete,
+    // /sshkeys/{id}/delete) return 200 with an empty body. JSON.parse
+    // on an empty string throws "Unexpected end of JSON input". Treat
+    // empty/whitespace-only bodies as {} so DELETE calls don't fail
+    // after a successful operation.
+    const text = await res.text()
+    if (text.trim() === '') return {} as T
+    return JSON.parse(text) as T
   }
 
   async listInstanceTypes(opts?: {
