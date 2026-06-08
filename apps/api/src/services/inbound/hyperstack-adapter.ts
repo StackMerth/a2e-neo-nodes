@@ -151,14 +151,17 @@ export function preferredHyperstackEnvironment(): string | null {
 }
 
 /**
- * Default image to deploy on Hyperstack VMs. Their catalog uses string
- * image names; "Ubuntu Server 22.04 LTS R570 CUDA 12.8 with Docker" is
- * the canonical GPU-ready Linux image as of 2026-06. Override via
- * HYPERSTACK_DEFAULT_IMAGE env if Hyperstack renames the SKU.
+ * Default image to deploy on Hyperstack VMs. Their catalog (observed
+ * 2026-06-08) carries this Ubuntu 24.04 + Docker + CUDA 12.8 image in
+ * every region we provision against; it's the recommended modern
+ * stack for fresh A100 / H100 / L40 deploys. Older 22.04 + R535 CUDA
+ * 12.2 image exists but ships stale drivers buyers won't expect.
+ * Override via HYPERSTACK_DEFAULT_IMAGE env if Hyperstack renames the
+ * SKU or you want a no-Docker base.
  */
 export function hyperstackDefaultImage(): string {
   return process.env.HYPERSTACK_DEFAULT_IMAGE?.trim()
-    || 'Ubuntu Server 22.04 LTS R570 CUDA 12.8 with Docker'
+    || 'Ubuntu Server 24.04 LTS R570 CUDA 12.8 with Docker'
 }
 
 /**
