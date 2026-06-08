@@ -96,10 +96,24 @@ const NEWER_CANDIDATES: Array<{ path: string; method: 'GET' | 'POST' }> = [
 ]
 
 const LEGACY_CANDIDATES: Array<{ path: string; method: 'GET' | 'POST' }> = [
-  { path: '/host/list', method: 'POST' },
-  { path: '/client/list', method: 'POST' },
+  // Auth + account probes — known working endpoints on legacy API.
   { path: '/auth/test', method: 'POST' },
+  { path: '/auth/list', method: 'POST' },
   { path: '/billing/balance', method: 'POST' },
+  { path: '/billing/list', method: 'POST' },
+  { path: '/client/list', method: 'POST' },
+  // Host-listing candidates — every plausible naming we've seen in
+  // TensorDock community SDKs and GitHub examples.
+  { path: '/host/list', method: 'POST' },
+  { path: '/list-hosts', method: 'POST' },
+  { path: '/list_hosts', method: 'POST' },
+  { path: '/listhosts', method: 'POST' },
+  { path: '/hosts/list', method: 'POST' },
+  { path: '/storefront/list', method: 'POST' },
+  { path: '/marketplace/list', method: 'POST' },
+  // Deployments / VMs.
+  { path: '/deploy/list', method: 'POST' },
+  { path: '/client/deploy/list', method: 'POST' },
   { path: '/list', method: 'POST' },
 ]
 
