@@ -34,7 +34,7 @@
 import { randomBytes } from 'node:crypto'
 import { generateRentalKeypair } from '../src/services/inbound/ssh-keygen.js'
 
-const SCRIPT_VERSION = '2026-06-08-v2-port-forwards-objects'
+const SCRIPT_VERSION = '2026-06-08-v2-internal-external-port-keys'
 const BASE_URL = 'https://dashboard.tensordock.com/api/v2'
 
 interface Args {
@@ -193,7 +193,7 @@ async function main(): Promise<void> {
         },
         location_id: locationId!,
         useDedicatedIp: false,
-        port_forwards: [{ internal: 22, external: externalPort }],
+        port_forwards: [{ internal_port: 22, external_port: externalPort }],
         ssh_key: keypair.publicKeyOpenssh.trim(),
       },
     },
