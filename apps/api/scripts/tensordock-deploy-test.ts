@@ -38,7 +38,7 @@ import {
 } from '../src/services/inbound/tensordock-adapter.js'
 import { generateRentalKeypair } from '../src/services/inbound/ssh-keygen.js'
 
-const SCRIPT_VERSION = '2026-06-08-e228b73-plus-fixed'
+const SCRIPT_VERSION = '2026-06-08-headers-and-alnum-pass'
 
 interface Args {
   gpu?: string
@@ -94,7 +94,14 @@ async function rawRequest(
   for (const [k, v] of Object.entries(bodyFields)) body.set(k, v)
   const res = await fetch(`${baseUrl}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      // Match the alx_tensordock_deploy Python requests-library defaults.
+      // Some Flask APIs reject anonymous requests at the provisioning
+      // step even when validation passes.
+      'User-Agent': 'a2e-engine-tensordock/1.0',
+      'Accept': 'application/json',
+    },
     body: body.toString(),
   })
   const text = await res.text()
@@ -104,6 +111,21 @@ async function rawRequest(
     bodyText: text,
     contentType: res.headers.get('content-type'),
   }
+}
+
+/**
+ * 16-char alphanumeric password. Avoids symbols (- _ + / =) that some
+ * VM provisioning pipelines reject when they shell-out the password to
+ * useradd / chpasswd without proper quoting.
+ */
+function generateAlphanumericPassword(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+  let out = ''
+  const bytes = randomBytes(32)
+  for (let i = 0; i < 16; i++) {
+    out += alphabet.charAt(bytes[i]! % alphabet.length)
+  }
+  return out
 }
 
 async function main(): Promise<void> {
@@ -164,7 +186,7 @@ async function main(): Promise<void> {
 
   // Step 2: build deploy body.
   const keypair = generateRentalKeypair(`testprobe-${Date.now()}`)
-  const password = randomBytes(24).toString('base64url')
+  const password = generateAlphanumericPassword()
   const internalPort = 22
   const externalPort = chosen.availableExternalPorts[0]!
 
