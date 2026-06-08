@@ -156,9 +156,10 @@ export async function provisionTensorDockRental(
   const rootPassword = randomBytes(24).toString('base64url')
 
   // Step 5: cloud-init that installs pubkey + ensures sshd is up.
-  // The alx deploy script sends cloudinit_script as a literal string;
-  // we render the same shape inline. Newlines stay literal in
-  // application/x-www-form-urlencoded body.
+  // The alx deploy script sends cloudinit_script with newlines
+  // escaped as the literal two-char sequence \n (not actual newline).
+  // We do the same to avoid triggering TensorDock's server-side parser
+  // edge case where form-encoded raw newlines 500 the request.
   const cloudInit = [
     '#cloud-config',
     'ssh_pwauth: false',
@@ -173,15 +174,20 @@ export async function provisionTensorDockRental(
     '  - [ chmod, "600", /root/.ssh/authorized_keys ]',
     '  - [ chmod, "700", /root/.ssh ]',
     '  - [ systemctl, restart, sshd ]',
-  ].join('\n')
+  ].join('\\n')
 
-  // Step 6: deploy. TensorDock returns port_forwards as
-  // { "<external_port>": <internal_port> }, so we set external_ports
-  // to a sentinel range (the API ignores the values for SSH-only
-  // deploys and picks free external ports automatically — pass [22]
-  // to indicate we want SSH-equivalent reachability).
+  // Step 6: pick external ports from the host's pre-allocated pool.
+  // TensorDock will 500 if external_ports contains values outside
+  // host.networking.ports (the alx deploy script does exactly this
+  // mapping: external_ports = host.networking.ports[:num_internal]).
   const internalPorts = [22, ...(options.extraInternalPorts ?? [])]
-  const externalPorts = internalPorts // host-side suggestion; TensorDock allocates real port
+  if (cheapest.availableExternalPorts.length < internalPorts.length) {
+    throw new TensorDockProvisionError(
+      `TensorDock host ${cheapest.hostId} only has ${cheapest.availableExternalPorts.length} external ports free, ` +
+      `but rental wants ${internalPorts.length} (${internalPorts.join(', ')}). Allocator should fall through to next provider.`,
+    )
+  }
+  const externalPorts = cheapest.availableExternalPorts.slice(0, internalPorts.length)
 
   let deployResp
   try {
@@ -202,7 +208,8 @@ export async function provisionTensorDockRental(
   } catch (err) {
     const msg = err instanceof TensorDockApiError ? err.message : (err as Error).message
     throw new TensorDockProvisionError(
-      `TensorDock deploy failed for ${mapping.label} on host ${cheapest.hostId}: ${msg}`,
+      `TensorDock deploy failed for ${mapping.label} on host ${cheapest.hostId} ` +
+      `(internal=${JSON.stringify(internalPorts)}, external=${JSON.stringify(externalPorts)}): ${msg}`,
       err,
     )
   }

@@ -166,10 +166,32 @@ export class TensorDockApiError extends Error {
     public endpoint: string,
     public body: unknown,
   ) {
+    // Truncate aggressively in the .message preview so the log line
+    // stays scannable, but stash the full body on the instance for the
+    // caller to inspect. The 500 HTML pages TensorDock returns are
+    // multi-kb traceback dumps that bury the actual cause when shown
+    // inline.
+    const preview = TensorDockApiError.summarize(body)
     super(
-      `TensorDock API ${endpoint} returned ${statusCode}: ${typeof body === 'string' ? body : JSON.stringify(body)}`,
+      `TensorDock API ${endpoint} returned ${statusCode}: ${preview}`,
     )
     this.name = 'TensorDockApiError'
+  }
+
+  static summarize(body: unknown): string {
+    if (typeof body === 'string') {
+      // HTML 5xx pages from Flask have a <title> with the actual error
+      // class + message; surface that as the preview.
+      const titleMatch = body.match(/<title>([^<]+)<\/title>/i)
+      if (titleMatch) return `[html] ${titleMatch[1]!.trim()}`
+      // Plain text or short JSON-as-string: keep first 200 chars.
+      return body.slice(0, 200)
+    }
+    try {
+      return JSON.stringify(body).slice(0, 300)
+    } catch {
+      return '[unserializable body]'
+    }
   }
 }
 
@@ -312,6 +334,12 @@ export interface TensorDockHostGpuRow {
   amount: number
   /** Per-card per-hour USD; absent when host doesn't expose it. */
   price?: number
+  /**
+   * Host's pre-allocated external port pool. /client/deploy/single's
+   * external_ports MUST be a subset of these; passing arbitrary ports
+   * triggers a server-side 500. Empty list = no free ports on host.
+   */
+  availableExternalPorts: number[]
 }
 
 export function flattenHostNodes(resp: TensorDockHostNodesResponse): TensorDockHostGpuRow[] {
@@ -320,6 +348,7 @@ export function flattenHostNodes(resp: TensorDockHostNodesResponse): TensorDockH
     const online = host.status?.online === true
     const country = host.location?.country ?? 'unknown'
     const city = host.location?.city ?? null
+    const ports = Array.isArray(host.networking?.ports) ? host.networking!.ports! : []
     for (const [gpu_model, slot] of Object.entries(host.specs?.gpu ?? {})) {
       const amount = Number(slot?.amount ?? 0)
       if (!Number.isFinite(amount) || amount <= 0) continue
@@ -331,6 +360,7 @@ export function flattenHostNodes(resp: TensorDockHostNodesResponse): TensorDockH
         gpu_model,
         amount,
         price: typeof slot?.price === 'number' ? slot.price : undefined,
+        availableExternalPorts: ports,
       })
     }
   }
