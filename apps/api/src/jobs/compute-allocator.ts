@@ -74,6 +74,15 @@ import {
   fitsSingleVastAiHost,
 } from '../services/inbound/vastai-tier-mapping.js'
 import { provisionVastAiRental } from '../services/inbound/vastai-provision.js'
+import {
+  isTensorDockConfigured,
+  isTensorDockAllocatorEnabled,
+} from '../services/inbound/tensordock-adapter.js'
+import {
+  tensorDockTypeForTier,
+  fitsSingleTensorDockHost,
+} from '../services/inbound/tensordock-tier-mapping.js'
+import { provisionTensorDockRental } from '../services/inbound/tensordock-provision.js'
 import { probeAllProviders } from '../services/inbound/capacity-probe.js'
 
 type ComputeRequestWithUser = ComputeRequest & { user: User }
@@ -391,6 +400,9 @@ async function processRequest(
           break
         case 'VASTAI':
           took = await tryVastAiFallback(prisma, io, cr)
+          break
+        case 'TENSORDOCK':
+          took = await tryTensorDockFallback(prisma, io, cr)
           break
       }
       if (took) return
@@ -1291,6 +1303,106 @@ async function tryVastAiFallback(
     requestId: cr.id,
     userId: cr.userId,
     provider: 'VASTAI',
+    instanceType: provisionResult.providerInstanceType,
+    region: provisionResult.providerRegion,
+    timestamp: now.toISOString(),
+  })
+
+  return true
+}
+
+/**
+ * TensorDock seventh-supplier fallback. Peer-to-peer marketplace; one
+ * direct adapter alongside Vast.ai with different host pool and
+ * pricing dynamics. Particularly strong on prosumer cards (RTX A4000
+ * from $0.07/h, RTX 3090 from $0.20/h) and the occasional A100 at
+ * $1.25/h that beats every other direct provider.
+ *
+ * Same shape as tryVastAiFallback: returns true when the cascade has
+ * taken the request, false on any pre-condition fail. Confidential
+ * requests must skip TensorDock (no TEE attestation in the host pool).
+ *
+ * Gates:
+ *   1. TENSORDOCK_API_KEY + TENSORDOCK_API_TOKEN set (isTensorDockConfigured)
+ *   2. TENSORDOCK_ALLOCATOR_ENABLED defaults true (master-switch).
+ *      Flip false for surgical bypass.
+ */
+async function tryTensorDockFallback(
+  prisma: PrismaClient,
+  io: SocketServer,
+  cr: ComputeRequestWithUser,
+): Promise<boolean> {
+  if (!isTensorDockConfigured()) return false
+  if (!isTensorDockAllocatorEnabled()) return false
+  if (!isKeyEncryptionConfigured()) return false
+  if (!tensorDockTypeForTier(cr.gpuTier)) return false
+  if (!fitsSingleTensorDockHost(cr.gpuTier, cr.gpuCount)) return false
+  const wantConfidential = (cr as { preferConfidential?: boolean }).preferConfidential === true
+  if (wantConfidential) return false
+
+  const session = mintSshSession(cr.durationDays)
+  const ratePerMinute = (cr.ratePerDay * cr.gpuCount) / (24 * 60)
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + cr.durationDays * 86400000)
+
+  let provisionResult
+  try {
+    provisionResult = await provisionTensorDockRental(prisma, cr.id)
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[compute-allocator] TensorDock fallback failed for ${cr.id} (tier ${cr.gpuTier} x${cr.gpuCount}):`,
+      (err as Error).message,
+    )
+    return false
+  }
+
+  const transitioned = await prisma.computeRequest.updateMany({
+    where: { id: cr.id, status: 'PENDING' },
+    data: {
+      status: 'PROVISIONING_EXTERNAL',
+      ratePerMinute,
+      expiresAt,
+      sshSessionToken: session.token,
+      sshSessionTokenExpiresAt: session.expiresAt,
+      sshSessionStatus: 'PROVISIONING',
+    },
+  })
+  if (transitioned.count === 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[compute-allocator] race on ${cr.id} after TensorDock provision; rolling back`,
+    )
+    const { terminateTensorDockRental } = await import('../services/inbound/tensordock-provision.js')
+    await terminateTensorDockRental(
+      prisma,
+      provisionResult.externalRentalId,
+      'allocator race: another path won the request',
+    ).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(`[compute-allocator] TensorDock rollback failed for ${provisionResult.externalRentalId}:`, err)
+    })
+    return false
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[compute-allocator] TensorDock fallback OK for ${cr.id}: provisioned gpu=${provisionResult.providerInstanceType} ` +
+    `(externalRentalId=${provisionResult.externalRentalId}, region=${provisionResult.providerRegion})`,
+  )
+
+  void createNotification(
+    cr.userId,
+    'COMPUTE_REQUEST_APPROVED',
+    'Compute is Provisioning',
+    `Your ${cr.gpuCount}x ${cr.gpuTier} rental is being prepared. SSH credentials appear in your dashboard within ~60-90s.`,
+    `/buyer/requests/${cr.id}`,
+  )
+
+  io.emit('compute:provisioning-external', {
+    requestId: cr.id,
+    userId: cr.userId,
+    provider: 'TENSORDOCK',
     instanceType: provisionResult.providerInstanceType,
     region: provisionResult.providerRegion,
     timestamp: now.toISOString(),

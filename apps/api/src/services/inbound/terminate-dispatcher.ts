@@ -31,6 +31,7 @@ import { terminatePhalaRental } from './phala-provision.js'
 import { terminateIoNetRental } from './ionet-provision.js'
 import { terminateVoltageGpuRental } from './voltagegpu-provision.js'
 import { terminateVastAiRental } from './vastai-provision.js'
+import { terminateTensorDockRental } from './tensordock-provision.js'
 
 export class UnknownProviderError extends Error {
   constructor(public provider: string, public externalRentalId: string) {
@@ -86,6 +87,9 @@ export async function terminateExternalRental(
       return
     case 'VASTAI':
       await terminateVastAiRental(prisma, externalRentalId, reason)
+      return
+    case 'TENSORDOCK':
+      await terminateTensorDockRental(prisma, externalRentalId, reason)
       return
     default:
       throw new UnknownProviderError(row.provider, externalRentalId)
