@@ -34,7 +34,7 @@
 import { randomBytes } from 'node:crypto'
 import { generateRentalKeypair } from '../src/services/inbound/ssh-keygen.js'
 
-const SCRIPT_VERSION = '2026-06-08-v2-auto-pick-host-and-network-mode'
+const SCRIPT_VERSION = '2026-06-08-v2-default-storage-200-match-docs'
 const BASE_URL = 'https://dashboard.tensordock.com/api/v2'
 
 interface Args {
@@ -53,7 +53,11 @@ function parseArgs(): Args {
     keep: false,
     vcpus: 4,
     ram: 16,
-    storage: 100,
+    // Docs Instance Creation example uses storage_gb: 200; the stated
+    // minimum of 100 was rejected at the deploy stage with a generic
+    // "unexpected error". 200 matches what TensorDock's docs show
+    // works.
+    storage: 200,
     image: 'ubuntu2404',
   }
   for (let i = 0; i < argv.length; i++) {
