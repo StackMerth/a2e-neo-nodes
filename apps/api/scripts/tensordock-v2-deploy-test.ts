@@ -34,7 +34,7 @@
 import { randomBytes } from 'node:crypto'
 import { generateRentalKeypair } from '../src/services/inbound/ssh-keygen.js'
 
-const SCRIPT_VERSION = '2026-06-08-v2-dashboard-bearer'
+const SCRIPT_VERSION = '2026-06-08-v2-port-forwards-array'
 const BASE_URL = 'https://dashboard.tensordock.com/api/v2'
 
 interface Args {
@@ -153,6 +153,11 @@ async function main(): Promise<void> {
   const keypair = generateRentalKeypair(`v2-probe-${Date.now()}`)
   const name = `a2e-v2-probe-${randomBytes(4).toString('hex')}`
 
+  // port_forwards is required when useDedicatedIp=false. The API
+  // explicitly validates "SSH port (22) must be forwarded for Ubuntu
+  // VMs". Format inferred as an array of INTERNAL ports we want
+  // exposed; TensorDock allocates external ports from the host's
+  // available_ports pool.
   const deployBody = {
     data: {
       type: 'virtualmachine',
@@ -170,6 +175,7 @@ async function main(): Promise<void> {
         },
         location_id: locationId!,
         useDedicatedIp: false,
+        port_forwards: [22],
         ssh_key: keypair.publicKeyOpenssh.trim(),
       },
     },
