@@ -186,6 +186,11 @@ import {
   scheduleVastAiPoll,
 } from './jobs/vastai-poll'
 import {
+  createShadeFormPollQueue,
+  createShadeFormPollWorker,
+  scheduleShadeFormPoll,
+} from './jobs/shadeform-poll'
+import {
   createPhalaPollQueue,
   createPhalaPollWorker,
   schedulePhalaPoll,
@@ -497,6 +502,17 @@ async function start() {
     createVastAiPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleVastAiPoll(vastaiPollQueue)
     server.log.info('Vast.ai poll worker initialized (30s tick)')
+
+    // Shadeform status poller. Parallel of Vast.ai poll for
+    // SHADEFORM-provisioned ExternalRentals. Without this worker, the
+    // row never transitions PENDING -> ACTIVE and the ComputeRequest
+    // sits in PROVISIONING_EXTERNAL forever (rental cmq5d5idm000 hit
+    // exactly this on 2026-06-08). Gated on SHADEFORM_API_KEY +
+    // SHADEFORM_ALLOCATOR_ENABLED.
+    const shadeformPollQueue = createShadeFormPollQueue(redisConnection)
+    createShadeFormPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
+    await scheduleShadeFormPoll(shadeformPollQueue)
+    server.log.info('Shadeform poll worker initialized (30s tick)')
 
     // T5f: Phala status poller. Parallel of T5e for Phala-provisioned
     // confidential CVMs. 15s tick (slightly slower than RunPod's 10s
