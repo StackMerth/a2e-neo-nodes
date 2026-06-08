@@ -177,6 +177,12 @@ const RESERVED_DISCOUNT_PCT = parsePricingFraction(process.env.RESERVED_DISCOUNT
 const GPU_PRICE_FLOOR_DAILY: Record<string, number> = {
   H100:     56.10, // supplier $1.87/h × 24 × 1.25
   H200:    100.00, // supplier $3.29/h × 24 × 1.25 = $98.70
+  // A100: Shadeform hyperstack A100_80G measured at $1.35/h on
+  // 2026-06-08 (cmq5if3gr000). Floor = $1.35 × 24 × 1.25 = $40.50/day.
+  // Without this floor a SPOT/INFERENCE A100 rental was selling at
+  // $0.80/h — below supplier cost. Lambda + RunPod static rates are
+  // similar, so the floor protects us across the whole cascade.
+  A100:     40.50,
   L40S:     23.70, // supplier $0.79/h × 24 × 1.25
   B200:    165.00, // supplier $5.49/h × 24 × 1.25 = $164.70
   B300:    200.00,
