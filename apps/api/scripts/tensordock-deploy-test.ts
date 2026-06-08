@@ -38,7 +38,7 @@ import {
 } from '../src/services/inbound/tensordock-adapter.js'
 import { generateRentalKeypair } from '../src/services/inbound/ssh-keygen.js'
 
-const SCRIPT_VERSION = '2026-06-08-47822e0-plus'
+const SCRIPT_VERSION = '2026-06-08-e228b73-plus-fixed'
 
 interface Args {
   gpu?: string
@@ -168,23 +168,47 @@ async function main(): Promise<void> {
   const internalPort = 22
   const externalPort = chosen.availableExternalPorts[0]!
 
-  const cloudInit = args.noCloudinit
-    ? ''
-    : [
-      '#cloud-config',
-      'ssh_pwauth: false',
-      'users:',
-      '  - name: root',
-      '    lock_passwd: false',
-      '    ssh_authorized_keys:',
-      `      - ${keypair.publicKeyOpenssh.trim()}`,
-      'runcmd:',
-      '  - [ mkdir, -p, /root/.ssh ]',
-      `  - bash -c "echo '${keypair.publicKeyOpenssh.trim()}' >> /root/.ssh/authorized_keys"`,
-      '  - [ chmod, "600", /root/.ssh/authorized_keys ]',
-      '  - [ chmod, "700", /root/.ssh ]',
-      '  - [ systemctl, restart, sshd ]',
-    ].join('\\n')
+  // Build cloud-init based on selected format.
+  //   alx    -> bare YAML, no #cloud-config header (matches the
+  //             alx_tensordock_deploy/cloud_init.yml.sample format)
+  //   header -> standard cloud-config with #cloud-config shebang
+  //   bash   -> raw bash script (no YAML)
+  const pubkey = keypair.publicKeyOpenssh.trim()
+  let cloudInit = ''
+  if (!args.noCloudinit) {
+    if (args.cloudInitFormat === 'header') {
+      cloudInit = [
+        '#cloud-config',
+        'ssh_pwauth: false',
+        'runcmd:',
+        '  - [ mkdir, -p, /root/.ssh ]',
+        `  - bash -c "echo '${pubkey}' >> /root/.ssh/authorized_keys"`,
+        '  - [ chmod, "600", /root/.ssh/authorized_keys ]',
+        '  - [ chmod, "700", /root/.ssh ]',
+        '  - [ systemctl, restart, sshd ]',
+      ].join('\\n')
+    } else if (args.cloudInitFormat === 'alx') {
+      cloudInit = [
+        'write_files:',
+        '  - path: /root/.ssh/authorized_keys',
+        "    permissions: '0600'",
+        '    owner: root:root',
+        '    content: |',
+        `     ${pubkey}`,
+        'runcmd:',
+        '  - chmod 700 /root/.ssh',
+        '  - systemctl restart sshd',
+      ].join('\\n')
+    } else if (args.cloudInitFormat === 'bash') {
+      cloudInit = [
+        '#!/bin/bash',
+        `echo '${pubkey}' >> /root/.ssh/authorized_keys`,
+        'chmod 600 /root/.ssh/authorized_keys',
+        'chmod 700 /root/.ssh',
+        'systemctl restart sshd',
+      ].join('\\n')
+    }
+  }
 
   const body: Record<string, string> = {
     api_key: apiKey,
@@ -194,9 +218,9 @@ async function main(): Promise<void> {
     hostnode: chosen.hostId,
     gpu_model: chosen.gpu_model,
     gpu_count: '1',
-    vcpus: '4',
-    ram: '16',
-    storage: '50',
+    vcpus: String(args.vcpus),
+    ram: String(args.ram),
+    storage: String(args.storage),
     operating_system: args.os,
     internal_ports: `{${internalPort}}`,
     external_ports: `{${externalPort}}`,
