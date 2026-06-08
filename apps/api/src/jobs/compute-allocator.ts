@@ -89,6 +89,12 @@ import {
   shadeFormTokenForTier,
 } from '../services/inbound/shadeform-adapter.js'
 import { provisionShadeFormRental } from '../services/inbound/shadeform-provision.js'
+import {
+  isHyperstackConfigured,
+  isHyperstackAllocatorEnabled,
+  hyperstackTokenForTier,
+} from '../services/inbound/hyperstack-adapter.js'
+import { provisionHyperstackRental } from '../services/inbound/hyperstack-provision.js'
 import { probeAllProviders } from '../services/inbound/capacity-probe.js'
 
 type ComputeRequestWithUser = ComputeRequest & { user: User }
@@ -412,6 +418,9 @@ async function processRequest(
           break
         case 'SHADEFORM':
           took = await tryShadeFormFallback(prisma, io, cr)
+          break
+        case 'HYPERSTACK':
+          took = await tryHyperstackFallback(prisma, io, cr)
           break
       }
       if (took) return
@@ -1510,6 +1519,108 @@ async function tryShadeFormFallback(
     requestId: cr.id,
     userId: cr.userId,
     provider: 'SHADEFORM',
+    instanceType: provisionResult.providerInstanceType,
+    region: provisionResult.providerRegion,
+    timestamp: now.toISOString(),
+  })
+
+  return true
+}
+
+/**
+ * Hyperstack direct fallback. Goes straight to NexGen Cloud's REST,
+ * skipping the Shadeform markup. Same supply pool we just verified
+ * end-to-end on 2026-06-08 (cmq5if3gr000 A100, cmq5j7msf000 H100 both
+ * succeeded via Shadeform routing to Hyperstack); direct is just
+ * cheaper.
+ *
+ * Gates:
+ *   1. HYPERSTACK_API_KEY set (isHyperstackConfigured)
+ *   2. HYPERSTACK_ALLOCATOR_ENABLED defaults true
+ *   3. tier mapped (Hyperstack GPU type tokens)
+ *
+ * Confidential routes never fall through to Hyperstack: NexGen Cloud's
+ * VMs aren't attested. preferConfidential stays on direct Phala /
+ * VoltageGPU paths.
+ */
+async function tryHyperstackFallback(
+  prisma: PrismaClient,
+  io: SocketServer,
+  cr: ComputeRequestWithUser,
+): Promise<boolean> {
+  if (!isHyperstackConfigured()) return false
+  if (!isHyperstackAllocatorEnabled()) return false
+  if (!isKeyEncryptionConfigured()) return false
+  if (!hyperstackTokenForTier(cr.gpuTier)) return false
+  const wantConfidential = (cr as { preferConfidential?: boolean }).preferConfidential === true
+  if (wantConfidential) return false
+
+  const session = mintSshSession(cr.durationDays)
+  const ratePerMinute = (cr.ratePerDay * cr.gpuCount) / (24 * 60)
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + cr.durationDays * 86400000)
+
+  let provisionResult
+  try {
+    provisionResult = await provisionHyperstackRental(prisma, cr.id)
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[compute-allocator] Hyperstack fallback failed for ${cr.id} (tier ${cr.gpuTier} x${cr.gpuCount}):`,
+      (err as Error).message,
+    )
+    return false
+  }
+
+  const transitioned = await prisma.computeRequest.updateMany({
+    where: { id: cr.id, status: 'PENDING' },
+    data: {
+      status: 'PROVISIONING_EXTERNAL',
+      ratePerMinute,
+      expiresAt,
+      sshSessionToken: session.token,
+      sshSessionTokenExpiresAt: session.expiresAt,
+      sshSessionStatus: 'PROVISIONING',
+    },
+  })
+  if (transitioned.count === 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[compute-allocator] race on ${cr.id} after Hyperstack provision; rolling back`,
+    )
+    const { terminateHyperstackRental } = await import('../services/inbound/hyperstack-provision.js')
+    await terminateHyperstackRental(
+      prisma,
+      provisionResult.externalRentalId,
+      'allocator race: another path won the request',
+    ).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[compute-allocator] Hyperstack rollback failed for ${provisionResult.externalRentalId}:`,
+        err,
+      )
+    })
+    return false
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[compute-allocator] Hyperstack fallback OK for ${cr.id}: provisioned flavor=${provisionResult.providerInstanceType} ` +
+    `(externalRentalId=${provisionResult.externalRentalId}, region=${provisionResult.providerRegion})`,
+  )
+
+  void createNotification(
+    cr.userId,
+    'COMPUTE_REQUEST_APPROVED',
+    'Compute is Provisioning',
+    `Your ${cr.gpuCount}x ${cr.gpuTier} rental is being prepared. SSH credentials appear in your dashboard within ~60-90s.`,
+    `/buyer/requests/${cr.id}`,
+  )
+
+  io.emit('compute:provisioning-external', {
+    requestId: cr.id,
+    userId: cr.userId,
+    provider: 'HYPERSTACK',
     instanceType: provisionResult.providerInstanceType,
     region: provisionResult.providerRegion,
     timestamp: now.toISOString(),

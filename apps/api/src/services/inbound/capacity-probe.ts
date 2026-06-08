@@ -75,6 +75,13 @@ import {
   flattenHostNodes,
 } from './tensordock-adapter.js'
 import {
+  HyperstackClient,
+  isHyperstackConfigured,
+  isHyperstackAllocatorEnabled,
+  hyperstackTokenForTier,
+  findCheapestHyperstackFlavor,
+} from './hyperstack-adapter.js'
+import {
   tensorDockTypeForTier,
   fitsSingleTensorDockHost,
   stockMatchesTier,
@@ -89,6 +96,7 @@ export type ProviderKey =
   | 'VASTAI'
   | 'SHADEFORM'
   | 'TENSORDOCK'
+  | 'HYPERSTACK'
 
 export interface CapacityQuote {
   provider: ProviderKey
@@ -188,6 +196,17 @@ const STATIC_PRICES: Record<ProviderKey, Partial<Record<GpuTier, number>>> = {
     RTX_3090: 0.30,
     CONSUMER: 0.30,
   },
+  HYPERSTACK: {
+    // Hyperstack (NexGen Cloud) direct. Measured via Shadeform routing
+    // on 2026-06-08: A100 80G at $1.35/h, H100 PCIe at ~$2.40/h (after
+    // Shadeform markup; direct is ~10-15% cheaper). Probe overrides
+    // with live /core/flavors prices when reachable.
+    H100: 1.95,
+    H200: 3.20,
+    A100: 1.35,
+    L40S: 1.30,
+    B200: 5.80,
+  },
 }
 
 interface ProbeOptions {
@@ -233,6 +252,12 @@ export async function probeAllProviders(
   // unset to avoid surfacing supply we can't actually rent.
   if (isTensorDockConfigured() && isTensorDockAllocatorEnabled()) {
     baseCandidates.push('TENSORDOCK')
+  }
+  // Hyperstack direct (NexGen Cloud). Only probed when both the API key
+  // is configured and the allocator gate is on. Goes alongside
+  // SHADEFORM; the cascade picks whichever is cheaper at probe time.
+  if (isHyperstackConfigured() && isHyperstackAllocatorEnabled()) {
+    baseCandidates.push('HYPERSTACK')
   }
   const candidates: ProviderKey[] = opts.preferConfidential
     ? ['PHALA', 'VOLTAGEGPU']
@@ -302,6 +327,12 @@ export async function probeAllProvidersDebug(
   if (isTensorDockConfigured() && isTensorDockAllocatorEnabled()) {
     baseCandidates.push('TENSORDOCK')
   }
+  // Hyperstack direct (NexGen Cloud). Only probed when both the API key
+  // is configured and the allocator gate is on. Goes alongside
+  // SHADEFORM; the cascade picks whichever is cheaper at probe time.
+  if (isHyperstackConfigured() && isHyperstackAllocatorEnabled()) {
+    baseCandidates.push('HYPERSTACK')
+  }
   const candidates: ProviderKey[] = opts.preferConfidential
     ? ['PHALA', 'VOLTAGEGPU']
     : baseCandidates
@@ -364,6 +395,30 @@ async function probeOne(
       return probeShadeForm(tier, gpuCount, price)
     case 'TENSORDOCK':
       return probeTensorDock(tier, gpuCount, price)
+    case 'HYPERSTACK':
+      return probeHyperstack(tier, gpuCount, price)
+  }
+}
+
+async function probeHyperstack(
+  tier: GpuTier,
+  gpuCount: number,
+  price: number,
+): Promise<CapacityQuote> {
+  if (!isHyperstackConfigured()) return noCapacity('HYPERSTACK', 'not_configured')
+  if (!isHyperstackAllocatorEnabled()) return noCapacity('HYPERSTACK', 'allocator_disabled')
+  if (!hyperstackTokenForTier(tier)) return noCapacity('HYPERSTACK', 'tier_unmapped')
+  try {
+    const client = new HyperstackClient()
+    const cheapest = await findCheapestHyperstackFlavor(client, tier, gpuCount)
+    if (!cheapest) return noCapacity('HYPERSTACK', 'no_supply')
+    return {
+      provider: 'HYPERSTACK',
+      pricePerHourUsd: cheapest.pricePerHourUsd > 0 ? cheapest.pricePerHourUsd : price,
+      hasCapacity: true,
+    }
+  } catch (err) {
+    return noCapacity('HYPERSTACK', err instanceof Error ? err.message : 'probe_throw')
   }
 }
 

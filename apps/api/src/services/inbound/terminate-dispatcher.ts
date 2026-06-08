@@ -33,6 +33,7 @@ import { terminateVoltageGpuRental } from './voltagegpu-provision.js'
 import { terminateVastAiRental } from './vastai-provision.js'
 import { terminateTensorDockRental } from './tensordock-provision.js'
 import { terminateShadeFormRental } from './shadeform-provision.js'
+import { terminateHyperstackRental } from './hyperstack-provision.js'
 
 export class UnknownProviderError extends Error {
   constructor(public provider: string, public externalRentalId: string) {
@@ -94,6 +95,9 @@ export async function terminateExternalRental(
       return
     case 'SHADEFORM':
       await terminateShadeFormRental(prisma, externalRentalId, reason)
+      return
+    case 'HYPERSTACK':
+      await terminateHyperstackRental(prisma, externalRentalId, reason)
       return
     default:
       throw new UnknownProviderError(row.provider, externalRentalId)

@@ -191,6 +191,11 @@ import {
   scheduleShadeFormPoll,
 } from './jobs/shadeform-poll'
 import {
+  createHyperstackPollQueue,
+  createHyperstackPollWorker,
+  scheduleHyperstackPoll,
+} from './jobs/hyperstack-poll'
+import {
   createPhalaPollQueue,
   createPhalaPollWorker,
   schedulePhalaPoll,
@@ -513,6 +518,16 @@ async function start() {
     createShadeFormPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleShadeFormPoll(shadeformPollQueue)
     server.log.info('Shadeform poll worker initialized (30s tick)')
+
+    // Hyperstack status poller. Mirror of Shadeform poll for direct
+    // NexGen Cloud rentals. Without this the ComputeRequest sits in
+    // PROVISIONING_EXTERNAL forever after tryHyperstackFallback creates
+    // the VM. No-op when HYPERSTACK_API_KEY isn't set OR when
+    // HYPERSTACK_ALLOCATOR_ENABLED=false.
+    const hyperstackPollQueue = createHyperstackPollQueue(redisConnection)
+    createHyperstackPollWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
+    await scheduleHyperstackPoll(hyperstackPollQueue)
+    server.log.info('Hyperstack poll worker initialized (30s tick)')
 
     // T5f: Phala status poller. Parallel of T5e for Phala-provisioned
     // confidential CVMs. 15s tick (slightly slower than RunPod's 10s
