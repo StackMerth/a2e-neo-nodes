@@ -59,6 +59,25 @@ const HOURLY_RATES: Record<string, number> = {
 
 const CONSUMER_TIER_IDS = new Set(['CONSUMER', 'RTX_4090', 'RTX_3090'])
 
+// Daily price floor per tier. Mirror of GPU_PRICE_FLOOR_DAILY in
+// apps/api/src/routes/buyer-compute.ts. Server applies this floor on
+// submit; without mirroring it client-side the Cost Summary would show
+// a discounted price the server will then refuse to honor (it'd silently
+// debit the floor instead, surprising the buyer). Keep in lock-step
+// with the server table.
+const GPU_FLOOR_DAILY: Record<string, number> = {
+  H100:     56.10,
+  H200:    100.00,
+  A100:     40.50,
+  L40S:     23.70,
+  B200:    165.00,
+  B300:    200.00,
+  GB300:   240.00,
+  RTX_4090: 10.20,
+  RTX_3090:  9.00,
+  CONSUMER:  6.00,
+}
+
 // M6: lightweight client-side validation for the buyer's SSH public key.
 // Matches the canonical openssh public key formats: ssh-rsa, ssh-ed25519,
 // ssh-dss, and the three ecdsa-sha2-nistp* variants, optionally followed
@@ -475,7 +494,14 @@ export default function RequestComputePage() {
   const workloadMultiplier = workloadType === 'INFERENCE' && !isConsumerTier
     ? 1 - INFERENCE_DISCOUNT_PCT
     : 1
-  const dailyRate = hourlyRate * 24 * tierMultiplier * workloadMultiplier
+  const discountedDaily = hourlyRate * 24 * tierMultiplier * workloadMultiplier
+  // Apply the per-tier price floor the same way the server does. Without
+  // this the Cost Summary would advertise a sub-floor price that the
+  // server then quietly bumps up on submit, surprising the buyer at
+  // debit time.
+  const tierFloor = selectedTier ? GPU_FLOOR_DAILY[selectedTier] ?? 0 : 0
+  const floorApplied = tierFloor > 0 && discountedDaily < tierFloor
+  const dailyRate = floorApplied ? tierFloor : discountedDaily
   // RESERVED rentals always lock in commitmentDays as the duration,
   // the API enforces this server-side, the UI just mirrors it for the
   // cost preview.
@@ -1474,11 +1500,19 @@ export default function RequestComputePage() {
                   <span style={{ color: 'var(--text-muted)' }}>Duration</span>
                   <span className="font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{effectiveDuration} days</span>
                 </div>
-                {workloadMultiplier < 1 && (
+                {workloadMultiplier < 1 && !floorApplied && (
                   <div className="flex justify-between text-sm">
                     <span style={{ color: 'var(--primary)' }}>Inference discount</span>
                     <span className="font-mono text-xs font-semibold" style={{ color: 'var(--primary)' }}>
                       &minus;{Math.round(INFERENCE_DISCOUNT_PCT * 100)}%
+                    </span>
+                  </div>
+                )}
+                {floorApplied && (
+                  <div className="flex justify-between text-sm">
+                    <span style={{ color: 'var(--text-muted)' }}>Minimum {selectedTier} price</span>
+                    <span className="font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
+                      ${tierFloor.toFixed(2)}/day
                     </span>
                   </div>
                 )}
