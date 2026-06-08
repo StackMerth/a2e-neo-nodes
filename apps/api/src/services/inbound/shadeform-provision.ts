@@ -171,7 +171,12 @@ export async function provisionShadeFormRental(
       status: 'PENDING',
       sshHost: null,
       sshPort: undefined,
-      sshUsername: 'root',
+      // Don't hardcode sshUsername. Shadeform's /instances/{id}/info
+      // returns ssh_user which varies by underlying cloud
+      // (shade_cloud=true uses 'shadeform'; BYOA cloud accounts may use
+      // 'ubuntu', 'root', etc.). pollShadeFormRentalStatus persists
+      // info.ssh_user on the first poll after status=active. Schema
+      // default 'ubuntu' is a safe placeholder until that fires.
       sshPublicKey: keypair.publicKeyOpenssh,
       sshPrivateKeyEnc: encryptedPrivKey,
       providerPricePerHourUsd: cheapest.pricePerHourUsd,
@@ -226,6 +231,14 @@ export async function pollShadeFormRentalStatus(
   if (info.ip && row.sshHost !== info.ip) updates.sshHost = info.ip
   if (info.ssh_port !== undefined && info.ssh_port !== null && row.sshPort !== info.ssh_port) {
     updates.sshPort = info.ssh_port
+  }
+  // Persist the actual SSH login user reported by Shadeform. Shade Cloud
+  // (massedcompute / etc. with shade_cloud=true) uses 'shadeform'; BYOA
+  // setups vary. The buyer SSH panel reads this row directly, so without
+  // this update buyers see whatever default we wrote at create time and
+  // get "Permission denied (publickey)" because they try the wrong user.
+  if (info.ssh_user && row.sshUsername !== info.ssh_user) {
+    updates.sshUsername = info.ssh_user
   }
   if (info.region && row.providerRegion !== info.region) updates.providerRegion = info.region
   if (typeof info.hourly_price === 'number') {
