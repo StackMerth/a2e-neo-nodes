@@ -163,7 +163,10 @@ async function main(): Promise<void> {
     cloudSet.add(t.cloud)
     const gpus = t.configuration?.num_gpus ?? 0
     const gpu = t.configuration?.gpu_type ?? '?'
-    const price = t.hourly_price !== undefined ? `$${t.hourly_price.toFixed(2)}` : '-'
+    // Shadeform returns hourly_price in CENTS. Divide by 100 to display
+    // USD so the inspector matches what the adapter actually charges.
+    const priceUsd = t.hourly_price !== undefined ? t.hourly_price / 100 : null
+    const price = priceUsd !== null ? `$${priceUsd.toFixed(2)}` : '-'
     const regions = (t.availability ?? [])
       .filter((a) => a.available !== false && a.region)
       .map((a) => a.region)
@@ -171,7 +174,7 @@ async function main(): Promise<void> {
       .join(',')
     const moreRegions = (t.availability ?? []).length > 4 ? '+...' : ''
     console.log(
-      `  ${(t.cloud ?? '').padEnd(12)}  ${t.shade_instance_type.padEnd(34)}  ${t.cloud_instance_type.padEnd(26)}  ${String(gpus).padStart(3)}x  ${gpu.padEnd(8)} ${price.padStart(7)}  ${regions}${moreRegions}`,
+      `  ${(t.cloud ?? '').padEnd(12)}  ${t.shade_instance_type.padEnd(34)}  ${t.cloud_instance_type.padEnd(26)}  ${String(gpus).padStart(3)}x  ${gpu.padEnd(8)} ${price.padStart(7)}/h  ${regions}${moreRegions}`,
     )
   }
   console.log()

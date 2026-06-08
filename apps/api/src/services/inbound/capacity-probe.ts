@@ -61,6 +61,13 @@ import {
   vastAiTypeForTier,
   fitsSingleVastAiHost,
 } from './vastai-tier-mapping.js'
+import {
+  ShadeFormClient,
+  isShadeFormConfigured,
+  isShadeFormAllocatorEnabled,
+  shadeFormTokenForTier,
+  findCheapestShadeFormType,
+} from './shadeform-adapter.js'
 
 export type ProviderKey =
   | 'LAMBDA'
@@ -69,6 +76,7 @@ export type ProviderKey =
   | 'IONET'
   | 'VOLTAGEGPU'
   | 'VASTAI'
+  | 'SHADEFORM'
 
 export interface CapacityQuote {
   provider: ProviderKey
@@ -139,6 +147,21 @@ const STATIC_PRICES: Record<ProviderKey, Partial<Record<GpuTier, number>>> = {
     H200: 3.66,
     B200: 4.38,
   },
+  SHADEFORM: {
+    // Aggregator. Static prices are the cheapest-cloud reference from
+    // the 2026-06-07 inspector snapshot (cents-to-dollars normalized).
+    // The probe overrides with the live cheapest-available row at probe
+    // time, so these are only fallback. Numbers below all beat the
+    // direct adapters for the same tier, which is why Shadeform is in
+    // the cascade at all.
+    L40S: 0.74,    // latitude L40s_vm
+    A100: 1.35,    // hyperstack A100_80G 1x
+    H100: 1.66,    // latitude H100_vm 1x
+    H200: 3.44,    // digitalocean H200_sxm5 1x
+    B200: 6.52,    // verda B200 1x
+    RTX_4090: 0.32, // consumer prices not yet observed in catalog; mirror Vast.ai
+    RTX_3090: 0.20,
+  },
 }
 
 interface ProbeOptions {
@@ -171,11 +194,17 @@ export async function probeAllProviders(
   // The probe still no-ops cheaply via isVastAiAllocatorEnabled() if
   // the flag is off, but skipping it here avoids the Vast.ai HTTP
   // round-trip entirely until rollout is approved.
+  const baseCandidates: ProviderKey[] = isVastAiAllocatorEnabled()
+    ? ['LAMBDA', 'RUNPOD', 'PHALA', 'IONET', 'VOLTAGEGPU', 'VASTAI']
+    : ['LAMBDA', 'RUNPOD', 'PHALA', 'IONET', 'VOLTAGEGPU']
+  // Shadeform is conditional on its own config + allocator gate so the
+  // probe doesn't waste a slot on it when SHADEFORM_API_KEY is unset.
+  if (isShadeFormConfigured() && isShadeFormAllocatorEnabled()) {
+    baseCandidates.push('SHADEFORM')
+  }
   const candidates: ProviderKey[] = opts.preferConfidential
     ? ['PHALA', 'VOLTAGEGPU']
-    : isVastAiAllocatorEnabled()
-      ? ['LAMBDA', 'RUNPOD', 'PHALA', 'IONET', 'VOLTAGEGPU', 'VASTAI']
-      : ['LAMBDA', 'RUNPOD', 'PHALA', 'IONET', 'VOLTAGEGPU']
+    : baseCandidates
 
   // Parallel kickoff. Promise.allSettled so one slow / failed probe
   // doesn't take the whole batch down.
@@ -227,11 +256,17 @@ export async function probeAllProvidersDebug(
   // The probe still no-ops cheaply via isVastAiAllocatorEnabled() if
   // the flag is off, but skipping it here avoids the Vast.ai HTTP
   // round-trip entirely until rollout is approved.
+  const baseCandidates: ProviderKey[] = isVastAiAllocatorEnabled()
+    ? ['LAMBDA', 'RUNPOD', 'PHALA', 'IONET', 'VOLTAGEGPU', 'VASTAI']
+    : ['LAMBDA', 'RUNPOD', 'PHALA', 'IONET', 'VOLTAGEGPU']
+  // Shadeform is conditional on its own config + allocator gate so the
+  // probe doesn't waste a slot on it when SHADEFORM_API_KEY is unset.
+  if (isShadeFormConfigured() && isShadeFormAllocatorEnabled()) {
+    baseCandidates.push('SHADEFORM')
+  }
   const candidates: ProviderKey[] = opts.preferConfidential
     ? ['PHALA', 'VOLTAGEGPU']
-    : isVastAiAllocatorEnabled()
-      ? ['LAMBDA', 'RUNPOD', 'PHALA', 'IONET', 'VOLTAGEGPU', 'VASTAI']
-      : ['LAMBDA', 'RUNPOD', 'PHALA', 'IONET', 'VOLTAGEGPU']
+    : baseCandidates
 
   const settled = await Promise.allSettled(
     candidates.map((p) =>
@@ -287,6 +322,33 @@ async function probeOne(
       return probeVoltageGpu(tier, gpuCount, price)
     case 'VASTAI':
       return probeVastAi(tier, gpuCount, price)
+    case 'SHADEFORM':
+      return probeShadeForm(tier, gpuCount, price)
+  }
+}
+
+async function probeShadeForm(
+  tier: GpuTier,
+  gpuCount: number,
+  price: number,
+): Promise<CapacityQuote> {
+  if (!isShadeFormConfigured()) return noCapacity('SHADEFORM', 'not_configured')
+  if (!isShadeFormAllocatorEnabled()) return noCapacity('SHADEFORM', 'allocator_disabled')
+  if (!shadeFormTokenForTier(tier)) return noCapacity('SHADEFORM', 'tier_unmapped')
+  try {
+    const client = new ShadeFormClient()
+    // Live catalog query handles the cents-to-dollars conversion +
+    // cloud-exclude filter inside findCheapestShadeFormType. The probe
+    // just decides if the cheapest is real and surfaces it.
+    const cheapest = await findCheapestShadeFormType(client, tier, gpuCount)
+    if (!cheapest) return noCapacity('SHADEFORM', 'no_supply')
+    return {
+      provider: 'SHADEFORM',
+      pricePerHourUsd: cheapest.pricePerHourUsd > 0 ? cheapest.pricePerHourUsd : price,
+      hasCapacity: true,
+    }
+  } catch (err) {
+    return noCapacity('SHADEFORM', err instanceof Error ? err.message : 'probe_throw')
   }
 }
 

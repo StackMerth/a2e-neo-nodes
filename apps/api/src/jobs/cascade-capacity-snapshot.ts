@@ -72,6 +72,7 @@ const PROVIDER_ORDER: ProviderKey[] = [
   'PHALA',
   'VOLTAGEGPU',
   'VASTAI',
+  'SHADEFORM',
 ]
 
 interface WatcherDeps {
