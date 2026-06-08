@@ -44,7 +44,7 @@ import {
 } from '../src/services/inbound/shadeform-adapter.js'
 import { generateRentalKeypair } from '../src/services/inbound/ssh-keygen.js'
 
-const SCRIPT_VERSION = '2026-06-08-shadeform-deploy-test-v1'
+const SCRIPT_VERSION = '2026-06-08-shadeform-deploy-test-heartbeat'
 
 interface Args {
   gpu?: string
@@ -56,7 +56,9 @@ interface Args {
 
 function parseArgs(): Args {
   const argv = process.argv.slice(2)
-  const out: Args = { listOnly: false, keep: false, timeoutSec: 300 }
+  // Default 600s (10 min) — massedcompute, hyperstack, latitude can
+  // take 5-10 minutes from create -> active.
+  const out: Args = { listOnly: false, keep: false, timeoutSec: 600 }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--gpu') out.gpu = argv[++i]
@@ -232,10 +234,15 @@ async function main(): Promise<void> {
       console.log(`getInstance threw: ${err instanceof Error ? err.message : err}`)
       continue
     }
+    const dt = Math.round((Date.now() - start) / 1000)
     if (info.status !== lastStatus) {
-      const dt = Math.round((Date.now() - start) / 1000)
       console.log(`  ${dt}s: status=${info.status}${info.ip ? ` ip=${info.ip}` : ''}${info.ssh_port ? ` ssh_port=${info.ssh_port}` : ''}`)
       lastStatus = info.status
+    } else {
+      // Heartbeat: confirm the script is still polling even when status
+      // hasn't changed. Massedcompute can sit in pending_provider for
+      // 5-10 minutes; a silent loop looks frozen to the operator.
+      console.log(`  ${dt}s: still ${info.status}${info.ip ? ` ip=${info.ip}` : ''}`)
     }
     if (info.status === 'active') break
     if (info.status === 'error' || info.status === 'deleted') {
