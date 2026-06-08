@@ -34,7 +34,7 @@
 import { randomBytes } from 'node:crypto'
 import { generateRentalKeypair } from '../src/services/inbound/ssh-keygen.js'
 
-const SCRIPT_VERSION = '2026-06-08-v2-internal-external-port-keys'
+const SCRIPT_VERSION = '2026-06-08-v2-auto-pick-host-and-network-mode'
 const BASE_URL = 'https://dashboard.tensordock.com/api/v2'
 
 interface Args {
@@ -117,90 +117,99 @@ async function main(): Promise<void> {
   console.log(`  -> auth ok.`)
   console.log()
 
-  // Step 2: discover locations + hostnodes. Try common path variants.
-  let locationId = args.location
-  let gpuModel = args.gpu
-
-  if (!locationId || !gpuModel) {
-    console.log('Discovering locations + hostnodes via GET /hostnodes ...')
-    const hostnodes = await req<unknown>('/hostnodes', 'GET', token)
-    console.log(`  HTTP ${hostnodes.status} content-type=${hostnodes.json ? 'json' : 'other'}`)
-    if (hostnodes.ok && hostnodes.text.length < 5000) {
-      console.log(`  body: ${hostnodes.text}`)
-    } else if (hostnodes.ok) {
-      console.log(`  body (first 3000 chars): ${hostnodes.text.slice(0, 3000)}`)
-    } else {
-      console.log(`  hostnodes call FAILED HTTP ${hostnodes.status}: ${hostnodes.text.slice(0, 500)}`)
-      console.log()
-      console.log('Trying GET /locations ...')
-      const locs = await req<unknown>('/locations', 'GET', token)
-      console.log(`  HTTP ${locs.status}`)
-      console.log(`  body: ${locs.text.slice(0, 2000)}`)
-      console.log()
-      console.log('Need a location_id and gpu model from one of these responses.')
-      console.log('Re-run with --location <id> --gpu <model> once you spot them in the output above.')
-      process.exit(1)
+  // Step 2: always re-fetch hostnodes so we pick a live host. Even
+  // when --location and --gpu are passed, the host might have lost
+  // capacity since the operator picked it; we use the fresh catalog
+  // to drive port-forwarding vs dedicated-IP decisions plus available
+  // external port selection.
+  console.log('Fetching live hostnodes catalog via GET /hostnodes ...')
+  type HostNode = {
+    id: string
+    location_id: string
+    available_resources?: {
+      gpus?: Array<{ v0Name?: string; availableCount?: number; price_per_hr?: number }>
+      available_ports?: number[]
+      has_public_ip_available?: boolean
     }
-
-    if (!locationId || !gpuModel) {
-      console.log()
-      console.log('Re-run with --location <id> --gpu <model> picked from the hostnode/location JSON above.')
-      process.exit(1)
-    }
+    location?: { city?: string; country?: string }
   }
+  const hostnodes = await req<{ data?: { hostnodes?: HostNode[] } }>('/hostnodes', 'GET', token)
+  if (!hostnodes.ok || !hostnodes.json?.data?.hostnodes) {
+    console.log(`  hostnodes failed: HTTP ${hostnodes.status} ${hostnodes.text.slice(0, 300)}`)
+    process.exit(1)
+  }
+  const allHosts = hostnodes.json.data.hostnodes
+  console.log(`  -> ${allHosts.length} hostnodes returned.`)
+
+  // Filter to hosts with available capacity for the requested (or any
+  // priority) GPU and a viable network mode.
+  const gpuFilter = args.gpu
+  const candidates = allHosts.flatMap((h) => {
+    const gpus = h.available_resources?.gpus ?? []
+    const ports = h.available_resources?.available_ports ?? []
+    const hasIp = h.available_resources?.has_public_ip_available === true
+    return gpus
+      .filter((g) => g.v0Name && (g.availableCount ?? 0) >= 1)
+      .filter((g) => !gpuFilter || g.v0Name === gpuFilter)
+      .map((g) => ({
+        hostId: h.id,
+        locationId: h.location_id,
+        city: h.location?.city ?? '?',
+        country: h.location?.country ?? '?',
+        gpuModel: g.v0Name!,
+        available: g.availableCount!,
+        pricePerHr: g.price_per_hr ?? 0,
+        externalPort: ports[0] ?? 0,
+        usePortForward: ports.length > 0,
+        useDedicatedIp: hasIp && ports.length === 0,
+      }))
+      .filter((c) => c.usePortForward || c.useDedicatedIp)
+  })
+  if (candidates.length === 0) {
+    console.log('No hosts with capacity + viable network mode right now. Try again in a moment or pick a different --gpu.')
+    process.exit(1)
+  }
+  candidates.sort((a, b) => a.pricePerHr - b.pricePerHr)
+  const chosen = args.location
+    ? candidates.find((c) => c.locationId === args.location) ?? candidates[0]!
+    : candidates[0]!
+  console.log(`  -> chose ${chosen.gpuModel} at ${chosen.city}, ${chosen.country}: $${chosen.pricePerHr.toFixed(2)}/h ` +
+    `(host ${chosen.hostId}, mode=${chosen.usePortForward ? 'port_forward' : 'dedicated_ip'})`)
+  console.log()
+  const locationId = chosen.locationId
+  const gpuModel = chosen.gpuModel
+  const externalPort = chosen.externalPort
+  const useDedicatedIp = chosen.useDedicatedIp
 
   // Step 3: mint SSH keypair for the deploy.
   const keypair = generateRentalKeypair(`v2-probe-${Date.now()}`)
   const name = `a2e-v2-probe-${randomBytes(4).toString('hex')}`
 
-  // port_forwards is required when useDedicatedIp=false. Iteration 2:
-  // The API rejected port_forwards: [22] with "Expected object,
-  // received number" so each entry needs to be an object. Trying
-  // { internal: 22, external: <host_port> } based on the legacy API's
-  // response shape. Pre-discover the host's first available external
-  // port via /hostnodes so this works on any location.
-  let externalPort = 0
-  try {
-    const hostnodesResp = await req<{
-      data?: { hostnodes?: Array<{ id: string; location_id: string; available_resources?: { available_ports?: number[] } }> }
-    }>('/hostnodes', 'GET', token)
-    if (hostnodesResp.ok && hostnodesResp.json?.data?.hostnodes) {
-      const match = hostnodesResp.json.data.hostnodes.find((h) => h.location_id === locationId)
-      const ports = match?.available_resources?.available_ports ?? []
-      if (ports.length > 0) externalPort = ports[0]!
-    }
-  } catch { /* fall through; let server error tell us */ }
-  if (externalPort === 0) {
-    console.log('Warning: could not pre-discover external port; using 0 (server may auto-allocate).')
-  } else {
-    console.log(`Using external port ${externalPort} from host's available_ports pool.`)
-    console.log()
-  }
-  const deployBody = {
-    data: {
-      type: 'virtualmachine',
-      attributes: {
-        name,
-        type: 'virtualmachine',
-        image: args.image,
-        resources: {
-          vcpu_count: args.vcpus,
-          ram_gb: args.ram,
-          storage_gb: args.storage,
-          gpus: {
-            [gpuModel!]: { count: 1 },
-          },
-        },
-        location_id: locationId!,
-        useDedicatedIp: false,
-        port_forwards: [{ internal_port: 22, external_port: externalPort }],
-        ssh_key: keypair.publicKeyOpenssh.trim(),
+  // port_forwards / useDedicatedIp already resolved during host
+  // selection above based on the live catalog.
+  const attrs: Record<string, unknown> = {
+    name,
+    type: 'virtualmachine',
+    image: args.image,
+    resources: {
+      vcpu_count: args.vcpus,
+      ram_gb: args.ram,
+      storage_gb: args.storage,
+      gpus: {
+        [gpuModel!]: { count: 1 },
       },
     },
+    location_id: locationId!,
+    useDedicatedIp,
+    ssh_key: keypair.publicKeyOpenssh.trim(),
   }
+  if (!useDedicatedIp) {
+    attrs.port_forwards = [{ internal_port: 22, external_port: externalPort }]
+  }
+  const deployBody = { data: { type: 'virtualmachine', attributes: attrs } }
 
   console.log('POST /instances body:')
-  const logBody = JSON.parse(JSON.stringify(deployBody)) as typeof deployBody
+  const logBody = JSON.parse(JSON.stringify(deployBody)) as { data: { attributes: { ssh_key: string } } }
   logBody.data.attributes.ssh_key = `<${keypair.publicKeyOpenssh.trim().length} chars: ${keypair.publicKeyOpenssh.trim().slice(0, 20)}...>`
   console.log(JSON.stringify(logBody, null, 2))
   console.log()
