@@ -28,6 +28,11 @@ const testSmtpSchema = z.object({
 
 export async function adminSmtpRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate)
+  // SECURITY (pen-test 2026-06-09): SMTP config carries provider
+  // credentials and is mutable from these routes. Anything but ADMIN
+  // would leak the password (masked but exfiltratable via test-send
+  // misuse) or pivot to relay phishing through our SMTP. Gate hard.
+  fastify.addHook('preHandler', fastify.requireRole('ADMIN'))
 
   /**
    * GET /v1/admin/smtp — Current SMTP config (password masked)

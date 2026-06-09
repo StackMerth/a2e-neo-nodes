@@ -23,6 +23,13 @@ const updateConfigSchema = z.object({
 })
 
 export async function settlementsRoutes(fastify: FastifyInstance) {
+  // SECURITY (pen-test 2026-06-09 A2E_AUTOPAYOUT_DRAIN): /v1/settlements/*
+  // drives the actual operator-payout machinery (trigger, process,
+  // complete). Previously per-route preHandler was only authenticate;
+  // any authed user could call /trigger or /process. Lock to ADMIN.
+  fastify.addHook('preHandler', fastify.authenticate)
+  fastify.addHook('preHandler', fastify.requireRole('ADMIN'))
+
   // GET /v1/settlements - List settlements
   fastify.get(
     '/v1/settlements',

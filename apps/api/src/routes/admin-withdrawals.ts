@@ -5,6 +5,15 @@ import { createConnectTransfer, isStripeConfigured } from '../services/payment/s
 
 export async function adminWithdrawalRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate)
+  // SECURITY (pen-test 2026-06-09 A2E_AUTOPAYOUT_DRAIN step 6):
+  // Without this gate, any authed NODE_RUNNER could PATCH
+  // /v1/admin/withdrawals/:id/approve and flip their own pending
+  // withdrawal to APPROVED state, bypassing the human-in-the-loop
+  // approval that gates real fund movement. requireRole('ADMIN')
+  // returns 403 to any non-admin caller (previously they got a 404
+  // only when the withdrawal id was unknown, which the attacker read
+  // as 'unprotected').
+  fastify.addHook('preHandler', fastify.requireRole('ADMIN'))
 
   // ===================================================================
   // LIST ALL WITHDRAWALS

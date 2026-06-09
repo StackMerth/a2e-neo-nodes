@@ -18,6 +18,15 @@ import { logPaymentChange, logSettlementChange } from '../services/audit/logger'
 import { createPendingReconciliation } from '../services/reconciliation/reconciler'
 
 export async function paymentsRoutes(fastify: FastifyInstance) {
+  // SECURITY (pen-test 2026-06-09 A2E_AUTOPAYOUT_DRAIN): all /v1/payments
+  // routes operate on the treasury and must be ADMIN-only. Previously
+  // each route had only `preHandler: [fastify.authenticate]`, which
+  // accepted any authed user. Hooks below ENFORCE the role gate at
+  // the file level; the per-route authenticate preHandlers remain in
+  // place (idempotent — kept for legibility).
+  fastify.addHook('preHandler', fastify.authenticate)
+  fastify.addHook('preHandler', fastify.requireRole('ADMIN'))
+
   // GET /v1/payments/mode - Get current payment mode (dev/live)
   fastify.get(
     '/v1/payments/mode',

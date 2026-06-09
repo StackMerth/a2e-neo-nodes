@@ -12,6 +12,10 @@ const allocateSchema = z.object({
 
 export async function adminComputeRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate)
+  // SECURITY (pen-test 2026-06-09): /v1/admin/* must reject non-admin
+  // tokens with 403 instead of 404. Without this gate any authed user
+  // could list and (where mutators exist) modify compute requests.
+  fastify.addHook('preHandler', fastify.requireRole('ADMIN'))
 
   /**
    * GET /v1/admin/compute/requests — List all compute requests

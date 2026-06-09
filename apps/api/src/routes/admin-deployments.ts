@@ -20,6 +20,9 @@ const sshSchema = z.object({
 export async function adminDeploymentRoutes(fastify: FastifyInstance) {
   // All routes require admin auth
   fastify.addHook('preHandler', fastify.authenticate)
+  // SECURITY (pen-test 2026-06-09): comment above said "All routes
+  // require admin auth" but the role gate was never wired. Add it.
+  fastify.addHook('preHandler', fastify.requireRole('ADMIN'))
 
   /**
    * GET /v1/admin/deployments — List deployment requests
