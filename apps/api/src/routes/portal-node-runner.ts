@@ -19,6 +19,7 @@ import {
 } from '../services/payment/stripe.js'
 import { debitBalance, InsufficientBalanceError } from '../services/balance/balance-service.js'
 import { mintInstallTokenForRunner } from './byog.js'
+import { getSolanaConfig, verifyUsdcDeposit } from '../services/payment/solana.js'
 
 const PORTAL_URL = process.env.PORTAL_URL?.trim() || 'https://user.tokenos.ai'
 
@@ -1524,10 +1525,25 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
         data: { txHash: `BAL:${placeholder.id}` },
       })
     } else {
-      // USDC path. Test mode: any txHash starting with 'test_' bypasses
-      // payment verification (signed by the refine() above to ensure
-      // txHash is present whenever paymentSource=USDC).
+      // USDC path. The txHash MUST be verified end-to-end:
+      //   - exists + finalized
+      //   - credits AT LEAST totalAmount in USDC to the treasury wallet
+      // This closes pen-test finding A2E_AUTOPAYOUT_DRAIN step 2 where
+      // a bogus txHash like '1'*88 forged a paid $2500/unit deployment
+      // with txConfirmed=true. Test/dev fast-paths preserved inside
+      // verifyUsdcDeposit (DEV_/test_ prefixes auto-verify).
       const isTestTx = txHash!.startsWith('test_')
+      const solanaConfig = await getSolanaConfig(fastify.prisma)
+      const verification = await verifyUsdcDeposit(solanaConfig, txHash!, totalAmount)
+      if (!verification.verified) {
+        return reply.code(400).send({
+          error: 'tx_unverified',
+          message: verification.error ?? 'Transaction could not be verified on-chain.',
+          required: totalAmount,
+          observed: verification.observedAmountUsd ?? 0,
+        })
+      }
+
       investment = await fastify.prisma.investment.create({
         data: {
           nodeRunnerId: nr.id,

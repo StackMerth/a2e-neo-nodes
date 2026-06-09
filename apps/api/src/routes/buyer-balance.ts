@@ -23,7 +23,7 @@ import {
   DuplicateTransactionError,
   InsufficientBalanceError,
 } from '../services/balance/balance-service'
-import { getSolanaConfig, processPayment, verifyTransaction } from '../services/payment/solana'
+import { getSolanaConfig, processPayment, verifyUsdcDeposit } from '../services/payment/solana'
 import { createTopupCheckoutSession, isStripeConfigured } from '../services/payment/stripe'
 import { createNotification } from '../services/notification/service.js'
 
@@ -203,13 +203,20 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
     const { txHash, amountUsd, note } = parse.data
     const userId = request.user!.userId
 
-    // Verify the tx exists on-chain (or is a DEV_ mock in dev mode).
+    // STRICT verification: tx exists AND credits >= amountUsd in USDC
+    // to the treasury wallet. Pen-test 2026-06-09 found that the old
+    // verifyTransaction only checked existence; an attacker could submit
+    // any unrelated mainnet tx hash and get the balance credited. The
+    // claim/amountUsd path was effectively gate-open. verifyUsdcDeposit
+    // closes both gaps via getParsedTransaction + token-balance delta.
     const config = await getSolanaConfig(fastify.prisma)
-    const verification = await verifyTransaction(config, txHash)
+    const verification = await verifyUsdcDeposit(config, txHash, amountUsd)
     if (!verification.verified) {
       reply.status(400).send({
         error: 'tx_unverified',
         message: verification.error ?? 'Transaction could not be verified on chain. Wait a few seconds and try again.',
+        required: amountUsd,
+        observed: verification.observedAmountUsd ?? 0,
       })
       return
     }

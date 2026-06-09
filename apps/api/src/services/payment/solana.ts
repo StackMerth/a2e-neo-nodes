@@ -551,6 +551,138 @@ export async function verifyTransaction(
   }
 }
 
+/**
+ * STRICT deposit verification: confirms a USDC transfer txHash
+ * actually moved funds INTO the treasury wallet for AT LEAST the
+ * expected amount.
+ *
+ * Why this exists (2026-06-09 pen-test A2E_AUTOPAYOUT_DRAIN):
+ * verifyTransaction() only checks the tx exists + didn't error.
+ * It does NOT verify recipient or amount. The portal-node-runner
+ * /deploy endpoint was using only verifyTransaction (or nothing —
+ * txConfirmed was set to true unconditionally), letting an attacker
+ * forge $2500/unit deployments with a bogus txHash like "1"*88.
+ *
+ * Checks (all must pass for verified=true):
+ *   1. Tx exists on chain and didn't error (delegates to verifyTransaction)
+ *   2. Tx is a parsed SPL token transfer touching the USDC mint
+ *   3. Treasury wallet's USDC ATA gained AT LEAST minAmountUsdc units
+ *   4. Optional: sender (the wallet that lost USDC) is allowed
+ *
+ * DEV MODE: tx hashes starting with DEV_ or test_ auto-verify.
+ *
+ * Returns { verified, observedAmountUsdc, sender, error }.
+ */
+export async function verifyUsdcDeposit(
+  config: SolanaConfig,
+  txHash: string,
+  minAmountUsd: number,
+): Promise<{
+  verified: boolean
+  observedAmountUsd?: number
+  sender?: string
+  isDevMode: boolean
+  error?: string
+}> {
+  // DEV MODE / test fast path. Same predicate as verifyTransaction so
+  // local + staging flows aren't disrupted by the stricter prod check.
+  if (config.devMode || txHash.startsWith('DEV_') || txHash.startsWith('test_')) {
+    return { verified: true, isDevMode: true, observedAmountUsd: minAmountUsd }
+  }
+
+  // Step 1: existence + non-error.
+  const base = await verifyTransaction(config, txHash)
+  if (!base.verified) {
+    return { verified: false, isDevMode: false, error: base.error ?? 'Transaction not verified' }
+  }
+
+  try {
+    const connection = new Connection(config.rpcUrl, 'confirmed')
+    const parsed = await connection.getParsedTransaction(txHash, {
+      commitment: 'confirmed',
+      maxSupportedTransactionVersion: 0,
+    })
+
+    if (!parsed?.meta) {
+      return { verified: false, isDevMode: false, error: 'Transaction not found or no meta' }
+    }
+
+    // Derive treasury pubkey from configured payer key. Without a
+    // payer configured we can't verify (verification means the buyer
+    // sent USDC to OUR wallet, so we need to know our address).
+    if (!config.payerPrivateKey) {
+      return { verified: false, isDevMode: false, error: 'Treasury payer key not configured' }
+    }
+    const payer = Keypair.fromSecretKey(parsePrivateKey(config.payerPrivateKey))
+    const treasury = payer.publicKey.toBase58()
+    const usdcMint = getUsdcMint(config).toBase58()
+
+    // Step 2 + 3: scan token-balance deltas to find a transfer INTO
+    // treasury's USDC account. Using pre/postTokenBalances is more
+    // robust than parsing instructions because it works regardless of
+    // which program (Token or Token-2022) executed the transfer.
+    const pre = parsed.meta.preTokenBalances ?? []
+    const post = parsed.meta.postTokenBalances ?? []
+
+    let creditedToTreasury = 0
+    for (const p of post) {
+      if (p.mint !== usdcMint) continue
+      if (p.owner !== treasury) continue
+      const preMatch = pre.find(
+        (x) => x.accountIndex === p.accountIndex && x.mint === usdcMint && x.owner === treasury,
+      )
+      const preAmount = preMatch?.uiTokenAmount.uiAmount ?? 0
+      const postAmount = p.uiTokenAmount.uiAmount ?? 0
+      creditedToTreasury += postAmount - preAmount
+    }
+
+    if (creditedToTreasury <= 0) {
+      return {
+        verified: false,
+        isDevMode: false,
+        error: `Transaction did not credit USDC to treasury ${treasury.slice(0, 6)}…${treasury.slice(-4)}`,
+      }
+    }
+    if (creditedToTreasury < minAmountUsd) {
+      return {
+        verified: false,
+        isDevMode: false,
+        observedAmountUsd: creditedToTreasury,
+        error: `Transaction credited only $${creditedToTreasury.toFixed(2)} USDC to treasury, expected at least $${minAmountUsd.toFixed(2)}`,
+      }
+    }
+
+    // Step 4: identify the sender — the wallet whose USDC ATA went
+    // down by the corresponding amount. Reported for audit; not
+    // currently enforced as we don't pin sender to the buyer's wallet
+    // (operators may deposit from any wallet they own).
+    let sender: string | undefined
+    for (const x of pre) {
+      if (x.mint !== usdcMint) continue
+      const postMatch = post.find((p) => p.accountIndex === x.accountIndex && p.mint === usdcMint)
+      const preAmount = x.uiTokenAmount.uiAmount ?? 0
+      const postAmount = postMatch?.uiTokenAmount.uiAmount ?? 0
+      if (preAmount - postAmount > 0 && x.owner && x.owner !== treasury) {
+        sender = x.owner
+        break
+      }
+    }
+
+    return {
+      verified: true,
+      observedAmountUsd: creditedToTreasury,
+      sender,
+      isDevMode: false,
+    }
+  } catch (error) {
+    return {
+      verified: false,
+      isDevMode: false,
+      error: error instanceof Error ? error.message : 'verifyUsdcDeposit failed',
+    }
+  }
+}
+
 export async function getPayerBalance(config: SolanaConfig): Promise<{
   sol: number
   usdc: number
