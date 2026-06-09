@@ -16,6 +16,22 @@ const updateMarketConfigSchema = z.object({
 })
 
 export async function configRoutes(fastify: FastifyInstance) {
+  // SECURITY (pen-test 2026-06-09 finding B-1): every route in this file
+  // mutates or discloses platform-wide operations config (yield-floor
+  // rates, market enable/priority, market apiEndpoint URL). Previously
+  // each route had only fastify.authenticate, meaning any free authed
+  // user could:
+  //   - inflate yield-floor rates -> drive real payout flow upward
+  //   - flip an external market's apiEndpoint to an attacker-controlled
+  //     host -> SSRF / MitM the routing layer
+  //   - enable/disable markets at will
+  //   - read the config audit trail
+  // Lock the whole file with ADMIN. Per-route preHandlers below stay as
+  // they were (idempotent, kept for legibility) following the Patch #2
+  // pattern from the same day's pen-test pass.
+  fastify.addHook('preHandler', fastify.authenticate)
+  fastify.addHook('preHandler', fastify.requireRole('ADMIN'))
+
   fastify.get(
     '/v1/config/yield-floors',
     {
@@ -67,6 +83,20 @@ export async function configRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({
           error: 'Validation Error',
           message: `Rate cannot be below cost floor ($${tierConfig.costFloor}/day)`,
+        })
+      }
+
+      // SECURITY (pen-test 2026-06-09 finding B-1): ceiling. Even with
+      // the ADMIN gate above, a misconfigured rate would inflate every
+      // job's payout above what we collect from buyers. Cap at the tier's
+      // retailRate (the buyer-facing catalog price). Defence in depth:
+      // if ADMIN ever gets compromised, the inflation blast radius is
+      // bounded to "operators paid retail" rather than "platform bleeds
+      // unbounded dollars per job."
+      if (ratePerDay > tierConfig.retailRate) {
+        return reply.code(400).send({
+          error: 'Validation Error',
+          message: `Rate cannot exceed retail rate ($${tierConfig.retailRate}/day). Yield-floor must sit between costFloor ($${tierConfig.costFloor}) and retailRate ($${tierConfig.retailRate}).`,
         })
       }
 
