@@ -362,7 +362,8 @@ export async function nodeRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // Update node details (wallet address, region, etc.)
+  // Update node details (region only — walletAddress changes require
+  // a dedicated signed-nonce flow per pen-test 2026-06-09 step 4).
   fastify.patch(
     '/v1/nodes/:id',
     {
@@ -370,8 +371,13 @@ export async function nodeRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       const { id } = request.params as { id: string }
+      // SECURITY (pen-test 2026-06-09 step 4): walletAddress was the
+      // settlement-payout target and was previously settable by any
+      // authed user with no ownership proof. Removing it from the
+      // schema entirely closes the attack until a proper signed-nonce
+      // wallet-rotation endpoint ships. region is informational and
+      // safe to keep patchable.
       const updateSchema = z.object({
-        walletAddress: z.string().min(1).max(128).optional(),
         region: z.string().max(64).optional(),
       })
 
@@ -384,7 +390,10 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         })
       }
 
-      const node = await fastify.prisma.node.findUnique({ where: { id } })
+      const node = await fastify.prisma.node.findUnique({
+        where: { id },
+        include: { nodeRunner: { select: { userId: true } } },
+      })
 
       if (!node) {
         return reply.code(404).send({
@@ -393,17 +402,38 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         })
       }
 
-      // Check if new wallet address is already taken by another node
-      if (parseResult.data.walletAddress && parseResult.data.walletAddress !== node.walletAddress) {
-        const existing = await fastify.prisma.node.findUnique({
-          where: { walletAddress: parseResult.data.walletAddress },
+      // SECURITY (pen-test 2026-06-09 step 4): ownership gate. Only:
+      //   - admin (X-API-Key=ADMIN_API_KEY or user role=ADMIN), or
+      //   - the node-agent itself (authNodeId === node.id), or
+      //   - the user who owns the NodeRunner that owns this node
+      // can PATCH. Previously any authed user could PATCH any node.
+      const isAdmin =
+        request.authType === 'admin' ||
+        (request.authType === 'user' && request.user?.role === 'ADMIN')
+      const isOwningNode =
+        request.authType === 'node' && request.authNodeId === node.id
+      const isOwningUser =
+        request.authType === 'user' &&
+        node.nodeRunner?.userId &&
+        request.user?.userId === node.nodeRunner.userId
+      if (!isAdmin && !isOwningNode && !isOwningUser) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Only the node owner, the node agent, or an admin can update this node.',
         })
-        if (existing) {
-          return reply.code(409).send({
-            error: 'Conflict',
-            message: 'Wallet address already in use by another node',
-          })
-        }
+      }
+
+      // Reject explicit attempts to set walletAddress with a clear
+      // diagnostic so legitimate clients learn the new contract
+      // instead of silently dropping the value. Inspect the raw body
+      // because the schema has stripped it.
+      if ((request.body as Record<string, unknown> | null)?.walletAddress !== undefined) {
+        return reply.code(400).send({
+          error: 'wallet_change_unsupported',
+          message:
+            'Node wallet address can no longer be changed via PATCH /v1/nodes/:id. ' +
+            'A signed-nonce wallet-rotation endpoint will be added; contact admin for now.',
+        })
       }
 
       const updatedNode = await fastify.prisma.node.update({
