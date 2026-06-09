@@ -32,39 +32,58 @@ export type JobStatus = 'PENDING' | 'ROUTING' | 'ASSIGNED' | 'RUNNING' | 'COMPLE
 // Market types
 export type Market = 'INTERNAL' | 'AKASH' | 'IONET' | 'VASTAI'
 
-// Rate information per GPU tier (daily rates in USD)
+// Rate information per GPU tier (daily rates in USD).
+// SINGLE SOURCE OF TRUTH for pricing across server (buyer-compute.ts)
+// and client (portal buyer/request page). Prior duplicated tables in
+// each location drifted out of sync, causing A100 to sell below
+// supplier cost on 2026-06-08 (cmq5if3gr000). This table is now
+// imported on both sides; do not duplicate.
+//
+// Fields:
+//   retailRate ($/day): catalog display rate buyers see. Drives the
+//     "Total Cost" line item and the base of all discount math.
+//   priceFloor ($/day): hard minimum we'll sell at, calibrated to the
+//     cheapest cascade supplier cost × 25% margin. SPOT + INFERENCE
+//     discounts that would dip the buyer rate below this get pinned to
+//     this floor. Calibration source: 2026-06 cascade probe results.
+//   costFloor ($/day): legacy break-even number (operator-only view).
+//     Kept for backward compat with non-rental flows; new code should
+//     prefer priceFloor.
+//   vram (GB): for catalog filtering / display.
+//   tier: internal sort order; T1=highest-end.
 export const GPU_TIER_CONFIG: Record<
   GpuTier,
   {
-    retailRate: number // Internal premium rate ($/day)
-    costFloor: number // Minimum rate to break even ($/day)
-    vram: number // GB
-    tier: number // T1-T6 (OTHER is tier 6)
+    retailRate: number
+    priceFloor: number
+    costFloor: number
+    vram: number
+    tier: number
   }
 > = {
-  H100: { retailRate: 140.15, costFloor: 83, vram: 80, tier: 1 },
-  H200: { retailRate: 179.85, costFloor: 105, vram: 141, tier: 2 },
-  // A100: NVIDIA Ampere data-center workhorse. 80GB (PCIe + SXM4)
-  // dominant form factor. Market reference: Lambda $1.10-$1.29/h,
-  // RunPod $1.69/h, Vast.ai verified $0.56-$1.16/h. Internal retail
-  // $24/day = $1.00/h is the sweet spot vs the cascade's blended
-  // cost. Cost floor leaves room for operator margin. Tier 2.25 puts
-  // it between H200 (high-end Hopper) and L40S (mid-tier Ada).
-  A100: { retailRate: 24, costFloor: 14, vram: 80, tier: 2.25 },
-  // L40S: datacenter Ada-Lovelace card. Mid-tier between H100 and
-  // consumer RTX. Market reference ~$0.88/hr (Vast.ai, RunPod, AITECH).
-  // $21/day = ~$0.875/hr. Cost floor leaves room for operator margin.
-  L40S: { retailRate: 21, costFloor: 12, vram: 48, tier: 2.5 },
-  B200: { retailRate: 321.1, costFloor: 170, vram: 192, tier: 3 },
-  B300: { retailRate: 431.75, costFloor: 250, vram: 288, tier: 4 },
-  GB300: { retailRate: 499.35, costFloor: 300, vram: 288, tier: 5 },
-  OTHER: { retailRate: 0, costFloor: 0, vram: 0, tier: 6 }, // Custom rates from node config
-  // C2 wave 2: consumer / prosumer tiers. Pricing is market-standard
-  // based on Vast.ai + RunPod consumer spot rates. Admin can override
-  // via the YieldFloor table from the /rates page.
-  RTX_4090: { retailRate: 14, costFloor: 8, vram: 24, tier: 7 },
-  RTX_3090: { retailRate: 9, costFloor: 5, vram: 24, tier: 8 },
-  CONSUMER: { retailRate: 7, costFloor: 4, vram: 12, tier: 9 }, // catchall floor
+  // H100 priceFloor: Shadeform latitude $1.66/h × 24 × 1.25 = $49.80
+  // (rounded up to 56.10 to keep margin healthy across SXM5 / PCIe).
+  H100: { retailRate: 140.15, priceFloor: 56.10, costFloor: 83, vram: 80, tier: 1 },
+  // H200 priceFloor: Shadeform digitalocean $3.29/h × 24 × 1.25 = $98.70.
+  H200: { retailRate: 179.85, priceFloor: 100.00, costFloor: 105, vram: 141, tier: 2 },
+  // A100 priceFloor: Shadeform hyperstack A100_80G $1.35/h × 24 × 1.25
+  // = $40.50. Critical: without this floor, INFERENCE + SPOT discounts
+  // dropped buyer rate to $0.80/h (below $1.35 supplier cost). Live
+  // on 2026-06-08 cmq5if3gr000 — we ate $0.55/h × runtime.
+  A100: { retailRate: 24, priceFloor: 40.50, costFloor: 14, vram: 80, tier: 2.25 },
+  // L40S priceFloor: Shadeform massedcompute $0.79/h × 24 × 1.25 = $23.70.
+  L40S: { retailRate: 21, priceFloor: 23.70, costFloor: 12, vram: 48, tier: 2.5 },
+  // B200 priceFloor: Shadeform verda $5.49/h × 24 × 1.25 = $164.70.
+  B200: { retailRate: 321.1, priceFloor: 165.00, costFloor: 170, vram: 192, tier: 3 },
+  B300: { retailRate: 431.75, priceFloor: 200.00, costFloor: 250, vram: 288, tier: 4 },
+  GB300: { retailRate: 499.35, priceFloor: 240.00, costFloor: 300, vram: 288, tier: 5 },
+  // OTHER: tiers with operator-declared custom rates skip the floor.
+  OTHER: { retailRate: 0, priceFloor: 0, costFloor: 0, vram: 0, tier: 6 },
+  // Consumer / prosumer floors calibrated to RunPod static + Vast.ai
+  // verified prices × 1.25 margin.
+  RTX_4090: { retailRate: 14, priceFloor: 10.20, costFloor: 8, vram: 24, tier: 7 },
+  RTX_3090: { retailRate: 9, priceFloor: 9.00, costFloor: 5, vram: 24, tier: 8 },
+  CONSUMER: { retailRate: 7, priceFloor: 6.00, costFloor: 4, vram: 12, tier: 9 },
 }
 
 // Convert daily rate to hourly

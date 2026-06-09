@@ -15,6 +15,7 @@ import {
   FormCard,
   FormSection,
 } from '@/components/dashboard/FuturisticShell'
+import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 
 interface GpuTier {
   id: string
@@ -42,41 +43,27 @@ const GPU_TIERS: GpuTier[] = [
   { id: 'CONSUMER', name: 'Consumer', inferenceOnly: true },
 ]
 
-const HOURLY_RATES: Record<string, number> = {
-  H100: 5.84,
-  H200: 7.49,
-  A100: 24 / 24,
-  // L40S: $21/day = $0.875/hr retail.
-  L40S: 21 / 24,
-  B200: 13.38,
-  B300: 17.99,
-  GB300: 20.81,
-  // C2 wave 2: GPU_TIER_CONFIG retailRate / 24
-  RTX_4090: 14 / 24,
-  RTX_3090: 9 / 24,
-  CONSUMER: 7 / 24,
-}
+// HOURLY_RATES and GPU_FLOOR_DAILY are derived from @a2e/shared
+// GPU_TIER_CONFIG (single source of truth). Prior versions
+// duplicated these tables in three places (server, client, allocator
+// fallbacks) and drifted on every Hyperstack/Shadeform price
+// recalibration. Now: edit packages/shared/src/index.ts → rebuild →
+// both sides pick up the change.
+type SharedTierCfg = (typeof GPU_TIER_CONFIG)[keyof typeof GPU_TIER_CONFIG]
+
+const HOURLY_RATES: Record<string, number> = Object.fromEntries(
+  (Object.entries(GPU_TIER_CONFIG) as Array<[string, SharedTierCfg]>).map(
+    ([tier, cfg]) => [tier, dailyToHourly(cfg.retailRate)],
+  ),
+)
 
 const CONSUMER_TIER_IDS = new Set(['CONSUMER', 'RTX_4090', 'RTX_3090'])
 
-// Daily price floor per tier. Mirror of GPU_PRICE_FLOOR_DAILY in
-// apps/api/src/routes/buyer-compute.ts. Server applies this floor on
-// submit; without mirroring it client-side the Cost Summary would show
-// a discounted price the server will then refuse to honor (it'd silently
-// debit the floor instead, surprising the buyer). Keep in lock-step
-// with the server table.
-const GPU_FLOOR_DAILY: Record<string, number> = {
-  H100:     56.10,
-  H200:    100.00,
-  A100:     40.50,
-  L40S:     23.70,
-  B200:    165.00,
-  B300:    200.00,
-  GB300:   240.00,
-  RTX_4090: 10.20,
-  RTX_3090:  9.00,
-  CONSUMER:  6.00,
-}
+const GPU_FLOOR_DAILY: Record<string, number> = Object.fromEntries(
+  (Object.entries(GPU_TIER_CONFIG) as Array<[string, SharedTierCfg]>).map(
+    ([tier, cfg]) => [tier, cfg.priceFloor],
+  ),
+)
 
 // M6: lightweight client-side validation for the buyer's SSH public key.
 // Matches the canonical openssh public key formats: ssh-rsa, ssh-ed25519,

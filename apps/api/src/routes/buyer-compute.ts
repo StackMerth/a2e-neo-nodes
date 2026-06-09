@@ -17,12 +17,17 @@ import {
 } from '../services/balance/balance-service.js'
 import { getConfidentialComputeUiMode } from './buyer-confidential-interest.js'
 
-const GPU_DAILY_RATES: Record<string, number> = {
-  H100: 140.15, H200: 179.85, A100: 24, L40S: 21, B200: 321.10, B300: 431.75, GB300: 499.35,
-  // C2 wave 2: consumer / prosumer tier pricing (market-standard,
-  // tunable via YieldFloor per-tier in admin /rates). Allocator
-  // gates these to workloadType=INFERENCE only - see compute-allocator.ts.
-  RTX_4090: 14, RTX_3090: 9, CONSUMER: 7,
+// GPU_DAILY_RATES and GPU_PRICE_FLOOR_DAILY now live in @a2e/shared's
+// GPU_TIER_CONFIG (single source of truth across server + portal
+// client). Helper: tier -> retailRate ($/day), tier -> priceFloor.
+function gpuDailyRate(tier: string): number {
+  const cfg = GPU_TIER_CONFIG[tier as keyof typeof GPU_TIER_CONFIG]
+  return cfg?.retailRate ?? 140.15
+}
+
+function gpuPriceFloor(tier: string): number {
+  const cfg = GPU_TIER_CONFIG[tier as keyof typeof GPU_TIER_CONFIG]
+  return cfg?.priceFloor ?? 0
 }
 
 const requestSchema = z.object({
@@ -174,27 +179,8 @@ const RESERVED_DISCOUNT_PCT = parsePricingFraction(process.env.RESERVED_DISCOUNT
 // 0.8 = 0.48) drops the buyer price to $0.42/h — below cost, every
 // minute is a guaranteed loss. The floor stops the stack before the
 // math goes underwater.
-const GPU_PRICE_FLOOR_DAILY: Record<string, number> = {
-  H100:     56.10, // supplier $1.87/h × 24 × 1.25
-  H200:    100.00, // supplier $3.29/h × 24 × 1.25 = $98.70
-  // A100: Shadeform hyperstack A100_80G measured at $1.35/h on
-  // 2026-06-08 (cmq5if3gr000). Floor = $1.35 × 24 × 1.25 = $40.50/day.
-  // Without this floor a SPOT/INFERENCE A100 rental was selling at
-  // $0.80/h — below supplier cost. Lambda + RunPod static rates are
-  // similar, so the floor protects us across the whole cascade.
-  A100:     40.50,
-  L40S:     23.70, // supplier $0.79/h × 24 × 1.25
-  B200:    165.00, // supplier $5.49/h × 24 × 1.25 = $164.70
-  B300:    200.00,
-  GB300:   240.00,
-  RTX_4090: 10.20, // supplier $0.34/h × 24 × 1.25
-  RTX_3090:  9.00, // supplier $0.30/h × 24 × 1.25 (RUNPOD STATIC_PRICES)
-  CONSUMER:  6.00,
-  OTHER:     6.00,
-}
-
 function applyPriceFloor(ratePerDay: number, gpuTier: string): number {
-  const floor = GPU_PRICE_FLOOR_DAILY[gpuTier]
+  const floor = gpuPriceFloor(gpuTier)
   if (floor && ratePerDay < floor) return floor
   return ratePerDay
 }
@@ -386,13 +372,13 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         })
       }
     }
-    const baseRatePerDay = GPU_DAILY_RATES[gpuTier] ?? 140.15
+    const baseRatePerDay = gpuDailyRate(gpuTier)
     // M3 tier discount (SPOT / RESERVED) + workload-type discount
     // (INFERENCE on datacenter tiers) compose multiplicatively. Both
     // ride on ratePerDay so totalCost, allocator-set ratePerMinute,
     // and refund math all inherit the final rate automatically.
     // Floor enforced after composition so we never sell below
-    // supplier cost — see GPU_PRICE_FLOOR_DAILY for rationale.
+    // supplier cost — see GPU_TIER_CONFIG.priceFloor in @a2e/shared.
     const ratePerDay = applyPriceFloor(
       baseRatePerDay
         * tierPricingMultiplier(tier)

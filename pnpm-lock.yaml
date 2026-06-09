@@ -339,6 +339,9 @@ importers:
 
   apps/portal:
     dependencies:
+      '@a2e/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@ducanh2912/next-pwa':
         specifier: ^10.2.9
         version: 10.2.9(next@14.2.35)(webpack@5.106.2)
