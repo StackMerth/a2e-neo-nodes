@@ -32,7 +32,10 @@ import { Queue, Worker } from 'bullmq'
 import type { ConnectionOptions } from 'bullmq'
 import type { PrismaClient } from '@a2e/database'
 import type { Server as SocketServer } from 'socket.io'
-import { pollHyperstackRentalStatus } from '../services/inbound/hyperstack-provision.js'
+import {
+  pollHyperstackRentalStatus,
+  terminateHyperstackRental,
+} from '../services/inbound/hyperstack-provision.js'
 import {
   isHyperstackConfigured,
   isHyperstackAllocatorEnabled,
@@ -250,6 +253,23 @@ async function cancelAndRefund(
     },
   })
   if (!cr || cr.status !== 'PROVISIONING_EXTERNAL') return
+
+  // Tear down the Hyperstack VM + keypair BEFORE marking the rental
+  // cancelled. Without this the VM keeps billing Hyperstack against
+  // our API key even though the buyer was refunded. Observed live
+  // on 2026-06-09: rental cmq5zgosf000 ran getVm 404 on first poll
+  // tick (stale URL in adapter); the auto-refund fired but VM 863001
+  // stayed ACTIVE on Hyperstack burning ~$1.95/h. terminate is
+  // idempotent so it's safe to call even when the supplier is the
+  // reason we're cancelling.
+  try {
+    await terminateHyperstackRental(prisma, externalRentalId, reason)
+  } catch (err) {
+    console.error(
+      `[hyperstack-poll] cleanup terminate failed for ${externalRentalId}:`,
+      err instanceof Error ? err.message : err,
+    )
+  }
 
   await prisma.computeRequest.updateMany({
     where: { id: cr.id, status: 'PROVISIONING_EXTERNAL' },

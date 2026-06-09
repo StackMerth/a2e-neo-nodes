@@ -351,24 +351,27 @@ export class HyperstackClient {
   }
 
   async getVm(id: number): Promise<HyperstackVm> {
-    // Hyperstack uses SINGULAR noun for single-resource operations:
-    // GET /core/virtual-machine/{id} (not /virtual-machines/{id}).
-    // Plural would return 404; mirrors the keypair convention verified
-    // 2026-06-09. Response wraps the VM under .instance (matches the
-    // keypair-singular pattern).
+    // Hyperstack's URL convention is INCONSISTENT per resource (verified
+    // live 2026-06-09 against id 863001):
+    //   keypair: DELETE  /core/keypair/{id}          (singular, 200)
+    //   keypair: DELETE  /core/keypairs/{id}         (plural, 404)
+    //   VM:      GET     /core/virtual-machines/{id} (plural, 200)
+    //   VM:      GET     /core/virtual-machine/{id}  (singular, 404)
+    // So VMs use PLURAL for single-resource GET, unlike keypairs.
+    // Response wraps the VM under .instance.
     const res = await this.request<{
       instance?: HyperstackVm
       vm?: HyperstackVm
       data?: HyperstackVm
     }>(
-      `/core/virtual-machine/${id}`,
+      `/core/virtual-machines/${id}`,
       'GET',
     )
     const vm = res.instance ?? res.vm ?? res.data
     if (!vm) {
       throw new HyperstackApiError(
         500,
-        `/core/virtual-machine/${id}`,
+        `/core/virtual-machines/${id}`,
         'getVm response missing instance / vm / data',
       )
     }
@@ -376,10 +379,13 @@ export class HyperstackClient {
   }
 
   async deleteVm(id: number): Promise<void> {
-    // Hyperstack uses SINGULAR noun for delete: /core/virtual-machine/{id}
-    // not /core/virtual-machines/{id}. Mirrors the keypair convention
-    // verified 2026-06-09. The plural form returns 404.
-    await this.request<unknown>(`/core/virtual-machine/${id}`, 'DELETE')
+    // VM endpoints use PLURAL for single-resource ops (verified live
+    // 2026-06-09 against id 863001):
+    //   DELETE /core/virtual-machines/{id}  -> 200
+    //   DELETE /core/virtual-machine/{id}   -> 404
+    // Opposite of keypair (which uses singular for DELETE). Hyperstack
+    // does NOT have a consistent rule across resources.
+    await this.request<unknown>(`/core/virtual-machines/${id}`, 'DELETE')
   }
 }
 
