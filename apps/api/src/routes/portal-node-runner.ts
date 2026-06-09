@@ -1010,12 +1010,25 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
 
   /**
    * POST /v1/portal/node-runner/payouts/withdraw-now
-   * Immediately fires settlements for every node with an unpaid
-   * balance, regardless of payoutMode. Honors per-withdraw wallet
-   * override; refuses while an admin hard-hold is active.
    *
-   * If the operator was on SCHEDULED, the manual withdraw consumes
-   * that intent and flips them back to AUTO.
+   * SECURITY (pen-test 2026-06-09 follow-up): previously this endpoint
+   * directly called processPayment for every unpaid settlement, moving
+   * real USDC from the treasury to the operator-supplied wallet with
+   * no admin approval. Pen tester's clean attack path: free account
+   * -> forge $X earnings -> set payout wallet -> withdraw-now -> funds
+   * land in attacker wallet. Self-pay primitive.
+   *
+   * Behavior now: this endpoint runs all the same pre-flight checks
+   * (email verification, admin hard-hold, balance calculation,
+   * spend-adjusted cap) but instead of executing the payment it
+   * creates a WithdrawalRequest row with status=PENDING. An admin
+   * must approve via PATCH /v1/admin/withdrawals/:id/approve (ADMIN-
+   * gated per Patch #2 from the 2026-06-09 push) before any funds
+   * move. All withdrawal paths now flow through human-in-the-loop.
+   *
+   * If the operator was on SCHEDULED, the manual withdraw still
+   * consumes that intent and flips them back to AUTO so the next
+   * scheduler tick doesn't fire on top of the pending request.
    */
   fastify.post('/v1/portal/node-runner/payouts/withdraw-now', async (request, reply) => {
     const nr = await getNodeRunnerForUser(fastify, request.user!.userId)
@@ -1099,35 +1112,36 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       })
     }
 
-    const solanaConfig = await getSolanaConfig(fastify.prisma)
-
-    const results: Array<{ settlementId: string; success: boolean; txHash?: string; error?: string; amount: number }> = []
-    let totalPaid = 0
-
-    for (const calc of payableCalcs) {
-      try {
-        // Override per-settlement wallet with the buyer-supplied
-        // destination so all earnings route to the same address even
-        // if individual Node rows have stale wallet values.
-        const overriddenCalc = { ...calc, walletAddress: destinationWallet }
-        const settlementId = await createSettlement(fastify.prisma, overriddenCalc)
-        await markSettlementProcessing(fastify.prisma, settlementId)
-        const result = await processPayment(solanaConfig, destinationWallet, calc.amount, 'USDC')
-        if (result.success && result.txHash) {
-          await markSettlementCompleted(fastify.prisma, settlementId, result.txHash)
-          totalPaid += calc.amount
-          results.push({ settlementId, success: true, txHash: result.txHash, amount: calc.amount })
-        } else {
-          await markSettlementFailed(fastify.prisma, settlementId, result.error ?? 'Payment failed')
-          results.push({ settlementId, success: false, error: result.error ?? 'Payment failed', amount: calc.amount })
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        results.push({ settlementId: '', success: false, error: msg, amount: calc.amount })
-      }
+    // SECURITY: create ONE WithdrawalRequest with the total payable
+    // amount instead of firing N processPayment calls. Status=PENDING
+    // (the schema default). Admin must approve via /v1/admin/withdrawals
+    // /:id/approve before any funds move on chain. The per-node
+    // Settlement rows are NOT created here; the existing approval
+    // pipeline handles that downstream.
+    const totalAmount = Number(
+      payableCalcs.reduce((sum, c) => sum + c.amount, 0).toFixed(2),
+    )
+    if (totalAmount <= 0) {
+      return reply.code(409).send({
+        error: 'No balance',
+        message: 'Withdrawable amount is zero after spend-adjustment',
+      })
     }
 
+    const withdrawal = await fastify.prisma.withdrawalRequest.create({
+      data: {
+        nodeRunnerId: nr.id,
+        amount: totalAmount,
+        walletAddress: destinationWallet,
+        payoutMethod: 'SOLANA',
+      },
+    })
+
     // Persist the new wallet to the profile if the operator opted in.
+    // Safe to do even though the withdrawal hasn't paid yet; this is
+    // the operator's own saved-wallet preference, not the payment
+    // destination (which is already snapshot on the WithdrawalRequest
+    // row above).
     if (parsed.data.walletAddress && parsed.data.saveWallet && parsed.data.walletAddress !== nr.walletAddress) {
       try {
         await fastify.prisma.nodeRunner.update({
@@ -1135,44 +1149,36 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
           data: { walletAddress: parsed.data.walletAddress },
         })
       } catch {
-        // Wallet uniqueness collision — ignore. The withdrawal still
-        // succeeded; saving the new address is a nice-to-have.
+        // Wallet uniqueness collision — ignore. The request still
+        // exists; saving the new address is a nice-to-have.
       }
     }
 
     // If the operator was on SCHEDULED, the manual withdraw consumes
-    // the scheduled-payout intent. Flip them back to AUTO.
+    // the scheduled-payout intent. Flip them back to AUTO so the next
+    // scheduler tick doesn't fire on top of the pending request.
     if (nr.payoutMode === 'SCHEDULED') {
       await clearScheduledPayout(fastify.prisma, nr.id)
     }
 
-    const anySuccess = results.some((r) => r.success)
+    // Notification: PENDING admin approval, not "Sent". Deep-link to
+    // the withdrawals page so the operator sees a real status.
+    const walletShort = `${destinationWallet.slice(0, 6)}...${destinationWallet.slice(-4)}`
+    void createNotification(
+      request.user!.userId,
+      'WITHDRAWAL_REQUESTED',
+      `Withdrawal of $${totalAmount.toFixed(2)} pending approval`,
+      `Your request for $${totalAmount.toFixed(2)} to ${walletShort} has been submitted. An admin will review and approve before funds move.`,
+      '/payouts',
+    )
 
-    // Fire a notification so the operator sees a persistent record in
-    // their bell dropdown, not just the auto-dismiss toast. Clicking
-    // the notification deep-links to /payouts (the settlement history
-    // page where they can find the tx hash). Skipped on full failure
-    // so the bell doesn't lie about money having moved.
-    if (anySuccess) {
-      const successCount = results.filter((r) => r.success).length
-      const totalCount = results.length
-      const walletShort = `${destinationWallet.slice(0, 6)}...${destinationWallet.slice(-4)}`
-      void createNotification(
-        request.user!.userId,
-        'PAYOUT_SENT',
-        `Withdrew $${totalPaid.toFixed(2)}`,
-        successCount === totalCount
-          ? `Sent to ${walletShort}. Tap to view settlement history.`
-          : `${successCount} of ${totalCount} settlements succeeded. Sent to ${walletShort}.`,
-        '/payouts',
-      )
-    }
-
-    reply.code(anySuccess ? 200 : 502).send({
-      totalPaid,
-      settlements: results,
+    reply.code(202).send({
+      withdrawalId: withdrawal.id,
+      status: withdrawal.status,
+      amount: totalAmount,
       destinationWallet,
       modeResetToAuto: nr.payoutMode === 'SCHEDULED',
+      message: 'Withdrawal request submitted. An admin will review before funds move.',
     })
   })
 
@@ -1263,55 +1269,27 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       return reply.code(409).send({ error: 'No balance', message: 'Withdrawable amount is zero after spend-adjustment' })
     }
 
-    // Create per-node Settlement rows in PROCESSING state so they
-    // appear in the operator's history immediately. We'll flip to
-    // COMPLETED + stamp the stripeTransferId after the Stripe Transfer
-    // succeeds. createSettlement returns the new row's id.
-    const settlements: Array<{ id: string; nodeId: string; amount: number }> = []
-    for (const calc of calcs) {
-      const settlementId = await createSettlement(fastify.prisma, {
-        nodeId: calc.nodeId,
-        walletAddress: '', // Stripe path; no Solana wallet involved
-        amount: calc.amount,
-        uptimeHours: calc.uptimeHours,
-        periodStart: calc.periodStart,
-        periodEnd: calc.periodEnd,
-      })
-      await markSettlementProcessing(fastify.prisma, settlementId)
-      settlements.push({ id: settlementId, nodeId: calc.nodeId, amount: calc.amount })
-    }
-
-    // One Stripe Transfer for the total. The idempotencyKey ties to
-    // a stable hash of the settlement ids so a page retry doesn't
-    // create a duplicate transfer.
-    const idempotencyKey = `withdraw_now_stripe_${nr.id}_${settlements.map((s) => s.id).sort().join('-').slice(0, 80)}`
-    let transferId: string
-    try {
-      const { id: tid } = await createConnectTransfer({
-        destinationAccountId: nr.stripeConnectAccountId,
-        amountUsd: totalAmount,
-        idempotencyKey,
-        description: `TokenOS_DeAI operator instant withdrawal (${settlements.length} node${settlements.length === 1 ? '' : 's'})`,
-      })
-      transferId = tid
-    } catch (err) {
-      // Roll all the Settlement rows we just created back to FAILED so
-      // the operator's balance becomes withdrawable again on retry.
-      for (const s of settlements) {
-        await markSettlementFailed(fastify.prisma, s.id, (err as Error).message).catch(() => undefined)
-      }
-      fastify.log.error({ err, nodeRunnerId: nr.id }, 'withdraw-now-stripe transfer failed')
-      return reply.code(500).send({ error: 'stripe_transfer_failed', message: (err as Error).message })
-    }
-
-    // Mark all settlements COMPLETED with the shared transfer id.
-    for (const s of settlements) {
-      await markSettlementCompleted(fastify.prisma, s.id, '')
-      await fastify.prisma.settlement.update({
-        where: { id: s.id },
-        data: { stripeTransferId: transferId },
-      })
-    }
+    // SECURITY (pen-test 2026-06-09 follow-up): identical change to the
+    // Solana withdraw-now path above. This endpoint used to call
+    // createConnectTransfer directly, moving real USD from the platform
+    // balance to the operator's Stripe Connect account with no admin
+    // approval. The pen tester's contained-proof attack works on this
+    // rail too (forge earnings -> withdraw-now-stripe -> $ lands in
+    // attacker's connected Stripe account).
+    //
+    // Behavior now: create ONE WithdrawalRequest with payoutMethod=
+    // STRIPE_CONNECT, status=PENDING. Admin must approve via the
+    // ADMIN-gated /v1/admin/withdrawals/:id/approve flow before any
+    // transfer fires. No Settlement rows created here; the approval
+    // pipeline handles that downstream.
+    const withdrawal = await fastify.prisma.withdrawalRequest.create({
+      data: {
+        nodeRunnerId: nr.id,
+        amount: totalAmount,
+        walletAddress: '', // Stripe path; destination is Stripe Connect account
+        payoutMethod: 'STRIPE_CONNECT',
+      },
+    })
 
     if (nr.payoutMode === 'SCHEDULED') {
       await clearScheduledPayout(fastify.prisma, nr.id)
@@ -1319,17 +1297,19 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
 
     void createNotification(
       nr.userId ?? request.user!.userId,
-      'WITHDRAWAL_COMPLETED',
-      'Withdrawal Sent to Bank',
-      `$${totalAmount.toFixed(2)} on its way to your bank via Stripe. Funds typically arrive on the next business day per Stripe's payout schedule.`,
+      'WITHDRAWAL_REQUESTED',
+      `Withdrawal of $${totalAmount.toFixed(2)} pending approval`,
+      `Your Stripe withdrawal of $${totalAmount.toFixed(2)} has been submitted. An admin will review and approve before the transfer is sent to your bank.`,
       '/payouts',
     )
 
-    reply.send({
-      totalPaid: totalAmount,
-      stripeTransferId: transferId,
-      settlements: settlements.map((s) => ({ id: s.id, nodeId: s.nodeId, amount: s.amount, success: true })),
+    reply.code(202).send({
+      withdrawalId: withdrawal.id,
+      status: withdrawal.status,
+      amount: totalAmount,
+      payoutMethod: 'STRIPE_CONNECT',
       modeResetToAuto: nr.payoutMode === 'SCHEDULED',
+      message: 'Withdrawal request submitted. An admin will review before funds move.',
     })
   })
 
