@@ -149,6 +149,31 @@ export async function provisionHyperstackRental(
     )
   }
 
+  // Open SSH inbound on the new VM. Hyperstack VMs default-deny ALL
+  // inbound traffic; without this the VM reaches ACTIVE but ssh times
+  // out (verified 2026-06-09 against VM 863056 cmq61hel9000). The
+  // sg-rule is per-VM so no shared firewall state to manage. Failure
+  // here would leave a working VM with no SSH route; we tear down both
+  // the VM and the keypair to avoid orphaned resources.
+  try {
+    await api.addVmSecurityRule(vm.id, {
+      direction: 'ingress',
+      protocol: 'tcp',
+      port_range_min: 22,
+      port_range_max: 22,
+      remote_ip_prefix: '0.0.0.0/0',
+      ethertype: 'IPv4',
+    })
+  } catch (err) {
+    await api.deleteVm(vm.id).catch(() => undefined)
+    await api.deleteKeypair(keypairId).catch(() => undefined)
+    const msg = err instanceof HyperstackApiError ? err.message : (err as Error).message
+    throw new HyperstackProvisionError(
+      `Hyperstack addVmSecurityRule (SSH ingress) failed for vm ${vm.id}: ${msg}`,
+      err,
+    )
+  }
+
   const encryptedPrivKey = encryptPrivateKey(keypair.privateKeyPem)
   const row = await prisma.externalRental.create({
     data: {

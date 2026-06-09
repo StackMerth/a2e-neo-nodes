@@ -387,6 +387,44 @@ export class HyperstackClient {
     // does NOT have a consistent rule across resources.
     await this.request<unknown>(`/core/virtual-machines/${id}`, 'DELETE')
   }
+
+  /**
+   * Add a direct security-group rule on a specific VM. Hyperstack VMs
+   * default-deny ALL inbound traffic; without at least one ingress rule
+   * SSH on port 22 will time out even though the VM shows ACTIVE. We
+   * call this once per provision right after createVm to open SSH.
+   *
+   * URL note: the path uses 'sg-rules' with a HYPHEN. Hyperstack's docs
+   * use hyphens for compound sub-resources (firewall-rules,
+   * update-attachments, sg-rules). Underscores 404.
+   *
+   * Verified 2026-06-09 against VM 863056. Returns the created rule;
+   * status is 'pending' for a few seconds then becomes 'active' at the
+   * network layer.
+   */
+  async addVmSecurityRule(vmId: number, rule: {
+    direction: 'ingress' | 'egress'
+    protocol: 'tcp' | 'udp' | 'icmp' | 'any'
+    port_range_min: number
+    port_range_max: number
+    remote_ip_prefix: string
+    ethertype?: 'IPv4' | 'IPv6'
+  }): Promise<{ id: number }> {
+    const body = { ethertype: 'IPv4' as const, ...rule }
+    const res = await this.request<{
+      security_rule?: { id: number }
+      data?: { id: number }
+    }>(`/core/virtual-machines/${vmId}/sg-rules`, 'POST', body)
+    const r = res.security_rule ?? res.data
+    if (!r?.id) {
+      throw new HyperstackApiError(
+        500,
+        `/core/virtual-machines/${vmId}/sg-rules`,
+        'addVmSecurityRule response missing security_rule.id',
+      )
+    }
+    return { id: r.id }
+  }
 }
 
 /**
