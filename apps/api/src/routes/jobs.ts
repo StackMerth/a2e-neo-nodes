@@ -260,6 +260,24 @@ export async function jobRoutes(fastify: FastifyInstance) {
         })
       }
 
+      // SECURITY (pen-test 2026-06-09 step 5): allow PATCH only from
+      //   - the owning node-agent (X-API-Key matches node.apiKey and
+      //     node.id matches job.nodeId), or
+      //   - an admin (X-API-Key matches ADMIN_API_KEY or user role=ADMIN).
+      // Any other caller previously got through with just JWT auth and
+      // could mint unbounded earnings via durationSeconds.
+      const isAdmin =
+        request.authType === 'admin' ||
+        (request.authType === 'user' && request.user?.role === 'ADMIN')
+      const isOwningNode =
+        request.authType === 'node' && request.authNodeId === job.nodeId
+      if (!isAdmin && !isOwningNode) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Only the assigned node or an admin can update this job.',
+        })
+      }
+
       const { status, durationSeconds, errorMessage, nodeId } = parseResult.data
 
       const updateData: {
@@ -275,9 +293,19 @@ export async function jobRoutes(fastify: FastifyInstance) {
       } = {}
 
       if (nodeId !== undefined) {
+        // Admin-only: re-assigning a job to a different node.
+        if (!isAdmin) {
+          return reply.code(403).send({
+            error: 'Forbidden',
+            message: 'Only admins can reassign job.nodeId.',
+          })
+        }
         updateData.nodeId = nodeId
       }
 
+      // Compute the effective completedAt FIRST so terminal-status
+      // earnings math below can derive a server-attested duration.
+      let effectiveCompletedAt: Date | null = job.completedAt
       if (status) {
         updateData.status = status as JobStatus
 
@@ -286,32 +314,55 @@ export async function jobRoutes(fastify: FastifyInstance) {
         }
 
         if ((status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED') && !job.completedAt) {
-          updateData.completedAt = new Date()
+          const now = new Date()
+          updateData.completedAt = now
+          effectiveCompletedAt = now
         }
       }
 
       if (durationSeconds !== undefined) {
+        // SECURITY (pen-test 2026-06-09 step 5): non-admin client cannot
+        // mint earnings via client-supplied durationSeconds. We record
+        // their value as informational only; earnings are derived from
+        // server-attested wall-clock (startedAt -> completedAt). Admin
+        // retains the ability to attribute a specific duration for
+        // ops/backfill scenarios.
         updateData.durationSeconds = durationSeconds
+      }
 
-        // Calculate earnings based on rate
-        if (job.ratePerHour) {
-          updateData.earnings = (durationSeconds / 3600) * job.ratePerHour
-        }
+      const isTerminal = status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED'
+      if (isTerminal && job.ratePerHour && effectiveCompletedAt) {
+        // Server-attested duration: wall-clock between startedAt and
+        // completedAt. If startedAt is missing (job never moved to
+        // RUNNING) the job earned nothing.
+        const startedAt = job.startedAt ?? effectiveCompletedAt
+        const attestedDuration = Math.max(
+          0,
+          Math.floor((effectiveCompletedAt.getTime() - startedAt.getTime()) / 1000),
+        )
 
-        // Calculate cost and profit if job is being completed
+        // Admin override: if admin explicitly supplied durationSeconds,
+        // honor it; otherwise use the server-attested value. Node-agent
+        // requests always use server-attested (durationSeconds is
+        // informational only for them).
+        const billableDuration =
+          isAdmin && durationSeconds !== undefined ? durationSeconds : attestedDuration
+
+        // Overwrite the durationSeconds we wrote above so the row
+        // reflects what was actually billed.
+        updateData.durationSeconds = billableDuration
+
+        updateData.earnings = (billableDuration / 3600) * job.ratePerHour
+
         if (status === 'COMPLETED' && job.market) {
           const costResult = await calculateJobCost(fastify.prisma, {
             market: job.market,
             gpuTier: job.gpuTier,
-            durationSeconds,
+            durationSeconds: billableDuration,
             ratePerHour: job.ratePerHour ?? undefined,
           })
-
           updateData.cost = costResult.cost
-
-          if (updateData.earnings !== undefined) {
-            updateData.profit = calculateJobProfit(updateData.earnings, costResult.cost)
-          }
+          updateData.profit = calculateJobProfit(updateData.earnings, costResult.cost)
         }
       }
 
