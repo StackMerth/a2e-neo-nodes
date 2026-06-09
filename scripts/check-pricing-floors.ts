@@ -30,6 +30,12 @@
  *   5. Portal-side HOURLY_RATES + GPU_FLOOR_DAILY derive from the
  *      shared package and equal retailRate / 24 and priceFloor for
  *      every tier. Catches drift between the two sides.
+ *
+ *   6. Pricing invariant: retailRate >= priceFloor for every tier
+ *      where both are non-zero. Catalog must never display less than
+ *      what the server will charge. The shared package itself throws
+ *      at module load if this is violated, so importing it counts as
+ *      one of the assertions here.
  */
 import { GPU_TIER_CONFIG, dailyToHourly } from '../packages/shared/src/index.js'
 
@@ -97,26 +103,29 @@ for (const t of TIERS) {
   assert(Number.isFinite(cfg.costFloor) && cfg.costFloor >= 0, `${t}.costFloor finite + non-neg`)
 }
 
-console.log('\n=== 2. A100 SPOT+INFERENCE incident (2026-06-08) ===')
+console.log('\n=== 2. A100 SPOT+INFERENCE under recalibrated retail (2026-06-09) ===')
 {
   const r = compose('A100', 'SPOT', 'INFERENCE')
-  // base 24 * 0.6 * 0.8 = 11.52 -> below floor 40.50 -> pinned to 40.50.
-  assert(Math.abs(r.uncapped - 11.52) < 0.001, 'A100 SPOT+INFERENCE uncapped = $11.52/day')
-  assert(r.floored, 'A100 SPOT+INFERENCE floor engages')
-  assert(Math.abs(r.final - 40.50) < 0.001, 'A100 SPOT+INFERENCE final = $40.50/day')
+  // base 90 (raised 2026-06-09 from 24) * 0.6 * 0.8 = 43.20 -> above
+  // floor 40.50 -> uncapped. Discount actually applies + lands above
+  // supplier cost.
+  assert(Math.abs(r.uncapped - 43.20) < 0.001, 'A100 SPOT+INFERENCE uncapped = $43.20/day')
+  assert(!r.floored, 'A100 SPOT+INFERENCE no longer needs floor under recalibrated retail')
+  assert(Math.abs(r.final - 43.20) < 0.001, 'A100 SPOT+INFERENCE final = $43.20/day = $1.80/h')
   const hourlyAtSupplier = 1.35
   assert(dailyToHourly(r.final) > hourlyAtSupplier,
     `A100 SPOT+INFERENCE hourly $${dailyToHourly(r.final).toFixed(2)}/h > supplier $${hourlyAtSupplier}/h`,
-    `incident proof: would have been $${dailyToHourly(r.uncapped).toFixed(2)}/h without floor`)
+    `2026-06-08 incident (cmq5if3gr000) cannot reoccur: discount now lands at $1.80/h, well above supplier`)
 }
 
 console.log('\n=== 3. Same shape for L40S + H100 ===')
 {
   const r = compose('L40S', 'SPOT', 'INFERENCE')
-  // base 21 * 0.6 * 0.8 = 10.08 -> below floor 23.70 -> pinned.
-  assert(Math.abs(r.uncapped - 10.08) < 0.001, 'L40S SPOT+INFERENCE uncapped = $10.08/day')
-  assert(r.floored, 'L40S SPOT+INFERENCE floor engages')
-  assert(Math.abs(r.final - 23.70) < 0.001, 'L40S SPOT+INFERENCE final = $23.70/day')
+  // base 60 (raised 2026-06-09 from 21) * 0.6 * 0.8 = 28.80 -> above
+  // floor 23.70 -> uncapped. Discount applies, lands above floor.
+  assert(Math.abs(r.uncapped - 28.80) < 0.001, 'L40S SPOT+INFERENCE uncapped = $28.80/day')
+  assert(!r.floored, 'L40S SPOT+INFERENCE no longer needs floor under recalibrated retail')
+  assert(Math.abs(r.final - 28.80) < 0.001, 'L40S SPOT+INFERENCE final = $28.80/day = $1.20/h')
 }
 {
   const r = compose('H100', 'SPOT', 'INFERENCE')
@@ -160,6 +169,26 @@ for (const t of TIERS) {
     `${t}.HOURLY_RATES = retailRate / 24 (${HOURLY_RATES[t].toFixed(4)})`)
   assert(GPU_FLOOR_DAILY[t] === cfg.priceFloor,
     `${t}.GPU_FLOOR_DAILY = priceFloor ($${cfg.priceFloor})`)
+}
+
+console.log('\n=== 6. Pricing invariant: retailRate >= priceFloor ===')
+// The shared package itself throws at import if this is violated, so
+// reaching this point already proves it for the current data. We still
+// assert per-tier as belt-and-suspenders + as a diagnostic surface for
+// editors looking at the test output.
+for (const t of TIERS) {
+  const cfg = GPU_TIER_CONFIG[t]
+  if (!cfg || cfg.retailRate === 0 || cfg.priceFloor === 0) {
+    console.log(`  ok   ${t} skipped (one of the values is zero — OTHER-style tier)`)
+    continue
+  }
+  assert(
+    cfg.retailRate >= cfg.priceFloor,
+    `${t} retailRate $${cfg.retailRate}/day >= priceFloor $${cfg.priceFloor}/day`,
+    cfg.retailRate < cfg.priceFloor
+      ? `INVARIANT BROKEN: catalog $${(cfg.retailRate / 24).toFixed(2)}/h < server-charge $${(cfg.priceFloor / 24).toFixed(2)}/h`
+      : undefined,
+  )
 }
 
 console.log(`\n${failed === 0 ? 'ALL PASS' : `${failed} FAILED`}`)
