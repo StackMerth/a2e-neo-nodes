@@ -3,7 +3,43 @@ import crypto from 'crypto';
 import { prisma } from '@a2e/database';
 import type { UserRole } from '@a2e/database';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'a2e-dev-secret-change-in-production';
+/**
+ * Resolve the JWT signing secret.
+ *
+ * SECURITY (pen-test 2026-06-09 defense-in-depth): the previous
+ * inline `process.env.JWT_SECRET || 'a2e-dev-secret-change-in-production'`
+ * fallback meant that if Render env's JWT_SECRET ever disappeared
+ * (config wipe, typo on another var, service migration), the API
+ * would silently boot and sign tokens with a string that is public
+ * in the repo. Anyone could then forge an ADMIN JWT. This getter
+ * shifts the failure mode: in production the boot crashes with a
+ * loud error; the bad config cannot ship.
+ *
+ * Exported so apps/api/src/routes/auth.ts uses the same resolution
+ * and there is one source of truth.
+ */
+export function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET?.trim();
+  if (secret) return secret;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      '[auth] JWT_SECRET env var is REQUIRED in production. ' +
+        'Refusing to boot with a fallback secret because that would let ' +
+        'anyone with source access forge JWTs (the fallback string would ' +
+        'be public in the repo). Set JWT_SECRET in Render env and redeploy.',
+    );
+  }
+  // Dev only: log a one-time warning and use a stable hardcoded value
+  // so tokens survive across reloads. Not a security risk; dev tokens
+  // are useless against prod which has a different secret.
+  console.warn(
+    '[auth] JWT_SECRET not set in non-production env; using a local dev fallback. ' +
+      'Do not ship this to a production-like environment.',
+  );
+  return 'a2e-dev-only-fallback-do-not-deploy';
+}
+
+const JWT_SECRET = getJwtSecret();
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 

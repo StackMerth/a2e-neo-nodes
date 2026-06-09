@@ -3,7 +3,7 @@ import { z } from 'zod'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@a2e/database'
-import { verifyAccessToken, type AccessTokenPayload } from '../services/auth/jwt.js'
+import { verifyAccessToken, getJwtSecret, type AccessTokenPayload } from '../services/auth/jwt.js'
 
 /**
  * Admin authentication routes.
@@ -25,12 +25,40 @@ import { verifyAccessToken, type AccessTokenPayload } from '../services/auth/jwt
  * implement refresh-on-401 yet. M2 can tighten this if desired.
  */
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'a2e-dev-secret-change-in-production'
+// Single source of truth for the signing secret. getJwtSecret() throws
+// at boot in production if the env var is missing, preventing silent
+// fallback to a publicly-grep-able default string (pen-test follow-up
+// 2026-06-09, defense in depth).
+const JWT_SECRET = getJwtSecret()
 const ADMIN_ACCESS_TOKEN_EXPIRY_HOURS = 8
 const ADMIN_USER_EMAIL = 'admin@a2e.local'
 
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME ?? 'admin'
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'a2e-admin-2026'
+// SECURITY (pen-test 2026-06-09 defense-in-depth): admin credentials
+// must come from env vars in production. Previously the fallbacks
+// 'admin' / 'a2e-admin-2026' were hardcoded in source, so anyone with
+// source access could log in as admin if env was unset. Same failure
+// class as the JWT_SECRET fallback. Fail-fast at boot in prod.
+function getAdminCredentials(): { username: string; password: string } {
+  const username = process.env.ADMIN_USERNAME?.trim()
+  const password = process.env.ADMIN_PASSWORD?.trim()
+  if (username && password) return { username, password }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      '[auth] ADMIN_USERNAME and ADMIN_PASSWORD env vars are REQUIRED in production. ' +
+        'Refusing to boot with hardcoded fallbacks because they would be public in the repo.',
+    )
+  }
+  console.warn(
+    '[auth] ADMIN_USERNAME / ADMIN_PASSWORD not set; using dev fallbacks. ' +
+      'Do not ship this to a production-like environment.',
+  )
+  return {
+    username: username ?? 'admin',
+    password: password ?? 'a2e-dev-admin-only-fallback-do-not-deploy',
+  }
+}
+
+const { username: ADMIN_USERNAME, password: ADMIN_PASSWORD } = getAdminCredentials()
 
 const loginSchema = z.object({
   username: z.string().min(1),
