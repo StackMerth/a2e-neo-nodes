@@ -314,7 +314,11 @@ export class HyperstackClient {
   }
 
   async deleteKeypair(id: number): Promise<void> {
-    await this.request<unknown>(`/core/keypairs/${id}`, 'DELETE')
+    // Hyperstack uses SINGULAR noun for delete despite plural for
+    // create + list. Verified 2026-06-09 via curl: DELETE /core/keypair/N
+    // returns 200; DELETE /core/keypairs/N (plural) returns 404. Quirky
+    // but that's their convention.
+    await this.request<unknown>(`/core/keypair/${id}`, 'DELETE')
   }
 
   async createVm(req: HyperstackCreateVmRequest): Promise<HyperstackVm> {
@@ -347,22 +351,24 @@ export class HyperstackClient {
   }
 
   async getVm(id: number): Promise<HyperstackVm> {
-    // /core/virtual-machines/:id returns the VM under .instance
-    // (singular, matching keypair-singular pattern). Fallback to .data
-    // and .vm for resilience to Hyperstack response reshapes.
+    // Hyperstack uses SINGULAR noun for single-resource operations:
+    // GET /core/virtual-machine/{id} (not /virtual-machines/{id}).
+    // Plural would return 404; mirrors the keypair convention verified
+    // 2026-06-09. Response wraps the VM under .instance (matches the
+    // keypair-singular pattern).
     const res = await this.request<{
       instance?: HyperstackVm
       vm?: HyperstackVm
       data?: HyperstackVm
     }>(
-      `/core/virtual-machines/${id}`,
+      `/core/virtual-machine/${id}`,
       'GET',
     )
     const vm = res.instance ?? res.vm ?? res.data
     if (!vm) {
       throw new HyperstackApiError(
         500,
-        `/core/virtual-machines/${id}`,
+        `/core/virtual-machine/${id}`,
         'getVm response missing instance / vm / data',
       )
     }
@@ -370,7 +376,10 @@ export class HyperstackClient {
   }
 
   async deleteVm(id: number): Promise<void> {
-    await this.request<unknown>(`/core/virtual-machines/${id}`, 'DELETE')
+    // Hyperstack uses SINGULAR noun for delete: /core/virtual-machine/{id}
+    // not /core/virtual-machines/{id}. Mirrors the keypair convention
+    // verified 2026-06-09. The plural form returns 404.
+    await this.request<unknown>(`/core/virtual-machine/${id}`, 'DELETE')
   }
 }
 
