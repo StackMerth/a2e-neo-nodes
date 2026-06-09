@@ -390,14 +390,51 @@ export async function markSettlementCompleted(
   settlementId: string,
   txHash: string
 ): Promise<void> {
-  await prisma.settlement.update({
-    where: { id: settlementId },
-    data: {
-      status: 'COMPLETED',
-      txHash,
-      txConfirmed: false,
-      processedAt: new Date(),
-    },
+  // SECURITY (pen-test 2026-06-09 finding B-4): previously this update
+  // ran in isolation, marking status=COMPLETED with txConfirmed=false
+  // and never scheduling a follow-up verification. The reconciler only
+  // operates on PendingReconciliation rows, so a completed settlement
+  // with txConfirmed=false sat forever in a "trust me, the chain
+  // confirmed" state. Combined with finding B-3 (no watchdog demotion)
+  // this gave the auto-payout path a permanent unverified blob.
+  //
+  // Fix: do both writes in a single transaction so every "completed"
+  // settlement gets a PendingReconciliation row that the reconciler
+  // job will verify on-chain within the backoff window. If the chain
+  // never confirms, the row eventually flips to NOT_FOUND/FAILED,
+  // which the B-3 watchdog (settlement-reconciliation-watchdog.ts)
+  // reads to demote the settlement back to FAILED.
+  //
+  // Settlement.amount is Decimal; convert to Number for the reconciler
+  // row's expectedAmount comparison (consistent with other Decimal->
+  // Number conversions elsewhere in this service).
+  await prisma.$transaction(async (tx) => {
+    const settlement = await tx.settlement.update({
+      where: { id: settlementId },
+      data: {
+        status: 'COMPLETED',
+        txHash,
+        txConfirmed: false,
+        processedAt: new Date(),
+      },
+      select: { amount: true, walletAddress: true },
+    })
+
+    await tx.pendingReconciliation.create({
+      data: {
+        txHash,
+        settlementId,
+        paymentId: null,
+        expectedAmount: Number(settlement.amount),
+        recipientAddress: settlement.walletAddress,
+        status: 'PENDING',
+      },
+    }).catch(() => {
+      // Tolerate unique-constraint races (same txHash retried by an
+      // operator-manual /complete). The existing PendingReconciliation
+      // row already covers verification, so swallowing the error here
+      // is safe and idempotent.
+    })
   })
 }
 

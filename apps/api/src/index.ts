@@ -248,6 +248,11 @@ import {
   scheduleEarningsConsolidator,
 } from './jobs/earnings-consolidator'
 import {
+  createSettlementReconciliationWatchdogQueue,
+  createSettlementReconciliationWatchdogWorker,
+  scheduleSettlementReconciliationWatchdog,
+} from './jobs/settlement-reconciliation-watchdog'
+import {
   createUsageAggregatorQueue,
   createUsageAggregatorWorker,
   scheduleUsageAggregator,
@@ -671,6 +676,23 @@ async function start() {
     createEarningsConsolidatorWorker({ redis: redisConnection, prisma: server.prisma })
     await scheduleEarningsConsolidator(earningsConsolidatorQueue)
     server.log.info('Earnings consolidator worker initialized (24h tick)')
+
+    // Pen-test 2026-06-09 finding B-3 watchdog. Demotes settlements
+    // stuck COMPLETED+txConfirmed=false past the reconciler backoff
+    // window. Also confirms settlements whose reconciliation row
+    // verified but never propagated back. Defence-in-depth on top of
+    // the B-4 fix that makes markSettlementCompleted create a
+    // PendingReconciliation row in the same transaction.
+    const settlementWatchdogQueue =
+      createSettlementReconciliationWatchdogQueue(redisConnection)
+    createSettlementReconciliationWatchdogWorker({
+      redis: redisConnection,
+      prisma: server.prisma,
+    })
+    await scheduleSettlementReconciliationWatchdog(settlementWatchdogQueue)
+    server.log.info(
+      'Settlement reconciliation watchdog initialized (15min tick, 60min grace)',
+    )
 
     // Track 5 / 3.A — token billing infrastructure. Aggregator rolls
     // TokenUsage into monthly Invoice rows; burn-rate alerts watch

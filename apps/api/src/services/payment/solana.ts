@@ -487,8 +487,20 @@ export async function verifyTransaction(
 }> {
   console.log(`[Payment] Verifying transaction: ${txHash} (devMode: ${config.devMode})`)
 
-  // DEV MODE: Auto-verify dev transactions
-  if (config.devMode || txHash.startsWith('DEV_')) {
+  // SECURITY (pen-test 2026-06-09 finding B-7): the original predicate
+  // was `config.devMode || txHash.startsWith('DEV_')`. The OR meant
+  // that EVEN IN LIVE MODE, any transaction whose hash started with
+  // `DEV_` auto-passed verification. Combined with the reconciler
+  // calling this function on every PendingReconciliation row, an
+  // attacker who could get a DEV_-prefixed txHash into a Settlement
+  // would have that settlement auto-marked verified by the reconciler.
+  //
+  // Hardened predicate: DEV_-prefix only auto-verifies when the server
+  // is ALSO in devMode. In live mode, a DEV_-hash falls through to the
+  // real on-chain check (where `getSignatureStatus` will reject it as
+  // an invalid signature format — same path that just-shipped Patch #1
+  // exercises against bogus "1" * 88 hashes).
+  if (config.devMode) {
     return {
       verified: true,
       confirmations: 32, // Finalized
