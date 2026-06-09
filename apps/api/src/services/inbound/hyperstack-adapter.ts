@@ -295,19 +295,22 @@ export class HyperstackClient {
     public_key: string
     environment_name: string
   }): Promise<{ id: number; name: string }> {
-    const res = await this.request<{ data?: { id: number; name: string } }>(
-      '/core/keypairs',
-      'POST',
-      req,
-    )
-    if (!res.data?.id) {
+    // Hyperstack returns the created key under .keypair (verified
+    // 2026-06-09). Fall back to .data for defensive parsing in case
+    // they reshape the response in a future release.
+    const res = await this.request<{
+      keypair?: { id: number; name: string }
+      data?: { id: number; name: string }
+    }>('/core/keypairs', 'POST', req)
+    const k = res.keypair ?? res.data
+    if (!k?.id) {
       throw new HyperstackApiError(
         500,
         '/core/keypairs',
-        'createKeypair response missing data.id',
+        'createKeypair response missing keypair.id / data.id',
       )
     }
-    return res.data
+    return { id: k.id, name: k.name }
   }
 
   async deleteKeypair(id: number): Promise<void> {
@@ -315,35 +318,52 @@ export class HyperstackClient {
   }
 
   async createVm(req: HyperstackCreateVmRequest): Promise<HyperstackVm> {
-    // Hyperstack returns { data: [vm, ...] } even for count=1; we always
-    // request count=1 so the first element is ours.
-    const res = await this.request<{ data?: HyperstackVm[] | HyperstackVm }>(
+    // Hyperstack returns instances under .instances (verified pattern
+    // from /core/keypairs returning .keypair singular). Plural here
+    // because count=N can create multiple VMs in one call; we always
+    // request count=1 so the first element is ours. Defensive
+    // fallbacks: .data array or .instance singular if Hyperstack
+    // reshapes.
+    const res = await this.request<{
+      instances?: HyperstackVm[]
+      instance?: HyperstackVm
+      data?: HyperstackVm[] | HyperstackVm
+    }>(
       '/core/virtual-machines',
       'POST',
       { ...req, count: req.count ?? 1, assign_floating_ip: req.assign_floating_ip ?? true },
     )
-    const vm = Array.isArray(res.data) ? res.data[0] : res.data
+    const vm = res.instances?.[0]
+      ?? res.instance
+      ?? (Array.isArray(res.data) ? res.data[0] : res.data)
     if (!vm) {
       throw new HyperstackApiError(
         500,
         '/core/virtual-machines',
-        'createVm response missing data',
+        'createVm response missing instances[] / instance / data',
       )
     }
     return vm
   }
 
   async getVm(id: number): Promise<HyperstackVm> {
-    const res = await this.request<{ data?: HyperstackVm; instance?: HyperstackVm }>(
+    // /core/virtual-machines/:id returns the VM under .instance
+    // (singular, matching keypair-singular pattern). Fallback to .data
+    // and .vm for resilience to Hyperstack response reshapes.
+    const res = await this.request<{
+      instance?: HyperstackVm
+      vm?: HyperstackVm
+      data?: HyperstackVm
+    }>(
       `/core/virtual-machines/${id}`,
       'GET',
     )
-    const vm = res.data ?? res.instance
+    const vm = res.instance ?? res.vm ?? res.data
     if (!vm) {
       throw new HyperstackApiError(
         500,
         `/core/virtual-machines/${id}`,
-        'getVm response missing data',
+        'getVm response missing instance / vm / data',
       )
     }
     return vm
