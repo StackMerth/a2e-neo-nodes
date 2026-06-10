@@ -27,6 +27,7 @@ import {
   TrendingDown,
   Minus,
   Sparkles,
+  Info,
 } from 'lucide-react'
 import Link from 'next/link'
 import { nodeRunner } from '@/lib/api'
@@ -332,6 +333,63 @@ function OperatorStatTile({
 // Forward-looking payout schedule. Replaces the trailing 30-day heatmap
 // with a real monthly calendar + countdown panel + upcoming list.
 // ---------------------------------------------------------------------
+
+/**
+ * Operator-facing info banner explaining the current payout policy.
+ *
+ * Visual borrowed from the TokenOS_COMPUTE marketing dashboard (blue
+ * tinted card, left accent border, info icon, mono small-caps label,
+ * key timing call-out in bold). Copy is rewritten to reflect the
+ * post-Patch-#7 admin-approved withdrawal flow rather than the
+ * auto-payout wording from the screenshot, which is no longer
+ * accurate as of 2026-06-10.
+ *
+ * Stateless and self-contained — drop wherever it makes sense at
+ * the top of the dashboard view.
+ */
+function AutomaticSettlementBanner() {
+  return (
+    <div
+      className="rounded-xl p-4 flex items-start gap-3 mb-6"
+      style={{
+        background: 'rgba(59, 130, 246, 0.06)',
+        border: '1px solid rgba(59, 130, 246, 0.20)',
+        borderLeft: '3px solid rgba(59, 130, 246, 0.55)',
+      }}
+    >
+      <div
+        className="flex-shrink-0 mt-0.5 w-7 h-7 rounded-md flex items-center justify-center"
+        style={{ background: 'rgba(59, 130, 246, 0.15)' }}
+      >
+        <Info size={14} style={{ color: '#60a5fa' }} />
+      </div>
+      <div className="min-w-0">
+        <p
+          className="font-mono text-[10px] uppercase tracking-[0.18em] mb-1.5"
+          style={{ color: '#60a5fa' }}
+        >
+          Automatic Settlement
+        </p>
+        <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+          Earnings accumulate continuously from your node uptime. Request a payout
+          anytime from the{' '}
+          <Link
+            href="/payouts"
+            className="underline decoration-dotted underline-offset-2 hover:no-underline"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            Payouts page
+          </Link>
+          {' '}— funds typically arrive within{' '}
+          <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+            1–2 business days
+          </span>{' '}
+          of admin approval.
+        </p>
+      </div>
+    </div>
+  )
+}
 
 function PayoutScheduleCard({ payouts }: { payouts: UpcomingPayout[] }) {
   const today = useMemo(() => {
@@ -894,6 +952,11 @@ export default function DashboardPage() {
       refreshing={refreshing}
     >
       <DashboardMainColumn>
+        {/* Policy banner: explains the current admin-approved
+            withdrawal flow so operators know when to expect funds
+            after requesting a payout. */}
+        <AutomaticSettlementBanner />
+
         {/* Earnings + nodes + jobs */}
         <MetricTriad
           metrics={[
