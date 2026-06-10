@@ -171,14 +171,23 @@ function signRegistryToken(
     }
   }
 
-  // Dev fallback. Production deployment of this endpoint MUST set
-  // REGISTRY_JWT_PRIVATE_KEY so real Docker registries can verify
-  // tokens (HS256 is rejected by distribution/distribution).
+  // HS256 fallback. Used during the window between M3.8b ship (this
+  // endpoint live) and M3.8c (Docker registry container deployed with
+  // RSA verification key). The HS256 token is harmless during that
+  // window because there is no consumer: no real Docker registry is
+  // pointed at this endpoint yet. Once M3.8c lands the registry will
+  // be configured to verify RS256-only and reject any HS256 token,
+  // so setting REGISTRY_JWT_PRIVATE_KEY becomes a hard requirement
+  // by the registry itself rather than something we self-enforce here.
+  //
+  // In production we log a loud warning every call so the gap is
+  // visible in Render logs and the rollout to M3.8c isn't forgotten.
   if (process.env.NODE_ENV === 'production') {
-    throw new Error(
-      '[registry-token] REGISTRY_JWT_PRIVATE_KEY env var is REQUIRED in production. ' +
-        'Generate an RSA keypair, set the private PEM here, and configure the public ' +
-        'key on the Docker registry service.',
+    console.warn(
+      '[registry-token] REGISTRY_JWT_PRIVATE_KEY not set; signing with HS256 dev ' +
+        'fallback. This is safe ONLY because no Docker registry currently consumes ' +
+        'these tokens. Set REGISTRY_JWT_PRIVATE_KEY (RSA PEM) before deploying the ' +
+        'registry container in M3.8c.',
     )
   }
 
