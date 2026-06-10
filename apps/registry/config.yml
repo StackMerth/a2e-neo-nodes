@@ -1,0 +1,99 @@
+# E6 / M3.8c: Docker Image Registry config (defaults).
+#
+# Production values come from Render env vars. The registry recognises
+# REGISTRY_<UPPERCASE_PATH> for every key in this file:
+#
+#   storage.s3.bucket          -> REGISTRY_STORAGE_S3_BUCKET
+#   auth.token.realm           -> REGISTRY_AUTH_TOKEN_REALM
+#   http.secret                -> REGISTRY_HTTP_SECRET
+#   notifications.endpoints.0  -> REGISTRY_NOTIFICATIONS_ENDPOINTS_0_*
+#
+# Any value here is just the local-dev default. Render env vars
+# override at startup.
+#
+# https://distribution.github.io/distribution/about/configuration/
+
+version: 0.1
+
+log:
+  level: info
+  formatter: json
+  fields:
+    service: a2e-registry
+
+storage:
+  # Filesystem fallback for local dev. Production OVERRIDES this
+  # entire block via env vars:
+  #   REGISTRY_STORAGE_S3_BUCKET=<bucket>
+  #   REGISTRY_STORAGE_S3_REGION=<region>
+  #   REGISTRY_STORAGE_S3_ACCESSKEY=<access key>
+  #   REGISTRY_STORAGE_S3_SECRETKEY=<secret key>
+  #   REGISTRY_STORAGE_S3_ROOTDIRECTORY=/registry
+  # When any REGISTRY_STORAGE_S3_* var is set, the registry treats
+  # the storage block as 'storage.s3' and ignores 'storage.filesystem'.
+  filesystem:
+    rootdirectory: /var/lib/registry
+  # Soft-delete: tags + manifests can be deleted but blobs stay until
+  # garbage collection runs. Required for our M3.11 DELETE flow.
+  delete:
+    enabled: true
+  # Cache manifest writes in memory to keep push throughput reasonable
+  # over high-latency S3 connections.
+  cache:
+    blobdescriptor: inmemory
+
+http:
+  addr: :5000
+  # Render terminates TLS in front of the service, so we serve plain
+  # HTTP on the container port. Render's edge handles HTTPS.
+  headers:
+    X-Content-Type-Options: [nosniff]
+  # http.secret must be set via REGISTRY_HTTP_SECRET in production.
+  # Used for HMAC over uploaded chunks so multiple registry replicas
+  # can finalize each other's uploads without trust shenanigans.
+  # Defaulted here to a placeholder ONLY so single-instance local dev
+  # works; production registry replicas would fail uploads cross-instance
+  # if every instance had a different secret.
+  secret: dev-only-replace-via-env
+
+# Token-based auth. The registry challenges any unauthenticated
+# request with the realm URL; the Docker CLI follows the realm, gets
+# a JWT from us, and presents it back as Bearer auth.
+#
+# Production env overrides:
+#   REGISTRY_AUTH_TOKEN_REALM=https://a2e-api.onrender.com/v1/registry/token
+#   REGISTRY_AUTH_TOKEN_SERVICE=a2e-registry
+#   REGISTRY_AUTH_TOKEN_ISSUER=a2e-registry-issuer
+#   REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE=/etc/docker/registry/cert.pem
+#
+# The rootcertbundle file is mounted via Render Secret Files at
+# deploy time (M3.8c runbook step 4). It contains the X.509 cert
+# corresponding to the RSA private key the API uses for RS256
+# signing (REGISTRY_JWT_PRIVATE_KEY on the API service).
+auth:
+  token:
+    realm: http://localhost:3001/v1/registry/token
+    service: a2e-registry
+    issuer: a2e-registry-issuer
+    rootcertbundle: /etc/docker/registry/cert.pem
+    # 60s skew tolerance for clock drift between API + registry.
+    autoredirect: false
+
+# Webhook notifications. The registry POSTs to our API on every push
+# event so we can upsert DockerImage rows + enqueue Trivy scans
+# (M3.9a). Disabled by default in this file; production sets:
+#   REGISTRY_NOTIFICATIONS_ENDPOINTS_0_NAME=tokenos-api
+#   REGISTRY_NOTIFICATIONS_ENDPOINTS_0_URL=https://a2e-api.onrender.com/v1/registry/webhook
+#   REGISTRY_NOTIFICATIONS_ENDPOINTS_0_TIMEOUT=5s
+#   REGISTRY_NOTIFICATIONS_ENDPOINTS_0_THRESHOLD=3
+#   REGISTRY_NOTIFICATIONS_ENDPOINTS_0_BACKOFF=10s
+#   REGISTRY_NOTIFICATIONS_ENDPOINTS_0_HEADERS_AUTHORIZATION_0=Bearer <REGISTRY_WEBHOOK_SECRET>
+# The Authorization header is how we authenticate webhooks coming
+# back from the registry (without it, anyone could POST forged
+# notifications to /v1/registry/webhook).
+
+health:
+  storagedriver:
+    enabled: true
+    interval: 10s
+    threshold: 3

@@ -117,6 +117,24 @@ services:
       - key: API_KEY
         sync: false
 
+      # E6 / M3.8c: Docker Image Registry token signing.
+      # PEM-encoded RSA private key (4096 bit) used to sign tokens the
+      # a2e-registry service will accept. Generate locally via:
+      #   openssl genrsa -out registry-private.pem 4096
+      #   openssl rsa -in registry-private.pem -pubout -out registry-public.pem
+      #   openssl req -x509 -new -key registry-private.pem -days 3650 \
+      #     -subj "/CN=a2e-registry-issuer" -out registry-cert.pem
+      # Paste the private.pem contents (replace literal newlines with \n
+      # since Render env vars are single-line) into Render's secret editor.
+      # The matching cert.pem goes on the registry service as a Secret File.
+      - key: REGISTRY_JWT_PRIVATE_KEY
+        sync: false
+      # Optional overrides (defaulted in code if unset):
+      - key: REGISTRY_SERVICE_NAME
+        value: a2e-registry
+      - key: REGISTRY_ISSUER
+        value: a2e-registry-issuer
+
       # Heartbeat timing (matches .env.example defaults).
       - key: HEARTBEAT_TIMEOUT_MS
         value: 90000
@@ -151,3 +169,76 @@ services:
         value: dev
       - key: SOLANA_RPC_URL
         value: https://api.mainnet-beta.solana.com
+
+  # E6 / M3.8c: Docker Image Registry.
+  # Runs the upstream distribution/distribution v2.8.3 binary, wrapped
+  # in our thin Dockerfile (apps/registry/Dockerfile) that ships a
+  # default config. Production behavior is driven by REGISTRY_* env
+  # vars below and the cert.pem mounted as a Secret File.
+  #
+  # Auth flow: docker push -> 401 with Bearer realm -> Docker CLI
+  # follows realm to a2e-api /v1/registry/token -> API issues RS256
+  # JWT -> CLI sends JWT to this service -> this service verifies
+  # with cert.pem -> push proceeds.
+  #
+  # Storage: separate S3 bucket from checkpoints (registry blobs can
+  # grow large; isolation is cleaner). Set REGISTRY_STORAGE_S3_* env
+  # vars to point at a dedicated bucket.
+  - type: web
+    name: a2e-registry
+    runtime: docker
+    plan: standard
+    region: oregon
+    autoDeploy: true
+    rootDir: apps/registry
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /v2/  # Registry V2 health probe
+    envVars:
+      # Token auth pointing at our API.
+      - key: REGISTRY_AUTH_TOKEN_REALM
+        value: https://a2e-api.onrender.com/v1/registry/token
+      - key: REGISTRY_AUTH_TOKEN_SERVICE
+        value: a2e-registry
+      - key: REGISTRY_AUTH_TOKEN_ISSUER
+        value: a2e-registry-issuer
+      - key: REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE
+        value: /etc/docker/registry/cert.pem
+
+      # Webhook notifications -> our API on every push event.
+      # M3.9a will implement /v1/registry/webhook to consume these.
+      - key: REGISTRY_NOTIFICATIONS_ENDPOINTS_0_NAME
+        value: tokenos-api
+      - key: REGISTRY_NOTIFICATIONS_ENDPOINTS_0_URL
+        value: https://a2e-api.onrender.com/v1/registry/webhook
+      - key: REGISTRY_NOTIFICATIONS_ENDPOINTS_0_TIMEOUT
+        value: 5s
+      - key: REGISTRY_NOTIFICATIONS_ENDPOINTS_0_THRESHOLD
+        value: 3
+      - key: REGISTRY_NOTIFICATIONS_ENDPOINTS_0_BACKOFF
+        value: 10s
+      # Shared secret between registry + API webhook receiver so the
+      # API can verify webhook calls are real. Set on BOTH services.
+      - key: REGISTRY_WEBHOOK_SECRET
+        sync: false
+
+      # S3 storage backend. Configure ALL of these via the Render UI
+      # before the first deploy succeeds — the registry refuses to
+      # start with an unreachable storage backend.
+      - key: REGISTRY_STORAGE_S3_BUCKET
+        sync: false
+      - key: REGISTRY_STORAGE_S3_REGION
+        sync: false
+      - key: REGISTRY_STORAGE_S3_ACCESSKEY
+        sync: false
+      - key: REGISTRY_STORAGE_S3_SECRETKEY
+        sync: false
+      - key: REGISTRY_STORAGE_S3_ROOTDIRECTORY
+        value: /registry
+
+      # HMAC secret for chunked uploads. Auto-generated; any random
+      # value works as long as it's consistent across replicas.
+      - key: REGISTRY_HTTP_SECRET
+        generateValue: true
+
+      - key: REGISTRY_LOG_LEVEL
+        value: info
