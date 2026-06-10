@@ -11,6 +11,7 @@
  */
 
 import type { PrismaClient, Prisma } from '@a2e/database'
+import { roundUsd } from '@a2e/shared'
 
 export type BalanceTxType =
   | 'TOPUP_SOLANA'
@@ -124,6 +125,13 @@ export async function creditBalance(
     throw new Error(`creditBalance requires positive amount, got ${args.amountUsd}`)
   }
 
+  // SECURITY (pen-test 2026-06-09/10 finding B-5): round to cents at
+  // the boundary so every ledger insert is exact and Postgres add does
+  // not accumulate IEEE 754 residue. Without this, repeated credits of
+  // computed amounts (e.g. operator earnings from rate * duration) drift
+  // directionally — pen tester reproduced +$1,212 / -$2,430 over 500K jobs.
+  const amountUsd = roundUsd(args.amountUsd)
+
   return prisma.$transaction(async (tx) => {
     // Make sure the balance row exists before we update it.
     await tx.buyerBalance.upsert({
@@ -138,9 +146,9 @@ export async function creditBalance(
     const updated = await tx.buyerBalance.update({
       where: { userId: args.userId },
       data: {
-        balanceUsd: { increment: args.amountUsd },
-        totalToppedUp: isTopup ? { increment: args.amountUsd } : undefined,
-        totalRefunded: isRefund ? { increment: args.amountUsd } : undefined,
+        balanceUsd: { increment: amountUsd },
+        totalToppedUp: isTopup ? { increment: amountUsd } : undefined,
+        totalRefunded: isRefund ? { increment: amountUsd } : undefined,
       },
       select: {
         id: true,
@@ -156,10 +164,10 @@ export async function creditBalance(
         data: {
           balanceId: updated.id,
           type: args.type,
-          amountUsd: args.amountUsd,
+          amountUsd,
           description: args.description,
           referenceId: args.referenceId,
-          balanceAfter: updated.balanceUsd,
+          balanceAfter: roundUsd(updated.balanceUsd),
         },
       })
     } catch (err) {
@@ -201,6 +209,10 @@ export async function debitBalanceInTx(
   tx: Prisma.TransactionClient,
   args: DebitArgs,
 ): Promise<BalanceSnapshot> {
+  // SECURITY (pen-test 2026-06-09/10 finding B-5): round at boundary
+  // so the debit and the balanceAfter ledger snapshot are exact-to-cent.
+  const amountUsd = roundUsd(args.amountUsd)
+
   const existing = await tx.buyerBalance.upsert({
     where: { userId: args.userId },
     create: { userId: args.userId },
@@ -208,15 +220,15 @@ export async function debitBalanceInTx(
     select: { id: true, balanceUsd: true },
   })
 
-  if (existing.balanceUsd < args.amountUsd) {
-    throw new InsufficientBalanceError(existing.balanceUsd, args.amountUsd)
+  if (existing.balanceUsd < amountUsd) {
+    throw new InsufficientBalanceError(existing.balanceUsd, amountUsd)
   }
 
   const updated = await tx.buyerBalance.update({
     where: { userId: args.userId },
     data: {
-      balanceUsd: { decrement: args.amountUsd },
-      totalSpent: { increment: args.amountUsd },
+      balanceUsd: { decrement: amountUsd },
+      totalSpent: { increment: amountUsd },
     },
     select: {
       id: true,
@@ -232,10 +244,10 @@ export async function debitBalanceInTx(
       data: {
         balanceId: updated.id,
         type: args.type,
-        amountUsd: -args.amountUsd,  // signed: debits stored as negative
+        amountUsd: -amountUsd,  // signed: debits stored as negative
         description: args.description,
         referenceId: args.referenceId,
-        balanceAfter: updated.balanceUsd,
+        balanceAfter: roundUsd(updated.balanceUsd),
       },
     })
   } catch (err) {

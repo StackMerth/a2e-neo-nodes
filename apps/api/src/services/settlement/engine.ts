@@ -1,5 +1,6 @@
 import type { PrismaClient, Node } from '@a2e/database'
 import { calculateUptimeEarnings } from '../earnings/uptime-calculator'
+import { roundUsd } from '@a2e/shared'
 
 export interface SettlementCalculation {
   nodeId: string
@@ -360,11 +361,15 @@ export async function createSettlement(
   prisma: PrismaClient,
   calculation: SettlementCalculation
 ): Promise<string> {
+  // SECURITY (pen-test 2026-06-09/10 finding B-5): round to cents so
+  // every Settlement row's amount is exact-to-cent on persist. Combined
+  // with roundUsd at credit/debit, the ledger trail stays free of
+  // IEEE 754 drift through the full payout cycle.
   const settlement = await prisma.settlement.create({
     data: {
       nodeId: calculation.nodeId,
       walletAddress: calculation.walletAddress,
-      amount: calculation.amount,
+      amount: roundUsd(calculation.amount),
       jobCount: 0, // Uptime-based, not job-based
       periodStart: calculation.periodStart,
       periodEnd: calculation.periodEnd,

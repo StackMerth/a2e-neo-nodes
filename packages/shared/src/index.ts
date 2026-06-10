@@ -131,6 +131,30 @@ export function dailyToHourly(dailyRate: number): number {
   return dailyRate / 24
 }
 
+// Round a USD amount to exactly two decimal places.
+//
+// Why this exists (pen-test 2026-06-09/10 finding B-5): every monetary
+// field in the schema is typed as Float (Postgres double precision),
+// which is IEEE 754 with the well-known 0.1 + 0.2 = 0.30000000000000004
+// problem. Over 500K jobs the pen tester reproduced +$1,212 / -$2,430
+// of DIRECTIONAL drift on H100 / CONSUMER ledger fields because every
+// rate * duration computation kept its sub-cent residue, and Postgres
+// add-and-store preserved it. Apply roundUsd() at every monetary write
+// boundary so each operation is exact-to-cent on persist, and the
+// cumulative skew collapses to zero per-operation.
+//
+// Tier 1 fix: applied at job earnings/cost/profit writes, balance
+// credit/debit, settlement create/complete, earnings consolidation.
+// Tier 2 (proper fix): migrate every monetary Float field to Decimal
+// in the prisma schema. Deferred to a dedicated session.
+export function roundUsd(amount: number): number {
+  // Math.round bias: ties go to even in some langs, but in JS Number
+  // rounds half-away-from-zero, which is what we want for symmetric
+  // financial rounding. The * 100 / 100 expansion handles negative
+  // values correctly too.
+  return Math.round(amount * 100) / 100
+}
+
 // Convert hourly rate to daily
 export function hourlyToDaily(hourlyRate: number): number {
   return hourlyRate * 24

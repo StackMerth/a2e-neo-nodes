@@ -39,6 +39,7 @@ import { Queue, Worker } from 'bullmq'
 import type { ConnectionOptions } from 'bullmq'
 import type { PrismaClient } from '@a2e/database'
 import { calculateAllNodesUptimeEarnings } from '../services/earnings/uptime-calculator.js'
+import { roundUsd } from '@a2e/shared'
 
 const QUEUE_NAME = 'earnings-consolidator'
 
@@ -165,12 +166,16 @@ export async function runEarningsConsolidatorTick(
           nodeId: result.nodeId,
           date: dayStart,
           market: 'INTERNAL',
-          earnings: result.earnings,
+          // SECURITY (pen-test 2026-06-09/10 B-5): round to cents at the
+          // daily Earning upsert so the operator's lifetime earnings sum
+          // stays exact-to-cent. Without this, repeated daily rolls of
+          // float-imprecise uptime calculations drift directionally.
+          earnings: roundUsd(result.earnings),
           gpuSeconds: result.uptimeSeconds,
           jobCount: 0, // populated separately by job-completion path
         },
         update: {
-          earnings: result.earnings,
+          earnings: roundUsd(result.earnings),
           gpuSeconds: result.uptimeSeconds,
         },
       })

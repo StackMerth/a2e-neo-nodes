@@ -4,6 +4,7 @@ import type { GpuTier, JobStatus, Market } from '@a2e/database'
 import { submitJobToQueue, requeueJob } from '../jobs/job-processor'
 import { calculateJobCost, calculateJobProfit } from '../services/cost/calculator'
 import { recordJobEarnings } from '../services/earnings/calculator'
+import { roundUsd } from '@a2e/shared'
 import '../types' // Type augmentations
 
 const submitJobSchema = z.object({
@@ -352,7 +353,14 @@ export async function jobRoutes(fastify: FastifyInstance) {
         // reflects what was actually billed.
         updateData.durationSeconds = billableDuration
 
-        updateData.earnings = (billableDuration / 3600) * job.ratePerHour
+        // SECURITY (pen-test 2026-06-09/10 finding B-5): round earnings,
+        // cost, and profit to cents on write. Pen tester reproduced
+        // +$1,212 (H100) / -$2,430 (CONSUMER) directional drift over
+        // 500K jobs because (billableDuration / 3600) * ratePerHour
+        // carries IEEE 754 residue and Postgres stores it verbatim. With
+        // rounding at the boundary each job's earnings is exact-to-cent
+        // and downstream balance credits stay exact too.
+        updateData.earnings = roundUsd((billableDuration / 3600) * job.ratePerHour)
 
         if (status === 'COMPLETED' && job.market) {
           const costResult = await calculateJobCost(fastify.prisma, {
@@ -361,8 +369,10 @@ export async function jobRoutes(fastify: FastifyInstance) {
             durationSeconds: billableDuration,
             ratePerHour: job.ratePerHour ?? undefined,
           })
-          updateData.cost = costResult.cost
-          updateData.profit = calculateJobProfit(updateData.earnings, costResult.cost)
+          updateData.cost = roundUsd(costResult.cost)
+          updateData.profit = roundUsd(
+            calculateJobProfit(updateData.earnings, costResult.cost),
+          )
         }
       }
 
