@@ -89,22 +89,34 @@ export interface A2EEvents {
 export function setupWebSocket(fastify: FastifyInstance): SocketServer {
   const validApiKey = process.env.API_KEY ?? 'a2e-dev-key-2026'
 
+  // Vercel preview deployments use rotating hostnames; allow them in
+  // addition to the static allowlist so portal preview builds can use
+  // the production API. Same rationale as plugins/cors.ts.
+  const WS_VERCEL_PREVIEW_RE = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i
+  const wsStaticAllowed = process.env.CORS_ORIGINS?.split(',') ?? [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:3002',
+    'http://localhost:3003',
+    'https://admin.tokenos.ai',
+    'https://user.tokenos.ai',
+    'https://market.tokenos.ai',
+    'https://a2e-admin.stackforgelab.tech',
+    'https://a2e-user.stackforgelab.tech',
+    'https://marketplace.stackforgelab.tech',
+  ]
+
   const io = new SocketServer(fastify.server, {
     cors: {
-      origin: process.env.CORS_ORIGINS?.split(',') ?? [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'http://localhost:3002',
-        'http://localhost:3003',
-        // Production (tokenos.ai)
-        'https://admin.tokenos.ai',
-        'https://user.tokenos.ai',
-        'https://market.tokenos.ai',
-        // Legacy (kept briefly so bookmarks keep working)
-        'https://a2e-admin.stackforgelab.tech',
-        'https://a2e-user.stackforgelab.tech',
-        'https://marketplace.stackforgelab.tech',
-      ],
+      origin: (
+        origin: string | undefined,
+        cb: (err: Error | null, allow?: boolean) => void,
+      ) => {
+        if (!origin) return cb(null, true)
+        if (wsStaticAllowed.includes(origin)) return cb(null, true)
+        if (WS_VERCEL_PREVIEW_RE.test(origin)) return cb(null, true)
+        cb(null, false)
+      },
       credentials: true,
     },
     path: '/socket.io',
