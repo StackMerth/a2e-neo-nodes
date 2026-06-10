@@ -22,23 +22,23 @@ log:
     service: a2e-registry
 
 storage:
-  # Filesystem fallback for local dev. Production OVERRIDES this
-  # entire block via env vars:
+  # No driver block here on purpose. The registry panics if a storage
+  # driver is declared in YAML AND also via REGISTRY_STORAGE_<DRIVER>_*
+  # env vars, so we leave the driver to be set entirely by environment.
+  #
+  # Production (Render):
   #   REGISTRY_STORAGE_S3_BUCKET=<bucket>
-  #   REGISTRY_STORAGE_S3_REGION=<region>
+  #   REGISTRY_STORAGE_S3_REGION=<region>  (use 'auto' for Cloudflare R2)
   #   REGISTRY_STORAGE_S3_ACCESSKEY=<access key>
   #   REGISTRY_STORAGE_S3_SECRETKEY=<secret key>
+  #   REGISTRY_STORAGE_S3_REGIONENDPOINT=<https://...> (R2 / non-AWS)
+  #   REGISTRY_STORAGE_S3_FORCEPATHSTYLE=true (R2 / non-AWS)
   #   REGISTRY_STORAGE_S3_ROOTDIRECTORY=/registry
-  # When any REGISTRY_STORAGE_S3_* var is set, the registry treats
-  # the storage block as 'storage.s3' and ignores 'storage.filesystem'.
-  filesystem:
-    rootdirectory: /var/lib/registry
-  # Soft-delete: tags + manifests can be deleted but blobs stay until
-  # garbage collection runs. Required for our M3.11 DELETE flow.
+  #
+  # Local dev (set in your shell before docker-compose up):
+  #   REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/var/lib/registry
   delete:
     enabled: true
-  # Cache manifest writes in memory to keep push throughput reasonable
-  # over high-latency S3 connections.
   cache:
     blobdescriptor: inmemory
 
