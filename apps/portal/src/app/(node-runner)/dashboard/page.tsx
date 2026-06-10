@@ -348,43 +348,52 @@ function OperatorStatTile({
  * the top of the dashboard view.
  */
 function AutomaticSettlementBanner() {
+  // Slate-neutral palette so the banner sits politely under the
+  // greens. Info banners shouldn't compete with financial data; the
+  // dashboard's primary accents (balance numbers, LIVE indicator,
+  // EARNINGS button) own the visual hierarchy. The link to /payouts
+  // gets the only accent color, telling operators where the action
+  // actually lives.
   return (
     <div
       className="rounded-xl p-4 flex items-start gap-3 mb-6"
       style={{
-        background: 'rgba(59, 130, 246, 0.06)',
-        border: '1px solid rgba(59, 130, 246, 0.20)',
-        borderLeft: '3px solid rgba(59, 130, 246, 0.55)',
+        background: 'rgba(148, 163, 184, 0.05)',
+        border: '1px solid rgba(148, 163, 184, 0.18)',
+        borderLeft: '3px solid rgba(148, 163, 184, 0.45)',
       }}
     >
       <div
         className="flex-shrink-0 mt-0.5 w-7 h-7 rounded-md flex items-center justify-center"
-        style={{ background: 'rgba(59, 130, 246, 0.15)' }}
+        style={{ background: 'rgba(148, 163, 184, 0.12)' }}
       >
-        <Info size={14} style={{ color: '#60a5fa' }} />
+        <Info size={14} style={{ color: 'var(--text-secondary)' }} />
       </div>
       <div className="min-w-0">
         <p
           className="font-mono text-[10px] uppercase tracking-[0.18em] mb-1.5"
-          style={{ color: '#60a5fa' }}
+          style={{ color: 'var(--text-muted)' }}
         >
           Automatic Settlement
         </p>
         <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-          Earnings accumulate continuously from your node uptime. Request a payout
-          anytime from the{' '}
+          After a{' '}
+          <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+            48-hour cool-down
+          </span>
+          , withdraw from the{' '}
           <Link
             href="/payouts"
             className="underline decoration-dotted underline-offset-2 hover:no-underline"
-            style={{ color: 'var(--text-primary)' }}
+            style={{ color: 'var(--primary)' }}
           >
             Payouts page
           </Link>
-          {' '}— funds typically arrive within{' '}
+          {' '}— funds arrive in{' '}
           <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
             1–2 business days
           </span>{' '}
-          of admin approval.
+          post-approval.
         </p>
       </div>
     </div>
