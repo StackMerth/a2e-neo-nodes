@@ -119,27 +119,49 @@ That's expected. Continue to Step 5.
 
 **Runtime: Render dashboard → a2e-registry → Environment.**
 
-Set all four S3 vars from Step 2:
+Set all six S3 vars from Step 2 by clicking `Add Environment Variable`
+(the `sync: false` entries from render.yaml appear empty and need
+manual fill-in):
 
 | Env var | Value |
 |---|---|
 | `REGISTRY_STORAGE_S3_BUCKET` | `a2e-registry-prod` (your bucket name) |
-| `REGISTRY_STORAGE_S3_REGION` | `us-east-1` (your bucket region) |
-| `REGISTRY_STORAGE_S3_ACCESSKEY` | IAM user access key id from Step 2 |
-| `REGISTRY_STORAGE_S3_SECRETKEY` | IAM user secret access key from Step 2 |
+| `REGISTRY_STORAGE_S3_REGION` | `auto` (literal string for R2; for AWS use the region like `us-east-1`) |
+| `REGISTRY_STORAGE_S3_ACCESSKEY` | R2 / IAM access key id from Step 2 |
+| `REGISTRY_STORAGE_S3_SECRETKEY` | R2 / IAM secret access key from Step 2 |
+| `REGISTRY_STORAGE_S3_REGIONENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` (R2 only; omit for AWS) |
+| `REGISTRY_STORAGE_S3_FORCEPATHSTYLE` | `true` (R2 only; AWS works with default virtual-host) |
 | `REGISTRY_WEBHOOK_SECRET` | Same value you set on a2e-api in Step 3 |
 
 Save Changes.
 
 **Then go to Secret Files** (same service, sidebar):
 
-- **Filename:** `cert.pem`
-- **Mount path:** `/etc/docker/registry/cert.pem`
-- **File contents:** paste the contents of `registry-cert.pem` from Step 1
+- **Filename:** `cert.pem` (just the bare filename — Render rejects
+  any path/slash characters here; the file is automatically mounted
+  at `/etc/secrets/cert.pem`)
+- **File contents:** paste the contents of `registry-cert.pem` from
+  Step 1 (real newlines, NOT the escaped `\n` format used for the
+  private key env var)
 
-Save Changes. Render redeploys the service. It should boot cleanly
-this time. Watch logs for `listening on [::]:5000` — that means the
-registry is up.
+Save Changes.
+
+**Important Render-specific quirks captured in render.yaml:**
+
+- The Blueprint sets `REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE=/etc/secrets/cert.pem`
+  to match Render's Secret File mount path.
+- The Blueprint sets `REGISTRY_HTTP_ADDR=:10000` because Render's
+  Docker runtime ignores the Dockerfile's `EXPOSE 5000` and probes
+  port 10000 by default for health checks.
+- The Blueprint omits `healthCheckPath` because the registry's `/v2/`
+  endpoint returns 401 when token auth is enabled (V2 protocol
+  correct), and Render's health check times out on 401 despite docs
+  claiming it accepts them. TCP-only port-open check is sufficient
+  since the registry exits on bad config rather than starting in a
+  broken state.
+
+Render redeploys the service. Watch logs for
+`listening on [::]:10000` — that means the registry is up.
 
 ---
 
@@ -260,6 +282,63 @@ After all 9 steps:
 **M3.8c is then complete.** Next session: M3.9a (webhook receiver +
 Trivy worker scaffold), which will start populating DockerImage +
 ImageScan rows.
+
+---
+
+## Render-specific gotchas (lessons from 2026-06-10 bring-up)
+
+These traps cost ~2 hours of debugging during the first deployment.
+All fixes are now in render.yaml + config.yml so a second runbook
+execution won't hit them, but documenting for future operators:
+
+1. **Storage driver conflict panic.** `apps/registry/config.yml`
+   originally declared `storage.filesystem` as a local-dev fallback.
+   Setting `REGISTRY_STORAGE_S3_*` env vars in production does NOT
+   replace the YAML driver — both apply, the registry sees two
+   drivers, and panics with
+   `multiple storage drivers specified`. Fix: removed the
+   filesystem block from config.yml. Local dev now sets
+   `REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/var/lib/registry`
+   via env if needed.
+
+2. **Port 10000 not 5000.** Render's Docker runtime ignores the
+   Dockerfile `EXPOSE` directive and defaults health checks to port
+   10000. The upstream distribution config defaults `http.addr` to
+   `:5000`. Fix: render.yaml sets `REGISTRY_HTTP_ADDR=:10000`.
+
+3. **Health check rejects 401.** Render's docs claim 401 is a valid
+   healthy response, but in practice deploys time out after 15 min
+   of `/v2/` returning 401 (which is the Docker V2 protocol-correct
+   challenge response when auth is enabled). Fix: render.yaml omits
+   `healthCheckPath`, falling back to TCP-only port-open check.
+
+4. **Secret Files mount path is fixed.** Render's Secret Files UI
+   rejects any path/slash in the filename field; files always land
+   at `/etc/secrets/<filename>`. The original config had
+   `REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE=/etc/docker/registry/cert.pem`
+   which is the distribution library default but unreachable on
+   Render. Fix: render.yaml sets it to `/etc/secrets/cert.pem`.
+
+5. **Blueprint sync overwrites manual env var changes.** Pushing a
+   commit to a Blueprint-managed service re-applies the YAML env
+   vars and reverts any manual UI changes that conflict. Always
+   bake the correct value into render.yaml; UI overrides are
+   ephemeral. Env vars NOT declared in YAML (e.g.,
+   `REGISTRY_STORAGE_S3_REGIONENDPOINT`, `_FORCEPATHSTYLE`) are
+   preserved across syncs.
+
+6. **R2 vs AWS S3 differences.** R2 requires `REGION=auto`,
+   `FORCEPATHSTYLE=true`, and a custom `REGIONENDPOINT`. None of
+   these are needed for AWS S3 — the default virtual-host style
+   works against `s3.amazonaws.com`.
+
+7. **REGISTRY_WEBHOOK_SECRET is informational.** The distribution
+   registry doesn't recognize that var name — it'll log
+   `Ignoring unrecognized environment variable` on every boot.
+   The secret is used by our API's webhook receiver (M3.9a+) to
+   verify incoming webhook calls. The registry needs the secret
+   wired via `REGISTRY_NOTIFICATIONS_ENDPOINTS_0_HEADERS_AUTHORIZATION_0=Bearer <secret>`
+   when M3.9a ships.
 
 ---
 
