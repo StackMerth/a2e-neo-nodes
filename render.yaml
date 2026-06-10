@@ -209,8 +209,12 @@ services:
         value: a2e-registry
       - key: REGISTRY_AUTH_TOKEN_ISSUER
         value: a2e-registry-issuer
+      # Render Secret Files mount under /etc/secrets/ regardless of the
+      # filename you choose, so the cert.pem upload at filename "cert.pem"
+      # lives at /etc/secrets/cert.pem. The original /etc/docker/registry
+      # path is a config.yml default that no longer applies on Render.
       - key: REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE
-        value: /etc/docker/registry/cert.pem
+        value: /etc/secrets/cert.pem
 
       # Webhook notifications -> our API on every push event.
       # M3.9a will implement /v1/registry/webhook to consume these.
