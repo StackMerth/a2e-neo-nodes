@@ -64,5 +64,10 @@ export function emitNotificationNew(
   fastify: FastifyInstance,
   data: A2EEvents['notification:new']
 ): void {
-  fastify.io?.emit('notification:new', data)
+  // SECURITY (pen-test 2026-06-09/10 finding B-2): scoped to per-user
+  // room. The payload's userId field is authoritative for routing;
+  // global io.emit() leaked title+message (which encode payout/balance
+  // amounts) to every connected client. See websocket/index.ts for the
+  // per-user room auto-join on socket connect.
+  fastify.io?.to(`user:${data.userId}`).emit('notification:new', data)
 }

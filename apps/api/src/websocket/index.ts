@@ -113,16 +113,29 @@ export function setupWebSocket(fastify: FastifyInstance): SocketServer {
   // Authentication middleware. Two valid auth shapes:
   //   - X-API-Key header / handshake.auth.apiKey: legacy admin global key
   //   - handshake.auth.token: JWT (portal users or admin per role)
+  //
+  // SECURITY (pen-test 2026-06-09/10 finding B-2): stash the decoded
+  // userId on socket.data when the JWT auth path succeeds. The connect
+  // handler below uses this to auto-join a per-user room so that
+  // notification:new emits scoped via io.to('user:${userId}').emit only
+  // land on the owning user's sockets. Previously verifyAccessToken's
+  // return value was discarded, leaving no way to scope downstream
+  // emits, so every user's notification was broadcast to every connected
+  // client.
   io.use((socket: Socket, next) => {
     const apiKey = socket.handshake.auth?.apiKey ?? socket.handshake.headers['x-api-key']
     if (apiKey && apiKey === validApiKey) {
+      socket.data.authType = 'admin'
       return next()
     }
 
     const token = socket.handshake.auth?.token
     if (token) {
       try {
-        verifyAccessToken(token)
+        const decoded = verifyAccessToken(token)
+        socket.data.authType = 'user'
+        socket.data.userId = decoded.userId
+        socket.data.role = decoded.role
         return next()
       } catch {
         return next(new Error('Authentication failed: Invalid token'))
@@ -134,6 +147,15 @@ export function setupWebSocket(fastify: FastifyInstance): SocketServer {
 
   io.on('connection', (socket: Socket) => {
     fastify.log.info({ socketId: socket.id }, 'WebSocket client connected')
+
+    // SECURITY (pen-test 2026-06-09/10 finding B-2): per-user room join.
+    // Scopes notification:new (and any future user-targeted emit) to
+    // only this user's sockets. Admin-API-key connections have no userId
+    // and skip this; admins receive their own user-bound notifications
+    // via the user-JWT auth path when logged into the admin dashboard.
+    if (socket.data.userId) {
+      socket.join(`user:${socket.data.userId}`)
+    }
 
     // Allow clients to subscribe to specific event types
     socket.on('subscribe', (events: string | string[]) => {

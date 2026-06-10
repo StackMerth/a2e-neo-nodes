@@ -65,8 +65,14 @@ export async function createNotification(
     data: { userId, type, title, message, link: link ?? null },
   })
 
-  // Push real-time notification via WebSocket
-  io?.emit('notification:new', {
+  // Push real-time notification via WebSocket.
+  // SECURITY (pen-test 2026-06-09/10 finding B-2): scoped to the per-
+  // user room (auto-joined in websocket/index.ts on connect) so only
+  // the owning user's sockets receive this payload. Previously this
+  // was io.emit which broadcasts to every connected client, leaking
+  // every user's payout/balance amounts (encoded into title+message)
+  // to every other logged-in user.
+  io?.to(`user:${userId}`).emit('notification:new', {
     userId,
     id: notification.id,
     type,
