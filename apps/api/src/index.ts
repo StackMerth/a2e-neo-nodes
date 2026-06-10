@@ -59,6 +59,7 @@ import {
   inferenceWorkerRoutes,
   inferenceRoutes,
   registryTokenRoutes,
+  registryWebhookRoutes,
   buyerBillingRoutes,
   buyerBalanceRoutes,
   buyerApiKeyRoutes,
@@ -249,6 +250,10 @@ import {
   scheduleEarningsConsolidator,
 } from './jobs/earnings-consolidator'
 import {
+  createImageScanQueue,
+  createImageScanWorker,
+} from './jobs/image-scan-worker'
+import {
   createSettlementReconciliationWatchdogQueue,
   createSettlementReconciliationWatchdogWorker,
   scheduleSettlementReconciliationWatchdog,
@@ -385,6 +390,14 @@ async function start() {
     const jobProcessorQueue = createJobProcessorQueue(redisConnection)
     const settlementSchedulerQueue = createSettlementSchedulerQueue(redisConnection)
     const settlementRetryQueue = createSettlementRetryQueue(redisConnection)
+
+    // E6 / M3.9a: image scan queue must exist BEFORE the webhook
+    // receiver is registered (the route enqueues into it). Worker
+    // creation happens later so the workers are co-located with the
+    // other worker boot block.
+    const imageScanQueue = createImageScanQueue(redisConnection)
+    await server.register(registryWebhookRoutes, { imageScanQueue })
+    server.log.info('Registry webhook + image scan queue initialized')
 
     const provisionQueue = createProvisionQueue(redisConnection)
     const reconciliationQueue = createReconciliationQueue(redisConnection)
@@ -680,6 +693,18 @@ async function start() {
     createEarningsConsolidatorWorker({ redis: redisConnection, prisma: server.prisma })
     await scheduleEarningsConsolidator(earningsConsolidatorQueue)
     server.log.info('Earnings consolidator worker initialized (24h tick)')
+
+    // E6 / M3.9a: image-scan worker consumes events from the queue
+    // that the registry webhook receiver enqueues into. Scaffold mode
+    // (TRIVY_WORKER_ENABLED!=true) emits COMPLETED scans with zero
+    // findings so the buyer UI shows scans happening end-to-end.
+    // M3.9b will flip on the real scanner.
+    createImageScanWorker({ redis: redisConnection, prisma: server.prisma })
+    server.log.info(
+      `Image scan worker initialized (mode=${
+        process.env.TRIVY_WORKER_ENABLED === 'true' ? 'trivy' : 'scaffold'
+      })`,
+    )
 
     // Pen-test 2026-06-09 finding B-3 watchdog. Demotes settlements
     // stuck COMPLETED+txConfirmed=false past the reconciler backoff

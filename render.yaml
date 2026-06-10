@@ -228,8 +228,20 @@ services:
         value: 3
       - key: REGISTRY_NOTIFICATIONS_ENDPOINTS_0_BACKOFF
         value: 10s
+      # E6 / M3.9a: bearer auth header the registry sends on every
+      # webhook call so the API can verify the request is genuine.
+      # Set manually to `Bearer <REGISTRY_WEBHOOK_SECRET>` (literal
+      # word "Bearer ", space, then the same secret you set on the
+      # API service). YAML can't compose env vars from other env vars
+      # so this is a manual UI fill-in. The API's webhook receiver
+      # compares the incoming Authorization header byte-for-byte
+      # against `Bearer <REGISTRY_WEBHOOK_SECRET>`.
+      - key: REGISTRY_NOTIFICATIONS_ENDPOINTS_0_HEADERS_AUTHORIZATION_0
+        sync: false
       # Shared secret between registry + API webhook receiver so the
       # API can verify webhook calls are real. Set on BOTH services.
+      # On a2e-registry the value here is consumed by the API only;
+      # the registry uses it via the AUTHORIZATION_0 header above.
       - key: REGISTRY_WEBHOOK_SECRET
         sync: false
 
