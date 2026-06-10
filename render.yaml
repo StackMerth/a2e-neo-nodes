@@ -192,8 +192,16 @@ services:
     autoDeploy: true
     rootDir: apps/registry
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /v2/  # Registry V2 health probe
+    # No healthCheckPath: when token auth is enabled, /v2/ returns 401
+    # (Docker V2 protocol-correct) and Render's health check rejects it
+    # despite docs claiming 401 is OK. Falling back to TCP-only check by
+    # omitting the path is reliable and sufficient: the registry process
+    # crashes on bad config rather than starting in a broken state, so
+    # "port open" already implies "healthy enough to serve auth".
     envVars:
+      # Bind to Render's default web port. Override of config.yml's :5000.
+      - key: REGISTRY_HTTP_ADDR
+        value: ":10000"
       # Token auth pointing at our API.
       - key: REGISTRY_AUTH_TOKEN_REALM
         value: https://a2e-api.onrender.com/v1/registry/token
