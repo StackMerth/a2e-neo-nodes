@@ -49,7 +49,7 @@ enum GpuTier {
 
 enum NodeType {
   PROVISIONED // TokenOS provisions from data center
-  BYOG        // Bring Your Own GPU
+  BYOG // Bring Your Own GPU
 }
 
 enum NodeStatus {
@@ -61,20 +61,20 @@ enum NodeStatus {
 }
 
 enum JobStatus {
-  PENDING    // Job submitted, waiting for routing
-  ROUTING    // A²E is deciding where to route
-  ASSIGNED   // Assigned to a node/market
-  RUNNING    // Job is executing
-  COMPLETED  // Job finished successfully
-  FAILED     // Job failed
-  CANCELLED  // Job was cancelled
+  PENDING // Job submitted, waiting for routing
+  ROUTING // A²E is deciding where to route
+  ASSIGNED // Assigned to a node/market
+  RUNNING // Job is executing
+  COMPLETED // Job finished successfully
+  FAILED // Job failed
+  CANCELLED // Job was cancelled
 }
 
 enum Market {
-  INTERNAL   // TokenOS internal (premium retail rate)
-  AKASH      // Akash Network (external)
-  IONET      // IO.net (external)
-  VASTAI     // Vast.ai (external)
+  INTERNAL // TokenOS internal (premium retail rate)
+  AKASH // Akash Network (external)
+  IONET // IO.net (external)
+  VASTAI // Vast.ai (external)
   // Track 5 / M0.3: per-rental revenue under Model C 3-way split.
   // When REVENUE_SPLIT_ENABLED=true, completed rentals write an
   // Earning row with market=RENTAL containing the operator's
@@ -86,21 +86,21 @@ enum Market {
 }
 
 enum JobSource {
-  INTERNAL   // Job originated from TokenOS internal demand (existing behavior)
-  EXTERNAL   // Job arrived via external market (Akash/IO.net/Vast.ai deployment)
+  INTERNAL // Job originated from TokenOS internal demand (existing behavior)
+  EXTERNAL // Job arrived via external market (Akash/IO.net/Vast.ai deployment)
 }
 
 enum ExternalDeploymentStatus {
-  PENDING      // Creation initiated, awaiting confirmation from market
-  ACTIVE       // Running on external market
-  TERMINATING  // Delist in progress (SAFE mode grace window)
-  TERMINATED   // Successfully terminated
-  FAILED       // Creation or runtime failure
+  PENDING // Creation initiated, awaiting confirmation from market
+  ACTIVE // Running on external market
+  TERMINATING // Delist in progress (SAFE mode grace window)
+  TERMINATED // Successfully terminated
+  FAILED // Creation or runtime failure
 }
 
 enum ExternalTerminationMode {
-  SAFE   // Waited for workload completion or grace window
-  FORCE  // Terminated immediately, forfeit in-flight earnings
+  SAFE // Waited for workload completion or grace window
+  FORCE // Terminated immediately, forfeit in-flight earnings
 }
 
 // ============================================================================
@@ -110,7 +110,7 @@ enum ExternalTerminationMode {
 enum UserRole {
   NODE_RUNNER
   COMPUTE_BUYER
-  CUSTOMER       // Legacy — use COMPUTE_BUYER for new buyers
+  CUSTOMER // Legacy — use COMPUTE_BUYER for new buyers
   ADMIN
   // Track 5 / M0.2: virtual system accounts that hold the 3-way
   // revenue split's non-operator slices. One STAKING_POOL row and one
@@ -147,12 +147,12 @@ enum NotificationType {
   WITHDRAWAL_REJECTED
   // Category C wave 1 additions
   FIRST_HEARTBEAT_RECEIVED // C5: fires once per operator when first heartbeat lands
-  FIRST_EARNING            // C5: fires once per operator on first non-zero Earning row
-  NODE_DEGRADED            // C4: fires when benchmark score drops >20% from prior score
+  FIRST_EARNING // C5: fires once per operator on first non-zero Earning row
+  NODE_DEGRADED // C4: fires when benchmark score drops >20% from prior score
   // Post-wave-2: email verification confirmation
-  EMAIL_VERIFIED           // Fires once when User.emailVerified flips from false -> true
+  EMAIL_VERIFIED // Fires once when User.emailVerified flips from false -> true
   // Track 5 / 3.A — token-billing alerts
-  BURN_RATE_ALERT          // Buyer's hourly inference spend > 2x their 7-day average
+  BURN_RATE_ALERT // Buyer's hourly inference spend > 2x their 7-day average
   // T2.1: top-up landed notifications. Fired from all three credit
   // paths (Solana mainnet topup, Stripe checkout, admin TOPUP_ADMIN)
   // so the buyer sees a bell + web push the moment money lands.
@@ -162,15 +162,15 @@ enum NotificationType {
 }
 
 model User {
-  id               String    @id @default(cuid())
-  email            String?   @unique
-  walletAddress    String?   @unique
+  id               String   @id @default(cuid())
+  email            String?  @unique
+  walletAddress    String?  @unique
   passwordHash     String?
   // role marks the user's primary identity (whichever they signed up
   // as). Kept for backward compat and for reporting. Day-to-day
   // capability checks should read isBuyer / isNodeRunner / isAdmin
   // instead, since a single account can now hold multiple roles.
-  role             UserRole  @default(NODE_RUNNER)
+  role             UserRole @default(NODE_RUNNER)
   // Dual-identity flags. Migration backfills from role on launch:
   //   role=COMPUTE_BUYER  -> isBuyer=true
   //   role=NODE_RUNNER    -> isNodeRunner=true
@@ -178,11 +178,11 @@ model User {
   //   role=ADMIN          -> isAdmin=true
   // New signups flip the right flag + leave the others false; users
   // can opt in to the other role later via Settings.
-  isBuyer          Boolean   @default(false)
-  isNodeRunner     Boolean   @default(false)
-  isAdmin          Boolean   @default(false)
-  emailVerified    Boolean   @default(false)
-  twoFactorEnabled Boolean   @default(false)
+  isBuyer          Boolean  @default(false)
+  isNodeRunner     Boolean  @default(false)
+  isAdmin          Boolean  @default(false)
+  emailVerified    Boolean  @default(false)
+  twoFactorEnabled Boolean  @default(false)
   twoFactorSecret  String?
 
   // Email verification
@@ -197,37 +197,47 @@ model User {
   // compromised account can't drain inventory or burn the buyer's wallet.
   // Defaults are generous enough to be invisible for legitimate users;
   // admin can tune per-user from the dashboard.
-  maxConcurrentRentals  Int     @default(10)
-  maxDailySpendUsd      Float   @default(10000)
+  maxConcurrentRentals Int   @default(10)
+  maxDailySpendUsd     Float @default(10000)
+
+  // E6 / M3.10: Custom Docker Image Registry quota. Sum of every
+  // active (not deletedAt) DockerImage.sizeBytes for this user must
+  // stay under maxRegistryGb gigabytes. 5 GB default covers a few
+  // small training images or a couple of inference workers; admin
+  // can tune per tier from the dashboard. Hard-checked at token-
+  // issue time so we never let a push start if it would put the
+  // user over.
+  maxRegistryGb Int @default(5)
 
   // M2: trust score for the auto-allocator. Increments on every successfully
   // completed rental (full cycle, no chargeback). Used by the eligibility
   // rules engine to decide whether a request auto-approves or holds for
   // admin review.
-  successfulRentalCount Int     @default(0)
+  successfulRentalCount Int       @default(0)
   lastRentalAt          DateTime?
 
   // M5.7 anti-abuse: signup IP. Used by the referral attribution path
   // to flag sock-puppet referees (same IP as the referrer) so the
   // worker can skip commission accrual on suspicious pairs. Indexed
   // because the IP check is on the hot signup path.
-  signupIp         String?
+  signupIp String?
 
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  nodeRunner       NodeRunner?
-  notifications    Notification[]
-  refreshTokens    RefreshToken[]
-  computeRequests   ComputeRequest[]
+  nodeRunner            NodeRunner?
+  notifications         Notification[]
+  refreshTokens         RefreshToken[]
+  computeRequests       ComputeRequest[]
   // Confidential compute waitlist entries when CONFIDENTIAL_COMPUTE_UI_MODE=waitlist.
   confidentialInterests ConfidentialInterest[]
-  apiKeys           ApiKey[]
-  ratingsGiven      Rating[]
-  buyerBalance      BuyerBalance?
-  buyerWithdrawals  BuyerWithdrawal[]
-  pushSubscriptions PushSubscription[]
+  apiKeys               ApiKey[]
+  ratingsGiven          Rating[]
+  buyerBalance          BuyerBalance?
+  buyerWithdrawals      BuyerWithdrawal[]
+  pushSubscriptions     PushSubscription[]
+  dockerImages          DockerImage[]
 
   @@index([role])
   @@index([signupIp])
@@ -257,7 +267,7 @@ model RefreshToken {
   revokedAt DateTime?
   createdAt DateTime  @default(now())
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
@@ -277,7 +287,7 @@ model Notification {
   read      Boolean          @default(false)
   createdAt DateTime         @default(now())
 
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, read])
   @@index([userId, createdAt])
@@ -288,14 +298,14 @@ model Notification {
 // ============================================================================
 
 model NodeRunner {
-  id            String   @id @default(cuid())
-  name          String               // Display name
-  email         String?  @unique     // Contact email
-  walletAddress String   @unique     // Solana wallet for payouts
+  id            String  @id @default(cuid())
+  name          String // Display name
+  email         String? @unique // Contact email
+  walletAddress String  @unique // Solana wallet for payouts
 
   // Link to User account (for portal login)
-  userId        String?  @unique
-  user          User?    @relation(fields: [userId], references: [id])
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id])
 
   // T3.2: Stripe Connect account id (`acct_xxxxxx`) when this operator
   // opted into USD payouts via bank instead of (or alongside) USDC to
@@ -303,18 +313,18 @@ model NodeRunner {
   // set + onboarding completed on Stripe's side, the operator can
   // pick payoutMethod=STRIPE_CONNECT on each WithdrawalRequest.
   // Nullable: pre-T3.2 operators keep working with Solana-only.
-  stripeConnectAccountId   String?
+  stripeConnectAccountId String?
   // Stripe Connect onboarding state. CREATED = account exists but the
   // operator hasn't finished the hosted onboarding (charges/payouts
   // disabled). READY = capabilities active, operator can receive
   // transfers. Refreshed on each call to the /status endpoint.
-  stripeConnectStatus      String?
+  stripeConnectStatus    String?
 
   // Payout preferences
-  payoutThreshold  Float    @default(10.0)   // Minimum USD to trigger payout
-  payoutFrequency  String   @default("WEEKLY") // DAILY, WEEKLY, MONTHLY
-  payoutDayOfWeek  Int?     // 0=Sunday, 1=Monday, etc. (for WEEKLY)
-  payoutDayOfMonth Int?     // 1-28 (for MONTHLY)
+  payoutThreshold  Float  @default(10.0) // Minimum USD to trigger payout
+  payoutFrequency  String @default("WEEKLY") // DAILY, WEEKLY, MONTHLY
+  payoutDayOfWeek  Int? // 0=Sunday, 1=Monday, etc. (for WEEKLY)
+  payoutDayOfMonth Int? // 1-28 (for MONTHLY)
 
   // Payout mode. Controls how earnings flow from the platform to the
   // operator's wallet:
@@ -334,7 +344,7 @@ model NodeRunner {
   // click Withdraw to receive funds. Existing rows pre-feature land on
   // AUTO and stay there until they actively change it; we don't migrate
   // them silently.
-  payoutMode        PayoutMode  @default(MANUAL)
+  payoutMode        PayoutMode @default(MANUAL)
   payoutScheduledAt DateTime?
 
   // Admin-applied hard hold on payouts. While set and in the future,
@@ -342,8 +352,8 @@ model NodeRunner {
   // to fire for this operator. Used by support during buyer disputes
   // or fraud investigations. payoutLockReason is surfaced to the
   // operator so they understand why their payouts are frozen.
-  payoutLockUntil   DateTime?
-  payoutLockReason  String?
+  payoutLockUntil  DateTime?
+  payoutLockReason String?
 
   // C5 (onboarding wave 1): one-shot timestamps that gate first-X
   // celebration notifications. Set inside the heartbeat / earnings-
@@ -351,8 +361,8 @@ model NodeRunner {
   // so concurrent writes are idempotent (Postgres row-lock wins one).
   // Once set, the FIRST_HEARTBEAT_RECEIVED / FIRST_EARNING notifications
   // never re-fire for this operator.
-  firstHeartbeatAt  DateTime?
-  firstEarningAt    DateTime?
+  firstHeartbeatAt DateTime?
+  firstEarningAt   DateTime?
 
   // C7 (tax wave 1): optional W-9 / tax-form data. Filled in by the
   // operator on /payouts/settings → "Tax info" card. The tax-year
@@ -361,19 +371,19 @@ model NodeRunner {
   // iteration; W-8BEN flow is in the runbook as a future addition.
   // taxId stores raw TIN — should be encrypted at rest in a follow-up
   // (see plan's risks section). Last-4 only is displayed in the UI.
-  legalName         String?
-  taxId             String?
-  taxIdType         TaxIdType?
-  taxAddress        String?
-  taxJurisdiction   String?     @default("US")
-  w9SubmittedAt     DateTime?
+  legalName       String?
+  taxId           String?
+  taxIdType       TaxIdType?
+  taxAddress      String?
+  taxJurisdiction String?    @default("US")
+  w9SubmittedAt   DateTime?
 
   // C3 wave 2: operator opt-out for the Monday weekly digest email.
   // Defaulted false so new operators get the digest by default; they
   // can flip on /payouts/settings if they find it noisy. Read by the
   // weekly-digest worker as a hard skip — opted-out operators get no
   // email regardless of forecast / uptime warnings.
-  digestOptedOut    Boolean     @default(false)
+  digestOptedOut Boolean @default(false)
 
   // M3: reputation. reputationScore is 0-100, recomputed daily by the
   // reputation-scorer worker from uptime + ratings + completed jobs.
@@ -381,23 +391,23 @@ model NodeRunner {
   // availableAsSpot: opt-in to the SPOT tier marketplace (lower revenue
   // per minute, but higher utilization since SPOT requests can preempt
   // ON_DEMAND inventory shortages).
-  reputationScore  Float           @default(0)
-  reputationTier   ReputationTier  @default(BRONZE)
-  availableAsSpot  Boolean         @default(false)
-  lastScoreUpdate  DateTime?
+  reputationScore Float          @default(0)
+  reputationTier  ReputationTier @default(BRONZE)
+  availableAsSpot Boolean        @default(false)
+  lastScoreUpdate DateTime?
 
   // M3: URL-safe slug for the public vanity profile page.
   // marketplace.tokenos.ai/operator/<slug>. Auto-generated from name.
-  slug             String?  @unique
+  slug String? @unique
 
   // M5.7 / D2: 8-character invite code (base32, ambiguous-char-free).
   // Auto-generated on first NodeRunner creation. Other operators can
   // sign up with ?ref=<this-code> to attribute commission for 365 days.
-  referralCode     String?  @unique
+  referralCode String? @unique
 
   // Timestamps
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
   nodes              Node[]
@@ -408,8 +418,8 @@ model NodeRunner {
   // attributed back to this runner. `referralReceived` is the single
   // (optional) Referral row pointing at the operator that referred this
   // runner in the first place.
-  referralsMade      Referral[] @relation("ReferrerEdge")
-  referralReceived   Referral?  @relation("RefereeEdge")
+  referralsMade      Referral[]          @relation("ReferrerEdge")
+  referralReceived   Referral?           @relation("RefereeEdge")
   // Launch-blocker #1 / BYOG: one-shot install tokens the operator
   // mints from "+ Add Node" in the portal. Each token authorizes a
   // single curl|bash install on one machine.
@@ -421,7 +431,7 @@ model NodeRunner {
   // rental lands here. amount tracks the actual final spend so it
   // can be rebated down on early terminate without losing the audit
   // trail. Subtracted from `available` in getOperatorBalanceBreakdown.
-  internalSpends     InternalSpend[]
+  internalSpends InternalSpend[]
 
   @@index([walletAddress])
   @@index([userId])
@@ -455,9 +465,9 @@ enum PayoutMode {
 // rental from their accumulated platform balance instead, and an
 // InternalSpend row records the debit.
 enum PaymentSource {
-  USDC              // fresh on-chain Solana payment (txHash required)
-  INTERNAL_BALANCE  // operator earnings used to fund a rental (dual-role accounts)
-  BUYER_BALANCE     // pre-loaded buyer credit (see BuyerBalance + BalanceTransaction)
+  USDC // fresh on-chain Solana payment (txHash required)
+  INTERNAL_BALANCE // operator earnings used to fund a rental (dual-role accounts)
+  BUYER_BALANCE // pre-loaded buyer credit (see BuyerBalance + BalanceTransaction)
   // T3.1: buyer paid for the rental directly with a card via Stripe
   // Hosted Checkout. ComputeRequest.txHash holds the Stripe Session
   // id (cs_live_...). Refund path on early-terminate must go through
@@ -476,11 +486,11 @@ enum PaymentSource {
 
 model StripeCheckoutContext {
   // Stripe Session id (cs_test_... / cs_live_...). Unique by definition.
-  sessionId   String   @id
-  userId      String
+  sessionId String   @id
+  userId    String
   // JSON blob of fields that don't fit in Stripe metadata. Today: sshPubKey.
-  payload     Json
-  createdAt   DateTime @default(now())
+  payload   Json
+  createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
 }
@@ -490,8 +500,8 @@ model StripeCheckoutContext {
 // flavors). Only US individuals + entities for now; W-8BEN flow for
 // non-US operators is a follow-up.
 enum TaxIdType {
-  SSN  // individual taxpayer
-  EIN  // sole-prop or entity
+  SSN // individual taxpayer
+  EIN // sole-prop or entity
 }
 
 // C2 wave 2: buyer-declared workload type on a ComputeRequest. Drives
@@ -517,15 +527,15 @@ enum WorkloadType {
 // getOperatorBalanceBreakdown so the next rental sees the right
 // remaining balance.
 model InternalSpend {
-  id                String         @id @default(cuid())
-  nodeRunnerId      String
-  nodeRunner        NodeRunner     @relation(fields: [nodeRunnerId], references: [id], onDelete: Cascade)
+  id               String     @id @default(cuid())
+  nodeRunnerId     String
+  nodeRunner       NodeRunner @relation(fields: [nodeRunnerId], references: [id], onDelete: Cascade)
   // 1:1 with the rental that drew the funds. Indexed for the
   // operator's payouts page; queried by nodeRunnerId in hot path.
-  computeRequestId  String         @unique
-  amount            Float
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  computeRequestId String     @unique
+  amount           Float
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 
   @@index([nodeRunnerId])
   @@index([nodeRunnerId, createdAt])
@@ -536,25 +546,25 @@ model InternalSpend {
 // 365-day commission window. After expiresAt, the daily worker stops
 // accruing and the row stays for audit.
 model Referral {
-  id                       String          @id @default(cuid())
-  code                     String          // copy of NodeRunner.referralCode at attribution time
-  referrerNodeRunnerId     String
-  referrer                 NodeRunner      @relation("ReferrerEdge", fields: [referrerNodeRunnerId], references: [id], onDelete: Cascade)
-  refereeNodeRunnerId      String          @unique
-  referee                  NodeRunner      @relation("RefereeEdge", fields: [refereeNodeRunnerId], references: [id], onDelete: Cascade)
+  id                   String     @id @default(cuid())
+  code                 String // copy of NodeRunner.referralCode at attribution time
+  referrerNodeRunnerId String
+  referrer             NodeRunner @relation("ReferrerEdge", fields: [referrerNodeRunnerId], references: [id], onDelete: Cascade)
+  refereeNodeRunnerId  String     @unique
+  referee              NodeRunner @relation("RefereeEdge", fields: [refereeNodeRunnerId], references: [id], onDelete: Cascade)
 
-  status                   ReferralStatus  @default(ACTIVE)
+  status ReferralStatus @default(ACTIVE)
 
   // Window during which earnings on the referee accrue commission to the
   // referrer. Default is 365 days from createdAt; we keep this explicit
   // on the row so future policy changes do not retroactively shorten or
   // extend existing referrals.
-  expiresAt                DateTime
-  totalCommissionAccrued   Float           @default(0)
-  lastSettledAt            DateTime?       // marks the most recent commission tick processed
+  expiresAt              DateTime
+  totalCommissionAccrued Float     @default(0)
+  lastSettledAt          DateTime? // marks the most recent commission tick processed
 
-  createdAt                DateTime        @default(now())
-  updatedAt                DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([referrerNodeRunnerId])
   @@index([code])
@@ -562,52 +572,52 @@ model Referral {
 }
 
 enum ReferralStatus {
-  ACTIVE       // accruing commission
-  EXPIRED      // 365-day window elapsed
-  REVOKED      // admin-revoked (abuse, dispute, sock-puppet)
+  ACTIVE // accruing commission
+  EXPIRED // 365-day window elapsed
+  REVOKED // admin-revoked (abuse, dispute, sock-puppet)
 }
 
 model Investment {
-  id            String           @id @default(cuid())
-  nodeRunnerId  String
-  nodeRunner    NodeRunner       @relation(fields: [nodeRunnerId], references: [id])
+  id           String     @id @default(cuid())
+  nodeRunnerId String
+  nodeRunner   NodeRunner @relation(fields: [nodeRunnerId], references: [id])
 
   // Investment details
-  amount        Float            // Amount paid (e.g., 2500)
-  currency      String           @default("USD")
-  nodeCount     Int              @default(1)
+  amount    Float // Amount paid (e.g., 2500)
+  currency  String @default("USD")
+  nodeCount Int    @default(1)
 
   // Crypto payment details
-  cryptoAmount  Float?           // Amount in crypto (e.g., SOL)
-  cryptoCurrency String?         // e.g., "SOL", "USDC"
-  txHash        String?          // Solana transaction hash
-  txConfirmed   Boolean          @default(false)
+  cryptoAmount   Float? // Amount in crypto (e.g., SOL)
+  cryptoCurrency String? // e.g., "SOL", "USDC"
+  txHash         String? // Solana transaction hash
+  txConfirmed    Boolean @default(false)
 
   // What was purchased
-  nodeId        String?          // Linked to node once provisioned
-  gpuTier       GpuTier          // GPU tier purchased
+  nodeId  String? // Linked to node once provisioned
+  gpuTier GpuTier // GPU tier purchased
 
   // Status
-  status        InvestmentStatus @default(PENDING)
+  status InvestmentStatus @default(PENDING)
 
   // Deployment tracking (node runner → admin → data center flow)
-  deploymentNote String?         // Node runner's note for the request
-  sshHost        String?         // SSH host (admin fills in from data center)
-  sshPort        Int?            // SSH port (default 22)
-  sshUsername    String?          // SSH username
-  provisionJobId String?         // Linked ProvisionJob once provisioning starts
+  deploymentNote String? // Node runner's note for the request
+  sshHost        String? // SSH host (admin fills in from data center)
+  sshPort        Int? // SSH port (default 22)
+  sshUsername    String? // SSH username
+  provisionJobId String? // Linked ProvisionJob once provisioning starts
 
   // Timestamps
-  createdAt     DateTime         @default(now())
-  confirmedAt   DateTime?        // When payment was confirmed
+  createdAt             DateTime  @default(now())
+  confirmedAt           DateTime? // When payment was confirmed
   deploymentRequestedAt DateTime? // When node runner requested deployment
-  provisionedAt DateTime?        // When node was provisioned
+  provisionedAt         DateTime? // When node was provisioned
 
   // Auto-minted BYOG install token. Created at payment-confirm time so
   // the operator gets the curl one-liner immediately on the deployment
   // detail page, no admin gate. Nullable for legacy rows + cases where
   // the auto-mint failed silently (e.g. orphan partial transaction).
-  installToken  String?
+  installToken String?
 
   @@index([nodeRunnerId])
   @@index([status])
@@ -615,12 +625,12 @@ model Investment {
 }
 
 enum InvestmentStatus {
-  PENDING                // Waiting for payment
-  PAID                   // Payment received (admin-created flow)
-  DEPLOYMENT_REQUESTED   // Node runner requested deployment, waiting for admin
-  DEPLOYING              // Admin submitted SSH details, provisioning in progress
-  PROVISIONED            // Node is set up and running
-  CANCELLED              // Investment cancelled/refunded
+  PENDING // Waiting for payment
+  PAID // Payment received (admin-created flow)
+  DEPLOYMENT_REQUESTED // Node runner requested deployment, waiting for admin
+  DEPLOYING // Admin submitted SSH details, provisioning in progress
+  PROVISIONED // Node is set up and running
+  CANCELLED // Investment cancelled/refunded
 }
 
 // ============================================================================
@@ -636,22 +646,22 @@ model Node {
   region        String?
 
   // Node Runner (owner/investor)
-  nodeRunnerId  String?
-  nodeRunner    NodeRunner? @relation(fields: [nodeRunnerId], references: [id])
+  nodeRunnerId String?
+  nodeRunner   NodeRunner? @relation(fields: [nodeRunnerId], references: [id])
 
   // Custom GPU info (used when gpuTier = OTHER)
-  customGpuModel    String?   // e.g. "A100", "RTX 4090", "L40S"
-  customRatePerHour Float?    // Custom hourly rate for OTHER tier
-  customRatePerDay  Float?    // Custom daily rate for OTHER tier
+  customGpuModel    String? // e.g. "A100", "RTX 4090", "L40S"
+  customRatePerHour Float? // Custom hourly rate for OTHER tier
+  customRatePerDay  Float? // Custom daily rate for OTHER tier
 
   // Agent authentication
-  apiKey        String?    @unique  // Node-specific API key for agent auth
+  apiKey String? @unique // Node-specific API key for agent auth
 
   // Deletion flag - when true, agent will receive UNINSTALL command on next heartbeat
-  pendingDeletion Boolean  @default(false)
+  pendingDeletion Boolean @default(false)
 
   // Compute buyer allocation
-  assignedComputeRequestId String?  // Which compute request this node is serving
+  assignedComputeRequestId String? // Which compute request this node is serving
 
   // M4.7: cluster membership. Set while the node is participating in a
   // multi-node cluster rental; cleared when the rental terminates and
@@ -659,9 +669,9 @@ model Node {
   // 0-indexed position in the cluster (rank 0 = master / head node).
   // clusterWireguardIp is a /30-sized peer address inside the cluster
   // mesh, e.g. 10.42.0.1.
-  clusterId            String?
-  clusterRank          Int?
-  clusterWireguardIp   String?
+  clusterId          String?
+  clusterRank        Int?
+  clusterWireguardIp String?
 
   // Agent information
   agentVersion  String?
@@ -669,8 +679,8 @@ model Node {
   lastCommandAt DateTime?
 
   // Health tracking
-  lastHeartbeat DateTime   @default(now())
-  missedBeats   Int        @default(0)
+  lastHeartbeat DateTime @default(now())
+  missedBeats   Int      @default(0)
 
   // C4 (benchmarking wave 1): one-click benchmark result fields. Set
   // by POST /v1/agent/benchmark/result after the agent runs the
@@ -680,10 +690,10 @@ model Node {
   // NODE_DEGRADED notification fires when a new score is >20% below
   // the previous benchmarkScore. lastBenchmarkAt drives the "last run
   // X days ago" copy on the operator's node detail page.
-  benchmarkScore             Float?
-  benchmarkMatmulTflops      Float?
-  benchmarkVramBandwidthGbs  Float?
-  lastBenchmarkAt            DateTime?
+  benchmarkScore            Float?
+  benchmarkMatmulTflops     Float?
+  benchmarkVramBandwidthGbs Float?
+  lastBenchmarkAt           DateTime?
 
   // C2 wave 2: operator-declared residential-IP marker. Lets operators
   // on home internet (no static IP, behind NAT) opt into the consumer
@@ -691,7 +701,7 @@ model Node {
   // marketplace surfaces a "Home GPU" badge when this is true so
   // buyers understand the expected reliability tradeoff. Defaulted
   // false to preserve all pre-migration nodes as non-residential.
-  isResidential              Boolean   @default(false)
+  isResidential Boolean @default(false)
 
   // #7 wave 3 (operator-set pricing): per-node operator-chosen rate
   // overriding the YieldFloor-derived default. Constrained at the
@@ -701,9 +711,9 @@ model Node {
   // the allocator's candidate window. NULL means "use YieldFloor"
   // (the pre-#7 default behavior every existing node keeps until the
   // operator opts in via the per-node Pricing card).
-  operatorRatePerHour        Float?
-  operatorRatePerDay         Float?
-  operatorRateUpdatedAt      DateTime?
+  operatorRatePerHour   Float?
+  operatorRatePerDay    Float?
+  operatorRateUpdatedAt DateTime?
 
   // Track 5 / M0.1: cost-of-service inputs.
   //
@@ -721,12 +731,12 @@ model Node {
   // ("US","EU","ASIA","OTHER"). Determines kWh price. NULL falls back
   // to PowerRate.region="GLOBAL" (a single median rate used until
   // regional inference is wired in).
-  declaredGpuSku             String?
-  powerRegion                String?
+  declaredGpuSku String?
+  powerRegion    String?
 
   // Timestamps
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
   jobs                Job[]
@@ -745,17 +755,17 @@ model Node {
 }
 
 model Heartbeat {
-  id          String   @id @default(cuid())
-  nodeId      String
-  node        Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  nodeId String
+  node   Node   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
 
   // GPU Metrics (optional)
-  gpuUtilization  Float?   // 0-100%
-  gpuTemperature  Float?   // Celsius
-  gpuMemoryUsed   Float?   // GB
-  gpuMemoryTotal  Float?   // GB
+  gpuUtilization Float? // 0-100%
+  gpuTemperature Float? // Celsius
+  gpuMemoryUsed  Float? // GB
+  gpuMemoryTotal Float? // GB
 
-  timestamp   DateTime @default(now())
+  timestamp DateTime @default(now())
 
   @@index([nodeId, timestamp])
 }
@@ -770,25 +780,25 @@ model Heartbeat {
 // token row is marked consumed and cannot be re-used. Unconsumed tokens
 // expire after `expiresAt` (default 7 days from creation).
 model InstallToken {
-  id                String      @id @default(cuid())
+  id    String @id @default(cuid())
   // URL-safe random string (~32 chars). The value the operator pastes
   // into the curl one-liner; never re-displayed in the portal after
   // creation, treat like a password.
-  token             String      @unique
+  token String @unique
 
   // Owner
-  nodeRunnerId      String
-  nodeRunner        NodeRunner  @relation(fields: [nodeRunnerId], references: [id], onDelete: Cascade)
+  nodeRunnerId String
+  nodeRunner   NodeRunner @relation(fields: [nodeRunnerId], references: [id], onDelete: Cascade)
 
   // Region operator pre-selected at mint time. Pre-populates Node.region
   // so the install script never has to prompt for it.
-  region            String?
+  region String?
 
   // Lifecycle. consumedByNodeId is the Node row created from this token.
-  consumedAt        DateTime?
-  consumedByNodeId  String?     @unique
-  expiresAt         DateTime
-  createdAt         DateTime    @default(now())
+  consumedAt       DateTime?
+  consumedByNodeId String?   @unique
+  expiresAt        DateTime
+  createdAt        DateTime  @default(now())
 
   @@index([nodeRunnerId])
   @@index([expiresAt])
@@ -799,20 +809,20 @@ model InstallToken {
 // ============================================================================
 
 model Job {
-  id            String    @id @default(cuid())
-  deploymentId  String    // External reference from TokenOS
+  id           String @id @default(cuid())
+  deploymentId String // External reference from TokenOS
 
   // Assignment
-  nodeId        String?
-  node          Node?     @relation(fields: [nodeId], references: [id])
+  nodeId String?
+  node   Node?   @relation(fields: [nodeId], references: [id])
 
   // Routing decision
-  market        Market?
-  ratePerHour   Float?
+  market      Market?
+  ratePerHour Float?
 
   // Job details
-  gpuTier       GpuTier
-  status        JobStatus @default(PENDING)
+  gpuTier GpuTier
+  status  JobStatus @default(PENDING)
 
   // Origin — whether this job came from internal TokenOS demand or an external market
   source               JobSource           @default(INTERNAL)
@@ -820,27 +830,27 @@ model Job {
   externalDeployment   ExternalDeployment? @relation(fields: [externalDeploymentId], references: [id])
 
   // Timing
-  requestedAt   DateTime  @default(now())
-  routedAt      DateTime?
-  startedAt     DateTime?
-  completedAt   DateTime?
+  requestedAt DateTime  @default(now())
+  routedAt    DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
 
   // Duration and earnings
   durationSeconds Int?
-  earnings        Float?    // Revenue from this job
-  cost            Float?    // Cost to execute (market rate or external fees)
-  profit          Float?    // earnings - cost
+  earnings        Float? // Revenue from this job
+  cost            Float? // Cost to execute (market rate or external fees)
+  profit          Float? // earnings - cost
 
   // Error tracking
-  errorMessage  String?
-  retryCount    Int       @default(0)
+  errorMessage String?
+  retryCount   Int     @default(0)
 
   // Timestamps
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  routingLog    RoutingLog?
+  routingLog RoutingLog?
 
   @@index([status])
   @@index([deploymentId])
@@ -856,31 +866,31 @@ model Job {
 // ============================================================================
 
 model RoutingLog {
-  id              String   @id @default(cuid())
-  jobId           String   @unique
-  job             Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id    String @id @default(cuid())
+  jobId String @unique
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   // Decision
-  selectedMarket  Market
-  selectedRate    Float    // Rate per hour that was selected
+  selectedMarket Market
+  selectedRate   Float // Rate per hour that was selected
 
   // Rates at decision time
-  internalRate    Float?
-  akashRate       Float?
-  ionetRate       Float?
-  vastaiRate      Float?
+  internalRate Float?
+  akashRate    Float?
+  ionetRate    Float?
+  vastaiRate   Float?
 
   // Yield floor
-  yieldFloor          Float
-  yieldFloorApplied   Boolean  @default(false)
+  yieldFloor        Float
+  yieldFloorApplied Boolean @default(false)
 
   // Reasoning
-  reason          String   // Human-readable explanation
+  reason String // Human-readable explanation
 
   // Decision metadata
-  decisionTimeMs  Int?     // How long the decision took
+  decisionTimeMs Int? // How long the decision took
 
-  timestamp       DateTime @default(now())
+  timestamp DateTime @default(now())
 
   @@index([selectedMarket])
   @@index([timestamp])
@@ -891,27 +901,27 @@ model RoutingLog {
 // ============================================================================
 
 model MarketRate {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   market      Market
   gpuTier     GpuTier
   ratePerHour Float
   ratePerDay  Float
-  available   Boolean  @default(true)
+  available   Boolean @default(true)
 
-  fetchedAt   DateTime @default(now())
+  fetchedAt DateTime @default(now())
 
   @@unique([market, gpuTier])
   @@index([market, gpuTier, fetchedAt])
 }
 
 model MarketRateHistory {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   market      Market
   gpuTier     GpuTier
   ratePerHour Float
   ratePerDay  Float
 
-  fetchedAt   DateTime @default(now())
+  fetchedAt DateTime @default(now())
 
   @@index([market, gpuTier, fetchedAt])
 }
@@ -921,16 +931,16 @@ model MarketRateHistory {
 // ============================================================================
 
 model Earning {
-  id            String   @id @default(cuid())
-  nodeId        String
-  node          Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  nodeId String
+  node   Node   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
 
-  date          DateTime @db.Date
-  market        Market
+  date   DateTime @db.Date
+  market Market
 
-  gpuSeconds    Int      @default(0)
-  earnings      Float    @default(0)
-  jobCount      Int      @default(0)
+  gpuSeconds Int   @default(0)
+  earnings   Float @default(0)
+  jobCount   Int   @default(0)
 
   // Cooling-off period. Earnings sit in "pending" state until availableAt
   // passes, then become withdrawable. Default 12h after creation gives
@@ -939,11 +949,11 @@ model Earning {
   // earlier (release on appeal) or later (extend hold during a dispute).
   // The settlement engine and "Withdraw now" path filter on availableAt
   // so locked funds physically can't leave the platform.
-  availableAt   DateTime @default(dbgenerated("CURRENT_TIMESTAMP + INTERVAL '12 hours'"))
+  availableAt DateTime @default(dbgenerated("CURRENT_TIMESTAMP + INTERVAL '12 hours'"))
 
   // Timestamps
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([nodeId, date, market])
   @@index([nodeId, date])
@@ -956,29 +966,29 @@ model Earning {
 // ============================================================================
 
 model Config {
-  key       String   @id
-  value     String
+  key   String @id
+  value String
 
   updatedAt DateTime @updatedAt
 }
 
 model YieldFloor {
-  gpuTier     GpuTier  @id
+  gpuTier     GpuTier @id
   ratePerHour Float
   ratePerDay  Float
 
-  updatedAt   DateTime @updatedAt
+  updatedAt DateTime @updatedAt
 }
 
 model MarketConfig {
-  market      Market   @id
-  enabled     Boolean  @default(true)
-  priority    Int      @default(0)  // Higher = preferred when rates equal
+  market   Market  @id
+  enabled  Boolean @default(true)
+  priority Int     @default(0) // Higher = preferred when rates equal
 
   // API configuration (stored encrypted in practice)
   apiEndpoint String?
 
-  updatedAt   DateTime @updatedAt
+  updatedAt DateTime @updatedAt
 }
 
 // ============================================================================
@@ -986,30 +996,30 @@ model MarketConfig {
 // ============================================================================
 
 model ExternalDeployment {
-  id              String                   @id @default(cuid())
-  nodeId          String
-  node            Node                     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  nodeId String
+  node   Node   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
 
-  market          Market                   // AKASH | IONET | VASTAI (never INTERNAL)
-  externalId      String                   // Deployment ID on the external platform
-  status          ExternalDeploymentStatus @default(PENDING)
+  market     Market // AKASH | IONET | VASTAI (never INTERNAL)
+  externalId String // Deployment ID on the external platform
+  status     ExternalDeploymentStatus @default(PENDING)
 
   // Economics
-  ratePerHour         Float                // Rate we expect to earn per hour
-  costAccumulated     Float                @default(0) // Running cost in USD
-  earningsAccumulated Float                @default(0) // Running earnings in USD
+  ratePerHour         Float // Rate we expect to earn per hour
+  costAccumulated     Float @default(0) // Running cost in USD
+  earningsAccumulated Float @default(0) // Running earnings in USD
 
   // Lifecycle
-  createdAt       DateTime                 @default(now())
-  terminatedAt    DateTime?
-  lastCheckedAt   DateTime                 @default(now())
+  createdAt     DateTime  @default(now())
+  terminatedAt  DateTime?
+  lastCheckedAt DateTime  @default(now())
 
   // Termination tracking
   terminationMode   ExternalTerminationMode?
   terminationReason String?
 
   // Relations — jobs that executed on this external deployment
-  jobs            Job[]
+  jobs Job[]
 
   @@index([nodeId])
   @@index([market])
@@ -1018,20 +1028,20 @@ model ExternalDeployment {
 }
 
 model OverflowConfig {
-  id                      String   @id @default("singleton")  // always "singleton"
-  enabled                 Boolean  @default(false)             // overflow off by default
-  simulationMode          Boolean  @default(true)              // simulated adapters by default until credentials arrive
+  id             String  @id @default("singleton") // always "singleton"
+  enabled        Boolean @default(false) // overflow off by default
+  simulationMode Boolean @default(true) // simulated adapters by default until credentials arrive
 
-  idleThresholdMinutes    Int      @default(10)                // how long idle before listing externally
-  demandThresholdPercent  Int      @default(80)                // % of nodes busy triggers delist
-  marginProtectionPercent Int      @default(15)                // minimum margin above cost floor
+  idleThresholdMinutes    Int @default(10) // how long idle before listing externally
+  demandThresholdPercent  Int @default(80) // % of nodes busy triggers delist
+  marginProtectionPercent Int @default(15) // minimum margin above cost floor
 
-  gracePeriodSeconds      Int      @default(300)               // SAFE termination grace window (5 min)
+  gracePeriodSeconds Int @default(300) // SAFE termination grace window (5 min)
 
   // Preferred market order (JSON array of Market enum values as strings)
-  preferredMarkets        String   @default("[\"AKASH\",\"IONET\",\"VASTAI\"]")
+  preferredMarkets String @default("[\"AKASH\",\"IONET\",\"VASTAI\"]")
 
-  updatedAt               DateTime @updatedAt
+  updatedAt DateTime @updatedAt
 }
 
 // ============================================================================
@@ -1039,18 +1049,18 @@ model OverflowConfig {
 // ============================================================================
 
 model Settlement {
-  id            String           @id @default(cuid())
-  nodeId        String
-  walletAddress String
-  amount        Float
-  currency      String           @default("USD")
-  status        SettlementStatus @default(PENDING)
-  periodStart   DateTime
-  periodEnd     DateTime
-  jobCount      Int
-  txHash        String?
-  txConfirmed   Boolean          @default(false)
-  errorMessage  String?
+  id               String           @id @default(cuid())
+  nodeId           String
+  walletAddress    String
+  amount           Float
+  currency         String           @default("USD")
+  status           SettlementStatus @default(PENDING)
+  periodStart      DateTime
+  periodEnd        DateTime
+  jobCount         Int
+  txHash           String?
+  txConfirmed      Boolean          @default(false)
+  errorMessage     String?
   // T3.2.1b: Stripe Transfer id when this settlement was paid via
   // Stripe Connect instead of Solana. One Stripe Transfer can settle
   // multiple Settlement rows in the same withdraw-now batch (per-node
@@ -1060,16 +1070,16 @@ model Settlement {
   stripeTransferId String?
 
   // Retry handling
-  retryCount    Int              @default(0)
-  maxRetries    Int              @default(3)
-  lastRetryAt   DateTime?
-  nextRetryAt   DateTime?
+  retryCount  Int       @default(0)
+  maxRetries  Int       @default(3)
+  lastRetryAt DateTime?
+  nextRetryAt DateTime?
 
-  createdAt     DateTime         @default(now())
-  processedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
 
-  node          Node             @relation(fields: [nodeId], references: [id])
-  items         SettlementItem[]
+  node  Node             @relation(fields: [nodeId], references: [id])
+  items SettlementItem[]
 
   @@index([nodeId])
   @@index([status])
@@ -1077,27 +1087,27 @@ model Settlement {
 }
 
 model SettlementItem {
-  id           String     @id @default(cuid())
+  id           String @id @default(cuid())
   settlementId String
   jobId        String
   amount       Float
 
-  settlement   Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  settlement Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
 
   @@index([settlementId])
 }
 
 model SettlementConfig {
-  id              String   @id @default("default")
-  period          String   @default("WEEKLY")   // DAILY, WEEKLY, MONTHLY
-  minimumPayout   Float    @default(10)
-  dayOfWeek       Int?     @default(1)          // 0=Sunday, 1=Monday, etc.
-  dayOfMonth      Int?                          // 1-28 for monthly
-  hour            Int      @default(9)          // Hour of day to run (0-23)
+  id            String @id @default("default")
+  period        String @default("WEEKLY") // DAILY, WEEKLY, MONTHLY
+  minimumPayout Float  @default(10)
+  dayOfWeek     Int?   @default(1) // 0=Sunday, 1=Monday, etc.
+  dayOfMonth    Int? // 1-28 for monthly
+  hour          Int    @default(9) // Hour of day to run (0-23)
 
   // Auto-scheduling
-  autoSchedule    Boolean  @default(false)      // Enable automatic settlements
-  lastScheduledAt DateTime?                     // Last time scheduler ran
+  autoSchedule    Boolean   @default(false) // Enable automatic settlements
+  lastScheduledAt DateTime? // Last time scheduler ran
 
   // Solana config
   solanaRpcUrl    String?
@@ -1121,7 +1131,7 @@ model InfrastructureCost {
   periodEnd   DateTime
   createdAt   DateTime @default(now())
 
-  node        Node?    @relation(fields: [nodeId], references: [id])
+  node Node? @relation(fields: [nodeId], references: [id])
 
   @@index([nodeId])
   @@index([category])
@@ -1140,10 +1150,10 @@ enum SettlementStatus {
 // ============================================================================
 
 model Payment {
-  id            String        @id @default(cuid())
-  settlementId  String
-  amount        Float
-  currency      String        @default("USDC")
+  id               String @id @default(cuid())
+  settlementId     String
+  amount           Float
+  currency         String @default("USDC")
   recipientAddress String
 
   // Payment execution
@@ -1153,17 +1163,17 @@ model Payment {
   confirmations Int           @default(0)
 
   // Dev mode tracking
-  isDevMode     Boolean       @default(false)
+  isDevMode Boolean @default(false)
 
   // Error handling
-  errorMessage  String?
-  retryCount    Int           @default(0)
-  maxRetries    Int           @default(3)
+  errorMessage String?
+  retryCount   Int     @default(0)
+  maxRetries   Int     @default(3)
 
   // Timestamps
-  createdAt     DateTime      @default(now())
-  processedAt   DateTime?
-  confirmedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+  confirmedAt DateTime?
 
   @@index([settlementId])
   @@index([status])
@@ -1183,18 +1193,18 @@ enum PaymentStatus {
 // ============================================================================
 
 model ProvisionJob {
-  id            String          @id @default(cuid())
-  status        ProvisionStatus @default(PENDING)
+  id     String          @id @default(cuid())
+  status ProvisionStatus @default(PENDING)
 
   // Connection details (credentials NOT stored - only in memory during job)
-  host          String
-  port          Int             @default(22)
-  username      String
+  host     String
+  port     Int    @default(22)
+  username String
 
   // Node configuration
-  gpuTier       GpuTier
-  nodeName      String?
-  region        String?
+  gpuTier  GpuTier
+  nodeName String?
+  region   String?
 
   // Custom GPU info (used when gpuTier = OTHER)
   customGpuModel    String?
@@ -1202,23 +1212,23 @@ model ProvisionJob {
   customRatePerDay  Float?
 
   // API key for the provisioned agent
-  apiKey        String?         @unique
+  apiKey String? @unique
 
   // Progress tracking
-  currentStep   Int             @default(0)
-  totalSteps    Int             @default(7)
+  currentStep   Int     @default(0)
+  totalSteps    Int     @default(7)
   currentAction String?
-  logs          Json            @default("[]")
+  logs          Json    @default("[]")
 
   // Result
-  nodeId        String?         @unique
-  node          Node?           @relation(fields: [nodeId], references: [id])
-  error         String?
+  nodeId String? @unique
+  node   Node?   @relation(fields: [nodeId], references: [id])
+  error  String?
 
   // Timestamps
-  createdAt     DateTime        @default(now())
-  startedAt     DateTime?
-  completedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
 
   @@index([status])
   @@index([createdAt])
@@ -1244,16 +1254,16 @@ enum ProvisionStatus {
 
 model AuditLog {
   id            String   @id @default(cuid())
-  entityType    String   // e.g., "Investment", "Settlement", "Payment"
-  entityId      String   // ID of the entity being audited
-  action        String   // e.g., "CREATE", "UPDATE", "DELETE", "STATUS_CHANGE"
-  previousValue String?  @db.Text  // JSON of previous state
-  newValue      String?  @db.Text  // JSON of new state
-  actor         String?  // Who made the change (userId, system, etc.)
+  entityType    String // e.g., "Investment", "Settlement", "Payment"
+  entityId      String // ID of the entity being audited
+  action        String // e.g., "CREATE", "UPDATE", "DELETE", "STATUS_CHANGE"
+  previousValue String?  @db.Text // JSON of previous state
+  newValue      String?  @db.Text // JSON of new state
+  actor         String? // Who made the change (userId, system, etc.)
   actorType     String   @default("SYSTEM") // "USER", "SYSTEM", "API"
-  ipAddress     String?  // IP address of the actor
-  reason        String?  // Optional reason for the change
-  metadata      Json?    // Additional context
+  ipAddress     String? // IP address of the actor
+  reason        String? // Optional reason for the change
+  metadata      Json? // Additional context
   createdAt     DateTime @default(now())
 
   @@index([entityType, entityId])
@@ -1266,11 +1276,11 @@ model AuditLog {
 // ============================================================================
 
 model IdempotencyKey {
-  id           String   @id  // The idempotency key from request header (IS the primary key)
-  endpoint     String   // The endpoint this key was used for
-  requestHash  String   // Hash of the request body for verification
-  statusCode   Int?     // HTTP status code of the response
-  responseBody String?  @db.Text  // Cached response JSON
+  id           String   @id // The idempotency key from request header (IS the primary key)
+  endpoint     String // The endpoint this key was used for
+  requestHash  String // Hash of the request body for verification
+  statusCode   Int? // HTTP status code of the response
+  responseBody String?  @db.Text // Cached response JSON
   expiresAt    DateTime // When this key expires (24 hours)
   createdAt    DateTime @default(now())
 
@@ -1282,19 +1292,19 @@ model IdempotencyKey {
 // ============================================================================
 
 model PendingReconciliation {
-  id               String              @id @default(cuid())
-  txHash           String              @unique  // Solana transaction hash
+  id               String               @id @default(cuid())
+  txHash           String               @unique // Solana transaction hash
   settlementId     String?
   paymentId        String?
   expectedAmount   Float
   recipientAddress String
   status           ReconciliationStatus @default(PENDING)
-  attempts         Int                 @default(0)
-  maxAttempts      Int                 @default(10)
+  attempts         Int                  @default(0)
+  maxAttempts      Int                  @default(10)
   lastAttemptAt    DateTime?
   nextAttemptAt    DateTime?
   errorMessage     String?
-  createdAt        DateTime            @default(now())
+  createdAt        DateTime             @default(now())
   resolvedAt       DateTime?
 
   @@index([status])
@@ -1303,11 +1313,11 @@ model PendingReconciliation {
 }
 
 enum ReconciliationStatus {
-  PENDING    // Waiting to be verified
-  VERIFIED   // Transaction confirmed on-chain, DB updated
-  FAILED     // Transaction failed or not found
-  NOT_FOUND  // Transaction not found after max attempts
-  MANUAL     // Requires manual intervention
+  PENDING // Waiting to be verified
+  VERIFIED // Transaction confirmed on-chain, DB updated
+  FAILED // Transaction failed or not found
+  NOT_FOUND // Transaction not found after max attempts
+  MANUAL // Requires manual intervention
 }
 
 // ============================================================================
@@ -1315,21 +1325,21 @@ enum ReconciliationStatus {
 // ============================================================================
 
 model ComputeRequest {
-  id              String               @id @default(cuid())
-  userId          String
-  user            User                 @relation(fields: [userId], references: [id])
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
   // What they need
-  gpuTier         GpuTier
-  gpuCount        Int                  @default(1)
-  durationDays    Int                  @default(30)
-  purpose         String?              // What they'll use it for
+  gpuTier        GpuTier
+  gpuCount       Int     @default(1)
+  durationDays   Int     @default(30)
+  purpose        String? // What they'll use it for
   // M4.4: optional region constraint. When set, the allocator hard-
   // filters candidate nodes to Node.region === requiredRegion. Null =
   // "Any" (default), meaning region is ignored. Free-form string to
   // match Node.region; common values: us-east-1, us-west-2, eu-west-1,
   // ap-south-1.
-  requiredRegion  String?
+  requiredRegion String?
 
   // M5.10c: soft operator preference. When the buyer clicks "Rent
   // from this operator" on the marketplace, this is set to that
@@ -1340,20 +1350,20 @@ model ComputeRequest {
   preferredOperatorId String?
 
   // Pricing
-  ratePerDay      Float                // Rate at time of request
-  totalCost       Float                // gpuCount × ratePerDay × durationDays
+  ratePerDay Float // Rate at time of request
+  totalCost  Float // gpuCount × ratePerDay × durationDays
 
   // Payment
-  txHash          String?              // Solana transaction hash (or INTERNAL:<id> for balance spend)
-  txConfirmed     Boolean              @default(false)
-  currency        String               @default("USD")
+  txHash               String? // Solana transaction hash (or INTERNAL:<id> for balance spend)
+  txConfirmed          Boolean       @default(false)
+  currency             String        @default("USD")
   // Payment source. USDC = real Solana transfer (txHash is the real
   // on-chain signature). INTERNAL_BALANCE = paid from operator
   // platform balance — txHash is INTERNAL:<computeRequestId> and a
   // matching InternalSpend row records the debit. BUYER_BALANCE =
   // drawn from pre-loaded buyer credit — txHash is BAL:<computeRequestId>
   // and balanceTransactionId links to the SPEND_RENTAL ledger entry.
-  paymentSource   PaymentSource        @default(USDC)
+  paymentSource        PaymentSource @default(USDC)
   // Wave 3 (AITECH topup): link to the BalanceTransaction row when
   // paymentSource = BUYER_BALANCE. Used by the refund path to credit
   // unused minutes back to the same buyer balance.
@@ -1364,7 +1374,7 @@ model ComputeRequest {
   // PENDING/APPROVED rows). When MIXED or TRAINING, the allocator
   // hard-filters out CONSUMER / RTX_4090 / RTX_3090 nodes — those
   // tiers are inference-only.
-  workloadType    WorkloadType         @default(MIXED)
+  workloadType WorkloadType @default(MIXED)
 
   // T5e + friend-feedback 2026-06-02: dedicated tenancy preference for
   // variance-sensitive workloads (benchmarks, reproducible inference
@@ -1374,7 +1384,7 @@ model ComputeRequest {
   // Lambda, RunPod SECURE. False is the default — most rentals don't
   // care about co-tenant variance and benefit from cheaper COMMUNITY
   // tier capacity.
-  preferDedicatedTier Boolean         @default(false)
+  preferDedicatedTier Boolean @default(false)
 
   // T7: when true, allocator routes ONLY to TEE-enabled suppliers
   // (VoltageGPU TDX H100/H200/B200, Phala TDX+SEV-SNP H200, io.net
@@ -1386,25 +1396,25 @@ model ComputeRequest {
   // reason rather than silently routing to a non-confidential
   // supplier (which would let an unsuspecting tester run on
   // unattested hardware).
-  preferConfidential Boolean          @default(false)
+  preferConfidential Boolean @default(false)
 
   // Status
-  status          ComputeRequestStatus @default(PENDING)
-  adminNote       String?              // Admin's internal note
+  status    ComputeRequestStatus @default(PENDING)
+  adminNote String? // Admin's internal note
 
   // Allocation — which internal nodes are assigned
-  allocatedNodeIds String[]            // Array of Node IDs assigned
-  allocationMethod String?             // 'auto' or 'manual'
+  allocatedNodeIds String[] // Array of Node IDs assigned
+  allocationMethod String? // 'auto' or 'manual'
 
   // SSH access details (filled when allocated)
-  sshHost         String?
-  sshPort         Int?
-  sshUsername      String?
+  sshHost     String?
+  sshPort     Int?
+  sshUsername String?
   // sshPassword stays for legacy rentals provisioned before M2 ephemeral
   // sessions. New rentals must use sshSessionToken below; the password
   // column is kept nullable so existing rows still load. Will be dropped
   // once all pre-M2 rentals are completed or migrated.
-  sshPassword     String?
+  sshPassword String?
 
   // M2: ephemeral SSH session token. Issued at allocation, rotated on
   // session end or expiry. Replaces persistent sshPassword for new rentals.
@@ -1421,28 +1431,28 @@ model ComputeRequest {
   // sshPubKey is the public key written into the rental user's
   // authorized_keys. May be supplied by the buyer (M6 BYO key option)
   // or generated by the platform; null until provisioning starts.
-  sshSessionStatus    SshSessionStatus  @default(PENDING)
-  sshPubKey           String?
-  sshProvisionedAt    DateTime?
-  sshTerminatedAt     DateTime?
-  sshErrorMessage     String?
+  sshSessionStatus SshSessionStatus @default(PENDING)
+  sshPubKey        String?
+  sshProvisionedAt DateTime?
+  sshTerminatedAt  DateTime?
+  sshErrorMessage  String?
 
   // M2: per-minute billing accumulators. Heartbeat meter rolls minutes into
   // minutesUsed; accruedCost = minutesUsed * ratePerMinute, recomputed on
   // each heartbeat so the buyer dashboard ticker is honest.
-  minutesUsed     Int                  @default(0)
-  ratePerMinute   Float?
-  accruedCost     Float                @default(0)
+  minutesUsed   Int    @default(0)
+  ratePerMinute Float?
+  accruedCost   Float  @default(0)
 
   // M2: auto-allocator eligibility flags. The rules engine writes flags like
   // "FIRST_TIME_OVER_CEILING" or "DAILY_SPEND_EXCEEDED" so admins can read
   // the hold reason from the Needs Review queue without rerunning the rules.
-  eligibilityFlags String[]            @default([])
+  eligibilityFlags String[] @default([])
 
   // M2: optional template the buyer launched. Pre-warmed on idle nodes so
   // launch-to-Jupyter is sub-30s on warm nodes.
-  templateId      String?
-  template        Template?            @relation(fields: [templateId], references: [id])
+  templateId String?
+  template   Template? @relation(fields: [templateId], references: [id])
 
   // M3: pricing tier for the rental.
   //   ON_DEMAND (default) — full price, never preempted, no commitment
@@ -1452,10 +1462,10 @@ model ComputeRequest {
   //   RESERVED            — buyer commits 7/30/90 days, gets 10% discount,
   //                         exempt from preemption, early-terminate refund
   //                         covers only minutes used (not remaining commit)
-  tier             ComputeRequestTier  @default(ON_DEMAND)
+  tier           ComputeRequestTier @default(ON_DEMAND)
   // M3: required for RESERVED tier; null for ON_DEMAND/SPOT.
   // Mirrors durationDays for RESERVED but is the thing buyer locked in.
-  commitmentDays   Int?
+  commitmentDays Int?
 
   // M3: checkpoint workspace snapshot. Single checkpoint per rental
   // for now (re-triggering overwrites). checkpointBucketUrl is set
@@ -1469,9 +1479,9 @@ model ComputeRequest {
   //   UPLOADING  - agent is packaging + uploading to S3
   //   READY      - upload complete, restorable
   //   FAILED     - last attempt errored (checkpointError has detail)
-  checkpointBucketUrl  String?
-  lastCheckpointId     String?
-  checkpointStatus     CheckpointStatus @default(NONE)
+  checkpointBucketUrl   String?
+  lastCheckpointId      String?
+  checkpointStatus      CheckpointStatus @default(NONE)
   checkpointRequestedAt DateTime?
   checkpointReadyAt     DateTime?
   checkpointError       String?
@@ -1485,7 +1495,7 @@ model ComputeRequest {
   restoreAppliedAt      DateTime?
 
   // M3: ratings (one per rental, post-completion).
-  rating          Rating?
+  rating Rating?
 
   // M5.8 / D3: estimated CO2 grams emitted by this rental.
   // Computed by the per-minute meter as
@@ -1495,22 +1505,22 @@ model ComputeRequest {
   // packages/core/src/carbon-estimator.ts. Honestly approximate,
   // documented inline. Surfaces on the buyer dashboard and monthly
   // billing aggregate; never a paid offset claim.
-  co2Grams        Float?
+  co2Grams Float?
 
   // M4.7: multi-node cluster (gpuCount > 1). Cluster row owns the
   // WireGuard subnet and master-node pointer; the rental is one
   // logical entity even though the allocator picks N independent
   // nodes underneath. Null on single-GPU rentals.
-  clusterId        String?              @unique
-  cluster          Cluster?             @relation(fields: [clusterId], references: [id])
+  clusterId String?  @unique
+  cluster   Cluster? @relation(fields: [clusterId], references: [id])
 
   // Timestamps
-  requestedAt     DateTime             @default(now())
-  approvedAt      DateTime?
-  allocatedAt     DateTime?
-  activatedAt     DateTime?
-  expiresAt       DateTime?            // activatedAt + durationDays
-  completedAt     DateTime?
+  requestedAt DateTime  @default(now())
+  approvedAt  DateTime?
+  allocatedAt DateTime?
+  activatedAt DateTime?
+  expiresAt   DateTime? // activatedAt + durationDays
+  completedAt DateTime?
 
   @@index([userId])
   @@index([status])
@@ -1527,40 +1537,40 @@ model ComputeRequest {
 // status so the allocator's atomic transaction can roll back if any
 // of the N node assignments fail mid-flight.
 model Cluster {
-  id               String        @id @default(cuid())
+  id              String          @id @default(cuid())
   // Unique back-pointer so the relation works both directions.
-  computeRequest   ComputeRequest?
-  masterNodeId     String?
-  status           ClusterStatus @default(PROVISIONING)
+  computeRequest  ComputeRequest?
+  masterNodeId    String?
+  status          ClusterStatus   @default(PROVISIONING)
   // A /24 subnet inside 10.42.0.0/16. Each node gets a /30 carved
   // from this subnet so peers route on the WireGuard mesh.
-  wireguardSubnet  String
+  wireguardSubnet String
   // Optional: explanation of why the cluster ended up FAILED or was
   // TERMINATED. Surfaced in admin's Compute detail view.
-  statusReason     String?
+  statusReason    String?
 
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
 }
 
 enum ClusterStatus {
-  PROVISIONING  // Allocator is wiring nodes + WireGuard configs
-  READY         // All nodes have come online with WireGuard peers
-  FAILED        // One or more nodes failed to come up; rolled back
-  TERMINATED    // Rental ended normally; nodes returned to idle pool
+  PROVISIONING // Allocator is wiring nodes + WireGuard configs
+  READY // All nodes have come online with WireGuard peers
+  FAILED // One or more nodes failed to come up; rolled back
+  TERMINATED // Rental ended normally; nodes returned to idle pool
 }
 
 enum ComputeRequestStatus {
-  PENDING        // Buyer submitted, waiting for admin review
-  APPROVED       // Admin approved, waiting for allocation
-  ALLOCATED      // Nodes assigned, SSH details ready
-  ACTIVE         // Buyer has access, compute is running
-  COMPLETED      // Lease expired or manually completed
-  CANCELLED      // Buyer cancelled
-  REJECTED       // Admin rejected
-  WAITLISTED     // M2: held by eligibility rules; admin must approve before allocation
+  PENDING // Buyer submitted, waiting for admin review
+  APPROVED // Admin approved, waiting for allocation
+  ALLOCATED // Nodes assigned, SSH details ready
+  ACTIVE // Buyer has access, compute is running
+  COMPLETED // Lease expired or manually completed
+  CANCELLED // Buyer cancelled
+  REJECTED // Admin rejected
+  WAITLISTED // M2: held by eligibility rules; admin must approve before allocation
   // T5b: allocator fell through to a third-party provider (Lambda
   // Labs). ExternalRental row carries the provider instance id +
   // ephemeral SSH credentials. The lambda-poll worker flips the
@@ -1575,9 +1585,9 @@ enum ComputeRequestStatus {
 // (preferring matching tier on operator inventory); the preemption worker
 // uses tier as a hard rule (SPOT preemptible, RESERVED exempt).
 enum ComputeRequestTier {
-  ON_DEMAND   // default; full price, no preemption, no commitment
-  SPOT        // discounted, preemptible with 90s notice
-  RESERVED    // commitment-based, preemption-exempt
+  ON_DEMAND // default; full price, no preemption, no commitment
+  SPOT // discounted, preemptible with 90s notice
+  RESERVED // commitment-based, preemption-exempt
 }
 
 // M3: checkpoint workspace lifecycle. See ComputeRequest.checkpointStatus
@@ -1613,24 +1623,24 @@ enum SshSessionStatus {
 // the operator's reputation score or appears on their public profile.
 
 model Rating {
-  id                String                 @id @default(cuid())
-  computeRequestId  String                 @unique
-  computeRequest    ComputeRequest         @relation(fields: [computeRequestId], references: [id])
+  id               String         @id @default(cuid())
+  computeRequestId String         @unique
+  computeRequest   ComputeRequest @relation(fields: [computeRequestId], references: [id])
 
-  buyerId           String
-  buyer             User                   @relation(fields: [buyerId], references: [id])
+  buyerId String
+  buyer   User   @relation(fields: [buyerId], references: [id])
 
-  nodeRunnerId      String
-  nodeRunner        NodeRunner             @relation(fields: [nodeRunnerId], references: [id])
+  nodeRunnerId String
+  nodeRunner   NodeRunner @relation(fields: [nodeRunnerId], references: [id])
 
-  score             Int                    // 1-5 stars (validated at API)
-  comment           String?                // optional, ≤500 chars (validated at API)
-  moderationStatus  RatingModerationStatus @default(PENDING)
-  moderationNote    String?                // admin's note when rejecting
+  score            Int // 1-5 stars (validated at API)
+  comment          String? // optional, ≤500 chars (validated at API)
+  moderationStatus RatingModerationStatus @default(PENDING)
+  moderationNote   String? // admin's note when rejecting
 
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  moderatedAt       DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  moderatedAt DateTime?
 
   @@index([nodeRunnerId, moderationStatus])
   @@index([buyerId])
@@ -1638,9 +1648,9 @@ model Rating {
 }
 
 enum RatingModerationStatus {
-  PENDING    // default; awaiting admin review
-  APPROVED   // visible on operator profile, counted in reputation score
-  REJECTED   // hidden, NOT counted in reputation score (kept for audit)
+  PENDING // default; awaiting admin review
+  APPROVED // visible on operator profile, counted in reputation score
+  REJECTED // hidden, NOT counted in reputation score (kept for audit)
 }
 
 // ============================================================================
@@ -1652,21 +1662,21 @@ enum RatingModerationStatus {
 // ComputeRequest.templateId.
 
 model Template {
-  id              String    @id @default(cuid())
-  slug            String    @unique // e.g. "pytorch-cuda12.1-jupyter"
-  name            String              // human-readable label shown in the picker
-  description     String?
-  dockerImage     String              // e.g. "pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime"
-  defaultPort     Int?                // primary service port (Jupyter, Gradio, etc.)
-  exposedPorts    Int[]               @default([])
-  envVars         Json?               // optional default env vars for this template
-  startupCommand  String?             // command run inside the container on launch
-  iconUrl         String?
-  category        String?             // "training" | "inference" | "blank" | etc.
-  popularity      Int       @default(0) // increments on each launch; drives prewarm ranking
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id             String   @id @default(cuid())
+  slug           String   @unique // e.g. "pytorch-cuda12.1-jupyter"
+  name           String // human-readable label shown in the picker
+  description    String?
+  dockerImage    String // e.g. "pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime"
+  defaultPort    Int? // primary service port (Jupyter, Gradio, etc.)
+  exposedPorts   Int[]    @default([])
+  envVars        Json? // optional default env vars for this template
+  startupCommand String? // command run inside the container on launch
+  iconUrl        String?
+  category       String? // "training" | "inference" | "blank" | etc.
+  popularity     Int      @default(0) // increments on each launch; drives prewarm ranking
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   computeRequests ComputeRequest[]
 
@@ -1680,36 +1690,36 @@ model Template {
 // ============================================================================
 
 model WithdrawalRequest {
-  id              String             @id @default(cuid())
-  nodeRunnerId    String
-  nodeRunner      NodeRunner         @relation(fields: [nodeRunnerId], references: [id])
+  id           String     @id @default(cuid())
+  nodeRunnerId String
+  nodeRunner   NodeRunner @relation(fields: [nodeRunnerId], references: [id])
 
-  amount          Float              // Amount in USD to withdraw
+  amount        Float // Amount in USD to withdraw
   // For SOLANA payouts: Solana wallet to send USDC to.
   // For STRIPE_CONNECT payouts: nullable (NodeRunner.stripeConnectAccountId
   // is the destination; this field is left blank to avoid two sources of truth).
-  walletAddress   String
-  status          WithdrawalStatus   @default(PENDING)
+  walletAddress String
+  status        WithdrawalStatus @default(PENDING)
 
   // T3.2: payout rail. Defaults to SOLANA so existing operators (who
   // never set payoutMethod) keep their current behavior. New operators
   // who connected Stripe can pick STRIPE_CONNECT at withdrawal time.
-  payoutMethod    WithdrawalPayoutMethod @default(SOLANA)
+  payoutMethod WithdrawalPayoutMethod @default(SOLANA)
 
   // Admin processing
-  adminNote       String?
-  txHash          String?            // Solana TX hash when transferred (SOLANA payouts)
+  adminNote        String?
+  txHash           String? // Solana TX hash when transferred (SOLANA payouts)
   // T3.2: Stripe transfer id when payoutMethod=STRIPE_CONNECT.
   // Format: tr_xxxxxx. Settles to the operator's connected Stripe
   // account, then routed to their bank on Stripe's payout cadence.
   stripeTransferId String?
-  processedBy     String?            // Admin user ID
+  processedBy      String? // Admin user ID
 
   // Timestamps
-  requestedAt     DateTime           @default(now())
-  approvedAt      DateTime?
-  processedAt     DateTime?          // When the transfer was made
-  rejectedAt      DateTime?
+  requestedAt DateTime  @default(now())
+  approvedAt  DateTime?
+  processedAt DateTime? // When the transfer was made
+  rejectedAt  DateTime?
 
   @@index([nodeRunnerId])
   @@index([status])
@@ -1717,11 +1727,11 @@ model WithdrawalRequest {
 }
 
 enum WithdrawalStatus {
-  PENDING        // Node runner submitted, waiting for admin
-  APPROVED       // Admin approved, waiting for transfer
-  PROCESSING     // Transfer in progress
-  COMPLETED      // Funds transferred, TX hash recorded
-  REJECTED       // Admin rejected
+  PENDING // Node runner submitted, waiting for admin
+  APPROVED // Admin approved, waiting for transfer
+  PROCESSING // Transfer in progress
+  COMPLETED // Funds transferred, TX hash recorded
+  REJECTED // Admin rejected
 }
 
 // T3.2: which rail processes the operator's payout. SOLANA = USDC
@@ -1744,18 +1754,18 @@ enum WithdrawalPayoutMethod {
 // as a BalanceTransaction so the ledger is fully reconstructable.
 
 model BuyerBalance {
-  id              String   @id @default(cuid())
-  userId          String   @unique
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  balanceUsd      Float    @default(0)  // current spendable balance
-  totalToppedUp   Float    @default(0)  // lifetime topup sum (audit)
-  totalSpent      Float    @default(0)  // lifetime spend on rentals
-  totalRefunded   Float    @default(0)  // lifetime refunds credited back
-  totalWithdrawn  Float    @default(0)  // lifetime withdrawal sum (audit)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balanceUsd     Float    @default(0) // current spendable balance
+  totalToppedUp  Float    @default(0) // lifetime topup sum (audit)
+  totalSpent     Float    @default(0) // lifetime spend on rentals
+  totalRefunded  Float    @default(0) // lifetime refunds credited back
+  totalWithdrawn Float    @default(0) // lifetime withdrawal sum (audit)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  transactions    BalanceTransaction[]
+  transactions BalanceTransaction[]
 }
 
 // Buyer-initiated withdrawal of unused prepaid balance back to their
@@ -1773,13 +1783,13 @@ model BuyerBalance {
 // USDC send returns. Future versions may move processing into a
 // dedicated worker if buyer volume calls for it.
 model BuyerWithdrawal {
-  id            String                  @id @default(cuid())
-  userId        String
-  user          User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  amountUsd     Float
-  method        BuyerWithdrawalMethod   @default(SOLANA)
-  status        BuyerWithdrawalStatus   @default(PENDING)
+  amountUsd Float
+  method    BuyerWithdrawalMethod @default(SOLANA)
+  status    BuyerWithdrawalStatus @default(PENDING)
 
   // Snapshot of the destination at request time, even if the user later
   // changes their User.walletAddress. Audit trail for "where did the
@@ -1787,33 +1797,33 @@ model BuyerWithdrawal {
   walletAddress String
 
   // On-chain Solana signature once the USDC send returns SUCCESS.
-  txHash        String?
+  txHash String?
 
   // Human-readable error if processing failed.
-  error         String?
+  error String?
 
-  requestedAt   DateTime  @default(now())
-  processedAt   DateTime?
+  requestedAt DateTime  @default(now())
+  processedAt DateTime?
 
   @@index([userId, requestedAt])
   @@index([status])
 }
 
 enum BuyerWithdrawalMethod {
-  SOLANA  // USDC sent to user.walletAddress on Solana
+  SOLANA // USDC sent to user.walletAddress on Solana
 }
 
 enum BuyerWithdrawalStatus {
-  PENDING      // accepted, not yet sent
-  PROCESSING   // sending now
-  COMPLETED    // on-chain confirmation received
-  FAILED       // send failed; balance was refunded
+  PENDING // accepted, not yet sent
+  PROCESSING // sending now
+  COMPLETED // on-chain confirmation received
+  FAILED // send failed; balance was refunded
 }
 
 model BalanceTransaction {
-  id           String          @id @default(cuid())
+  id           String        @id @default(cuid())
   balanceId    String
-  balance      BuyerBalance    @relation(fields: [balanceId], references: [id], onDelete: Cascade)
+  balance      BuyerBalance  @relation(fields: [balanceId], references: [id], onDelete: Cascade)
   type         BalanceTxType
   // Signed amount: positive = credit, negative = debit. Denominated USD.
   amountUsd    Float
@@ -1821,24 +1831,24 @@ model BalanceTransaction {
   // Referenced object id: ComputeRequest.id for SPEND/REFUND_RENTAL,
   // Solana txHash for TOPUP_SOLANA, NULL for admin-credit promos.
   referenceId  String?
-  balanceAfter Float           // ledger snapshot after this tx
-  createdAt    DateTime        @default(now())
+  balanceAfter Float // ledger snapshot after this tx
+  createdAt    DateTime      @default(now())
 
-  @@unique([type, referenceId])  // prevents double-credit of the same txHash
+  @@unique([type, referenceId]) // prevents double-credit of the same txHash
   @@index([balanceId, createdAt])
 }
 
 enum BalanceTxType {
-  TOPUP_SOLANA       // user paid SOL/USDC to admin wallet, credited
-  TOPUP_STRIPE       // fiat onramp via Stripe Hosted Checkout
-  TOPUP_ADMIN        // manual admin credit (promo, support refund)
-  SPEND_RENTAL       // rental cost deducted at request time
-  SPEND_DEPLOYMENT   // operator paid for a node deployment from balance
-  SPEND_INFERENCE    // per-call inference debit (Track 5 / E1 metering)
-  REFUND_RENTAL      // partial refund from early-stop or unused minutes
-  REFUND_DEPLOYMENT  // deployment cancelled or rejected — full credit back
-  REFUND_INFERENCE   // failed mid-stream / disputed inference call refund
-  REFUND_FAILED      // allocator couldn't match — full credit back
+  TOPUP_SOLANA // user paid SOL/USDC to admin wallet, credited
+  TOPUP_STRIPE // fiat onramp via Stripe Hosted Checkout
+  TOPUP_ADMIN // manual admin credit (promo, support refund)
+  SPEND_RENTAL // rental cost deducted at request time
+  SPEND_DEPLOYMENT // operator paid for a node deployment from balance
+  SPEND_INFERENCE // per-call inference debit (Track 5 / E1 metering)
+  REFUND_RENTAL // partial refund from early-stop or unused minutes
+  REFUND_DEPLOYMENT // deployment cancelled or rejected — full credit back
+  REFUND_INFERENCE // failed mid-stream / disputed inference call refund
+  REFUND_FAILED // allocator couldn't match — full credit back
   // Track 5 / M0.2: 3-way revenue split destinations. Every SPEND_*
   // debit produces three credit entries: COST_REIMBURSEMENT to the
   // operator (their cost-of-service slice — kept distinct from their
@@ -1886,7 +1896,7 @@ model ModelPricing {
   // Marketplace) ships, this either stays as the canonical pricing
   // source or is folded into Model.pricingId — leaving open both
   // paths for now.
-  modelId                    String   @id
+  modelId                     String   @id
   // Both prices stored as USD per ONE MILLION tokens to match
   // industry-standard pricing units (matches OpenAI's published
   // pricing format). The meter divides by 1e6 when computing per-call
@@ -1896,44 +1906,44 @@ model ModelPricing {
   // Active flag flips off when a model is retired / deprecated.
   // Meter rejects calls against inactive models so we never bill at
   // an old rate.
-  isActive                   Boolean  @default(true)
+  isActive                    Boolean  @default(true)
   // Free-form metadata — provider, baseModel, vendor link, etc. JSON
   // so the schema doesn't churn each time we add a new field.
-  metadata                   Json?
-  createdAt                  DateTime @default(now())
-  updatedAt                  DateTime @updatedAt
+  metadata                    Json?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
 }
 
 model TokenUsage {
-  id              String   @id @default(cuid())
+  id           String   @id @default(cuid())
   // Foreign key to ApiKey is logical only (Prisma relation omitted
   // to keep the inference hot path schema-light); join via raw ID
   // when needed.
-  apiKeyId        String
+  apiKeyId     String
   // Denormalized for fast user-scoped queries (dashboard, invoice
   // aggregator) without a join.
-  userId          String
+  userId       String
   // Optional trace id from the inference router so a single call
   // can be correlated across logs + ledger + invoice. In 3.A test
   // mode this is null; in 3.B it's the InferenceRequest.id.
-  requestId       String?
+  requestId    String?
   // The modelId from ModelPricing the meter charged against.
-  model           String
+  model        String
   // Raw token counts emitted by the tokenizer for this call.
-  inputTokens     Int
-  outputTokens   Int
+  inputTokens  Int
+  outputTokens Int
   // Total cost charged to the buyer in USD. Computed by the meter
   // as (inputTokens * inputPrice + outputTokens * outputPrice) / 1e6.
   // Stored even though it's derivable so per-day rollups don't have
   // to re-multiply.
-  costUsd         Float
+  costUsd      Float
   // Operator who served the call (the inference worker's nodeRunner).
   // Null in 3.A test mode — only populated once E2 ships the router.
-  operatorId      String?
+  operatorId   String?
   // Optional latency in ms (request start to last token) for
   // observability + future SLO tracking. Null when not measured.
-  latencyMs       Int?
-  createdAt       DateTime @default(now())
+  latencyMs    Int?
+  createdAt    DateTime @default(now())
 
   // Hot path indexes for the aggregator + dashboards.
   @@index([apiKeyId, createdAt])
@@ -1942,34 +1952,34 @@ model TokenUsage {
 }
 
 model Invoice {
-  id          String        @id @default(cuid())
-  userId      String
+  id        String        @id @default(cuid())
+  userId    String
   // YYYY-MM period the invoice covers. One invoice per user per
   // month — enforced by the unique below.
-  period      String
+  period    String
   // JSON breakdown of line items: [{ model, inputTokens, outputTokens, costUsd }, ...]
   // Built by the usage-aggregator from TokenUsage rows for the period.
-  lineItems   Json
-  totalUsd    Float
-  status      InvoiceStatus @default(DRAFT)
+  lineItems Json
+  totalUsd  Float
+  status    InvoiceStatus @default(DRAFT)
   // Used by the aggregator to set a sensible "statement due" date
   // for accounting; payment is already debited live via debitBalance,
   // so this is informational rather than a hard deadline.
-  dueAt       DateTime?
+  dueAt     DateTime?
   // Set when the SENT email goes out (or the buyer marks acknowledged).
-  sentAt      DateTime?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  sentAt    DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 
   @@unique([userId, period])
   @@index([status, dueAt])
 }
 
 enum InvoiceStatus {
-  DRAFT      // current open period, aggregator still adding line items
-  FINALIZED  // period closed, statement ready, not yet delivered
-  SENT       // statement email delivered to the buyer
-  VOID       // admin reversal (refund, dispute, fraud)
+  DRAFT // current open period, aggregator still adding line items
+  FINALIZED // period closed, statement ready, not yet delivered
+  SENT // statement email delivered to the buyer
+  VOID // admin reversal (refund, dispute, fraud)
 }
 
 // ============================================================================
@@ -1983,25 +1993,25 @@ enum InvoiceStatus {
 // auth are base64url-encoded; we keep them as opaque strings.
 
 model PushSubscription {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Globally-unique URL the Push Service issued; primary lookup key.
-  endpoint  String   @unique
+  endpoint String @unique
 
   // P-256 public key + 16-byte auth secret. Used by web-push to
   // encrypt the payload to the subscriber. Opaque to us.
-  p256dh    String
-  auth      String
+  p256dh String
+  auth   String
 
   // User-Agent string at subscribe time (best-effort device label).
   // Not used for routing — purely so the operator can see which
   // device they registered from when revoking a subscription.
   userAgent String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
   // Last successful push send. Lets a cleanup job retire endpoints
   // that have been gone for a long time (e.g., 60+ days of 410s).
   lastSentAt DateTime?
@@ -2038,7 +2048,7 @@ model GpuCostBaseline {
   // matches, the cost-of-service service falls back to a tier-default
   // (one row per GpuTier value also seeded under names like
   // "TIER_DEFAULT_H100", "TIER_DEFAULT_CONSUMER").
-  gpuSku                String  @id
+  gpuSku                String   @id
   // Free-form family label for grouping in admin UIs ("Hopper", "Ada",
   // "Ampere", "Blackwell", "Consumer"). Not used by the cost formula.
   gpuFamily             String
@@ -2059,7 +2069,7 @@ model GpuCostBaseline {
   // Catch-all platform overhead per hour (monitoring, support, SLA
   // reserve). Default $0.05/hour. Lets us nudge cost-of-service up or
   // down without re-fitting individual components.
-  overheadHourly        Float   @default(0.05)
+  overheadHourly        Float    @default(0.05)
   // Pre-computed sum of the above at GLOBAL power rate, for fast
   // admin / dashboard display. Recomputed by the seed/update path;
   // the cost-of-service service does NOT read this — it always
@@ -2069,7 +2079,7 @@ model GpuCostBaseline {
   // Free-form note (datasheet link, sourcing decision, etc.) for the
   // admin UI.
   notes                 String?
-  isActive              Boolean @default(true)
+  isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }
@@ -2092,33 +2102,33 @@ model GpuCostBaseline {
 // page; the plaintext never lands in any log or audit trail.
 
 model ExternalRental {
-  id                     String   @id @default(cuid())
+  id               String @id @default(cuid())
   // 1:1 with ComputeRequest. Lookup either direction via this unique.
-  computeRequestId       String   @unique
+  computeRequestId String @unique
 
   // Provider identity. Free-form string so we can add RUNPOD /
   // COREWEAVE / VAST / etc. without an enum migration. Today only
   // "LAMBDA" is wired in.
-  provider               String
-  providerInstanceId     String
-  providerSshKeyId       String?
-  providerInstanceType   String
-  providerRegion         String
+  provider             String
+  providerInstanceId   String
+  providerSshKeyId     String?
+  providerInstanceType String
+  providerRegion       String
 
   // PENDING -> ACTIVE -> CLOSING -> CLOSED is the happy path. FAILED
   // means provisioning errored before the instance came up; the
   // allocator refunds the buyer's debit and re-flags the request as
   // capacity-short (next tick can try again).
-  status                 String
+  status String
 
   // SSH credentials we minted for this rental. Surfaced to the buyer
   // on their rental detail page; never logged. sshHost populated when
   // the provider reports the instance is ready.
-  sshHost                String?
-  sshPort                Int      @default(22)
-  sshUsername            String   @default("ubuntu")
-  sshPublicKey           String
-  sshPrivateKeyEnc       String
+  sshHost          String?
+  sshPort          Int     @default(22)
+  sshUsername      String  @default("ubuntu")
+  sshPublicKey     String
+  sshPrivateKeyEnc String
 
   // Provider price at launch time. We pay this rate; the buyer pays
   // our marked-up rate. T6 splits the buyer's gross 3 ways with this
@@ -2129,7 +2139,7 @@ model ExternalRental {
   // Reconciliation timestamps. launchedAt is set when status flips
   // PENDING -> ACTIVE; terminationRequestedAt / terminatedAt close
   // the loop on the way down.
-  launchRequestedAt      DateTime @default(now())
+  launchRequestedAt      DateTime  @default(now())
   launchedAt             DateTime?
   terminationRequestedAt DateTime?
   terminatedAt           DateTime?
@@ -2138,7 +2148,7 @@ model ExternalRental {
   // 404s, terminate-API failures, unexpected provider exceptions.
   // Cleared on the next successful poll. Reading this alongside
   // status='FAILED' explains why a rental couldn't be provisioned.
-  lastError              String?
+  lastError String?
 
   // Last lifecycle NOTE (not an error): termination reason from the
   // buyer or admin, rental-expiry trigger, allocator-race rollback
@@ -2147,7 +2157,7 @@ model ExternalRental {
   // buyer/system close it cleanly?" without parsing free-form text.
   // Persists across polls (only overwritten on the next lifecycle
   // event), unlike lastError which clears.
-  lastNote               String?
+  lastNote String?
 
   // T7: cryptographic attestation report URL surfaced by the
   // provider after the pod reaches RUNNING. Buyers click this to
@@ -2155,11 +2165,11 @@ model ExternalRental {
   // TEE (DCAP quote / NVIDIA Hopper CC report). Only confidential
   // providers populate this: VoltageGPU, Phala, io.net (when
   // confidential SKUs are allow-listed). null for non-TEE rentals.
-  attestationUrl         String?
-  attestationFetchedAt   DateTime?
+  attestationUrl       String?
+  attestationFetchedAt DateTime?
 
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([provider, providerInstanceId])
@@ -2169,16 +2179,16 @@ model PowerRate {
   // Region bucket. Initial seed has one row: "GLOBAL" at $0.12/kWh.
   // Per-region rows ("US", "EU", "ASIA", "OTHER") added when M0.1+
   // backfills detect operator regions from BYOG install IPs.
-  region     String   @id
+  region    String   @id
   // USD per kWh charged at this region's residential/datacenter
   // average. Used by the cost-of-service service to multiply against
   // GpuCostBaseline.kwhDraw.
-  usdPerKwh  Float
+  usdPerKwh Float
   // Free-form note (data source, last-checked date, etc.).
-  notes      String?
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ============================================================================
@@ -2203,39 +2213,39 @@ model PowerRate {
 // double-credit can land in staking/treasury.
 
 model RevenueShareEntry {
-  id              String   @id @default(cuid())
+  id               String   @id @default(cuid())
   // Tags which revenue path produced this split. Must match the
   // BalanceTxType value the buyer was debited with so reconciliation
   // can join the two ledgers.
-  sourceTxType    String
+  sourceTxType     String
   // Stable identifier the buyer's debit also carries. ComputeRequest.id
   // for rentals, deployment id for deployments, inference request id
   // for SPEND_INFERENCE.
-  referenceId     String
+  referenceId      String
   // Gross revenue collected from the buyer (= buyer's SPEND_* debit).
-  grossUsd        Float
+  grossUsd         Float
   // Cost-of-service reimbursed to operator first (cost-of-service.ts
   // output at split time).
-  costUsd         Float
+  costUsd          Float
   // Net = max(0, gross - cost). Stored for the audit even though
   // derivable, since cost-of-service may change retroactively if a
   // GpuCostBaseline row is edited.
-  netUsd          Float
+  netUsd           Float
   // What the operator actually received (cost + 0.5 * net at the time
   // of this split). The retrofit caller uses this to credit the
   // operator's Earning row.
   operatorTotalUsd Float
-  stakingShareUsd Float
+  stakingShareUsd  Float
   treasuryShareUsd Float
   // The operator's User id, for cross-checking with the Earning table.
-  operatorUserId  String
+  operatorUserId   String
   // Snapshot of the kill switch state at split time. Lets the audit
   // distinguish "OFF — operator got full gross via legacy path" from
   // "ON — operator got cost + 0.5 * net via the new path". When OFF,
   // stakingShareUsd and treasuryShareUsd will be 0 and operatorTotalUsd
   // will equal grossUsd.
-  splitEnabled    Boolean
-  createdAt       DateTime @default(now())
+  splitEnabled     Boolean
+  createdAt        DateTime @default(now())
 
   @@unique([referenceId])
   @@index([sourceTxType, createdAt])
@@ -2264,45 +2274,45 @@ model RevenueShareEntry {
 // telemetry (latency / status). One row per call.
 
 model InferenceWorker {
-  id              String              @id @default(cuid())
+  id            String                @id @default(cuid())
   // Operator-side identity. nodeId is the Node row of the GPU running
   // this worker. Same operator can run multiple workers across multiple
   // nodes; one worker serves a fixed set of models.
-  nodeId          String
-  node            Node                @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  nodeId        String
+  node          Node                  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
   // Comma-separated list of model ids this worker serves (e.g.
   // "llama-3.1-70b-instruct,mistral-large-2"). Match against
   // ModelPricing.modelId. Stored flat (not a join table) because the
   // worker decides which models to load at startup and rarely changes
   // them mid-life.
-  servedModels    String
+  servedModels  String
   // HTTP base URL the platform POSTs inference requests to. Usually
   // private (only reachable from the platform's egress) — operators
   // expose this via their existing agent's reverse-proxy. Includes
   // trailing slash so the router can append /v1/chat/completions.
-  baseUrl         String
+  baseUrl       String
   // Bearer token the worker requires on requests. Generated by the
   // operator at worker install time; stored as a hash to keep the
   // plaintext off the DB.
-  authTokenHash   String
+  authTokenHash String
   // Lifecycle state. PENDING -> READY -> SERVING -> (DEGRADED ->) DRAINED.
   // The router only picks workers in READY or SERVING state.
-  status          InferenceWorkerStatus @default(PENDING)
+  status        InferenceWorkerStatus @default(PENDING)
   // Max concurrent inferences this worker accepts before queueing
   // (or returning 429 if `queueDepth` would exceed capacity).
-  capacity        Int                 @default(1)
+  capacity      Int                   @default(1)
   // Observed latency for the last 50 requests, rolled into a single
   // p50 in ms. Updated by the meter on every call close. Used as a
   // tertiary sort in the router after price + reputation.
-  p50LatencyMs    Int?
+  p50LatencyMs  Int?
   // Last successful heartbeat from the worker. Workers older than 90s
   // are excluded from routing automatically by the picker.
-  lastHeartbeat   DateTime            @default(now())
+  lastHeartbeat DateTime              @default(now())
   // Free-form metadata from the worker — vLLM version, GPU type,
   // VRAM available, etc. JSON so registration can self-describe.
-  metadata        Json?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  metadata      Json?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
 
   inferenceRequests InferenceRequest[]
 
@@ -2311,48 +2321,48 @@ model InferenceWorker {
 }
 
 enum InferenceWorkerStatus {
-  PENDING    // registered but no successful heartbeat yet
-  READY      // accepting work, no current load
-  SERVING    // accepting work with active inferences in flight
-  DEGRADED   // operator reported a fault but still useable; admin alerted
-  DRAINED    // gracefully removed from routing; existing inferences finish
+  PENDING // registered but no successful heartbeat yet
+  READY // accepting work, no current load
+  SERVING // accepting work with active inferences in flight
+  DEGRADED // operator reported a fault but still useable; admin alerted
+  DRAINED // gracefully removed from routing; existing inferences finish
 }
 
 model InferenceRequest {
-  id              String   @id @default(cuid())
+  id                String                 @id @default(cuid())
   // Buyer + auth context. apiKeyId is the buyer's key that authorized
   // the call; userId is denormalized for fast per-user queries.
-  apiKeyId        String
-  userId          String
+  apiKeyId          String
+  userId            String
   // Worker that served the call. NULL until the router picks one;
   // also NULL when the request fell through to an external provider
   // (in which case `externalProvider` carries the upstream name).
   inferenceWorkerId String?
-  inferenceWorker InferenceWorker?    @relation(fields: [inferenceWorkerId], references: [id], onDelete: SetNull)
+  inferenceWorker   InferenceWorker?       @relation(fields: [inferenceWorkerId], references: [id], onDelete: SetNull)
   // When set, indicates the platform routed this call to an external
   // provider (OpenAI / Anthropic / etc.) instead of an operator worker.
   // Mutually exclusive with inferenceWorkerId.
-  externalProvider String?
-  model           String
+  externalProvider  String?
+  model             String
   // Same lifecycle the router writes through: ROUTING (picked worker)
   // -> STREAMING (response in flight) -> COMPLETED / FAILED / CANCELLED.
-  status          InferenceRequestStatus @default(ROUTING)
+  status            InferenceRequestStatus @default(ROUTING)
   // Token counts come from the worker's streaming response when
   // available, else from the local tokenizer fallback. Persisted on
   // every request close so the aggregator + invoice can reconcile.
-  inputTokens     Int?
-  outputTokens    Int?
+  inputTokens       Int?
+  outputTokens      Int?
   // Wall-clock time from "router picked worker" to "stream closed",
   // in milliseconds. Feeds the worker's p50 latency stat.
-  latencyMs       Int?
+  latencyMs         Int?
   // Final cost charged to the buyer (mirrors TokenUsage.costUsd for
   // the matching requestId; carried here so InferenceRequest is a
   // self-contained audit row).
-  costUsd         Float?
+  costUsd           Float?
   // Captured error message when status=FAILED. NULL on success.
-  errorMessage    String?
-  createdAt       DateTime @default(now())
-  completedAt     DateTime?
+  errorMessage      String?
+  createdAt         DateTime               @default(now())
+  completedAt       DateTime?
 
   @@index([apiKeyId, createdAt])
   @@index([userId, createdAt])
@@ -2362,11 +2372,11 @@ model InferenceRequest {
 }
 
 enum InferenceRequestStatus {
-  ROUTING     // router picked a target; haven't started streaming yet
-  STREAMING   // response in flight (worker is generating tokens)
-  COMPLETED   // stream closed normally; tokens + cost persisted
-  FAILED      // worker errored or external provider rejected
-  CANCELLED   // buyer cancelled before stream completed
+  ROUTING // router picked a target; haven't started streaming yet
+  STREAMING // response in flight (worker is generating tokens)
+  COMPLETED // stream closed normally; tokens + cost persisted
+  FAILED // worker errored or external provider rejected
+  CANCELLED // buyer cancelled before stream completed
 }
 
 // ============================================================================
@@ -2390,45 +2400,142 @@ enum InferenceRequestStatus {
 // original "submit + provision" flow.
 
 model ConfidentialInterest {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // User reference is OPTIONAL. The waitlist form is reachable by
   // any signed-in buyer (most cases) but we also keep it filing-
   // capable for guest/anonymous users if we surface it pre-auth
   // later. When null, email is the only contact.
-  userId          String?
-  user            User?    @relation(fields: [userId], references: [id])
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
 
   // Required: how do we reach them when capacity lands.
-  email           String
+  email String
 
   // What they want (best-effort, all optional). Lets admin
   // prioritize which suppliers to onboard first based on tier
   // demand and target deadlines.
-  gpuTier         GpuTier?
-  gpuCount        Int?
+  gpuTier       GpuTier?
+  gpuCount      Int?
   // Free-form: training, inference, fine-tune, multi-party
   // computation, confidential database, etc. Helps us understand
   // which testers need GPU TEE vs CPU-only TDX.
-  workloadType    String?
+  workloadType  String?
   // Rough estimate of monthly compute hours. Helps us size the
   // initial supplier commitment.
-  expectedHours   Int?
+  expectedHours Int?
   // When does the buyer need this? Drives outreach priority.
-  timelineWeeks   Int?
+  timelineWeeks Int?
   // Free-form notes (use case, budget signal, contact preference).
-  notes           String?
+  notes         String?
 
   // Set when admin emails the buyer that capacity is available.
   // Lets admin filter the list to "not yet contacted" rows.
-  notifiedAt      DateTime?
+  notifiedAt DateTime?
 
   // Optional admin annotation: status, follow-up notes, etc.
-  adminNote       String?
+  adminNote String?
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([createdAt])
   @@index([notifiedAt])
   @@index([userId])
+}
+
+// E6 / M3.8a: Custom Docker Image Registry.
+//
+// Architecture: we deploy the open-source `distribution/distribution`
+// (Docker's official registry) as a separate Render service with S3
+// storage backend. Auth is delegated to our API: registry challenges
+// the Docker CLI with a Bearer realm pointing at /v1/registry/token,
+// our API validates the buyer API key + scope and signs a JWT the
+// registry trusts.
+//
+// On each successful push the registry calls our webhook, we insert
+// a DockerImage row and enqueue an ImageScan. Trivy worker pulls the
+// image, runs the scan, stores the severity counts + full JSON
+// result. If criticalCount > 0 we flip DockerImage.pullBlocked = true
+// so subsequent pulls fail until the buyer pushes a fixed version.
+model DockerImage {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Repository name WITHIN the buyer's namespace. Full registry path
+  // is `<buyerId>/<repository>:<tag>`, e.g. cmq1abc/inference-worker:v3.
+  repository String
+  tag        String
+
+  // Content-addressable digest from the registry, e.g.
+  // sha256:1234abcd... Same digest can appear under multiple
+  // (repository, tag) pairs (re-tag); we keep one row per logical
+  // tag for accurate quota accounting.
+  digest String
+
+  // Size in bytes — populated from the registry webhook's "Length"
+  // header on push. BigInt because individual layers can exceed 2 GB.
+  sizeBytes BigInt @default(0)
+
+  // Lifecycle.
+  pushedAt  DateTime  @default(now())
+  deletedAt DateTime?
+
+  // E6 / M3.9b: retroactive pull-block on critical CVE finding. The
+  // image stays in the registry (we don't delete blobs — other tags
+  // may reference them) but pulls fail at the auth-token layer.
+  pullBlocked     Boolean @default(false)
+  pullBlockReason String?
+
+  scans ImageScan[]
+
+  // (userId, repository, tag) is the buyer-facing identity of an
+  // image. A re-push of the same tag replaces the row in-place
+  // (handled in the webhook receiver via upsert).
+  @@unique([userId, repository, tag])
+  @@index([userId])
+  @@index([digest])
+  @@index([pushedAt])
+}
+
+// E6 / M3.9: Trivy scan result for a single image.
+//
+// One scan per push. Aggregate counts in dedicated columns for fast
+// quota dashboards + admin moderation queues; full Trivy JSON kept
+// in resultJson for the detail view.
+model ImageScan {
+  id      String      @id @default(cuid())
+  imageId String
+  image   DockerImage @relation(fields: [imageId], references: [id], onDelete: Cascade)
+
+  status ImageScanStatus @default(PENDING)
+
+  // Severity-bucket counts. Trivy returns CRITICAL / HIGH / MEDIUM /
+  // LOW / UNKNOWN. Critical findings drive pullBlock; the others are
+  // surfaced in the buyer UI but don't gate access.
+  criticalCount Int @default(0)
+  highCount     Int @default(0)
+  mediumCount   Int @default(0)
+  lowCount      Int @default(0)
+  unknownCount  Int @default(0)
+
+  // Full Trivy JSON for the per-finding detail page. Up to a few MB
+  // for image with many vulnerabilities; stored verbatim so we never
+  // re-fetch from Trivy if the buyer drills in months later.
+  resultJson Json?
+
+  startedAt    DateTime  @default(now())
+  completedAt  DateTime?
+  errorMessage String?
+
+  @@index([imageId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+enum ImageScanStatus {
+  PENDING // queued, BullMQ hasn't picked it up yet
+  RUNNING // Trivy worker is scanning right now
+  COMPLETED // results stored, severity counts authoritative
+  FAILED // Trivy errored or timed out; errorMessage explains
 }

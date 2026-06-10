@@ -58,6 +58,7 @@ import {
   solanaRpcProxyRoutes,
   inferenceWorkerRoutes,
   inferenceRoutes,
+  registryTokenRoutes,
   buyerBillingRoutes,
   buyerBalanceRoutes,
   buyerApiKeyRoutes,
@@ -355,6 +356,9 @@ async function start() {
     await server.register(solanaRpcProxyRoutes)
     await server.register(inferenceWorkerRoutes)
     await server.register(inferenceRoutes)
+    // E6 / M3.8b: Docker registry token issuer (/v1/registry/token).
+    // Validates buyer API keys, signs JWTs the Docker registry trusts.
+    await server.register(registryTokenRoutes)
     await server.register(buyerBillingRoutes)
     await server.register(buyerBalanceRoutes)
     await server.register(buyerApiKeyRoutes)

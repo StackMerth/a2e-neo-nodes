@@ -10,10 +10,17 @@ const KEY_PREFIX = 'a2e-buyer-'
 // inference:write per E2.2 so buyers can call /v1/chat/completions
 // out of the box without manually adding the scope. Buyers who want
 // a narrower key can still override via the create endpoint.
+//
+// E6 / M3.8b: registry:read + registry:write added so `docker login`
+// against a2e-registry.tokenos.ai works out of the box with any
+// default-permissioned key. The registry token issuer at
+// /v1/registry/token reads these scopes from the API key row.
 export const DEFAULT_BUYER_KEY_PERMISSIONS = [
   'compute:read',
   'compute:write',
   'inference:write',
+  'registry:read',
+  'registry:write',
 ]
 
 export async function generateApiKey(
