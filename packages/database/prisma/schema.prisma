@@ -1814,6 +1814,17 @@ model BuyerWithdrawal {
   // Human-readable error if processing failed.
   error String?
 
+  // Pen-test A5 follow-up 2026-06-11: large withdrawals require a
+  // single-use email confirm before they're admin-actionable. Rows with
+  // emailConfirmToken IS NOT NULL AND emailConfirmedAt IS NULL are
+  // waiting for the buyer to click the confirm link from their inbox.
+  // Admin endpoints filter those out so they don't clutter the queue.
+  // Both fields null = no confirm required (amount below threshold);
+  // emailConfirmedAt set = confirm completed, row is admin-actionable.
+  emailConfirmToken  String?   @unique
+  emailConfirmExpiry DateTime?
+  emailConfirmedAt   DateTime?
+
   requestedAt DateTime  @default(now())
   processedAt DateTime?
 

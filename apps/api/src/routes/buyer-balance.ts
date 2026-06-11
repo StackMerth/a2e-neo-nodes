@@ -12,6 +12,7 @@
  */
 
 import type { FastifyInstance } from 'fastify'
+import crypto from 'crypto'
 import { z } from 'zod'
 import { Keypair } from '@solana/web3.js'
 import bs58 from 'bs58'
@@ -26,6 +27,7 @@ import {
 import { getSolanaConfig, processPayment, verifyUsdcDeposit } from '../services/payment/solana'
 import { createTopupCheckoutSession, isStripeConfigured } from '../services/payment/stripe'
 import { createNotification } from '../services/notification/service.js'
+import { sendEmail } from '../services/email/sender.js'
 
 const PORTAL_URL = process.env.PORTAL_URL ?? 'https://user.tokenos.ai'
 
@@ -363,7 +365,7 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
 
     const user = await fastify.prisma.user.findUnique({
       where: { id: userId },
-      select: { walletAddress: true },
+      select: { walletAddress: true, email: true },
     })
     if (!user?.walletAddress) {
       return reply.code(400).send({
@@ -531,9 +533,83 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
     // sane brokerage UI: 'pending withdrawal' is already deducted from
     // available). If the admin REJECTS, the admin endpoint emits a
     // REFUND_FAILED credit that brings the balance back.
+
+    // Pen-test A5 follow-up 2026-06-11: large-amount email confirm gate.
+    // Withdrawals above WITHDRAW_EMAIL_CONFIRM_THRESHOLD_USD (default
+    // $500) require the buyer to click a confirm link in their inbox
+    // before the request becomes admin-actionable. Mitigates compromised
+    // session attacks: an attacker with a stolen JWT can't drain a
+    // large balance without also controlling the buyer's email.
     //
-    // Notification: tell the buyer their request is queued so they're
-    // not surprised when no tx hash appears.
+    // Implementation: when over threshold, stamp the row with a random
+    // 64-char hex token + expiry, send the email, and tell the buyer to
+    // check their inbox. Admin queue filters out rows with
+    // emailConfirmToken set + emailConfirmedAt null so the unconfirmed
+    // requests don't clutter the review surface.
+    const confirmThreshold = parseFloat(
+      process.env.WITHDRAW_EMAIL_CONFIRM_THRESHOLD_USD ?? '500',
+    )
+    const confirmExpiryHours = parseInt(
+      process.env.WITHDRAW_EMAIL_CONFIRM_EXPIRY_HOURS ?? '24',
+      10,
+    )
+
+    if (
+      confirmThreshold > 0 &&
+      amountUsd >= confirmThreshold &&
+      user.email
+    ) {
+      const token = crypto.randomBytes(32).toString('hex')
+      const expiry = new Date(Date.now() + confirmExpiryHours * 3600 * 1000)
+      await fastify.prisma.buyerWithdrawal.update({
+        where: { id: withdrawal.id },
+        data: {
+          emailConfirmToken: token,
+          emailConfirmExpiry: expiry,
+        },
+      })
+
+      const confirmLink = `${PORTAL_URL}/buyer/balance/withdraw/${withdrawal.id}/confirm?token=${token}`
+      void sendEmail(
+        user.email,
+        'Confirm your withdrawal — TokenOS_DeAI',
+        `<h2 style="color: #ffffff; margin: 0 0 16px;">Confirm Your Withdrawal</h2>
+         <p style="color: #a1a1aa; line-height: 1.6;">
+           You requested a withdrawal of <strong style="color: #22c55e;">$${amountUsd.toFixed(2)}</strong>
+           to wallet <span style="color: #cbd5e1; font-family: monospace;">${user.walletAddress?.slice(0, 6)}…${user.walletAddress?.slice(-4)}</span>.
+         </p>
+         <p style="color: #a1a1aa; line-height: 1.6;">
+           For withdrawals over $${confirmThreshold.toFixed(0)} we require an email
+           confirmation. Click below within ${confirmExpiryHours} hours to confirm.
+           After you confirm, the request enters the admin review queue.
+         </p>
+         <div style="text-align: center; margin: 32px 0;">
+           <a href="${confirmLink}" style="display: inline-block; background: #22c55e; color: #0a0a0f; font-weight: 700; padding: 14px 32px; border-radius: 8px; text-decoration: none; letter-spacing: 0.5px;">
+             Confirm Withdrawal
+           </a>
+         </div>
+         <p style="color: #71717a; font-size: 13px;">
+           Or copy this link: <span style="color: #cbd5e1;">${confirmLink}</span>
+         </p>
+         <p style="color: #ef4444; font-size: 13px; margin-top: 16px;">
+           Didn't request this? Sign in immediately and change your password —
+           someone may have access to your account.
+         </p>`,
+      )
+
+      return reply.send({
+        id: withdrawal.id,
+        status: 'PENDING',
+        amountUsd,
+        requiresEmailConfirm: true,
+        message:
+          `Check your inbox at ${user.email}. Confirm within ${confirmExpiryHours} hours ` +
+          `to queue this withdrawal for admin review.`,
+      })
+    }
+
+    // Standard path: under threshold OR no email on file. Notify the
+    // buyer their request is queued.
     void createNotification(
       userId,
       'BALANCE_TOPUP',
@@ -547,10 +623,120 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
       id: withdrawal.id,
       status: 'PENDING',
       amountUsd,
+      requiresEmailConfirm: false,
       message:
         'Withdrawal queued for admin approval. You will be notified when it processes.',
     })
   })
+
+  /**
+   * POST /v1/buyer/balance/withdraw/:id/confirm
+   *
+   * Single-use email-confirm token endpoint for large withdrawals.
+   * Validates the token against BuyerWithdrawal.emailConfirmToken +
+   * .emailConfirmExpiry, then clears the token + stamps emailConfirmedAt
+   * so the admin queue picks the row up. Buyer who clicks the link in
+   * their inbox lands on a portal page that POSTs here with the token.
+   *
+   * Status guard: only PENDING rows can be confirmed. PROCESSING/
+   * COMPLETED/FAILED/REJECTED rows return 409.
+   *
+   * Token comparison: constant-time via crypto.timingSafeEqual to avoid
+   * timing oracles on token length / prefix.
+   */
+  fastify.post<{ Params: { id: string } }>(
+    '/v1/buyer/balance/withdraw/:id/confirm',
+    async (request, reply) => {
+      const userId = request.user!.userId
+      const { id } = request.params
+      const schema = z.object({
+        token: z.string().min(32).max(128),
+      })
+      const parsed = schema.safeParse(request.body)
+      if (!parsed.success) {
+        return reply.code(400).send({
+          error: 'invalid_request',
+          message: 'Confirm token required.',
+        })
+      }
+      const { token } = parsed.data
+
+      const row = await fastify.prisma.buyerWithdrawal.findUnique({
+        where: { id },
+      })
+      if (!row || row.userId !== userId) {
+        // 404 for foreign id too (no existence oracle).
+        return reply.code(404).send({ error: 'not_found' })
+      }
+      if (row.status !== 'PENDING') {
+        return reply.code(409).send({
+          error: 'already_processed',
+          message: `Withdrawal is in ${row.status} state.`,
+        })
+      }
+      if (row.emailConfirmedAt) {
+        return reply.send({
+          id,
+          status: 'PENDING',
+          confirmedAt: row.emailConfirmedAt,
+          message: 'Already confirmed.',
+        })
+      }
+      if (!row.emailConfirmToken) {
+        // Token was never set; nothing to confirm. Treat as already
+        // confirmed so the row stays admin-actionable (matches the
+        // under-threshold path).
+        return reply.send({
+          id,
+          status: 'PENDING',
+          message: 'No confirmation required.',
+        })
+      }
+      if (row.emailConfirmExpiry && row.emailConfirmExpiry < new Date()) {
+        return reply.code(410).send({
+          error: 'token_expired',
+          message: 'Confirmation link expired. Cancel and resubmit the withdrawal.',
+        })
+      }
+
+      // Constant-time compare so we don't leak length info via early
+      // termination of a string compare.
+      const a = Buffer.from(token, 'utf8')
+      const b = Buffer.from(row.emailConfirmToken, 'utf8')
+      const valid = a.length === b.length && crypto.timingSafeEqual(a, b)
+      if (!valid) {
+        return reply.code(401).send({
+          error: 'invalid_token',
+          message: 'Invalid confirmation token.',
+        })
+      }
+
+      await fastify.prisma.buyerWithdrawal.update({
+        where: { id },
+        data: {
+          emailConfirmedAt: new Date(),
+          emailConfirmToken: null,
+          emailConfirmExpiry: null,
+        },
+      })
+
+      void createNotification(
+        userId,
+        'BALANCE_TOPUP',
+        'Withdrawal confirmed',
+        `Your $${row.amountUsd.toFixed(2)} withdrawal is now in admin review. ` +
+          `You will be notified when it processes.`,
+        `/buyer/balance`,
+      )
+
+      reply.send({
+        id,
+        status: 'PENDING',
+        confirmedAt: new Date(),
+        message: 'Confirmation received. Withdrawal is now in admin review.',
+      })
+    },
+  )
 
   /**
    * GET /v1/buyer/balance/withdrawals

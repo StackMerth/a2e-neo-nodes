@@ -28,6 +28,7 @@
  */
 
 import type { FastifyInstance } from 'fastify'
+import type { Prisma } from '@a2e/database'
 import { z } from 'zod'
 import { getSolanaConfig, processPayment } from '../services/payment/solana.js'
 import { creditBalance } from '../services/balance/balance-service.js'
@@ -60,7 +61,29 @@ export async function adminBuyerWithdrawalRoutes(fastify: FastifyInstance) {
       })
     }
     const { page, limit, status } = parsed.data
-    const where = status ? { status } : {}
+
+    // Hide PENDING rows that are still waiting for the buyer to confirm
+    // via the email link (emailConfirmToken set but emailConfirmedAt
+    // null). Admin's review queue should only show rows the buyer has
+    // affirmatively committed to. Non-PENDING statuses are unaffected
+    // since they've already moved past the confirm gate.
+    const where: Prisma.BuyerWithdrawalWhereInput = status
+      ? status === 'PENDING'
+        ? {
+            status,
+            OR: [
+              { emailConfirmToken: null },
+              { emailConfirmedAt: { not: null } },
+            ],
+          }
+        : { status }
+      : {
+          OR: [
+            { status: { not: 'PENDING' } },
+            { emailConfirmToken: null },
+            { emailConfirmedAt: { not: null } },
+          ],
+        }
 
     const [rows, total] = await Promise.all([
       fastify.prisma.buyerWithdrawal.findMany({
@@ -100,8 +123,19 @@ export async function adminBuyerWithdrawalRoutes(fastify: FastifyInstance) {
 
       // Status-guarded transition to PROCESSING. Two admins clicking
       // simultaneously: one wins (count=1), one gets count=0 -> 409.
+      // Email-confirm guard: refuse to claim a row that requires email
+      // confirm but hasn't been confirmed yet. The list endpoint
+      // already hides those rows, but defense-in-depth in case an
+      // admin tries to direct-POST a known id.
       const claim = await fastify.prisma.buyerWithdrawal.updateMany({
-        where: { id, status: 'PENDING' },
+        where: {
+          id,
+          status: 'PENDING',
+          OR: [
+            { emailConfirmToken: null },
+            { emailConfirmedAt: { not: null } },
+          ],
+        },
         data: { status: 'PROCESSING' },
       })
       if (claim.count === 0) {
@@ -109,6 +143,16 @@ export async function adminBuyerWithdrawalRoutes(fastify: FastifyInstance) {
           where: { id },
         })
         if (!existing) return reply.code(404).send({ error: 'Withdrawal not found' })
+        if (
+          existing.status === 'PENDING' &&
+          existing.emailConfirmToken &&
+          !existing.emailConfirmedAt
+        ) {
+          return reply.code(409).send({
+            error: 'awaiting_email_confirm',
+            message: 'Buyer has not confirmed this withdrawal via email yet.',
+          })
+        }
         return reply.code(409).send({
           error: 'Already processed',
           message: `Withdrawal is in ${existing.status} state; cannot approve.`,
