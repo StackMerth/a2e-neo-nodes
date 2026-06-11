@@ -1173,12 +1173,48 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string }
     const userId = request.user!.userId
 
+    // SECURITY (2026-06-11 fourth-round): atomic status-claim is the
+    // ONLY thing standing between this route and an on-chain TOCTOU
+    // double-spend. The prior implementation read status via findFirst,
+    // checked ACTIVE, then spent seconds running the refund flow (which
+    // calls processPayment from the treasury wallet). N concurrent
+    // POSTs all pass the read-check and all run their own refund. Each
+    // one signs a fresh on-chain transfer. The BalanceTransaction
+    // (type, referenceId) unique only catches duplicate balance
+    // credits — on-chain sends have no idempotency, so the attacker
+    // drained ~$65.50 across 3 parallel terminates of ACTIVE rentals.
+    //
+    // Fix mirrors the /cancel route at line 818: claim the row by
+    // atomically flipping status with updateMany. Only the winning
+    // request gets count >= 1 and proceeds to refund. Losers see
+    // count === 0 and bail without touching money. Postgres
+    // row-locking is what makes this safe under load.
+    const claimed = await fastify.prisma.computeRequest.updateMany({
+      where: { id, userId, status: 'ACTIVE' },
+      data: { status: 'TERMINATING' },
+    })
+    if (claimed.count === 0) {
+      // Either the rental doesn't exist, isn't ours, or wasn't ACTIVE.
+      // Distinguish 404 vs 400 with a follow-up read for the
+      // user-facing error message; the read can't race because the
+      // refund path no longer fires (we already lost the claim).
+      const existing = await fastify.prisma.computeRequest.findFirst({
+        where: { id, userId },
+        select: { status: true },
+      })
+      if (!existing) return reply.code(404).send({ error: 'Request not found' })
+      return reply.code(400).send({
+        error: `Cannot terminate: status is ${existing.status}`,
+      })
+    }
+
     const cr = await fastify.prisma.computeRequest.findFirst({
       where: { id, userId },
     })
-    if (!cr) return reply.code(404).send({ error: 'Request not found' })
-    if (cr.status !== 'ACTIVE') {
-      return reply.code(400).send({ error: `Cannot terminate: status is ${cr.status}` })
+    if (!cr) {
+      // Defensive: row vanished between claim and read. Very unlikely
+      // (we own a TERMINATING row at this point) but handle it.
+      return reply.code(404).send({ error: 'Request not found' })
     }
 
     // Final accrual snapshot. The meter (60s tick) may not have caught

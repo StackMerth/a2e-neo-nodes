@@ -1595,6 +1595,14 @@ enum ComputeRequestStatus {
   // booted; on failure it flips to CANCELLED and the buyer is
   // refunded.
   PROVISIONING_EXTERNAL
+  // 2026-06-11 fourth-round: transitional status set by atomic
+  // updateMany at the start of POST /terminate. Prevents parallel
+  // terminate requests from each running their own on-chain refund
+  // (the TOCTOU drain). Only the first request that flips
+  // ACTIVE -> TERMINATING wins the claim; others see count === 0 and
+  // bail. The winning request continues to TERMINATING -> COMPLETED
+  // at the end of the refund flow.
+  TERMINATING
 }
 
 // M3: pricing tier for compute requests. Three discrete options buyers
