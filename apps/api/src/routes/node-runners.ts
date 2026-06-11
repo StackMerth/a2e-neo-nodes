@@ -38,14 +38,30 @@ const payoutLockSchema = z.object({
 export async function nodeRunnerRoutes(fastify: FastifyInstance) {
   // ==================== NODE RUNNERS ====================
 
-  // GET /v1/node-runners - List all node runners
+  // GET /v1/node-runners - List node runners (scoped per role)
   fastify.get(
     '/v1/node-runners',
     {
       preHandler: [fastify.authenticate],
     },
     async (request, reply) => {
+      // SECURITY (pen-test A1 2026-06-10): the original list endpoint
+      // returned every operator's name + email + walletAddress +
+      // totalInvested to any authenticated caller (including a fresh
+      // free NODE_RUNNER token). Cross-tenant PII leak.
+      //
+      // Fix: admins see everything (support tooling); non-admins see
+      // only their OWN NodeRunner row (filtered by userId). The list
+      // shape is unchanged so the existing portal UI still works for
+      // each role; non-admin users see a 1-row list of their own
+      // record.
+      const userId = request.user!.userId
+      const isAdmin = request.user!.role === 'ADMIN'
+
+      const where = isAdmin ? {} : { userId }
+
       const nodeRunners = await fastify.prisma.nodeRunner.findMany({
+        where,
         include: {
           nodes: {
             select: { id: true, gpuTier: true, status: true },
@@ -141,7 +157,16 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
         },
       })
 
-      if (!nodeRunner) {
+      // SECURITY (pen-test A1 2026-06-10): byId previously returned the
+      // full financials (totalInvested, totalEarnings, totalPayouts,
+      // netPosition, ROI) + email + walletAddress + payoutLockReason +
+      // investment txHashes for ENUMERABLE foreign ids. Non-admin
+      // callers must only see their own row. Return 404 (not 403) for
+      // foreign ids so the response is indistinguishable from a row
+      // that doesn't exist — no existence oracle.
+      const userId = request.user!.userId
+      const isAdmin = request.user!.role === 'ADMIN'
+      if (!nodeRunner || (!isAdmin && nodeRunner.userId !== userId)) {
         return reply.code(404).send({ error: 'Node runner not found' })
       }
 
@@ -263,7 +288,13 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
         },
       })
 
-      if (!nodeRunner) {
+      // SECURITY (pen-test A1 2026-06-10): ROI breakdown surfaces
+      // operator financials (investment totals, earnings history, ROI
+      // trajectory) which is the same PII class as the byId route. Same
+      // owner-or-admin gate, same 404-not-403 to avoid existence oracle.
+      const userId = request.user!.userId
+      const isAdmin = request.user!.role === 'ADMIN'
+      if (!nodeRunner || (!isAdmin && nodeRunner.userId !== userId)) {
         return reply.code(404).send({ error: 'Node runner not found' })
       }
 
