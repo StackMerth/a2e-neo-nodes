@@ -44,10 +44,10 @@ import {
 } from '../services/inbound/vastai-adapter.js'
 import { createNotification } from '../services/notification/service.js'
 import { creditBalance } from '../services/balance/balance-service.js'
-import {
-  cleanupRentalTenantState,
-  CLEANUP_SUCCESS_NOTE,
-} from '../services/inbound/tenant-cleanup.js'
+// tenant-cleanup imports removed: cleanup is skipped for Vast.ai (fresh
+// container per booking; ssh2 ECONNREFUSED crashes were happening on
+// the cleanup path). See the comment block in pollOne for the 2026-06-11
+// incident summary.
 
 const QUEUE_NAME = 'vastai-poll'
 const TICK_INTERVAL_MS = parseInt(process.env.VASTAI_POLL_TICK_MS ?? '30000', 10)
@@ -174,19 +174,23 @@ async function pollOne(
   // manual intervention (terminate, cancel) can't be silently
   // overwritten by a stale poll.
   if (fresh.status === 'ACTIVE' && fresh.sshHost) {
-    // Tenant cleanup before surfacing credentials. Fails open,
-    // idempotent. Vast.ai uses fresh containers per booking so this
-    // is mostly a no-op, but kept for defense-in-depth parity.
-    if (fresh.lastNote !== CLEANUP_SUCCESS_NOTE) {
-      const cleanup = await cleanupRentalTenantState(prisma, fresh.id)
-      if (!cleanup.ok) {
-        console.error(
-          `[vastai-poll] tenant cleanup failed for ${fresh.id} after ${cleanup.durationMs}ms: ${cleanup.error}`,
-        )
-      } else {
-        console.log(`[vastai-poll] tenant cleanup OK for ${fresh.id} in ${cleanup.durationMs}ms`)
-      }
-    }
+    // SKIP tenant cleanup for Vast.ai — same rationale as Shadeform's
+    // skip block (see apps/api/src/jobs/shadeform-poll.ts). Vast.ai
+    // provisions a fresh container per booking, so there's no prior-
+    // tenant residue to clean. Attempting cleanup creates a real crash
+    // surface:
+    //
+    //   2026-06-11 incident: rental cmq9cxn0f000 fired a Sentry fatal
+    //   with 'Error: connect ECONNREFUSED 32.192.51.102:37216' during
+    //   cleanup. ssh2 library's socket emits an 'error' event for the
+    //   TCP-refusal case that escapes our try/catch boundary and
+    //   becomes an uncaught exception (mechanism=onuncaughtexception
+    //   in Sentry). Same pattern that took down shadeform-poll on
+    //   2026-06-08 before we removed cleanup there.
+    //
+    // The container is fresh + the rental's user pubkey is installed
+    // via Vast.ai's onstart script, so we proceed straight to promotion
+    // with no SSH probe.
 
     // SSH copy + status promote in one atomic update. Prior versions
     // promoted to ACTIVE without copying sshHost/sshPort/sshUsername
