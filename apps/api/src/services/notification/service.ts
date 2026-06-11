@@ -47,6 +47,10 @@ const EMAIL_NOTIFICATION_TYPES: NotificationType[] = [
   // movement events ship a receipt-style email so the user gets
   // confirmation even when offline.
   'BALANCE_TOPUP',
+  // 2026-06-11 third-round: admin gets pinged when a first-time
+  // buyer's rental needs human review (L3 gate). Dedupe handled at
+  // call site so a burst becomes one email.
+  'ADMIN_REVIEW_REQUIRED',
 ]
 
 /**

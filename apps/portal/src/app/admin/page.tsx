@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowDownToLine,
@@ -11,16 +10,9 @@ import {
   TrendingUp,
   RefreshCw,
 } from 'lucide-react'
-import { apiFetch } from '@/lib/api'
 import { DashboardShell } from '@/components/dashboard/FuturisticShell'
 import type { LucideIcon } from 'lucide-react'
-
-interface DashboardStats {
-  buyerWithdrawalsPending: number
-  operatorWithdrawalsPending: number
-  computeRequestsPending: number
-  deploymentsPending: number
-}
+import { useAdminPendingCounts } from '@/components/layout/AdminPendingCountsContext'
 
 interface QueueCardProps {
   label: string
@@ -79,65 +71,15 @@ function QueueCard({ label, count, icon: Icon, href, loading, accent }: QueueCar
   )
 }
 
-const AUTO_REFRESH_MS = 30_000 // 30s — fast enough to feel live, slow enough that 4 admins with the tab open don't hammer the API.
+const AUTO_REFRESH_MS = 30_000
 
 export default function AdminDashboardPage() {
-  const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [lastFetched, setLastFetched] = useState<Date | null>(null)
-
-  async function loadStats(showSpinner: boolean) {
-    if (showSpinner) setLoading(true)
-    try {
-      const [buyerW, operatorW, compute, deploy] = await Promise.all([
-        apiFetch<{ total: number }>('/v1/admin/buyer-withdrawals?status=PENDING&limit=1').catch(
-          () => ({ total: 0 }),
-        ),
-        apiFetch<{ total: number }>('/v1/admin/withdrawals?status=PENDING&limit=1').catch(
-          () => ({ total: 0 }),
-        ),
-        apiFetch<{ stats: { pending: number } }>('/v1/admin/compute/stats').catch(
-          () => ({ stats: { pending: 0 } }),
-        ),
-        apiFetch<{ deployments: unknown[]; total?: number }>('/v1/admin/deployments?status=PENDING&limit=1').catch(
-          () => ({ deployments: [], total: 0 }),
-        ),
-      ])
-      setStats({
-        buyerWithdrawalsPending: buyerW.total ?? 0,
-        operatorWithdrawalsPending: operatorW.total ?? 0,
-        computeRequestsPending: compute.stats?.pending ?? 0,
-        deploymentsPending: deploy.total ?? deploy.deployments?.length ?? 0,
-      })
-      setLastFetched(new Date())
-    } catch {
-      setStats({
-        buyerWithdrawalsPending: 0,
-        operatorWithdrawalsPending: 0,
-        computeRequestsPending: 0,
-        deploymentsPending: 0,
-      })
-    } finally {
-      if (showSpinner) setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    void loadStats(true)
-    const id = setInterval(() => {
-      // Skip refresh when the tab is hidden — saves both API roundtrips
-      // and the per-admin queue load when nobody's watching.
-      if (document.visibilityState !== 'hidden') {
-        void loadStats(false)
-      }
-    }, AUTO_REFRESH_MS)
-    return () => clearInterval(id)
-  }, [])
+  const { counts, loading, lastFetched, refresh } = useAdminPendingCounts()
 
   const cards: QueueCardProps[] = [
     {
       label: 'Buyer Withdrawals',
-      count: stats?.buyerWithdrawalsPending ?? 0,
+      count: counts.buyerWithdrawals,
       icon: ArrowDownToLine,
       href: '/admin/buyer-withdrawals',
       loading,
@@ -145,7 +87,7 @@ export default function AdminDashboardPage() {
     },
     {
       label: 'Operator Withdrawals',
-      count: stats?.operatorWithdrawalsPending ?? 0,
+      count: counts.operatorWithdrawals,
       icon: ArrowUpToLine,
       href: '/admin/operator-withdrawals',
       loading,
@@ -153,7 +95,7 @@ export default function AdminDashboardPage() {
     },
     {
       label: 'Compute Requests',
-      count: stats?.computeRequestsPending ?? 0,
+      count: counts.compute,
       icon: Cpu,
       href: '/admin/compute',
       loading,
@@ -161,7 +103,7 @@ export default function AdminDashboardPage() {
     },
     {
       label: 'Deployments',
-      count: stats?.deploymentsPending ?? 0,
+      count: counts.deployments,
       icon: Server,
       href: '/admin/deployments',
       loading,
@@ -181,7 +123,7 @@ export default function AdminDashboardPage() {
             : 'Loading…'}
         </div>
         <button
-          onClick={() => void loadStats(true)}
+          onClick={() => void refresh()}
           disabled={loading}
           className="text-xs inline-flex items-center gap-1.5 px-2.5 py-1 rounded transition-colors disabled:opacity-50"
           style={{

@@ -16,17 +16,53 @@ import {
   PanelLeftClose,
   ShieldCheck,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import {
+  useAdminPendingCounts,
+  type AdminPendingCounts,
+} from './AdminPendingCountsContext'
 
 // Admin navigation. Built fresh in this session as the platform's first
 // admin surface. Items are scoped to the actionable admin endpoints
 // that already have backend routes; everything else stays API-only
 // until a separate UX pass decides it needs a page.
-const navItems = [
+//
+// countKey is the field on AdminPendingCounts the nav item's badge
+// reads from. The Dashboard item has no key (its purpose is the
+// overview, no badge needed).
+interface NavItem {
+  path: string
+  icon: LucideIcon
+  label: string
+  countKey?: keyof AdminPendingCounts
+}
+
+const navItems: NavItem[] = [
   { path: '/admin', icon: LayoutDashboard, label: 'Dashboard' },
-  { path: '/admin/buyer-withdrawals', icon: ArrowDownToLine, label: 'Buyer Withdrawals' },
-  { path: '/admin/operator-withdrawals', icon: ArrowUpToLine, label: 'Operator Withdrawals' },
-  { path: '/admin/compute', icon: Cpu, label: 'Compute Requests' },
-  { path: '/admin/deployments', icon: Server, label: 'Deployments' },
+  {
+    path: '/admin/buyer-withdrawals',
+    icon: ArrowDownToLine,
+    label: 'Buyer Withdrawals',
+    countKey: 'buyerWithdrawals',
+  },
+  {
+    path: '/admin/operator-withdrawals',
+    icon: ArrowUpToLine,
+    label: 'Operator Withdrawals',
+    countKey: 'operatorWithdrawals',
+  },
+  {
+    path: '/admin/compute',
+    icon: Cpu,
+    label: 'Compute Requests',
+    countKey: 'compute',
+  },
+  {
+    path: '/admin/deployments',
+    icon: Server,
+    label: 'Deployments',
+    countKey: 'deployments',
+  },
 ]
 
 const sidebarEase: [number, number, number, number] = [0.4, 0, 0.2, 1]
@@ -44,6 +80,7 @@ const labelVariants = {
 export function AdminSidebar() {
   const pathname = usePathname()
   const { sidebarOpen, setSidebarOpen } = useSidebar()
+  const { counts } = useAdminPendingCounts()
   const asideRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
@@ -130,6 +167,8 @@ export function AdminSidebar() {
           const isActive =
             pathname === item.path ||
             (item.path !== '/admin' && pathname.startsWith(item.path))
+          const count = item.countKey ? counts[item.countKey] : 0
+          const hasCount = count > 0
           return (
             <Link
               key={item.path}
@@ -142,7 +181,7 @@ export function AdminSidebar() {
                 }
               }}
               className={`nav-item ${isActive ? 'active' : ''}`}
-              title={!sidebarOpen ? item.label : undefined}
+              title={!sidebarOpen ? `${item.label}${hasCount ? ` (${count})` : ''}` : undefined}
             >
               <motion.div
                 className="nav-item-content"
@@ -158,12 +197,49 @@ export function AdminSidebar() {
                     transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                   />
                 )}
-                <div className="nav-icon-wrapper">
+                <div className="nav-icon-wrapper" style={{ position: 'relative' }}>
                   <item.icon size={20} className="nav-icon" />
+                  {/* Collapsed sidebar: small red dot in the corner.
+                      Open sidebar: pill is rendered next to the label
+                      (see below) instead, so the dot is hidden. */}
+                  {hasCount && !sidebarOpen && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: -2,
+                        right: -2,
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: '#ef4444',
+                        boxShadow: '0 0 0 2px var(--bg-card)',
+                      }}
+                      aria-label={`${count} pending`}
+                    />
+                  )}
                 </div>
                 <motion.span className="nav-label" variants={labelVariants}>
                   {item.label}
                 </motion.span>
+                {hasCount && sidebarOpen && (
+                  <motion.span
+                    variants={labelVariants}
+                    style={{
+                      marginLeft: 'auto',
+                      background: 'rgba(239, 68, 68, 0.18)',
+                      color: '#ef4444',
+                      borderRadius: 999,
+                      padding: '2px 8px',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      fontFamily: 'var(--font-mono, ui-monospace)',
+                      minWidth: 22,
+                      textAlign: 'center',
+                    }}
+                  >
+                    {count}
+                  </motion.span>
+                )}
               </motion.div>
             </Link>
           )

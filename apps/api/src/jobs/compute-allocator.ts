@@ -247,6 +247,71 @@ async function processRequest(
         flags: verdict.flags,
         timestamp: new Date().toISOString(),
       })
+
+      // 2026-06-11 third-round: when a hold fires that needs human
+      // review (specifically HOLD_FIRST_RENTAL_NEEDS_ADMIN, the L3
+      // verifiable backstop), ping admins. Redis dedupe (5-min
+      // window, shared across all admins) so a burst of holds
+      // becomes ONE email summarising the pending queue instead of
+      // a per-row flood. Fires AFTER the buyer notification so a
+      // Redis failure doesn't drop the buyer-facing message.
+      const needsAdminReview = verdict.flags.some((f) =>
+        f === 'HOLD_FIRST_RENTAL_NEEDS_ADMIN' ||
+        f === 'HOLD_UNVERIFIED_EMAIL_FIRST_RENTALS',
+      )
+      if (needsAdminReview) {
+        void (async () => {
+          try {
+            const dedupeKey = 'admin-review-notify:lock'
+            const lockTtlSec = 5 * 60
+            const acquired = await REFUSAL_REDIS.set(
+              dedupeKey,
+              '1',
+              'EX',
+              lockTtlSec,
+              'NX',
+            )
+            if (acquired !== 'OK') return // another tick already notified within the window
+
+            const pending = await prisma.computeRequest.count({
+              where: {
+                status: 'WAITLISTED',
+                eligibilityFlags: {
+                  hasSome: [
+                    'HOLD_FIRST_RENTAL_NEEDS_ADMIN',
+                    'HOLD_UNVERIFIED_EMAIL_FIRST_RENTALS',
+                  ],
+                },
+              },
+            })
+            const admins = await prisma.user.findMany({
+              where: { role: 'ADMIN' },
+              select: { id: true },
+            })
+            const noun = pending === 1 ? 'request' : 'requests'
+            const buyerEmail = cr.user.email ?? '(no email)'
+            const totalUsd = cr.totalCost.toFixed(2)
+            const title = `${pending} compute ${noun} need review`
+            const body =
+              `Latest: ${buyerEmail} requesting ${cr.gpuCount}× ${cr.gpuTier} ` +
+              `for ${cr.durationDays} day${cr.durationDays === 1 ? '' : 's'} ` +
+              `($${totalUsd}). Flags: ${verdict.flags.join(', ')}.`
+            for (const admin of admins) {
+              void createNotification(
+                admin.id,
+                'ADMIN_REVIEW_REQUIRED',
+                title,
+                body,
+                '/admin/compute',
+              )
+            }
+          } catch {
+            // Notification failures must never block the buyer-
+            // facing path. Admins will catch missed reviews via
+            // the dashboard auto-refresh + sidebar badge.
+          }
+        })()
+      }
     }
     return
   }

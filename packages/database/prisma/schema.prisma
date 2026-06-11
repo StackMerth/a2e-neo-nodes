@@ -159,6 +159,11 @@ enum NotificationType {
   // Eligible for email per the existing high-priority list so
   // receipts ship even when the user isn't online.
   BALANCE_TOPUP
+  // 2026-06-11 third-round: fired to admin when a buyer's first
+  // rental hits the L3 HOLD_FIRST_RENTAL_NEEDS_ADMIN gate. Eligible
+  // for email (in EMAIL_NOTIFICATION_TYPES) and de-duped per-admin
+  // via Redis (5-min window) so a burst of holds becomes one email.
+  ADMIN_REVIEW_REQUIRED
 }
 
 model User {
