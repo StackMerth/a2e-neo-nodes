@@ -1826,10 +1826,11 @@ enum BuyerWithdrawalMethod {
 }
 
 enum BuyerWithdrawalStatus {
-  PENDING // accepted, not yet sent
-  PROCESSING // sending now
+  PENDING // accepted, awaiting admin approval (since pen-test A5 fix)
+  PROCESSING // admin approved, sending on-chain now
   COMPLETED // on-chain confirmation received
-  FAILED // send failed; balance was refunded
+  FAILED // send failed; balance was refunded via REFUND_FAILED
+  REJECTED // admin rejected the request; balance was refunded
 }
 
 model BalanceTransaction {

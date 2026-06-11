@@ -449,90 +449,38 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
       })
     }
 
-    // Step 2: on-chain send. Wrapped in try/catch so a send failure
-    // refunds the user's balance via a compensating credit, keeping
-    // them whole even if Solana rejects the tx.
-    await fastify.prisma.buyerWithdrawal.update({
-      where: { id: withdrawal.id },
-      data: { status: 'PROCESSING' },
+    // SECURITY (pen-test A5 2026-06-10): the previous Step 2 immediately
+    // flipped the withdrawal to PROCESSING and auto-broadcast USDC on-
+    // chain to the buyer's wallet — no email confirm, no admin approval,
+    // no velocity check. Combined with any balance-inflation bug it was
+    // an instant drain. Per [[architecture_custodial_payouts]], the
+    // platform is a custodial money transmitter; withdrawals MUST sit
+    // PENDING until a human approves them via the admin route.
+    //
+    // The balance debit above stays so the buyer's available balance
+    // reflects the in-flight commitment (matches what they'd see in any
+    // sane brokerage UI: 'pending withdrawal' is already deducted from
+    // available). If the admin REJECTS, the admin endpoint emits a
+    // REFUND_FAILED credit that brings the balance back.
+    //
+    // Notification: tell the buyer their request is queued so they're
+    // not surprised when no tx hash appears.
+    void createNotification(
+      userId,
+      'BALANCE_TOPUP',
+      'Withdrawal queued',
+      `Your $${amountUsd.toFixed(2)} withdrawal is pending admin review. ` +
+        `You will be notified when it is approved and sent.`,
+      `/buyer/balance`,
+    )
+
+    return reply.send({
+      id: withdrawal.id,
+      status: 'PENDING',
+      amountUsd,
+      message:
+        'Withdrawal queued for admin approval. You will be notified when it processes.',
     })
-
-    try {
-      const solanaConfig = await getSolanaConfig(fastify.prisma)
-      const result = await processPayment(solanaConfig, user.walletAddress, amountUsd, 'USDC')
-
-      if (result.success && result.txHash) {
-        await fastify.prisma.buyerWithdrawal.update({
-          where: { id: withdrawal.id },
-          data: {
-            status: 'COMPLETED',
-            txHash: result.txHash,
-            processedAt: new Date(),
-          },
-        })
-        // Fire-and-forget notification.
-        void createNotification(
-          userId,
-          'BALANCE_TOPUP',
-          'Withdrawal sent',
-          `$${amountUsd.toFixed(2)} sent to your wallet. Tx: ${result.txHash.slice(0, 12)}…`,
-          `/buyer/balance`,
-        )
-        return reply.send({
-          id: withdrawal.id,
-          status: 'COMPLETED',
-          txHash: result.txHash,
-          amountUsd,
-        })
-      }
-
-      // processPayment returned success: false
-      const errMsg = result.error ?? 'On-chain send failed'
-      await fastify.prisma.buyerWithdrawal.update({
-        where: { id: withdrawal.id },
-        data: { status: 'FAILED', error: errMsg, processedAt: new Date() },
-      })
-      // Refund the debited amount via REFUND_FAILED so the buyer's
-      // balance isn't lost when our send fails. Same referenceId as
-      // the debit so reconciliation can pair them.
-      await creditBalance(fastify.prisma, {
-        userId,
-        amountUsd,
-        type: 'REFUND_FAILED',
-        description: `Refund: withdrawal ${withdrawal.id.slice(0, 8)} failed (${errMsg})`,
-        referenceId: `withdraw-fail:${withdrawal.id}`,
-      })
-      return reply.code(502).send({
-        error: 'send_failed',
-        message: `On-chain send failed: ${errMsg}. Your balance has been restored.`,
-      })
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown send error'
-      fastify.log.error({ err, withdrawalId: withdrawal.id }, 'Withdraw send threw')
-      await fastify.prisma.buyerWithdrawal
-        .update({
-          where: { id: withdrawal.id },
-          data: { status: 'FAILED', error: errMsg, processedAt: new Date() },
-        })
-        .catch(() => undefined)
-      // Compensating credit (best-effort).
-      await creditBalance(fastify.prisma, {
-        userId,
-        amountUsd,
-        type: 'REFUND_FAILED',
-        description: `Refund: withdrawal ${withdrawal.id.slice(0, 8)} threw (${errMsg})`,
-        referenceId: `withdraw-fail:${withdrawal.id}`,
-      }).catch((creditErr) => {
-        fastify.log.error(
-          { err: creditErr, withdrawalId: withdrawal!.id },
-          'Compensating credit failed after withdraw send error',
-        )
-      })
-      return reply.code(502).send({
-        error: 'send_failed',
-        message: `On-chain send error: ${errMsg}. Your balance has been restored.`,
-      })
-    }
   })
 
   /**
