@@ -14,6 +14,7 @@ import {
   Wallet,
   CreditCard,
   Key,
+  Container,
   BookOpen,
   Settings,
   PanelLeftOpen,
@@ -28,6 +29,9 @@ const navItems = [
   { path: '/buyer/balance', icon: Wallet, label: 'Balance' },
   { path: '/buyer/billing', icon: CreditCard, label: 'Billing' },
   { path: '/buyer/api-keys', icon: Key, label: 'API Keys' },
+  // E6: Docker image registry. Adjacent to API Keys because docker
+  // login uses an a2e-buyer-... key with registry:read/write scopes.
+  { path: '/buyer/registry', icon: Container, label: 'Registry' },
   { path: '/buyer/docs', icon: BookOpen, label: 'API Docs' },
   { path: '/buyer/settings', icon: Settings, label: 'Settings' },
 ]
