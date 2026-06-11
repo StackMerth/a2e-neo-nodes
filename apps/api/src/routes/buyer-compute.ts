@@ -6,7 +6,7 @@ import { terminateExternalRentalForRequest, UnknownProviderError } from '../serv
 import { decryptPrivateKey } from '../services/inbound/key-encryption.js'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import { checkIdempotencyKey, storeIdempotencyResponse } from '../services/idempotency/keys.js'
-import { getSolanaConfig, processPayment } from '../services/payment/solana.js'
+import { getSolanaConfig, processPayment, verifyUsdcDeposit } from '../services/payment/solana.js'
 import { createDirectRentalCheckoutSession, isStripeConfigured } from '../services/payment/stripe.js'
 import { getOperatorBalanceBreakdown } from '../services/settlement/engine.js'
 import {
@@ -498,6 +498,43 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       }
     }
 
+    // SECURITY (pen-test B3 2026-06-10): USDC rentals were created with
+    // txConfirmed=true hardcoded — no on-chain verification of the
+    // submitted txHash. Any forged Solana-looking string passed validation
+    // and the allocator happily provisioned compute. CRITICAL: free
+    // compute for anyone willing to fabricate a hash. We now mirror the
+    // verification used in /v1/buyer/balance/topup-solana:
+    //
+    //   1. Dev/test txHash (DEV_ / test_ prefix or PAYMENT_MODE=dev)
+    //      passes through with isDevMode=true (kept for local + staging).
+    //   2. Real Solana hashes are verified via verifyUsdcDeposit:
+    //      - transaction exists on-chain + has no error
+    //      - the destination matches our treasury wallet
+    //      - the observed USDC amount >= totalCost
+    //   3. Failed verification -> 402 Payment Required with the specific
+    //      reason so the buyer can retry with the correct hash. No
+    //      DB row created; no compute allocated.
+    let txConfirmedForCreate = paymentSource !== 'USDC'
+    if (paymentSource === 'USDC') {
+      const solanaConfig = await getSolanaConfig(fastify.prisma)
+      const verification = await verifyUsdcDeposit(
+        solanaConfig,
+        usdcTxHash,
+        totalCost,
+      )
+      if (!verification.verified) {
+        return reply.code(402).send({
+          error: 'Payment Required',
+          message:
+            verification.error ??
+            'Could not verify USDC payment on-chain. Submit a fresh txHash after the transaction confirms.',
+          submittedTxHash: usdcTxHash,
+          expectedAmountUsd: totalCost,
+        })
+      }
+      txConfirmedForCreate = true
+    }
+
     // Common create payload. Built once; the only difference between
     // USDC and INTERNAL_BALANCE is the initial txHash placeholder.
     const baseData = {
@@ -508,7 +545,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       purpose,
       ratePerDay,
       totalCost,
-      txConfirmed: true,
+      txConfirmed: txConfirmedForCreate,
       status: 'PENDING' as const,
       paymentSource,
       // C2 wave 2: workload-type tag the allocator filters on. Default
