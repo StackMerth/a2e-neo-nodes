@@ -132,7 +132,7 @@ const STEP_LABELS: Record<string, string> = {
 }
 
 const STATUS_MESSAGES: Record<string, { title: string; desc: string; color: string }> = {
-  PENDING: { title: 'Looking for available capacity', desc: 'Checking suppliers every 10 seconds for a matching GPU. Provisioning starts the moment one is available. No action needed.', color: '#f59e0b' },
+  PENDING: { title: 'Looking for available capacity', desc: 'Checking suppliers every 10 seconds. Most rentals provision within minutes. If none responds within 20 minutes, the rental auto-cancels and your full payment is refunded.', color: '#f59e0b' },
   APPROVED: { title: 'Request Approved', desc: 'Your request has been approved and resources are being prepared.', color: '#3b82f6' },
   ALLOCATED: { title: 'Resources Allocated', desc: 'GPUs have been allocated and are being configured for you.', color: '#8b5cf6' },
   ACTIVE: { title: 'Active, Connect via SSH', desc: 'Your compute resources are ready. Use the SSH details below to connect.', color: '#22c55e' },
@@ -501,7 +501,7 @@ export default function RequestDetailPage() {
       if (flags.includes('SEARCHING_CAPACITY') || flags.includes('WAITING_ON_CAPACITY')) {
         return {
           title: 'Looking for available capacity',
-          desc: 'Checking suppliers every 10 seconds for a matching GPU. Provisioning starts the moment one is available. No action needed.',
+          desc: 'Checking suppliers every 10 seconds. Most rentals provision within minutes. If none responds within 20 minutes, the rental auto-cancels and your full payment is refunded.',
           color: '#f59e0b',
         }
       }
