@@ -144,6 +144,11 @@ import {
   scheduleProvisioningTimeout,
 } from './jobs/provisioning-timeout'
 import {
+  createProvisioningRerouteQueue,
+  createProvisioningRerouteWorker,
+  scheduleProvisioningReroute,
+} from './jobs/provisioning-reroute'
+import {
   createCapacitySearchTimeoutQueue,
   createCapacitySearchTimeoutWorker,
   scheduleCapacitySearchTimeout,
@@ -488,6 +493,17 @@ async function start() {
     createProvisioningTimeoutWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleProvisioningTimeout(provisioningTimeoutQueue)
     server.log.info('Provisioning timeout worker initialized (60s tick, 20min no-progress cutoff)')
+
+    // Soft-reroute worker. Sits BEFORE the 20-min hard timeout: at 8 min
+    // of no-progress on a non-Shadeform provider, terminates the stuck
+    // rental and reroutes to Shadeform (largest fallback pool because
+    // Shadeform aggregates many underlying clouds). If Shadeform also
+    // refuses, hard-timeout still fires at 20 min to refund cleanly.
+    // Disable via PROVISIONING_REROUTE_ENABLED=false.
+    const provisioningRerouteQueue = createProvisioningRerouteQueue(redisConnection)
+    createProvisioningRerouteWorker({ redis: redisConnection, prisma: server.prisma })
+    await scheduleProvisioningReroute(provisioningRerouteQueue)
+    server.log.info('Provisioning reroute worker initialized (60s tick, 8min soft cutoff -> SHADEFORM)')
 
     // Capacity-search timeout worker: cancels + refunds rentals stuck
     // in PENDING with SEARCHING_CAPACITY / NO_REGION_CAPACITY flags
