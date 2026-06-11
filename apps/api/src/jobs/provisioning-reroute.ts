@@ -46,9 +46,11 @@ import type { PrismaClient } from '@a2e/database'
 import { provisionShadeFormRental } from '../services/inbound/shadeform-provision.js'
 import { provisionRunPodRental } from '../services/inbound/runpod-provision.js'
 import { provisionLambdaRental } from '../services/inbound/lambda-provision.js'
+import { provisionIoNetRental } from '../services/inbound/ionet-provision.js'
 import { isShadeFormConfigured } from '../services/inbound/shadeform-adapter.js'
 import { isRunPodConfigured } from '../services/inbound/runpod-adapter.js'
 import { isLambdaConfigured } from '../services/inbound/lambda-adapter.js'
+import { isIoNetConfigured } from '../services/inbound/ionet-adapter.js'
 import {
   terminateExternalRentalForRequest,
   UnknownProviderError,
@@ -86,28 +88,50 @@ const REROUTE_SKIPPED_MARKER = '[reroute-skipped-consumer-tier]'
 // remains as the safety net.
 const CONSUMER_GPU_TIERS = new Set(['CONSUMER', 'RTX_4090', 'RTX_3090'])
 
-// Providers we route AWAY from. The fallback ladder targets a disjoint
-// set (Shadeform, RunPod, Lambda) — we'd never reroute Shadeform to
-// Shadeform. Reroute-source providers map to "anywhere except where
-// you came from"; reroute-target providers map to "the ladder below."
+// Providers we route AWAY from. Includes every supported external
+// provider — if a buyer's initial allocation gets stuck on ANY
+// provider, we want the option to try the FALLBACK_LADDER alternatives.
+// The per-rung guard `rung.provider === er.provider` prevents routing
+// a provider to itself, so e.g. a stuck RunPod rental walks
+// Shadeform -> IO.net -> Lambda (skipping its own rung).
 const REROUTABLE_SOURCE_PROVIDERS = new Set([
   'VASTAI',
   'IONET',
   'PHALA',
   'VOLTAGEGPU',
   'HYPERSTACK',
-  // RUNPOD and LAMBDA are reroute-targets but ALSO sources, so we
-  // include them. If a buyer's request initially routed to RunPod and
-  // got stuck, we still want to try Shadeform / Lambda from there.
   'RUNPOD',
   'LAMBDA',
+  'SHADEFORM',
 ])
 
 // One ladder rung: a provision function + a configured-guard + a name
 // for logging and adminNote stamping. Order in this array is the
 // fallback order.
+//
+// Phala and VoltageGPU are intentionally EXCLUDED from the ladder:
+//   - Phala: email-gated, $115/24h minimum, confidential-only path
+//   - VoltageGPU: public API has no pod-create endpoint, read-only catalog
+// They remain available via the compute-allocator for buyers who
+// explicitly need confidential compute, but they're not viable as
+// generic fallback rungs.
+//
+// Ladder order rationale (RunPod -> Shadeform -> IO.net -> Lambda):
+//   - RunPod first: fastest direct provisioning when supply exists
+//     (1-3 min typical). Independent supply pool not aggregated
+//     elsewhere. Reroute fires AFTER 8min of waiting; the buyer wants
+//     speed, not breadth.
+//   - Shadeform second: meta-broker aggregating Hyperstack, Crusoe,
+//     MassedCompute, Latitude, NeuralRack. Broadest fallback pool when
+//     RunPod refuses. ~2-5 min broker overhead but huge inventory.
+//   - IO.net third: decentralized backup with real enterprise (A100/
+//     H100) supply. Less reliable than centralized but adds another
+//     real shot before falling through to Lambda.
+//   - Lambda fourth: most reliable but slowest cold-boot (5-15 min).
+//     Quota-strict. Good last-resort when reliability matters more
+//     than speed.
 interface LadderRung {
-  provider: 'SHADEFORM' | 'RUNPOD' | 'LAMBDA'
+  provider: 'SHADEFORM' | 'RUNPOD' | 'LAMBDA' | 'IONET'
   isConfigured: () => boolean
   provision: (
     prisma: PrismaClient,
@@ -117,14 +141,19 @@ interface LadderRung {
 
 const FALLBACK_LADDER: LadderRung[] = [
   {
+    provider: 'RUNPOD',
+    isConfigured: isRunPodConfigured,
+    provision: provisionRunPodRental,
+  },
+  {
     provider: 'SHADEFORM',
     isConfigured: isShadeFormConfigured,
     provision: provisionShadeFormRental,
   },
   {
-    provider: 'RUNPOD',
-    isConfigured: isRunPodConfigured,
-    provision: provisionRunPodRental,
+    provider: 'IONET',
+    isConfigured: isIoNetConfigured,
+    provision: provisionIoNetRental,
   },
   {
     provider: 'LAMBDA',
