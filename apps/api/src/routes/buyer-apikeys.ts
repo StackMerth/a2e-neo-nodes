@@ -32,6 +32,24 @@ export async function buyerApiKeyRoutes(fastify: FastifyInstance) {
     const { name, permissions, expiresInDays } = parsed.data
     const expiresAt = expiresInDays ? new Date(Date.now() + expiresInDays * 86400000) : undefined
 
+    // SECURITY (2026-06-11 third-round follow-up): refuse API key
+    // minting for unverified buyers. An API key is the credential used
+    // to call paid endpoints (inference, chat completions). Pairs with
+    // L2 HOLD_UNVERIFIED_EMAIL_FIRST_RENTALS in eligibility.ts so the
+    // verification gate is consistent across every money-touching
+    // action a brand-new buyer can take.
+    const me = await fastify.prisma.user.findUnique({
+      where: { id: request.user!.userId },
+      select: { emailVerified: true },
+    })
+    if (!me?.emailVerified) {
+      return reply.code(403).send({
+        error: 'Forbidden',
+        code: 'EMAIL_VERIFICATION_REQUIRED',
+        message: 'Verify your email before creating API keys. Check your inbox for the verification link, or use the resend button in the dashboard.',
+      })
+    }
+
     const result = await generateApiKey(request.user!.userId, name, permissions, expiresAt)
 
     reply.code(201).send({
