@@ -141,7 +141,7 @@ const STATUS_MESSAGES: Record<string, { title: string; desc: string; color: stri
   // intentionally abstracted — buyers see "TokenOS Compute" so the
   // platform reads as a unified service, not a router into named
   // third-party clouds.
-  PROVISIONING_EXTERNAL: { title: 'Provisioning your compute', desc: 'TokenOS is preparing your instance. SSH credentials appear within ~60s.', color: '#06b6d4' },
+  PROVISIONING_EXTERNAL: { title: 'Provisioning your compute', desc: 'Your instance is booting. SSH credentials usually appear within 5-15 minutes. Auto-refunds if provisioning fails.', color: '#06b6d4' },
   COMPLETED: { title: 'Completed', desc: 'This compute allocation has ended.', color: '#71717a' },
   CANCELLED: { title: 'Cancelled', desc: 'This request was cancelled.', color: '#71717a' },
   REJECTED: { title: 'Rejected', desc: 'This request was not approved.', color: '#ef4444' },
@@ -671,7 +671,7 @@ export default function RequestDetailPage() {
             <div className="flex items-center gap-3 py-4">
               <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--info)' }} />
               <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                Your instance is booting. SSH credentials will appear here within ~60 seconds.
+                Your instance is booting. SSH credentials usually appear within 5-15 minutes. Auto-refunds if provisioning fails.
                 <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
                   This page refreshes automatically.
                 </div>
