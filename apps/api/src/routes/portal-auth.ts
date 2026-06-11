@@ -7,6 +7,11 @@ import { registerUser, authenticateUser, hashPassword } from '../services/auth/p
 import { sendEmail } from '../services/email/sender.js'
 import { attributeReferral } from '../services/referral/attribution.js'
 import { createNotification } from '../services/notification/service.js'
+import {
+  checkLoginRateLimit,
+  recordFailedLogin,
+  resetLoginAttempts,
+} from '../services/auth/login-rate-limit.js'
 
 // Validation schemas
 
@@ -215,14 +220,45 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
     }
 
     const { email, password } = parsed.data
+
+    // SECURITY (pen-test A2 2026-06-10): rate-limit + lockout by both
+    // source IP and target email. Audit confirmed 8 rapid wrong-
+    // password attempts produced 8 plain 401s with no 429/backoff. With
+    // this check, the 6th attempt against the same email (or the 31st
+    // attempt from the same IP within the window) gets 429 + a
+    // Retry-After header. Fail-open on Redis errors so an outage
+    // doesn't lock everybody out.
+    const redis = fastify.redis
+    const ip = request.ip
+    if (redis) {
+      const limitState = await checkLoginRateLimit(redis, ip, email)
+      if (limitState.blocked) {
+        const retryAfter = limitState.retryAfterSeconds ?? 900
+        return reply
+          .code(429)
+          .header('Retry-After', String(retryAfter))
+          .send({
+            error: 'Too Many Requests',
+            message:
+              `Too many login attempts. Try again in about ${Math.ceil(retryAfter / 60)} minute(s).`,
+          })
+      }
+    }
+
     const user = await authenticateUser(email, password)
 
     if (!user) {
+      if (redis) void recordFailedLogin(redis, ip, email)
       return reply.code(401).send({
         error: 'Unauthorized',
         message: 'Invalid email or password',
       })
     }
+
+    // Successful login: clear both counters so a user who finally typed
+    // their password correctly after a couple of mistakes isn't held in
+    // lockout for the remainder of the window.
+    if (redis) void resetLoginAttempts(redis, ip, email)
 
     const accessToken = generateAccessToken(user.id, user.role)
     const refreshToken = await generateRefreshToken(user.id)
