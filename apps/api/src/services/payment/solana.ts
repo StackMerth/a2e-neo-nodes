@@ -581,7 +581,9 @@ export async function verifyTransaction(
  *   3. Treasury wallet's USDC ATA gained AT LEAST minAmountUsdc units
  *   4. Optional: sender (the wallet that lost USDC) is allowed
  *
- * DEV MODE: tx hashes starting with DEV_ or test_ auto-verify.
+ * DEV MODE: tx hashes starting with DEV_ or test_ auto-verify ONLY when
+ * the server is in devMode. In live mode, prefix-only hashes fall
+ * through to the on-chain check and fail.
  *
  * Returns { verified, observedAmountUsdc, sender, error }.
  */
@@ -596,9 +598,18 @@ export async function verifyUsdcDeposit(
   isDevMode: boolean
   error?: string
 }> {
-  // DEV MODE / test fast path. Same predicate as verifyTransaction so
-  // local + staging flows aren't disrupted by the stricter prod check.
-  if (config.devMode || txHash.startsWith('DEV_') || txHash.startsWith('test_')) {
+  // SECURITY (2026-06-11): the original predicate was
+  // `config.devMode || startsWith('DEV_') || startsWith('test_')`. The
+  // OR meant ANY caller in live mode could craft `txHash: "test_x"`
+  // and get verified=true — the same shape as the 2026-06-09 B-7
+  // finding that was hardened on verifyTransaction directly above
+  // (lines 490-509) but left in place here. The B3 pen-test fix on
+  // /v1/buyer/compute/request called this function expecting it to
+  // reject forged hashes; the internal bypass undermined it and a
+  // forged `@example.invalid` buyer walked a $9 RTX_3090 rental to
+  // PROVISIONING_EXTERNAL on Vast.ai. Hardened: prefix-only auto-
+  // verifies ONLY when devMode is also true.
+  if (config.devMode) {
     return { verified: true, isDevMode: true, observedAmountUsd: minAmountUsd }
   }
 

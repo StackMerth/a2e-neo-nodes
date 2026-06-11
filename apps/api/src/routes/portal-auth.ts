@@ -15,8 +15,43 @@ import {
 
 // Validation schemas
 
+// RFC 2606 / RFC 6761 reserved domains + obvious fake-tlds. These never
+// resolve to real mailboxes; accepting them at signup is how the
+// 2026-06-11 forged-buyer rental got created (cpk-b4-...@example.invalid
+// walked a $9 RTX_3090 rental to PROVISIONING_EXTERNAL after the parallel
+// USDC bypass let payment pass). Block the domain at the validation
+// boundary so the same shape can't be replayed.
+const BLOCKED_EMAIL_DOMAINS = new Set([
+  'example.com',
+  'example.net',
+  'example.org',
+  'example.invalid',
+  'example.test',
+  'test',
+  'localhost',
+  'invalid',
+  'local',
+])
+
+function isBlockedEmailDomain(email: string): boolean {
+  const at = email.lastIndexOf('@')
+  if (at < 0) return false
+  const domain = email.slice(at + 1).toLowerCase().trim()
+  if (BLOCKED_EMAIL_DOMAINS.has(domain)) return true
+  // Block any subdomain of a reserved TLD (e.g. foo.test, bar.invalid).
+  for (const tld of ['test', 'invalid', 'localhost', 'local']) {
+    if (domain === tld || domain.endsWith(`.${tld}`)) return true
+  }
+  return false
+}
+
 const registerSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z
+    .string()
+    .email('Invalid email address')
+    .refine(e => !isBlockedEmailDomain(e), {
+      message: 'Email domain is not allowed. Use a real mailbox.',
+    }),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   name: z.string().min(1).max(100).optional(),
   role: z.enum(['NODE_RUNNER', 'COMPUTE_BUYER']).default('NODE_RUNNER'),
