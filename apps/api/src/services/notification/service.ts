@@ -192,6 +192,80 @@ async function findUserIdForNode(nodeId: string): Promise<string | null> {
 }
 
 /**
+ * Notify every platform admin AND any extra addresses configured via
+ * ADMIN_NOTIFICATION_EMAILS env var (comma-separated). Used for
+ * admin-review surfaces (new compute requests, holds needing review,
+ * etc.) where the admin User row may be a service placeholder (e.g.
+ * admin@a2e.local) that doesn't have a deliverable mailbox.
+ *
+ * Two parallel channels:
+ *   1. ADMIN User rows: full createNotification treatment (DB row,
+ *      Socket.io emit, push, email if the type is in
+ *      EMAIL_NOTIFICATION_TYPES). Admin user can log into the portal
+ *      and see the badge.
+ *   2. ADMIN_NOTIFICATION_EMAILS env addresses: direct sendEmail
+ *      only (no User row to attach a Notification to). Useful for
+ *      humans who should observe but not have admin permissions in
+ *      the portal.
+ *
+ * Both channels fire-and-forget; failures never bubble up to block
+ * the caller's main flow.
+ */
+export async function notifyAdmins(
+  type: NotificationType,
+  title: string,
+  message: string,
+  link?: string,
+) {
+  // Channel 1: in-app + email for admin User rows.
+  void (async () => {
+    try {
+      const admins = await prisma.user.findMany({
+        where: { role: 'ADMIN' },
+        select: { id: true },
+      })
+      for (const a of admins) {
+        void createNotification(a.id, type, title, message, link)
+      }
+    } catch {
+      // Swallow — channel 2 still fires independently.
+    }
+  })()
+
+  // Channel 2: direct email to env-listed addresses. Gated on the
+  // type being in EMAIL_NOTIFICATION_TYPES so high-volume types like
+  // COMPUTE_REQUEST_NEW (fires per rental) don't spam env recipients.
+  // ADMIN_REVIEW_REQUIRED fires per first-rental hold (rare, with
+  // Redis dedupe upstream), so it correctly reaches the env list.
+  if (!EMAIL_NOTIFICATION_TYPES.includes(type)) return
+  void (async () => {
+    try {
+      const raw = process.env.ADMIN_NOTIFICATION_EMAILS ?? ''
+      const addresses = Array.from(
+        new Set(
+          raw
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0 && s.includes('@')),
+        ),
+      )
+      if (addresses.length === 0) return
+
+      const configured = await isEmailConfigured()
+      if (!configured) return
+
+      const html = renderGenericBody({ title, message, link })
+      for (const addr of addresses) {
+        // Each send is fire-and-forget; one bounce shouldn't stop the rest.
+        void sendEmail(addr, `${title} — TokenOS_DeAI`, html)
+      }
+    } catch {
+      // Swallow — channel 1 (admin User rows) already fired.
+    }
+  })()
+}
+
+/**
  * Notify that a node went offline. Deep-links to the operator's
  * node detail page so they can jump straight to the diagnostic view.
  */

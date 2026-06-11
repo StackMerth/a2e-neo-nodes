@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { createNotification } from '../services/notification/service.js'
+import { createNotification, notifyAdmins } from '../services/notification/service.js'
 import { creditCompletedRental } from '../services/revenue/rental-credit.js'
 import { terminateExternalRentalForRequest, UnknownProviderError } from '../services/inbound/terminate-dispatcher.js'
 import { decryptPrivateKey } from '../services/inbound/key-encryption.js'
@@ -661,13 +661,15 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       })
     }
 
-    // Notify admins (DB row + global notification:new WS event per admin)
-    const admins = await fastify.prisma.user.findMany({ where: { role: 'ADMIN' }, select: { id: true } })
-    for (const admin of admins) {
-      void createNotification(admin.id, 'COMPUTE_REQUEST_NEW', 'New Compute Request',
-        `${gpuCount}x ${gpuTier} for ${durationDays} days ($${totalCost.toFixed(2)})`,
-        '/compute')
-    }
+    // Notify admins + ADMIN_NOTIFICATION_EMAILS env addresses. The
+    // .local placeholder admin row gets the in-app + (undeliverable)
+    // email; the env list reaches the real humans.
+    void notifyAdmins(
+      'COMPUTE_REQUEST_NEW',
+      'New Compute Request',
+      `${gpuCount}x ${gpuTier} for ${durationDays} days ($${totalCost.toFixed(2)})`,
+      '/admin/compute',
+    )
 
     // Real-time event so the admin dashboard can show a toast and bump
     // the sidebar badge without waiting for the next 30s poll. Distinct

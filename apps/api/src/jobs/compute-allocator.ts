@@ -48,7 +48,7 @@ import type { PrismaClient, ComputeRequest, User, GpuTier } from '@a2e/database'
 import type { Server as SocketServer } from 'socket.io'
 import { evaluateEligibility } from '../services/allocation/eligibility.js'
 import { mintSshSession } from '../services/allocation/ssh-session.js'
-import { createNotification } from '../services/notification/service.js'
+import { createNotification, notifyAdmins } from '../services/notification/service.js'
 import { planClusterMesh } from '../services/provisioning/wireguard-mesh.js'
 import { isLambdaConfigured } from '../services/inbound/lambda-adapter.js'
 import { isKeyEncryptionConfigured } from '../services/inbound/key-encryption.js'
@@ -284,10 +284,6 @@ async function processRequest(
                 },
               },
             })
-            const admins = await prisma.user.findMany({
-              where: { role: 'ADMIN' },
-              select: { id: true },
-            })
             const noun = pending === 1 ? 'request' : 'requests'
             const buyerEmail = cr.user.email ?? '(no email)'
             const totalUsd = cr.totalCost.toFixed(2)
@@ -296,15 +292,15 @@ async function processRequest(
               `Latest: ${buyerEmail} requesting ${cr.gpuCount}× ${cr.gpuTier} ` +
               `for ${cr.durationDays} day${cr.durationDays === 1 ? '' : 's'} ` +
               `($${totalUsd}). Flags: ${verdict.flags.join(', ')}.`
-            for (const admin of admins) {
-              void createNotification(
-                admin.id,
-                'ADMIN_REVIEW_REQUIRED',
-                title,
-                body,
-                '/admin/compute',
-              )
-            }
+            // Channels: admin User rows + ADMIN_NOTIFICATION_EMAILS env list.
+            // The .local placeholder admin row gets the in-app + (undeliverable)
+            // email; the env list reaches the real humans.
+            await notifyAdmins(
+              'ADMIN_REVIEW_REQUIRED',
+              title,
+              body,
+              '/admin/compute',
+            )
           } catch {
             // Notification failures must never block the buyer-
             // facing path. Admins will catch missed reviews via
