@@ -132,14 +132,28 @@ export async function runProvisioningRerouteTick(
 ): Promise<void> {
   const cutoff = new Date(Date.now() - SOFT_THRESHOLD_MS)
 
-  // Step 1: find ExternalRental rows in PENDING whose updatedAt hasn't
-  // moved in SOFT_THRESHOLD_MS, on a provider we know how to route AWAY
-  // from. Same updatedAt freshness logic as the hard timeout — a
-  // healthy poll worker keeps updatedAt fresh.
+  // Step 1: find ExternalRental rows that have been in PENDING status
+  // for longer than SOFT_THRESHOLD_MS since CREATION, on a provider we
+  // know how to route AWAY from.
+  //
+  // Why createdAt and NOT updatedAt: every provider's poll worker
+  // (e.g. vastai-provision.ts pollVastAiRentalStatus) calls
+  // prisma.externalRental.update() on every tick, even when nothing
+  // changed, with at least `{status: newStatus, lastError: null}`.
+  // Prisma's @updatedAt directive bumps the column on every update()
+  // regardless of whether the data actually changed. So `updatedAt`
+  // is essentially "wall-clock-now for any rental whose poll worker is
+  // running" rather than "time since the provider made progress." A
+  // healthy-but-slow Vast.ai rental would keep updatedAt fresh every
+  // minute and never trigger the reroute despite being genuinely stuck.
+  //
+  // createdAt is immutable, so `createdAt + SOFT_THRESHOLD_MS < now`
+  // accurately means "this rental has existed for N minutes and is
+  // still not ACTIVE." That's the right signal for the reroute.
   const stuckRentals = await prisma.externalRental.findMany({
     where: {
       status: 'PENDING',
-      updatedAt: { lte: cutoff },
+      createdAt: { lte: cutoff },
       provider: { in: Array.from(REROUTABLE_SOURCE_PROVIDERS) },
     },
     take: BATCH_SIZE,
