@@ -70,6 +70,22 @@ const BATCH_SIZE = 20
 // includes() on the column.
 const REROUTE_MARKER = '[reroute-fired]'
 
+// Skip-reason marker for consumer GPU rentals where rerouting away
+// from Vast.ai would actively hurt the buyer because datacenter
+// fallbacks (Shadeform, RunPod Secure, Lambda) don't carry consumer
+// hardware at all. Stamping it once prevents per-tick logspam.
+const REROUTE_SKIPPED_MARKER = '[reroute-skipped-consumer-tier]'
+
+// Consumer GPU tiers. Datacenter providers (Shadeform aggregating
+// Hyperstack/Crusoe/MassedCompute/Latitude, Lambda, RunPod Secure
+// Cloud) do not carry these — they're built for residential / prosumer
+// hosts on peer-to-peer marketplaces (Vast.ai, IO.net). Rerouting away
+// from Vast.ai for these tiers leads to "all fallback rungs refused"
+// and a worse outcome than just waiting for Vast.ai's typical 5-15min
+// provisioning. The 20-min hard-timeout in provisioning-timeout.ts
+// remains as the safety net.
+const CONSUMER_GPU_TIERS = new Set(['CONSUMER', 'RTX_4090', 'RTX_3090'])
+
 // Providers we route AWAY from. The fallback ladder targets a disjoint
 // set (Shadeform, RunPod, Lambda) — we'd never reroute Shadeform to
 // Shadeform. Reroute-source providers map to "anywhere except where
@@ -210,6 +226,32 @@ async function rerouteOne(
   if (!cr) return
   if (cr.status !== 'PROVISIONING_EXTERNAL') return
   if (cr.adminNote?.includes(REROUTE_MARKER)) return
+  if (cr.adminNote?.includes(REROUTE_SKIPPED_MARKER)) return
+
+  // Tier-aware skip: consumer GPUs (RTX_3090, RTX_4090, CONSUMER) live
+  // primarily on Vast.ai / IO.net (P2P consumer hardware). Datacenter
+  // providers in the fallback ladder (Shadeform, Lambda, RunPod Secure)
+  // do not carry these. Terminating the original provider for these
+  // tiers strictly hurts the buyer: we kill the best-supply path then
+  // discover no alternative exists, and fall through to the hard-
+  // timeout refund. The 20-min hard timeout still acts as the safety
+  // net for genuinely stuck consumer rentals.
+  if (CONSUMER_GPU_TIERS.has(cr.gpuTier)) {
+    console.log(
+      `[provisioning-reroute] skipping ${cr.id}: consumer GPU tier ${cr.gpuTier} has no viable datacenter fallback`,
+    )
+    const previousNote = cr.adminNote ?? ''
+    const skipNote =
+      `${REROUTE_SKIPPED_MARKER} tier=${cr.gpuTier} on ${er.provider}; ` +
+      `letting Vast.ai/IO.net complete or hard-timeout at 20min`
+    await prisma.computeRequest.updateMany({
+      where: { id: cr.id, status: 'PROVISIONING_EXTERNAL' },
+      data: {
+        adminNote: previousNote ? `${previousNote}; ${skipNote}` : skipNote,
+      },
+    })
+    return
+  }
 
   console.log(
     `[provisioning-reroute] starting ladder for ${cr.id} from ${er.provider} ` +
