@@ -205,6 +205,30 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
     const { txHash, amountUsd, note } = parse.data
     const userId = request.user!.userId
 
+    // SECURITY (A11, 2026-06-11): block topups from unverified-email
+    // buyers. A buyer who deposits to an account with a fake/typo'd
+    // email and later loses access (forgotten password + the recovery
+    // flow needs a working inbox) has no path back to their funds —
+    // the platform holds the USDC, the buyer can't withdraw. Gate
+    // funding on emailVerified so the recovery rail is real before
+    // money enters the account. The verify-email flow already exists
+    // at /v1/portal/auth/verify-email.
+    const me = await fastify.prisma.user.findUnique({
+      where: { id: userId },
+      select: { emailVerified: true, email: true },
+    })
+    if (!me?.emailVerified) {
+      return reply.code(403).send({
+        error: 'email_verification_required',
+        message:
+          'Verify your email before topping up. Funding an unverified ' +
+          'account creates a fund-loss risk: if you ever lose access ' +
+          'we can\'t restore your balance without a working mailbox. ' +
+          'Check your inbox or resend the verification email from ' +
+          '/buyer/settings.',
+      })
+    }
+
     // STRICT verification: tx exists AND credits >= amountUsd in USDC
     // to the treasury wallet. Pen-test 2026-06-09 found that the old
     // verifyTransaction only checked existence; an attacker could submit
@@ -305,8 +329,22 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
     const userId = request.user!.userId
     const user = await fastify.prisma.user.findUnique({
       where: { id: userId },
-      select: { email: true },
+      select: { email: true, emailVerified: true },
     })
+
+    // SECURITY (A11, 2026-06-11): same email-verify gate as
+    // topup-solana. Card-funded topups have the same fund-loss risk
+    // when the buyer can't receive password-reset email after losing
+    // access.
+    if (!user?.emailVerified) {
+      return reply.code(403).send({
+        error: 'email_verification_required',
+        message:
+          'Verify your email before topping up. Funding an unverified ' +
+          'account creates a fund-loss risk if you lose access. Check ' +
+          'your inbox or resend the verification email.',
+      })
+    }
 
     try {
       const session = await createTopupCheckoutSession({

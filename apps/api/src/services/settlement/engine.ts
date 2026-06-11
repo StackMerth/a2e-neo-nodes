@@ -133,11 +133,25 @@ export async function calculatePendingSettlements(
       continue
     }
 
-    // Per-operator payout mode decision tree. Default to AUTO for
-    // nodes without a linked NodeRunner so legacy behavior is preserved.
+    // SECURITY (B1, 2026-06-11 fifth-round): orphan nodes (nodes with
+    // no NodeRunner relation) DEFAULT TO DENY now, not AUTO. Previous
+    // behavior was the structural primitive of the B1 fake-node uptime
+    // drain: register a node with an attacker-controlled walletAddress
+    // and no NodeRunner -> orphan auto-pays uptime earnings on-chain
+    // to the attacker. With deny-by-default, an orphan node accrues
+    // earnings on the ledger but the scheduler never disburses them;
+    // an admin must explicitly link the node to a NodeRunner (proving
+    // operator identity / wallet ownership) before payout can fire.
     const runner = node.nodeRunner
-    const mode = runner?.payoutMode ?? 'AUTO'
-    const scheduledAt = runner?.payoutScheduledAt ?? null
+    if (!runner) {
+      // Skip orphan nodes entirely. They never get a settlement row
+      // until an admin links them. This is the structural close to
+      // B1: register-fake-node -> auto-payout is no longer a chain
+      // because step 4 (auto-payout) never fires for orphans.
+      continue
+    }
+    const mode = runner.payoutMode ?? 'MANUAL'
+    const scheduledAt = runner.payoutScheduledAt ?? null
 
     const isOverCap = uptimeEarnings.earnings >= PLATFORM_BALANCE_CAP_USD
     const isInactive = effectivePeriodEnd.getTime() - periodStart.getTime() > inactivityMs

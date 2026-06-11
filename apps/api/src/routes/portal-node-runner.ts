@@ -1430,9 +1430,23 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
    * POST /v1/portal/node-runner/deploy — Request a new node deployment
    */
   fastify.post('/v1/portal/node-runner/deploy', async (request, reply) => {
+    // SECURITY (A8, 2026-06-11): validate the request body BEFORE
+    // touching DB. The previous flow created the operator NodeRunner
+    // profile as a side-effect of any /deploy hit, then validated; a
+    // POST {} would 400 but leave an orphan operator profile. That
+    // profile was the no-payment primitive for the A7 fake-GPU
+    // flooding chain (claim BYOG token + heartbeat without ever
+    // funding a deployment). Validate first, then create.
+    const parsed = deploySchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
+    }
+
     let nr = await getNodeRunnerForUser(fastify, request.user!.userId)
 
-    // Auto-create NodeRunner profile if user doesn't have one
+    // Auto-create NodeRunner profile if user doesn't have one. Safe to
+    // do here because the body has already validated above; a 400
+    // never reaches this point so orphan profiles can't be minted.
     if (!nr) {
       const user = await fastify.prisma.user.findUnique({ where: { id: request.user!.userId } })
       if (!user) return reply.code(404).send({ error: 'User not found' })
@@ -1445,11 +1459,6 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
           userId: user.id,
         },
       })
-    }
-
-    const parsed = deploySchema.safeParse(request.body)
-    if (!parsed.success) {
-      return reply.code(400).send({ error: 'Validation Error', message: parsed.error.errors.map(e => e.message).join(', ') })
     }
 
     const { gpuTier, nodeCount, txHash, cryptoAmount, cryptoCurrency, deploymentNote, paymentSource } = parsed.data

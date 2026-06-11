@@ -165,6 +165,20 @@ export async function publicListingsRoutes(fastify: FastifyInstance) {
     // after the last c2:refresh-node call — which breaks any drawn-out
     // marketplace verification. The clause becomes effectively "either
     // the heartbeat is fresh, OR this is a known test seed node".
+    // SECURITY (A7, 2026-06-11 fifth-round): require a real benchmark
+    // score before a node appears in the public catalog. Previously a
+    // freshly-claimed BYOG node with a self-declared B300 tier would
+    // appear in /v1/public/listings the moment it started heart-beating
+    // — buyers could rent a non-existent GPU. The A3 fix already
+    // hardened the benchmark write to require node-attested auth, so a
+    // node can't fake its own score. Gating the public catalog on
+    // benchmarkScore > 0 means only nodes that have ACTUALLY run the
+    // standard benchmark image (proving they have functional GPU
+    // hardware that produces a real score) are buyer-discoverable.
+    // Self-declared-only nodes are hidden until they prove themselves.
+    //
+    // Test-seed exemption: id startsWith 'test-c2-' keeps marketplace
+    // verification flows working.
     const nodes = await fastify.prisma.node.findMany({
       where: {
         status: 'ONLINE' as NodeStatus,
@@ -172,7 +186,12 @@ export async function publicListingsRoutes(fastify: FastifyInstance) {
         assignedComputeRequestId: null,
         pendingDeletion: false,
         OR: [
-          { lastHeartbeat: { gte: heartbeatFloor } },
+          {
+            AND: [
+              { lastHeartbeat: { gte: heartbeatFloor } },
+              { benchmarkScore: { gt: 0 } },
+            ],
+          },
           { id: { startsWith: 'test-c2-' } },
         ],
         ...(gpuTierParam ? { gpuTier: gpuTierParam as GpuTier } : {}),
@@ -185,6 +204,7 @@ export async function publicListingsRoutes(fastify: FastifyInstance) {
         lastHeartbeat: true,
         customRatePerHour: true,
         isResidential: true,
+        benchmarkScore: true,
         nodeRunner: {
           select: {
             slug: true,

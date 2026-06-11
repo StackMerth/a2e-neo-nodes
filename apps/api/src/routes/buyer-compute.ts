@@ -505,13 +505,19 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     // compute for anyone willing to fabricate a hash. We now mirror the
     // verification used in /v1/buyer/balance/topup-solana:
     //
-    //   1. Dev/test txHash (DEV_ / test_ prefix or PAYMENT_MODE=dev)
-    //      passes through with isDevMode=true (kept for local + staging).
-    //   2. Real Solana hashes are verified via verifyUsdcDeposit:
-    //      - transaction exists on-chain + has no error
-    //      - the destination matches our treasury wallet
-    //      - the observed USDC amount >= totalCost
-    //   3. Failed verification -> 402 Payment Required with the specific
+    //   1. verifyUsdcDeposit is called for EVERY USDC payment. There
+    //      is no client-controllable prefix bypass anymore — the old
+    //      DEV_ / test_ shortcuts were removed in commit 1785eb6
+    //      (2026-06-11 second-round pen-test) after the prefix
+    //      shortcut was exploited.
+    //   2. The auto-pass branch is gated on !hasRealConfig (no RPC
+    //      and no payer key configured at all) AND NODE_ENV !==
+    //      'production', so prod always does the real on-chain check.
+    //      Mock-pass is local-dev only.
+    //   3. Real check (when hasRealConfig is true): transaction exists
+    //      on-chain + has no error, destination matches our treasury
+    //      wallet, observed USDC amount >= totalCost.
+    //   4. Failed verification -> 402 Payment Required with the specific
     //      reason so the buyer can retry with the correct hash. No
     //      DB row created; no compute allocated.
     let txConfirmedForCreate = paymentSource !== 'USDC'
@@ -805,10 +811,28 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     // whole time. Treat it as cancellable here too; the refund leg
     // is the same as PENDING since no usage has accrued yet (the
     // meter only starts when status flips to ACTIVE).
-    const cancellableStates = new Set(['PENDING', 'PROVISIONING_EXTERNAL'])
+    // SECURITY (D1, 2026-06-11 fifth-round): every pre-ACTIVE state
+    // holds debited money for the buyer (debitBalance fires at request
+    // create time, while status is PENDING). The cancellable set was
+    // {PENDING, PROVISIONING_EXTERNAL} only, which trapped buyers
+    // whose rental landed in WAITLISTED (eligibility hold or capacity-
+    // starved consumer tier), APPROVED (admin approved, awaiting
+    // allocation), or ALLOCATED (SSH ready, awaiting agent confirm).
+    // None of those states have accrued usage yet (the meter starts
+    // when status flips to ACTIVE), so the refund leg is identical to
+    // PENDING — same code path below. Extend the set to every
+    // pre-ACTIVE state so a buyer can always self-cancel until real
+    // compute starts running.
+    const cancellableStates = new Set([
+      'PENDING',
+      'WAITLISTED',
+      'APPROVED',
+      'ALLOCATED',
+      'PROVISIONING_EXTERNAL',
+    ])
     if (!cancellableStates.has(cr.status)) {
       return reply.code(400).send({
-        error: `Can only cancel PENDING or PROVISIONING_EXTERNAL requests (current: ${cr.status})`,
+        error: `Can only cancel pre-ACTIVE requests (current: ${cr.status})`,
       })
     }
 
@@ -816,7 +840,12 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     // updated.count is 0 and we skip the refund — the other request is
     // responsible for it.
     const updated = await fastify.prisma.computeRequest.updateMany({
-      where: { id, status: { in: ['PENDING', 'PROVISIONING_EXTERNAL'] } },
+      where: {
+        id,
+        status: {
+          in: ['PENDING', 'WAITLISTED', 'APPROVED', 'ALLOCATED', 'PROVISIONING_EXTERNAL'],
+        },
+      },
       data: { status: 'CANCELLED' },
     })
     if (updated.count === 0) {
@@ -826,10 +855,69 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     // Refund routing. Catches and logs but does NOT roll back the
     // CANCELLED status — the row is still cancelled, and a separate
     // operator action can recover money if the refund leg fails.
+    //
+    // SECURITY (D3/A10, 2026-06-11 fifth-round): rail-symmetric refund.
+    // The previous flow routed ALL cancel refunds into the buyer's
+    // internal balance, which is now (post A5 fix) admin-gated +
+    // 48h-cooldown + email-confirm to withdraw. A USDC-funding buyer
+    // who cancels a never-served rental couldn't cash out without an
+    // admin. We now attempt an on-chain refund first when:
+    //   - paymentSource = USDC (the rail they paid with), AND
+    //   - the buyer has a verified walletAddress on file
+    // On-chain failure falls back to balance credit (existing behavior)
+    // so the buyer always gets value, just biased toward returning on
+    // the rail they paid with.
     let refundIssued = false
-    let refundDestination: 'balance' | 'internal_spend_reverted' | 'none' = 'none'
+    let refundDestination: 'balance' | 'wallet' | 'internal_spend_reverted' | 'none' = 'none'
+    let refundTxHash: string | null = null
     try {
-      if (cr.paymentSource === 'BUYER_BALANCE' || cr.paymentSource === 'USDC' || cr.paymentSource === 'STRIPE_DIRECT') {
+      if (cr.paymentSource === 'USDC') {
+        const buyerUser = await fastify.prisma.user.findUnique({
+          where: { id: userId },
+          select: { walletAddress: true },
+        })
+        if (buyerUser?.walletAddress) {
+          try {
+            const solanaConfig = await getSolanaConfig(fastify.prisma)
+            const result = await processPayment(solanaConfig, buyerUser.walletAddress, cr.totalCost, 'USDC')
+            if (result.success && result.txHash) {
+              refundTxHash = result.txHash
+              refundIssued = true
+              refundDestination = 'wallet'
+            } else {
+              // On-chain failed; fall through to balance credit.
+              throw new Error(result.error ?? 'USDC refund send failed')
+            }
+          } catch (sendErr) {
+            // Falls into the catch below if the balance credit also
+            // throws; otherwise the buyer gets value via balance.
+            await creditBalance(fastify.prisma, {
+              userId,
+              amountUsd: cr.totalCost,
+              type: 'REFUND_RENTAL',
+              description: `Refund for cancelled ${cr.gpuCount}x ${cr.gpuTier} rental (USDC send failed: ${sendErr instanceof Error ? sendErr.message : 'unknown'} - credited to balance)`,
+              referenceId: `cancel:${id}`,
+            })
+            refundIssued = true
+            refundDestination = 'balance'
+          }
+        } else {
+          // No wallet on file — balance credit, same as before.
+          await creditBalance(fastify.prisma, {
+            userId,
+            amountUsd: cr.totalCost,
+            type: 'REFUND_RENTAL',
+            description: `Refund for cancelled ${cr.gpuCount}x ${cr.gpuTier} rental (no wallet on file - credited to balance)`,
+            referenceId: `cancel:${id}`,
+          })
+          refundIssued = true
+          refundDestination = 'balance'
+        }
+      } else if (cr.paymentSource === 'BUYER_BALANCE' || cr.paymentSource === 'STRIPE_DIRECT') {
+        // BUYER_BALANCE came from the balance, MUST go back to the
+        // balance (same rail). STRIPE_DIRECT credit-as-balance is the
+        // existing T3.1-follow-up shape; closing it on the Stripe
+        // refund API is a separate workstream.
         await creditBalance(fastify.prisma, {
           userId,
           amountUsd: cr.totalCost,
@@ -888,6 +976,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       refundIssued,
       refundDestination,
       refundAmountUsd: refundIssued ? cr.totalCost : 0,
+      refundTxHash,
     })
   })
 
@@ -1220,9 +1309,17 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     // Final accrual snapshot. The meter (60s tick) may not have caught
     // up to wall-clock-now yet; recompute on the spot so the refund
     // reflects the exact second the buyer clicked terminate.
+    //
+    // SECURITY (D4, 2026-06-11): switched from floor() to ceil() on
+    // elapsed minutes. The previous floor allowed a sub-60s terminate
+    // to compute finalAccrued = 0 -> refund = totalCost, a 100% refund
+    // after up to 59 seconds of real GPU usage. Automatable into a
+    // free-compute loop. Ceiling charges at least one minute of usage
+    // for any non-zero elapsed time, matching standard
+    // pay-per-minute granularity.
     const ratePerMinute = cr.ratePerMinute ?? (cr.ratePerDay * cr.gpuCount) / (24 * 60)
     const elapsedMs = cr.activatedAt ? Date.now() - cr.activatedAt.getTime() : 0
-    const elapsedMinutes = Math.floor(elapsedMs / 60000)
+    const elapsedMinutes = elapsedMs > 0 ? Math.ceil(elapsedMs / 60000) : 0
     const maxMinutes = cr.durationDays * 24 * 60
     const finalMinutes = Math.min(elapsedMinutes, maxMinutes)
     const finalAccrued = Math.min(
@@ -1743,13 +1840,52 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       }
     }
 
-    const updated = await fastify.prisma.user.update({
-      where: { id: request.user!.userId },
-      data: {
-        ...(email ? { email } : {}),
-        ...(walletAddress ? { walletAddress: walletAddress.trim() } : {}),
-      },
-    })
+    // SECURITY (D0 follow-up, 2026-06-11): catch P2002 unique-constraint
+    // violations and return a clean 400 instead of letting Prisma throw
+    // into a 500. User.email and User.walletAddress are both @unique;
+    // a buyer setting a wallet/email already linked to another account
+    // would previously crash the request handler, and because withdrawal
+    // hard-requires a linked wallet, the buyer ended up with funds
+    // stranded behind a settings 500. Now: clear "already in use"
+    // error, no crash, no fund-lock.
+    let updated: { id: string; email: string | null; walletAddress: string | null }
+    try {
+      updated = await fastify.prisma.user.update({
+        where: { id: request.user!.userId },
+        data: {
+          ...(email ? { email } : {}),
+          ...(walletAddress ? { walletAddress: walletAddress.trim() } : {}),
+        },
+        select: { id: true, email: true, walletAddress: true },
+      })
+    } catch (err) {
+      // Prisma's PrismaClientKnownRequestError has code === 'P2002'
+      // for unique constraint violations; meta.target identifies the
+      // field. Pattern-match without importing the type so we don't
+      // tightly couple to Prisma's error class layout.
+      const e = err as { code?: string; meta?: { target?: string[] } }
+      if (e?.code === 'P2002') {
+        const targetField = Array.isArray(e.meta?.target) ? e.meta.target[0] : undefined
+        const which =
+          targetField === 'walletAddress'
+            ? 'wallet address'
+            : targetField === 'email'
+              ? 'email'
+              : 'value'
+        return reply.code(400).send({
+          error: 'duplicate',
+          message:
+            `That ${which} is already linked to another account. Use a ` +
+            `different one, or contact support if you think this is wrong.`,
+          field: targetField ?? null,
+        })
+      }
+      fastify.log.error({ err }, 'PATCH /v1/buyer/settings failed unexpectedly')
+      return reply.code(500).send({
+        error: 'internal_error',
+        message: 'Could not update settings. Try again in a moment.',
+      })
+    }
 
     reply.send({ id: updated.id, email: updated.email, walletAddress: updated.walletAddress })
   })

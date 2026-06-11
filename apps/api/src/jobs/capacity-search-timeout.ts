@@ -115,14 +115,19 @@ export async function runCapacitySearchTimeoutTick(
   io: SocketServer,
 ): Promise<void> {
   const cutoff = new Date(Date.now() - TIMEOUT_MS)
-  // ComputeRequests in PENDING past the cutoff. We do NOT filter on
-  // eligibilityFlags here because there are multiple "still searching"
-  // flag values (SEARCHING_CAPACITY, NO_REGION_CAPACITY, PASS_FAST_TRACK
-  // when waiting for a tracked-preferred operator, etc.) and the
-  // canonical signal is "PENDING + age > timeout".
+  // SECURITY (A12/D7, 2026-06-11): extended state coverage. Was
+  // PENDING-only, but consumer-tier rentals (RTX_3090/4090/CONSUMER)
+  // routed to capacity-starved Vast.ai/IO.net land in WAITLISTED
+  // immediately, not PENDING. They never get auto-cancelled and the
+  // buyer's money stays locked. Cover the full pre-ACTIVE state
+  // surface: PENDING (capacity search), WAITLISTED (eligibility hold
+  // or capacity stall), APPROVED (admin approved but allocator
+  // didn't pick it up), ALLOCATED (SSH ready but agent didn't flip
+  // to ACTIVE). The refund leg is identical regardless of which
+  // pre-ACTIVE state we cancel from (no usage accrued yet).
   const stuck = await prisma.computeRequest.findMany({
     where: {
-      status: 'PENDING',
+      status: { in: ['PENDING', 'WAITLISTED', 'APPROVED', 'ALLOCATED'] },
       requestedAt: { lte: cutoff },
     },
     take: BATCH_SIZE,
@@ -166,9 +171,14 @@ async function timeoutSearch(
   const reason = buildCancellationReason(cr)
 
   // Atomic transition. Status guard prevents a race with the allocator
-  // (which might pick the request up at the same instant).
+  // or admin approve action picking up the request at the same instant.
+  // Covers all pre-ACTIVE states (see A12/D7 comment on the outer
+  // findMany above).
   const updated = await prisma.computeRequest.updateMany({
-    where: { id: cr.id, status: 'PENDING' },
+    where: {
+      id: cr.id,
+      status: { in: ['PENDING', 'WAITLISTED', 'APPROVED', 'ALLOCATED'] },
+    },
     data: {
       status: 'CANCELLED',
       completedAt: now,
