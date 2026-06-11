@@ -161,6 +161,8 @@ async function pollOne(
       id: true,
       status: true,
       sshHost: true,
+      sshPort: true,
+      sshUsername: true,
       computeRequestId: true,
       lastNote: true,
     },
@@ -186,12 +188,24 @@ async function pollOne(
       }
     }
 
+    // SSH copy + status promote in one atomic update. Prior versions
+    // promoted to ACTIVE without copying sshHost/sshPort/sshUsername
+    // from the ExternalRental, leaving the ComputeRequest row in a
+    // confused state where downstream consumers reading
+    // ComputeRequest.sshHost (e.g. the buyer dashboard) saw null
+    // while the detail page (which falls back to ExternalRental) saw
+    // a real host. Symptom: rental "looks stuck" in dashboards even
+    // though the buyer CAN connect via the detail page.
     const promoted = await prisma.computeRequest.updateMany({
       where: { id: fresh.computeRequestId, status: 'PROVISIONING_EXTERNAL' },
       data: {
         status: 'ACTIVE',
         activatedAt: new Date(),
         sshSessionStatus: 'ACTIVE',
+        sshHost: fresh.sshHost,
+        sshPort: fresh.sshPort ?? 22,
+        sshUsername: fresh.sshUsername ?? 'root',
+        sshProvisionedAt: new Date(),
       },
     })
     if (promoted.count > 0) {

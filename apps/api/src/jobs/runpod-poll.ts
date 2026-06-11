@@ -134,6 +134,8 @@ async function pollOne(
       id: true,
       status: true,
       sshHost: true,
+      sshPort: true,
+      sshUsername: true,
       computeRequestId: true,
       lastNote: true,
     },
@@ -156,12 +158,19 @@ async function pollOne(
       }
     }
 
+    // SSH copy + status promote in one update; mirrors the vastai-poll
+    // fix for the "looks stuck in dashboard" symptom that bit the
+    // 2026-06-10 RTX_3090 rental.
     const promoted = await prisma.computeRequest.updateMany({
       where: { id: fresh.computeRequestId, status: 'PROVISIONING_EXTERNAL' },
       data: {
         status: 'ACTIVE',
         activatedAt: new Date(),
         sshSessionStatus: 'ACTIVE',
+        sshHost: fresh.sshHost,
+        sshPort: fresh.sshPort ?? 22,
+        sshUsername: fresh.sshUsername ?? 'root',
+        sshProvisionedAt: new Date(),
       },
     })
     if (promoted.count > 0) {

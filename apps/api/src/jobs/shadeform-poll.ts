@@ -199,6 +199,8 @@ async function pollOne(
       id: true,
       status: true,
       sshHost: true,
+      sshPort: true,
+      sshUsername: true,
       computeRequestId: true,
       lastNote: true,
     },
@@ -217,12 +219,18 @@ async function pollOne(
     // unhandled emit took down the API every minute. Skipping cleanup
     // here removes both the unnecessary work AND the crash vector.
 
+    // SSH copy + status promote in one update; see vastai-poll for the
+    // dashboard-looks-stuck symptom that bit the 2026-06-10 rental.
     const promoted = await prisma.computeRequest.updateMany({
       where: { id: fresh.computeRequestId, status: 'PROVISIONING_EXTERNAL' },
       data: {
         status: 'ACTIVE',
         activatedAt: new Date(),
         sshSessionStatus: 'ACTIVE',
+        sshHost: fresh.sshHost,
+        sshPort: fresh.sshPort ?? 22,
+        sshUsername: fresh.sshUsername ?? 'root',
+        sshProvisionedAt: new Date(),
       },
     })
     if (promoted.count > 0) {
