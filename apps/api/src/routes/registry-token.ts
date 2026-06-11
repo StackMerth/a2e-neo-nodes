@@ -51,6 +51,7 @@
 import type { FastifyInstance } from 'fastify'
 import jwt from 'jsonwebtoken'
 import { verifyApiKey, isBuyerApiKey } from '../services/apikey/manager.js'
+import { getQuotaSnapshot } from '../services/registry/quota.js'
 
 const REGISTRY_SERVICE_NAME = process.env.REGISTRY_SERVICE_NAME ?? 'a2e-registry'
 const REGISTRY_TOKEN_TTL_SECONDS = 3600
@@ -276,14 +277,55 @@ export async function registryTokenRoutes(fastify: FastifyInstance) {
       ? []
       : Array.isArray(query.scope) ? query.scope : [query.scope]
 
+    // E6 / M3.10: pre-push quota gate. If any of the requested scopes
+    // include a write action, look up the buyer's current usage. If
+    // they're within PRE_PUSH_HEADROOM_BYTES of their cap, strip the
+    // write actions before signing the token. The Docker CLI then
+    // sees a token with only pull granted and surfaces a `denied:
+    // requested access to the resource is denied` to the user. This
+    // is best-effort — Docker doesn't tell us the size at scope-
+    // request time, so the post-push check in the webhook is the
+    // authoritative enforcement layer.
+    let quotaOver = false
+    let quotaUsedBytes = 0n
+    let quotaLimitBytes = 0n
+    const wantsWrite = rawScopes.some((raw) => {
+      const parsed = parseScope(raw)
+      return parsed?.actions.some(
+        (a) => a === 'push' || a === 'delete' || a === '*',
+      )
+    })
+    if (wantsWrite) {
+      const snapshot = await getQuotaSnapshot(fastify.prisma, apiKeyRow.userId)
+      quotaOver = snapshot.shouldBlockPush
+      quotaUsedBytes = snapshot.usedBytes
+      quotaLimitBytes = snapshot.limitBytes
+    }
+
     const access: ResourceAccess[] = []
     for (const raw of rawScopes) {
       const parsed = parseScope(raw)
       if (!parsed) continue
-      const granted = authorizeScope(parsed, apiKeyRow.userId, apiKeyRow.permissions)
+      let granted = authorizeScope(parsed, apiKeyRow.userId, apiKeyRow.permissions)
+      if (quotaOver) {
+        // Filter out write actions; pulls of existing images still work.
+        granted = granted.filter((a) => a === 'pull')
+      }
       if (granted.length > 0) {
         access.push({ type: parsed.type, name: parsed.name, actions: granted })
       }
+    }
+
+    if (quotaOver) {
+      request.log.warn(
+        {
+          userId: apiKeyRow.userId,
+          usedBytes: quotaUsedBytes.toString(),
+          limitBytes: quotaLimitBytes.toString(),
+          requestedScopes: rawScopes,
+        },
+        'registry-token: pre-push quota gate denied write scopes',
+      )
     }
 
     const { token, expiresIn, issuedAt } = signRegistryToken(apiKeyRow.userId, access)

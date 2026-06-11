@@ -49,6 +49,7 @@
 
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { Queue } from 'bullmq'
+import { getQuotaSnapshot } from '../services/registry/quota.js'
 
 interface RegistryEvent {
   id?: string
@@ -242,6 +243,40 @@ export async function registryWebhookRoutes(
           { imageId: image.id, scanId: scan.id },
           { jobId: scan.id }, // dedupe: same scan id can't be added twice
         )
+
+        // E6 / M3.10: post-push quota enforcement. The pre-push gate
+        // in registry-token.ts is best-effort because Docker doesn't
+        // declare layer sizes in the auth challenge. The webhook is
+        // the authoritative check: at this point we know exactly how
+        // much storage the user is consuming. If they're over, soft-
+        // delete the just-pushed row so pulls fail and listings hide
+        // it. The blobs stay in R2 until the registry's GC sweep
+        // removes orphans.
+        const quotaAfter = await getQuotaSnapshot(fastify.prisma, split.userId)
+        if (quotaAfter.over) {
+          await fastify.prisma.dockerImage.update({
+            where: { id: image.id },
+            data: {
+              deletedAt: new Date(),
+              pullBlocked: true,
+              pullBlockReason:
+                `Image push put account over storage quota ` +
+                `(${quotaAfter.usedBytes.toString()} / ` +
+                `${quotaAfter.limitBytes.toString()} bytes used). ` +
+                `Delete older images to reclaim space.`,
+            },
+          })
+          request.log.warn(
+            {
+              userId: split.userId,
+              repo: split.repo,
+              tag,
+              usedBytes: quotaAfter.usedBytes.toString(),
+              limitBytes: quotaAfter.limitBytes.toString(),
+            },
+            'registry webhook: post-push quota exceeded, soft-deleted image',
+          )
+        }
 
         processed++
       }
