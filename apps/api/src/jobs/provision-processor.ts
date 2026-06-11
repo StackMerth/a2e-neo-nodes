@@ -138,7 +138,12 @@ function generateNodeApiKey(): string {
 export async function submitProvisionJob(
   queue: Queue<ProvisionJobData>,
   prisma: PrismaClient,
-  config: ProvisionConfig
+  config: ProvisionConfig,
+  // SECURITY (pen-test A4 2026-06-10): owner stamp so GET /:id can
+  // refuse cross-tenant reads. Optional to keep the historical API
+  // shape compatible; a job submitted without userId is admin-only by
+  // the route guard.
+  userId?: string,
 ): Promise<string> {
   // Generate unique API key for this node
   const apiKey = generateNodeApiKey()
@@ -158,6 +163,7 @@ export async function submitProvisionJob(
       apiKey, // Store the API key for auth validation
       status: 'PENDING',
       totalSteps: 7,
+      userId: userId ?? null,
     },
   })
 

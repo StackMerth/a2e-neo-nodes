@@ -74,6 +74,17 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       }
 
       try {
+        // SECURITY (pen-test A4 2026-06-10): stamp the calling operator
+        // so GET /:id can refuse cross-tenant reads. Buyers, nodes,
+        // and provisioning callers can also reach this route via the
+        // route-level fastify.authenticate; we only capture the
+        // initiating user when the auth type is a portal user — admins
+        // get to read everything anyway, and a node-key / provision-key
+        // caller wouldn't have a meaningful owner here.
+        const initiatingUserId = request.authType === 'user'
+          ? request.user?.userId
+          : undefined
+
         const provisionId = await submitProvisionJob(
           fastify.provisionQueue,
           fastify.prisma,
@@ -91,7 +102,8 @@ export async function provisionRoutes(fastify: FastifyInstance) {
             customGpuModel: data.customGpuModel,
             customRatePerDay: data.customRatePerDay,
             testMode: data.testMode,
-          }
+          },
+          initiatingUserId,
         )
 
         reply.code(202).send({
@@ -136,7 +148,18 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         },
       })
 
-      if (!job) {
+      // SECURITY (pen-test A4 2026-06-10): the prior handler returned
+      // 404 only when the row genuinely didn't exist, and otherwise
+      // surfaced host/port/username (the operator's SSH endpoint) to
+      // any authenticated caller. Cross-tenant read confirmed via
+      // enumerable cuid. Owner-or-admin only; foreign id -> 404 so the
+      // response is indistinguishable from a missing row. Rows with no
+      // userId (pre-A4 history) are admin-only.
+      const callerUserId = request.user?.userId
+      const isAdmin = request.user?.role === 'ADMIN'
+      const isOwner = !!job?.userId && job.userId === callerUserId
+
+      if (!job || (!isAdmin && !isOwner)) {
         return reply.code(404).send({
           error: 'Not Found',
           message: 'Provision job not found',
@@ -197,8 +220,14 @@ export async function provisionRoutes(fastify: FastifyInstance) {
       const { status, page, limit } = parseResult.data
       const skip = (page - 1) * limit
 
-      const where: { status?: ProvisionStatus } = {}
+      // SECURITY (pen-test A4 2026-06-10): list was also unscoped — a
+      // free token saw every operator's provision attempts (host +
+      // gpuTier + status + currentAction + error). Admin sees all;
+      // non-admin sees only their own jobs.
+      const isAdmin = request.user?.role === 'ADMIN'
+      const where: { status?: ProvisionStatus; userId?: string } = {}
       if (status) where.status = status as ProvisionStatus
+      if (!isAdmin) where.userId = request.user!.userId
 
       const [jobs, total] = await Promise.all([
         fastify.prisma.provisionJob.findMany({
@@ -256,7 +285,15 @@ export async function provisionRoutes(fastify: FastifyInstance) {
         where: { id },
       })
 
-      if (!job) {
+      // SECURITY (pen-test A4 2026-06-10): cancel is destructive so
+      // cross-tenant DELETE would let any authenticated identity
+      // sabotage somebody else's in-flight provisioning. Same gate as
+      // GET /:id: admin OR owner, 404 otherwise (no existence oracle).
+      const callerUserId = request.user?.userId
+      const isAdmin = request.user?.role === 'ADMIN'
+      const isOwner = !!job?.userId && job.userId === callerUserId
+
+      if (!job || (!isAdmin && !isOwner)) {
         return reply.code(404).send({
           error: 'Not Found',
           message: 'Provision job not found',

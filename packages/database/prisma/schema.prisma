@@ -238,6 +238,9 @@ model User {
   buyerWithdrawals      BuyerWithdrawal[]
   pushSubscriptions     PushSubscription[]
   dockerImages          DockerImage[]
+  // Pen-test A4 2026-06-10: provision jobs owned by this operator,
+  // gated on /v1/nodes/provision/:id reads.
+  provisionJobs         ProvisionJob[]
 
   @@index([role])
   @@index([signupIp])
@@ -1196,6 +1199,14 @@ model ProvisionJob {
   id     String          @id @default(cuid())
   status ProvisionStatus @default(PENDING)
 
+  // SECURITY (pen-test A4 2026-06-10): operator who initiated this
+  // provision job. Used to scope GET /v1/nodes/provision/:id so other
+  // tenants can't enumerate ids and read the host/port/username of
+  // somebody else's machine. Nullable to keep historical rows valid;
+  // any row without a userId is admin-only by the route guard.
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
   // Connection details (credentials NOT stored - only in memory during job)
   host     String
   port     Int    @default(22)
@@ -1232,6 +1243,7 @@ model ProvisionJob {
 
   @@index([status])
   @@index([createdAt])
+  @@index([userId])
 }
 
 enum ProvisionStatus {
