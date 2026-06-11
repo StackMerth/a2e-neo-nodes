@@ -382,6 +382,75 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
       })
     }
 
+    // SECURITY (pen-test A5 follow-ups 2026-06-11):
+    //
+    // Gate 1: Anti-laundering 48h cool-down on incoming TOPUPs. The
+    // pattern we're blocking: attacker compromises a buyer account,
+    // funnels USDC into the platform via TOPUP_SOLANA / TOPUP_STRIPE,
+    // then immediately withdraws to an attacker-controlled wallet.
+    // Without a cool-down the platform is a 1-hop laundering bridge.
+    // REFUND_* events are excluded — those are spend reversals on the
+    // buyer's own activity; penalizing them would hurt the legitimate
+    // 'terminated rental, want my money back' flow.
+    const cooldownHours = parseInt(
+      process.env.WITHDRAW_TOPUP_COOLDOWN_HOURS ?? '48',
+      10,
+    )
+    if (cooldownHours > 0) {
+      const cooldownCutoff = new Date(Date.now() - cooldownHours * 3600 * 1000)
+      const recentTopup = await fastify.prisma.balanceTransaction.findFirst({
+        where: {
+          balance: { userId },
+          type: { in: ['TOPUP_SOLANA', 'TOPUP_STRIPE', 'TOPUP_ADMIN'] },
+          createdAt: { gte: cooldownCutoff },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true, type: true },
+      })
+      if (recentTopup) {
+        const ageHours = Math.floor(
+          (Date.now() - recentTopup.createdAt.getTime()) / 3600 / 1000,
+        )
+        const waitHours = cooldownHours - ageHours
+        return reply.code(403).send({
+          error: 'topup_cooldown',
+          message:
+            `Withdrawals are paused for ${cooldownHours}h after a deposit. ` +
+            `Your last deposit was ${ageHours}h ago; please wait ~${waitHours}h ` +
+            `(or until ${new Date(
+              recentTopup.createdAt.getTime() + cooldownHours * 3600 * 1000,
+            ).toISOString()}).`,
+          waitHours,
+        })
+      }
+    }
+
+    // Gate 2: Per-user velocity cap on PENDING withdrawals. Prevents an
+    // attacker who got hold of the JWT from queueing 50 withdrawals in
+    // a tight loop and overwhelming the admin review surface. Default
+    // 3 concurrent pending requests is enough for legitimate UX (someone
+    // splitting amounts to test, etc.) without giving an attacker a
+    // useful tool.
+    const velocityCap = parseInt(
+      process.env.WITHDRAW_PENDING_VELOCITY_CAP ?? '3',
+      10,
+    )
+    if (velocityCap > 0) {
+      const pendingCount = await fastify.prisma.buyerWithdrawal.count({
+        where: { userId, status: 'PENDING' },
+      })
+      if (pendingCount >= velocityCap) {
+        return reply.code(429).send({
+          error: 'velocity_cap',
+          message:
+            `You have ${pendingCount} withdrawal${pendingCount === 1 ? '' : 's'} ` +
+            `already pending admin review. Wait for one to process before queueing another.`,
+          pendingCount,
+          cap: velocityCap,
+        })
+      }
+    }
+
     // Step 1: create the withdrawal row + debit balance in a single tx
     // so we can't end up with one without the other if the route
     // crashes between the two writes. The on-chain send is async; we
