@@ -42,6 +42,7 @@
 
 import { Queue, Worker } from 'bullmq'
 import type { ConnectionOptions } from 'bullmq'
+import { Redis } from 'ioredis'
 import type { PrismaClient } from '@a2e/database'
 import { provisionShadeFormRental } from '../services/inbound/shadeform-provision.js'
 import { provisionRunPodRental } from '../services/inbound/runpod-provision.js'
@@ -55,6 +56,20 @@ import {
   terminateExternalRentalForRequest,
   UnknownProviderError,
 } from '../services/inbound/terminate-dispatcher.js'
+import {
+  getRefusal,
+  recordRefusal,
+} from '../services/provider/refusal-cache.js'
+
+// Module-level Redis client for refusal-cache reads/writes. Same
+// pattern as runpod-capacity-watcher.ts — picks up REDIS_URL from env.
+const REFUSAL_REDIS = new Redis(
+  process.env.REDIS_URL ?? 'redis://localhost:6379',
+  {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+  },
+)
 
 const QUEUE_NAME = 'provisioning-reroute'
 const TICK_INTERVAL_MS = parseInt(
@@ -339,6 +354,19 @@ async function rerouteOne(
       continue
     }
 
+    // Refusal-cache pre-check. If this (provider, tier) refused us
+    // within the last 10 min, skip the round-trip. The cache auto-
+    // expires so supply rotation re-opens the rung eventually.
+    const cachedRefusal = await getRefusal(REFUSAL_REDIS, rung.provider, cr.gpuTier)
+    if (cachedRefusal) {
+      attemptedProviders.push(`${rung.provider}:cache-skip`)
+      console.log(
+        `[provisioning-reroute] skipping ${rung.provider} for ${cr.id}: ` +
+          `refused ${cr.gpuTier} ${cachedRefusal.ts} (${cachedRefusal.reason})`,
+      )
+      continue
+    }
+
     // Flip CR back to PENDING for the provision function's status
     // guard. We always do this — provisionXxxRental expects PENDING.
     await prisma.computeRequest.updateMany({
@@ -360,6 +388,9 @@ async function rerouteOne(
       console.log(
         `[provisioning-reroute] ${rung.provider} refused ${cr.id}: ${msg}`,
       )
+      // Cache this refusal so subsequent requests for the same
+      // (provider, tier) skip the round-trip for the TTL window.
+      void recordRefusal(REFUSAL_REDIS, rung.provider, cr.gpuTier, msg)
       // Clear any partial ExternalRental row the provider might have
       // created before throwing, so the next rung's idempotency check
       // sees a clean slate.

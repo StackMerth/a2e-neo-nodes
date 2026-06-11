@@ -28,6 +28,22 @@
 
 import { Queue, Worker } from 'bullmq'
 import type { ConnectionOptions } from 'bullmq'
+import { Redis } from 'ioredis'
+import { isRefused, recordRefusal } from '../services/provider/refusal-cache.js'
+
+// Module-level Redis client for refusal-cache lookups. Same pattern
+// as runpod-capacity-watcher.ts; picks up REDIS_URL from env. When
+// a provider+tier was recently refused (within PROVIDER_REFUSAL_TTL_SECONDS,
+// default 10 min), the matching tryXxxFallback short-circuits early
+// so the allocator skips to the next candidate without round-tripping
+// the upstream API.
+const REFUSAL_REDIS = new Redis(
+  process.env.REDIS_URL ?? 'redis://localhost:6379',
+  {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+  },
+)
 import type { PrismaClient, ComputeRequest, User, GpuTier } from '@a2e/database'
 import type { Server as SocketServer } from 'socket.io'
 import { evaluateEligibility } from '../services/allocation/eligibility.js'
@@ -647,6 +663,7 @@ async function tryLambdaFallback(
   if (!isKeyEncryptionConfigured()) return false
   if (!lambdaTypeForTier(cr.gpuTier)) return false
   if (!fitsSingleLambdaInstance(cr.gpuTier, cr.gpuCount)) return false
+  if (await isRefused(REFUSAL_REDIS, 'LAMBDA', cr.gpuTier)) return false
 
   // Mint a session token + compute the meter rate before the
   // provision call so we have everything ready for one atomic
@@ -667,6 +684,7 @@ async function tryLambdaFallback(
       `[compute-allocator] Lambda fallback failed for ${cr.id} (tier ${cr.gpuTier}):`,
       (err as Error).message,
     )
+    void recordRefusal(REFUSAL_REDIS, 'LAMBDA', cr.gpuTier, (err as Error).message)
     return false
   }
 
@@ -769,6 +787,7 @@ async function tryRunPodFallback(
   if (!isRunPodConfigured()) return false
   if (!isKeyEncryptionConfigured()) return false
   if (!runPodTypeForTier(cr.gpuTier)) return false
+  if (await isRefused(REFUSAL_REDIS, 'RUNPOD', cr.gpuTier)) return false
   if (!fitsSingleRunPodPod(cr.gpuTier, cr.gpuCount)) return false
 
   const session = mintSshSession(cr.durationDays)
@@ -808,6 +827,7 @@ async function tryRunPodFallback(
         `[compute-allocator] RunPod fallback failed for ${cr.id} (tier ${cr.gpuTier}, ${initialTier}):`,
         message,
       )
+      void recordRefusal(REFUSAL_REDIS, 'RUNPOD', cr.gpuTier, message)
       return false
     }
 
@@ -839,6 +859,7 @@ async function tryRunPodFallback(
         `[compute-allocator] RunPod fallback failed for ${cr.id} on both COMMUNITY and SECURE:`,
         (escErr as Error).message,
       )
+      void recordRefusal(REFUSAL_REDIS, 'RUNPOD', cr.gpuTier, (escErr as Error).message)
       return false
     }
   }
@@ -936,6 +957,7 @@ async function tryPhalaFallback(
   if (!isKeyEncryptionConfigured()) return false
   if (!phalaTypeForTier(cr.gpuTier, cr.gpuCount)) return false
   if (!fitsSinglePhalaCvm(cr.gpuTier, cr.gpuCount)) return false
+  if (await isRefused(REFUSAL_REDIS, 'PHALA', cr.gpuTier)) return false
 
   const session = mintSshSession(cr.durationDays)
   const ratePerMinute = (cr.ratePerDay * cr.gpuCount) / (24 * 60)
@@ -951,6 +973,7 @@ async function tryPhalaFallback(
       `[compute-allocator] Phala fallback failed for ${cr.id} (tier ${cr.gpuTier} x${cr.gpuCount}):`,
       (err as Error).message,
     )
+    void recordRefusal(REFUSAL_REDIS, 'PHALA', cr.gpuTier, (err as Error).message)
     return false
   }
 
@@ -1036,6 +1059,7 @@ async function tryIoNetFallback(
   if (process.env.IONET_ALLOCATOR_ENABLED !== 'true') return false
   if (!isIoNetConfigured()) return false
   if (!isKeyEncryptionConfigured()) return false
+  if (await isRefused(REFUSAL_REDIS, 'IONET', cr.gpuTier)) return false
   if (!ioNetTypeForTier(cr.gpuTier, cr.gpuCount)) return false
   if (!fitsSingleIoNetVm(cr.gpuTier, cr.gpuCount)) return false
   // T7 — when buyer asked for confidential, only route to io.net IF
@@ -1063,6 +1087,7 @@ async function tryIoNetFallback(
       `[compute-allocator] io.net fallback failed for ${cr.id} (tier ${cr.gpuTier} x${cr.gpuCount}):`,
       (err as Error).message,
     )
+    void recordRefusal(REFUSAL_REDIS, 'IONET', cr.gpuTier, (err as Error).message)
     return false
   }
 
@@ -1145,6 +1170,7 @@ async function tryVoltageGpuFallback(
   if (process.env.VOLTAGEGPU_ALLOCATOR_ENABLED !== 'true') return false
   if (!isVoltageGpuConfigured()) return false
   if (!isKeyEncryptionConfigured()) return false
+  if (await isRefused(REFUSAL_REDIS, 'VOLTAGEGPU', cr.gpuTier)) return false
   if (!voltageGpuTypeForTier(cr.gpuTier, cr.gpuCount)) return false
   if (!fitsSingleVoltageGpuPod(cr.gpuTier, cr.gpuCount)) return false
 
@@ -1162,6 +1188,7 @@ async function tryVoltageGpuFallback(
       `[compute-allocator] VoltageGPU fallback failed for ${cr.id} (${cr.gpuTier} x${cr.gpuCount}):`,
       (err as Error).message,
     )
+    void recordRefusal(REFUSAL_REDIS, 'VOLTAGEGPU', cr.gpuTier, (err as Error).message)
     return false
   }
 
@@ -1252,6 +1279,7 @@ async function tryVastAiFallback(
   if (!isKeyEncryptionConfigured()) return false
   if (!vastAiTypeForTier(cr.gpuTier, cr.gpuCount)) return false
   if (!fitsSingleVastAiHost(cr.gpuTier, cr.gpuCount)) return false
+  if (await isRefused(REFUSAL_REDIS, 'VASTAI', cr.gpuTier)) return false
   // Confidential routing: Vast.ai's verified-host network is NOT
   // TEE/SEV-SNP attested. preferConfidential requests must skip
   // Vast.ai entirely; they continue to Phala / VoltageGPU.
@@ -1272,6 +1300,7 @@ async function tryVastAiFallback(
       `[compute-allocator] Vast.ai fallback failed for ${cr.id} (tier ${cr.gpuTier} x${cr.gpuCount}):`,
       (err as Error).message,
     )
+    void recordRefusal(REFUSAL_REDIS, 'VASTAI', cr.gpuTier, (err as Error).message)
     return false
   }
 
@@ -1355,6 +1384,7 @@ async function tryTensorDockFallback(
   if (!isKeyEncryptionConfigured()) return false
   if (!tensorDockTypeForTier(cr.gpuTier)) return false
   if (!fitsSingleTensorDockHost(cr.gpuTier, cr.gpuCount)) return false
+  if (await isRefused(REFUSAL_REDIS, 'TENSORDOCK', cr.gpuTier)) return false
   const wantConfidential = (cr as { preferConfidential?: boolean }).preferConfidential === true
   if (wantConfidential) return false
 
@@ -1372,6 +1402,7 @@ async function tryTensorDockFallback(
       `[compute-allocator] TensorDock fallback failed for ${cr.id} (tier ${cr.gpuTier} x${cr.gpuCount}):`,
       (err as Error).message,
     )
+    void recordRefusal(REFUSAL_REDIS, 'TENSORDOCK', cr.gpuTier, (err as Error).message)
     return false
   }
 
@@ -1453,6 +1484,7 @@ async function tryShadeFormFallback(
   if (!isShadeFormAllocatorEnabled()) return false
   if (!isKeyEncryptionConfigured()) return false
   if (!shadeFormTokenForTier(cr.gpuTier)) return false
+  if (await isRefused(REFUSAL_REDIS, 'SHADEFORM', cr.gpuTier)) return false
   const wantConfidential = (cr as { preferConfidential?: boolean }).preferConfidential === true
   if (wantConfidential) return false
 
@@ -1470,6 +1502,7 @@ async function tryShadeFormFallback(
       `[compute-allocator] Shadeform fallback failed for ${cr.id} (tier ${cr.gpuTier} x${cr.gpuCount}):`,
       (err as Error).message,
     )
+    void recordRefusal(REFUSAL_REDIS, 'SHADEFORM', cr.gpuTier, (err as Error).message)
     return false
   }
 
@@ -1551,6 +1584,7 @@ async function tryHyperstackFallback(
   if (!isHyperstackConfigured()) return false
   if (!isHyperstackAllocatorEnabled()) return false
   if (!isKeyEncryptionConfigured()) return false
+  if (await isRefused(REFUSAL_REDIS, 'HYPERSTACK', cr.gpuTier)) return false
   if (!hyperstackTokenForTier(cr.gpuTier)) return false
   const wantConfidential = (cr as { preferConfidential?: boolean }).preferConfidential === true
   if (wantConfidential) return false
@@ -1569,6 +1603,7 @@ async function tryHyperstackFallback(
       `[compute-allocator] Hyperstack fallback failed for ${cr.id} (tier ${cr.gpuTier} x${cr.gpuCount}):`,
       (err as Error).message,
     )
+    void recordRefusal(REFUSAL_REDIS, 'HYPERSTACK', cr.gpuTier, (err as Error).message)
     return false
   }
 
