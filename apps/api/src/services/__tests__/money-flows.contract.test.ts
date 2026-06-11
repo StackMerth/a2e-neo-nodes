@@ -148,6 +148,7 @@ describe('Money flows — Solana payment dev mode', () => {
     payerPrivateKey: '',
     usdcMint: undefined,
     devMode: true,
+    hasRealConfig: false,
   }
 
   it('USDC payment in dev mode returns success with a DEV_-prefixed tx hash', async () => {
@@ -204,7 +205,7 @@ describe('Money flows — end-to-end round-trip integrity', () => {
 
     // Phase 2: payment broadcast (dev mode — simulates the real flow)
     const payment = await processPayment(
-      { rpcUrl: 'https://api.devnet.solana.com', payerPrivateKey: '', devMode: true },
+      { rpcUrl: 'https://api.devnet.solana.com', payerPrivateKey: '', devMode: true, hasRealConfig: false },
       'EZjkXq3pTvVZRkM8nWqYzKqVxr5JdLwNbTjK5KwCUJxF',
       earning!.amount,
       'USDC',

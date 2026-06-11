@@ -38,7 +38,18 @@ export interface SolanaConfig {
   rpcUrl: string
   payerPrivateKey: string
   usdcMint?: string
+  // devMode controls OUTBOUND behavior (mock payouts vs real send).
+  // It is intentionally NOT used to gate INBOUND verification anymore —
+  // see hasRealConfig below.
   devMode: boolean
+  // SECURITY (2026-06-11): inbound verification gates on this, not
+  // devMode. Set true when both an RPC URL AND a payer key are
+  // configured — enough to perform a real on-chain check. The flag
+  // is independent of PAYMENT_MODE so prod with Solana wired up but
+  // PAYMENT_MODE still pending 'live' (the M1 transitional state) does
+  // not silently auto-accept every forged txHash. Only true local-dev
+  // (no RPC, no payer key) mocks verification.
+  hasRealConfig: boolean
 }
 
 // USDC has 6 decimals
@@ -123,9 +134,10 @@ export async function getSolanaConfig(prisma: PrismaClient): Promise<SolanaConfi
     usdcMint: envMint ? 'env' : dbMint ? 'db' : 'missing',
   })
 
-  // Live mode requires both a real RPC URL (not the devnet default) and
-  // a payer key. Otherwise we stay in dev mode and mock transactions.
-  const hasRealConfig = (envRpc || dbRpc) && payerPrivateKey
+  // Live-send mode requires both a real RPC URL (not the devnet default) and
+  // a payer key. Otherwise we stay in dev mode and mock OUTBOUND transactions
+  // (payouts). hasRealConfig is the separate inbound-verification gate.
+  const hasRealConfig = !!((envRpc || dbRpc) && payerPrivateKey)
   const devMode = process.env.PAYMENT_MODE !== 'live' || !hasRealConfig
 
   return {
@@ -133,6 +145,7 @@ export async function getSolanaConfig(prisma: PrismaClient): Promise<SolanaConfi
     payerPrivateKey,
     usdcMint,
     devMode,
+    hasRealConfig,
   }
 }
 
@@ -500,7 +513,15 @@ export async function verifyTransaction(
   // real on-chain check (where `getSignatureStatus` will reject it as
   // an invalid signature format — same path that just-shipped Patch #1
   // exercises against bogus "1" * 88 hashes).
-  if (config.devMode) {
+  //
+  // FOLLOW-UP (2026-06-11): switched the predicate from devMode to
+  // hasRealConfig. The M1 transitional state — Solana wallet + RPC
+  // configured but PAYMENT_MODE not yet flipped to 'live' — had
+  // devMode=true even with a real treasury, so the reconciler still
+  // auto-marked any settlement verified. Now: any real config (even
+  // devnet) triggers the real on-chain check. Mock-pass only when no
+  // RPC and no payer key are configured at all.
+  if (!config.hasRealConfig) {
     return {
       verified: true,
       confirmations: 32, // Finalized
@@ -598,18 +619,24 @@ export async function verifyUsdcDeposit(
   isDevMode: boolean
   error?: string
 }> {
-  // SECURITY (2026-06-11): the original predicate was
-  // `config.devMode || startsWith('DEV_') || startsWith('test_')`. The
-  // OR meant ANY caller in live mode could craft `txHash: "test_x"`
-  // and get verified=true — the same shape as the 2026-06-09 B-7
-  // finding that was hardened on verifyTransaction directly above
-  // (lines 490-509) but left in place here. The B3 pen-test fix on
-  // /v1/buyer/compute/request called this function expecting it to
-  // reject forged hashes; the internal bypass undermined it and a
-  // forged `@example.invalid` buyer walked a $9 RTX_3090 rental to
-  // PROVISIONING_EXTERNAL on Vast.ai. Hardened: prefix-only auto-
-  // verifies ONLY when devMode is also true.
-  if (config.devMode) {
+  // SECURITY (2026-06-11 follow-up): the previous predicate was
+  // `config.devMode || startsWith('DEV_') || startsWith('test_')`. Two
+  // separate holes:
+  //   1. Any client could craft txHash:'test_x' / 'DEV_x' and bypass.
+  //   2. devMode was true whenever PAYMENT_MODE !== 'live' — the M1
+  //      transitional state (Solana wallet + devnet RPC configured,
+  //      mainnet flip pending) — so EVERY USDC txHash auto-passed even
+  //      with no prefix. cpk-buyer2's "forged-cpk-no-real-payment-0002"
+  //      and cpk-b4's copy-pasted real-looking signature both verified
+  //      via this branch despite being unrelated to our treasury.
+  //
+  // Hardened predicate: auto-pass ONLY when neither RPC nor payer key
+  // is configured (true local-dev with zero Solana setup). The prefix
+  // shortcut is removed entirely; if you have any Solana config (even
+  // devnet), we do the real on-chain check. The PAYMENT_MODE flag is
+  // retained for OUTBOUND payouts only (mock vs real send) and is
+  // no longer consulted for inbound verification.
+  if (!config.hasRealConfig) {
     return { verified: true, isDevMode: true, observedAmountUsd: minAmountUsd }
   }
 
