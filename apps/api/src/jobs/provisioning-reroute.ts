@@ -1,44 +1,35 @@
 /**
- * PROVISIONING_EXTERNAL soft-reroute worker.
+ * PROVISIONING_EXTERNAL soft-reroute worker with multi-provider fallback ladder.
  *
  * Sits BEFORE the existing 20-minute hard-cancel timeout
- * (provisioning-timeout.ts). When an external rental hasn't made
- * progress in REROUTE_SOFT_THRESHOLD_MS (default 8 min), instead of
- * letting it ride to the hard timeout, we:
+ * (provisioning-timeout.ts). When an external rental hasn't reached
+ * ACTIVE within SOFT_THRESHOLD_MS since createdAt, we:
  *
  *   1. Terminate the stuck rental on the original provider's side
  *      (e.g. delete the Vast.ai instance so we stop being billed)
- *   2. Re-route the same ComputeRequest to Shadeform — chosen because
- *      it's a meta-broker that aggregates Hyperstack, Latitude,
- *      MassedCompute, Crusoe, etc. behind a single API, giving the
- *      largest fallback pool
- *   3. Stamp the ComputeRequest.adminNote with `reroute:<original>->SHADEFORM`
- *      so a second reroute can't fire on the same request (idempotency
- *      without schema migration)
+ *   2. DELETE the local ExternalRental row so that downstream provider
+ *      provision functions don't hit the (computeRequestId) unique
+ *      constraint or their own idempotency checks
+ *   3. Try the fallback ladder in order: Shadeform -> RunPod -> Lambda
+ *      Each provider's provisionXxxRental() is called inside try/catch.
+ *      On success, ladder exits. On failure, delete the (possibly empty)
+ *      row and move to next.
+ *   4. If all fallback providers refuse, leave the ComputeRequest in
+ *      PROVISIONING_EXTERNAL with a stamped adminNote. The existing
+ *      20-min hard-timeout worker takes over and refunds the buyer.
  *
- * If Shadeform also has no supply (or also gets stuck), the existing
- * 20-minute hard timeout in provisioning-timeout.ts takes over and
- * refunds the buyer cleanly. So this worker is a STRICT improvement:
- * cuts the typical bad-luck wait from 20 min to ~8 min when a faster
- * fallback is available, otherwise no behavior change.
+ * Ladder order rationale:
+ *   - Shadeform first: aggregates many underlying clouds (Hyperstack,
+ *     Latitude, MassedCompute, Crusoe, etc.) behind one API, so it has
+ *     the broadest supply
+ *   - RunPod second: large independent pool, fast provisioning when
+ *     supply exists, separate inventory from Vast.ai
+ *   - Lambda third: reliable but limited GPU variety; last resort
  *
- * Why Shadeform and not "try each provider in turn":
- *   - One fallback path is dramatically simpler than a ladder
- *     (1 file vs 6, no per-provider exclusion list, no infinite-loop
- *     guard beyond the single adminNote check)
- *   - Shadeform IS the multi-provider option — under the hood it
- *     already routes across many underlying clouds
- *   - When we want a full ladder later (Vast → RunPod → Lambda → etc.)
- *     we extend this worker with an attemptedProviders schema column
- *     and a per-provider exclusion list. For now: one fallback is enough.
- *
- * Why adminNote-based tracking instead of a schema column:
- *   - No migration needed; ships in one commit
- *   - The reroute is meant to fire AT MOST ONCE per ComputeRequest, so
- *     a "did we already reroute this?" boolean is enough
- *   - When we generalize to N providers, we'll add a proper
- *     `attemptedProviders String[]` field on ComputeRequest. This worker
- *     becomes a no-op or migrates to read that field.
+ * adminNote-based idempotency: each ladder attempt stamps the marker
+ *   `[reroute-fired] from <ORIGINAL> -> attempted:<P1>+<P2>+...`
+ * Once stamped, subsequent ticks skip this CR entirely. Fires AT MOST
+ * ONCE per ComputeRequest regardless of how many providers we tried.
  *
  * Configurability:
  *   PROVISIONING_REROUTE_ENABLED        default 'true'
@@ -53,6 +44,11 @@ import { Queue, Worker } from 'bullmq'
 import type { ConnectionOptions } from 'bullmq'
 import type { PrismaClient } from '@a2e/database'
 import { provisionShadeFormRental } from '../services/inbound/shadeform-provision.js'
+import { provisionRunPodRental } from '../services/inbound/runpod-provision.js'
+import { provisionLambdaRental } from '../services/inbound/lambda-provision.js'
+import { isShadeFormConfigured } from '../services/inbound/shadeform-adapter.js'
+import { isRunPodConfigured } from '../services/inbound/runpod-adapter.js'
+import { isLambdaConfigured } from '../services/inbound/lambda-adapter.js'
 import {
   terminateExternalRentalForRequest,
   UnknownProviderError,
@@ -71,23 +67,55 @@ const BATCH_SIZE = 20
 
 // Sentinel string we prepend to ComputeRequest.adminNote to mark that
 // this request has already been rerouted once. The check is a simple
-// includes() on the column. Stable token so future schema migrations
-// can replace this with a typed column without losing the marker.
+// includes() on the column.
 const REROUTE_MARKER = '[reroute-fired]'
 
-// Providers we route AWAY from. Shadeform is omitted from the source
-// list (we don't reroute Shadeform to itself) AND it's not in the
-// destination list because IT is the destination. If we ever add more
-// fallback destinations, this becomes per-source routing config.
+// Providers we route AWAY from. The fallback ladder targets a disjoint
+// set (Shadeform, RunPod, Lambda) — we'd never reroute Shadeform to
+// Shadeform. Reroute-source providers map to "anywhere except where
+// you came from"; reroute-target providers map to "the ladder below."
 const REROUTABLE_SOURCE_PROVIDERS = new Set([
   'VASTAI',
-  'RUNPOD',
-  'LAMBDA',
   'IONET',
   'PHALA',
   'VOLTAGEGPU',
   'HYPERSTACK',
+  // RUNPOD and LAMBDA are reroute-targets but ALSO sources, so we
+  // include them. If a buyer's request initially routed to RunPod and
+  // got stuck, we still want to try Shadeform / Lambda from there.
+  'RUNPOD',
+  'LAMBDA',
 ])
+
+// One ladder rung: a provision function + a configured-guard + a name
+// for logging and adminNote stamping. Order in this array is the
+// fallback order.
+interface LadderRung {
+  provider: 'SHADEFORM' | 'RUNPOD' | 'LAMBDA'
+  isConfigured: () => boolean
+  provision: (
+    prisma: PrismaClient,
+    computeRequestId: string,
+  ) => Promise<unknown>
+}
+
+const FALLBACK_LADDER: LadderRung[] = [
+  {
+    provider: 'SHADEFORM',
+    isConfigured: isShadeFormConfigured,
+    provision: provisionShadeFormRental,
+  },
+  {
+    provider: 'RUNPOD',
+    isConfigured: isRunPodConfigured,
+    provision: provisionRunPodRental,
+  },
+  {
+    provider: 'LAMBDA',
+    isConfigured: isLambdaConfigured,
+    provision: provisionLambdaRental,
+  },
+]
 
 interface Deps {
   redis: ConnectionOptions
@@ -132,24 +160,11 @@ export async function runProvisioningRerouteTick(
 ): Promise<void> {
   const cutoff = new Date(Date.now() - SOFT_THRESHOLD_MS)
 
-  // Step 1: find ExternalRental rows that have been in PENDING status
-  // for longer than SOFT_THRESHOLD_MS since CREATION, on a provider we
-  // know how to route AWAY from.
-  //
-  // Why createdAt and NOT updatedAt: every provider's poll worker
-  // (e.g. vastai-provision.ts pollVastAiRentalStatus) calls
-  // prisma.externalRental.update() on every tick, even when nothing
-  // changed, with at least `{status: newStatus, lastError: null}`.
-  // Prisma's @updatedAt directive bumps the column on every update()
-  // regardless of whether the data actually changed. So `updatedAt`
-  // is essentially "wall-clock-now for any rental whose poll worker is
-  // running" rather than "time since the provider made progress." A
-  // healthy-but-slow Vast.ai rental would keep updatedAt fresh every
-  // minute and never trigger the reroute despite being genuinely stuck.
-  //
-  // createdAt is immutable, so `createdAt + SOFT_THRESHOLD_MS < now`
-  // accurately means "this rental has existed for N minutes and is
-  // still not ACTIVE." That's the right signal for the reroute.
+  // Find ExternalRental rows that have been in PENDING status for
+  // longer than SOFT_THRESHOLD_MS since CREATION on a routable
+  // provider. createdAt is immutable, so this signal is robust against
+  // provider-poll-worker chatter that would otherwise keep updatedAt
+  // fresh on a stalled rental.
   const stuckRentals = await prisma.externalRental.findMany({
     where: {
       status: 'PENDING',
@@ -182,25 +197,27 @@ async function rerouteOne(
   prisma: PrismaClient,
   er: { id: string; provider: string; computeRequestId: string },
 ): Promise<void> {
-  // Step 2: load the parent ComputeRequest and verify it's still in
-  // PROVISIONING_EXTERNAL AND hasn't been rerouted before.
   const cr = await prisma.computeRequest.findUnique({
     where: { id: er.computeRequestId },
-    select: { id: true, status: true, adminNote: true, gpuTier: true, gpuCount: true },
+    select: {
+      id: true,
+      status: true,
+      adminNote: true,
+      gpuTier: true,
+      gpuCount: true,
+    },
   })
   if (!cr) return
   if (cr.status !== 'PROVISIONING_EXTERNAL') return
   if (cr.adminNote?.includes(REROUTE_MARKER)) return
 
   console.log(
-    `[provisioning-reroute] rerouting ${cr.id} from ${er.provider} -> SHADEFORM ` +
+    `[provisioning-reroute] starting ladder for ${cr.id} from ${er.provider} ` +
       `(${cr.gpuCount}x ${cr.gpuTier}, stuck > ${Math.round(SOFT_THRESHOLD_MS / 60000)}min)`,
   )
 
-  // Step 3: terminate the stuck rental on the source provider so we
-  // stop paying for it. Best-effort; if it fails the buyer still gets
-  // their compute via the new path and the existing
-  // external-orphan-reconciler will clean up later.
+  // Step 1: terminate the stuck rental on the source provider so we
+  // stop paying for it. Best-effort.
   try {
     await terminateExternalRentalForRequest(
       prisma,
@@ -210,70 +227,107 @@ async function rerouteOne(
   } catch (err) {
     if (err instanceof UnknownProviderError) {
       console.error(
-        `[provisioning-reroute] unknown-provider terminate for ${cr.id}: ${err.message}; continuing reroute`,
+        `[provisioning-reroute] unknown-provider terminate for ${cr.id}: ${err.message}; continuing`,
       )
     } else {
       console.error(
-        `[provisioning-reroute] terminate-on-source failed for ${cr.id}; continuing reroute:`,
+        `[provisioning-reroute] terminate-on-source failed for ${cr.id}; continuing:`,
         err,
       )
     }
   }
 
-  // Mark the prior ExternalRental as CLOSED so the original provider's
-  // poll worker stops touching it and the hard-timeout worker doesn't
-  // consider it again. terminateExternalRentalForRequest already does
-  // this on success, but the catch-all above means we might still need
-  // to mark it manually if the upstream call fell over.
-  await prisma.externalRental.updateMany({
-    where: { id: er.id, status: { in: ['PENDING', 'ACTIVE'] } },
-    data: { status: 'CLOSED', lastNote: 'Closed by soft-reroute worker' },
+  // Step 2: delete the source ExternalRental row entirely. The
+  // (computeRequestId) unique constraint AND the provision functions'
+  // own idempotency checks would both block a fresh provider attempt
+  // if we just marked the row CLOSED. Deletion is safe because
+  // terminate-dispatcher already destroyed the upstream instance and
+  // we don't need the row's history for buyer-facing accounting
+  // (ComputeRequest carries the canonical buyer record).
+  await prisma.externalRental.deleteMany({
+    where: { id: er.id },
   })
 
-  // Step 4: flip ComputeRequest back to PENDING so
-  // provisionShadeFormRental's status guard accepts the call, AND stamp
-  // the adminNote with the reroute marker so this can't fire twice.
-  const previousNote = cr.adminNote ?? ''
+  // Step 3: walk the fallback ladder. Each rung gets the same shot:
+  // CR flipped to PENDING (provisionXxxRental's status guard), call
+  // the provider's provision function, on throw delete any phantom
+  // row and move on. On success, the function leaves the ComputeRequest
+  // back in PROVISIONING_EXTERNAL with a fresh ExternalRental — we're
+  // done.
+  const attemptedProviders: string[] = []
+  let succeededWith: string | null = null
+
+  for (const rung of FALLBACK_LADDER) {
+    if (rung.provider === er.provider) {
+      // Don't reroute a provider to itself, even if it's also in
+      // the fallback list (e.g. RunPod stuck rerouted via Shadeform
+      // and Lambda, NOT RunPod again).
+      continue
+    }
+    if (!rung.isConfigured()) {
+      continue
+    }
+
+    // Flip CR back to PENDING for the provision function's status
+    // guard. We always do this — provisionXxxRental expects PENDING.
+    await prisma.computeRequest.updateMany({
+      where: { id: cr.id, status: { in: ['PROVISIONING_EXTERNAL', 'PENDING'] } },
+      data: { status: 'PENDING' },
+    })
+
+    try {
+      await rung.provision(prisma, cr.id)
+      succeededWith = rung.provider
+      attemptedProviders.push(rung.provider)
+      console.log(
+        `[provisioning-reroute] ${cr.id} successfully rerouted to ${rung.provider}`,
+      )
+      break
+    } catch (err) {
+      attemptedProviders.push(rung.provider)
+      const msg = err instanceof Error ? err.message : String(err)
+      console.log(
+        `[provisioning-reroute] ${rung.provider} refused ${cr.id}: ${msg}`,
+      )
+      // Clear any partial ExternalRental row the provider might have
+      // created before throwing, so the next rung's idempotency check
+      // sees a clean slate.
+      await prisma.externalRental.deleteMany({
+        where: { computeRequestId: cr.id },
+      })
+    }
+  }
+
+  // Step 4: write the adminNote marker AFTER the ladder so we capture
+  // every provider we attempted. If we succeeded, the new provision
+  // function has already flipped CR back to PROVISIONING_EXTERNAL and
+  // we only need to stamp the note. If we failed everywhere, restore
+  // PROVISIONING_EXTERNAL so the hard-timeout worker can do its job.
+  const stampSuffix = succeededWith
+    ? `succeeded:${succeededWith}`
+    : 'all-ladder-rungs-refused, falling through to hard-timeout'
   const rerouteNote =
-    `${REROUTE_MARKER} from ${er.provider} -> SHADEFORM at ${new Date().toISOString()}`
-  await prisma.computeRequest.update({
-    where: { id: cr.id },
-    data: {
-      status: 'PENDING',
-      adminNote: previousNote
-        ? `${previousNote}; ${rerouteNote}`
-        : rerouteNote,
-    },
-  })
+    `${REROUTE_MARKER} from ${er.provider} -> ` +
+    `attempted:${attemptedProviders.join('+') || 'none'}; ${stampSuffix} at ${new Date().toISOString()}`
+  const previousNote = cr.adminNote ?? ''
+  const newNote = previousNote ? `${previousNote}; ${rerouteNote}` : rerouteNote
 
-  // Step 5: call into shadeform-provision which performs the API call
-  // + creates a fresh ExternalRental + flips status back to
-  // PROVISIONING_EXTERNAL. If Shadeform also has no supply, this
-  // throws — we restore the ComputeRequest to PROVISIONING_EXTERNAL so
-  // the hard-timeout worker can handle it normally, but leave the
-  // adminNote marker in place so a 2nd reroute doesn't fire.
-  try {
-    await provisionShadeFormRental(prisma, cr.id)
-    console.log(
-      `[provisioning-reroute] ${cr.id} successfully rerouted to SHADEFORM`,
-    )
-  } catch (err) {
-    // Shadeform refused. Put the request back into PROVISIONING_EXTERNAL
-    // with the original-provider's already-CLOSED rental record so the
-    // hard timeout fires cleanly and refunds the buyer at the 20-min
-    // mark. The adminNote stays stamped — we won't try again.
-    console.error(
-      `[provisioning-reroute] Shadeform fallback failed for ${cr.id}:`,
-      err instanceof Error ? err.message : err,
-    )
-    await prisma.computeRequest.update({
-      where: { id: cr.id, status: 'PENDING' },
+  if (succeededWith) {
+    // Provision function already set us to PROVISIONING_EXTERNAL; just
+    // stamp the note.
+    await prisma.computeRequest.updateMany({
+      where: { id: cr.id, status: 'PROVISIONING_EXTERNAL' },
+      data: { adminNote: newNote },
+    })
+  } else {
+    // Ladder exhausted. Put CR back into PROVISIONING_EXTERNAL even
+    // though there's no live ExternalRental — that triggers the
+    // hard-timeout worker on its next tick to cancel + refund.
+    await prisma.computeRequest.updateMany({
+      where: { id: cr.id, status: { in: ['PENDING', 'PROVISIONING_EXTERNAL'] } },
       data: {
         status: 'PROVISIONING_EXTERNAL',
-        adminNote:
-          previousNote
-            ? `${previousNote}; ${rerouteNote}; Shadeform also unavailable, falling through to hard-timeout`
-            : `${rerouteNote}; Shadeform also unavailable, falling through to hard-timeout`,
+        adminNote: newNote,
       },
     })
   }
