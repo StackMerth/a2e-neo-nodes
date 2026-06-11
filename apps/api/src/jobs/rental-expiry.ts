@@ -107,6 +107,18 @@ async function completeRental(
   cr: { id: string; userId: string; gpuTier: string; gpuCount: number; totalCost: number; allocatedNodeIds: string[] },
   now: Date,
 ): Promise<void> {
+  // Detect external rental BEFORE the status update. External rentals
+  // (Vast.ai, RunPod, Lambda, etc.) have no node-agent to confirm
+  // teardown; the provider's API termination IS the SSH cleanup.
+  // Internal rentals (BYOG nodes) need to signal TERMINATING for the
+  // agent to pick up. See buyer-compute.ts terminate route for the
+  // same branching logic + the early-tester incident that prompted it.
+  const externalRental = await prisma.externalRental.findUnique({
+    where: { computeRequestId: cr.id },
+    select: { id: true },
+  })
+  const isExternalRental = !!externalRental
+
   // Atomic transition: status guard prevents double-processing if the
   // buyer's terminate route races us.
   const result = await prisma.$transaction(async tx => {
@@ -119,14 +131,11 @@ async function completeRental(
         // even if they cached it. Mirrors what the terminate route does.
         sshSessionToken: null,
         sshSessionTokenExpiresAt: null,
-        // Launch-blocker #2: flag the SSH session for agent teardown.
-        // The agent will see TERMINATING in its next heartbeat response,
-        // pkill + userdel the rental user, and report TERMINATED via
-        // POST /v1/nodes/:id/ssh-sessions/:requestId/status — which is
-        // where the node finally returns to the idle pool. The reaper
-        // (apps/api/src/jobs/ssh-session-reaper.ts) is the failsafe if
-        // the agent never comes back.
-        sshSessionStatus: 'TERMINATING',
+        // External: TERMINATED immediately (provider API call below is
+        // the actual cleanup). Internal: TERMINATING so the agent picks
+        // up via heartbeat and runs userdel; reaper is the 10-min failsafe.
+        sshSessionStatus: isExternalRental ? 'TERMINATED' : 'TERMINATING',
+        ...(isExternalRental ? { sshTerminatedAt: now } : {}),
         adminNote: 'Auto-completed: rental term reached',
       },
     })

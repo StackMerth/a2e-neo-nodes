@@ -1297,6 +1297,25 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       }
     }
 
+    // Detect external rental BEFORE the status update. External rentals
+    // (Vast.ai, RunPod, Lambda, etc.) have no node-agent to confirm
+    // teardown; the provider's API termination IS the SSH cleanup, and
+    // happens later in this function via terminateExternalRentalForRequest.
+    // Internal rentals (BYOG nodes running our node-agent) need to
+    // signal TERMINATING so the agent picks it up via heartbeat and
+    // runs userdel, with the reaper as a 10-min failsafe.
+    //
+    // Without this distinction, external rentals would sit at TERMINATING
+    // forever (no agent to confirm) and the reaper would fire its
+    // misleading "force-released by reaper after 10m without agent
+    // confirmation" message on a rental that has no agent — which is
+    // what bit the early-tester cmq8mmz3a004y 2026-06-10 rental.
+    const externalRental = await fastify.prisma.externalRental.findUnique({
+      where: { computeRequestId: id },
+      select: { id: true },
+    })
+    const isExternalRental = !!externalRental
+
     // Atomically: mark COMPLETED, freeze final accrual, release nodes,
     // bump trust signals so the eligibility engine learns this buyer
     // followed through. Refund tx hash recorded in adminNote so the
@@ -1316,11 +1335,11 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
           // Clear ephemeral SSH so leaked credentials become useless.
           sshSessionToken: null,
           sshSessionTokenExpiresAt: null,
-          // Launch-blocker #2: signal agent teardown. The node will
-          // return to the idle pool only after the agent's TERMINATED
-          // callback (or the reaper's 10-minute failsafe) — until
-          // then the buyer's installed pubkey can't outlive the rental.
-          sshSessionStatus: 'TERMINATING',
+          // External: TERMINATED immediately (provider API call below is
+          // the actual cleanup). Internal: TERMINATING and let the agent
+          // confirm, with the reaper as 10-min failsafe.
+          sshSessionStatus: isExternalRental ? 'TERMINATED' : 'TERMINATING',
+          ...(isExternalRental ? { sshTerminatedAt: completedAt } : {}),
         },
       }),
       fastify.prisma.user.update({
