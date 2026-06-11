@@ -655,7 +655,16 @@ export default function RequestDetailPage() {
             polling effect above retries every 5s. Underlying supplier
             stays abstracted — buyers see "TokenOS Compute," not a
             named third-party cloud. */}
-        {data.status === 'PROVISIONING_EXTERNAL' && !externalCreds && (
+        {/* Show the loading card for the ENTIRE PROVISIONING_EXTERNAL
+            window — including the gap between when the external provider
+            surfaces credentials (externalCreds becomes available because
+            ExternalRental.status flipped to ACTIVE) and when our
+            vastai-poll/runpod-poll/etc worker promotes ComputeRequest
+            to ACTIVE on the next 60s tick. Without this, buyers see
+            only the top banner with no detail card for ~60s, which
+            reads as 'is something broken?' rather than 'about to be
+            ready.' */}
+        {data.status === 'PROVISIONING_EXTERNAL' && (
           <SectionCard
             title="Provisioning your compute"
             icon={Cloud}
