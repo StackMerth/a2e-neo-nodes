@@ -148,6 +148,22 @@ async function terminateGracedRentals(
     if (!preemptAt || Number.isNaN(preemptAt.getTime())) continue
     if (preemptAt > now) continue // still in grace window
 
+    // SECURITY (2026-06-11 fourth-round audit): atomic claim ACTIVE
+    // -> TERMINATING before computing refund / calling processPayment.
+    // Two preemption ticks could otherwise process the same SPOT
+    // rental, each call processPayment, drain N times. Same TOCTOU
+    // shape as the terminate route (which was the original drain
+    // vector). Mirrors that fix.
+    const claimed = await prisma.computeRequest.updateMany({
+      where: { id: cr.id, status: 'ACTIVE' },
+      data: { status: 'TERMINATING' },
+    })
+    if (claimed.count === 0) {
+      // Another preemption tick beat us to it. Skip; the winner
+      // is responsible for refund + status finalization.
+      continue
+    }
+
     // Compute final accrual + refund
     const ratePerMinute = cr.ratePerMinute ?? (cr.totalCost / cr.durationDays / 24 / 60)
     const elapsedMs = cr.activatedAt ? now.getTime() - cr.activatedAt.getTime() : 0
@@ -231,8 +247,11 @@ async function terminateGracedRentals(
     if (refundError) noteParts.push(`Error: ${refundError}.`)
 
     const result = await prisma.$transaction(async tx => {
+      // We claimed the row to TERMINATING above, so finalize from
+      // TERMINATING -> COMPLETED. The status guard prevents a third
+      // party from racing the finalization.
       const updated = await tx.computeRequest.updateMany({
-        where: { id: cr.id, status: 'ACTIVE' },
+        where: { id: cr.id, status: 'TERMINATING' },
         data: {
           status: 'COMPLETED',
           completedAt: now,

@@ -108,8 +108,16 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
         })
       }
 
-      // Mark as processing with audit log
-      await markSettlementProcessing(fastify.prisma, settlementId)
+      // Atomic claim: only the request that flips PENDING -> PROCESSING
+      // proceeds. Parallel requests for the same settlement see false
+      // and bail before any treasury USDC is signed.
+      const claimed = await markSettlementProcessing(fastify.prisma, settlementId)
+      if (!claimed) {
+        return reply.code(409).send({
+          error: 'Already Processing',
+          message: 'Settlement was claimed by another request',
+        })
+      }
       await logSettlementChange(
         fastify.prisma,
         settlementId,
@@ -486,8 +494,18 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
           continue
         }
 
-        // Mark as processing
-        await markSettlementProcessing(fastify.prisma, settlementId)
+        // Atomic claim: only the iteration that flips PENDING -> PROCESSING
+        // proceeds. Concurrent batch requests for the same settlement
+        // see false and skip without signing treasury USDC.
+        const claimed = await markSettlementProcessing(fastify.prisma, settlementId)
+        if (!claimed) {
+          results.push({
+            settlementId,
+            success: false,
+            error: 'Already claimed by another request',
+          })
+          continue
+        }
 
         // Create payment record
         const payment = await fastify.prisma.payment.create({

@@ -76,7 +76,15 @@ export function createSettlementSchedulerWorker(
           try {
             // Create settlement record
             const settlementId = await createSettlement(prisma, calc)
-            await markSettlementProcessing(prisma, settlementId)
+            // Atomic claim. Skipping if false means another scheduler
+            // tick (or operator manual /process) already grabbed this
+            // newly-created settlement before us. Race window is tiny
+            // (one Postgres roundtrip) but possible under concurrency.
+            const claimed = await markSettlementProcessing(prisma, settlementId)
+            if (!claimed) {
+              console.log(`[SettlementScheduler] Settlement ${settlementId} already claimed by another worker; skipping`)
+              continue
+            }
 
             // Process payment
             const result = await processPayment(
@@ -181,15 +189,29 @@ export function createSettlementRetryWorker(
           return { error: 'Max retries exceeded' }
         }
 
-        // Increment retry count
-        await prisma.settlement.update({
-          where: { id: settlementId },
+        // SECURITY (2026-06-11 fourth-round audit): atomic claim before
+        // touching processPayment. Two retry jobs for the same
+        // settlement (BullMQ duplicate enqueue, manual + auto-retry
+        // overlap, etc.) would otherwise both pass the status check
+        // and both fire treasury USDC. Only one wins the FAILED ->
+        // PROCESSING flip; the other sees count === 0 and returns
+        // early.
+        const claimed = await prisma.settlement.updateMany({
+          where: {
+            id: settlementId,
+            status: { in: ['FAILED', 'PENDING'] },
+            retryCount: { lt: settlement.maxRetries },
+          },
           data: {
             retryCount: settlement.retryCount + 1,
             lastRetryAt: new Date(),
             status: 'PROCESSING',
           },
         })
+        if (claimed.count === 0) {
+          console.log(`[SettlementRetry] Settlement ${settlementId} could not be claimed (already processing or claimed by another retry)`)
+          return { skipped: true, reason: 'Could not claim' }
+        }
 
         // Get Solana config
         const solanaConfig = await getSolanaConfig(prisma)

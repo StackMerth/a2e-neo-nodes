@@ -380,14 +380,30 @@ export async function createSettlement(
   return settlement.id
 }
 
+/**
+ * SECURITY (2026-06-11 fourth-round follow-up audit): switched from a
+ * plain status update to an atomic claim. Previously this was used as
+ * a "I'm taking over this settlement" marker but callers checked
+ * status === 'PENDING' separately (non-atomic read). N concurrent
+ * scheduler ticks / HTTP requests all passed the check and all
+ * called processPayment for the same settlement, generating N
+ * treasury transfers. Same TOCTOU shape that drained $65.50 via the
+ * terminate route. Mirrors the cancel-route claim pattern.
+ *
+ * Returns true if the caller successfully claimed the settlement
+ * (status flipped PENDING -> PROCESSING) and SHOULD proceed with
+ * processPayment. Returns false if the settlement was already
+ * claimed by someone else; caller MUST skip the payment.
+ */
 export async function markSettlementProcessing(
   prisma: PrismaClient,
   settlementId: string
-): Promise<void> {
-  await prisma.settlement.update({
-    where: { id: settlementId },
+): Promise<boolean> {
+  const result = await prisma.settlement.updateMany({
+    where: { id: settlementId, status: 'PENDING' },
     data: { status: 'PROCESSING' },
   })
+  return result.count > 0
 }
 
 export async function markSettlementCompleted(
