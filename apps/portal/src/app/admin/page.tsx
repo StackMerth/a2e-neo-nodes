@@ -9,6 +9,7 @@ import {
   Server,
   Loader2,
   TrendingUp,
+  RefreshCw,
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { DashboardShell } from '@/components/dashboard/FuturisticShell'
@@ -78,45 +79,59 @@ function QueueCard({ label, count, icon: Icon, href, loading, accent }: QueueCar
   )
 }
 
+const AUTO_REFRESH_MS = 30_000 // 30s — fast enough to feel live, slow enough that 4 admins with the tab open don't hammer the API.
+
 export default function AdminDashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [lastFetched, setLastFetched] = useState<Date | null>(null)
+
+  async function loadStats(showSpinner: boolean) {
+    if (showSpinner) setLoading(true)
+    try {
+      const [buyerW, operatorW, compute, deploy] = await Promise.all([
+        apiFetch<{ total: number }>('/v1/admin/buyer-withdrawals?status=PENDING&limit=1').catch(
+          () => ({ total: 0 }),
+        ),
+        apiFetch<{ total: number }>('/v1/admin/withdrawals?status=PENDING&limit=1').catch(
+          () => ({ total: 0 }),
+        ),
+        apiFetch<{ stats: { pending: number } }>('/v1/admin/compute/stats').catch(
+          () => ({ stats: { pending: 0 } }),
+        ),
+        apiFetch<{ deployments: unknown[]; total?: number }>('/v1/admin/deployments?status=PENDING&limit=1').catch(
+          () => ({ deployments: [], total: 0 }),
+        ),
+      ])
+      setStats({
+        buyerWithdrawalsPending: buyerW.total ?? 0,
+        operatorWithdrawalsPending: operatorW.total ?? 0,
+        computeRequestsPending: compute.stats?.pending ?? 0,
+        deploymentsPending: deploy.total ?? deploy.deployments?.length ?? 0,
+      })
+      setLastFetched(new Date())
+    } catch {
+      setStats({
+        buyerWithdrawalsPending: 0,
+        operatorWithdrawalsPending: 0,
+        computeRequestsPending: 0,
+        deploymentsPending: 0,
+      })
+    } finally {
+      if (showSpinner) setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    void (async () => {
-      setLoading(true)
-      try {
-        const [buyerW, operatorW, compute, deploy] = await Promise.all([
-          apiFetch<{ total: number }>('/v1/admin/buyer-withdrawals?status=PENDING&limit=1').catch(
-            () => ({ total: 0 }),
-          ),
-          apiFetch<{ total: number }>('/v1/admin/withdrawals?status=PENDING&limit=1').catch(
-            () => ({ total: 0 }),
-          ),
-          apiFetch<{ stats: { pending: number } }>('/v1/admin/compute/stats').catch(
-            () => ({ stats: { pending: 0 } }),
-          ),
-          apiFetch<{ deployments: unknown[]; total?: number }>('/v1/admin/deployments?status=PENDING&limit=1').catch(
-            () => ({ deployments: [], total: 0 }),
-          ),
-        ])
-        setStats({
-          buyerWithdrawalsPending: buyerW.total ?? 0,
-          operatorWithdrawalsPending: operatorW.total ?? 0,
-          computeRequestsPending: compute.stats?.pending ?? 0,
-          deploymentsPending: deploy.total ?? deploy.deployments?.length ?? 0,
-        })
-      } catch {
-        setStats({
-          buyerWithdrawalsPending: 0,
-          operatorWithdrawalsPending: 0,
-          computeRequestsPending: 0,
-          deploymentsPending: 0,
-        })
-      } finally {
-        setLoading(false)
+    void loadStats(true)
+    const id = setInterval(() => {
+      // Skip refresh when the tab is hidden — saves both API roundtrips
+      // and the per-admin queue load when nobody's watching.
+      if (document.visibilityState !== 'hidden') {
+        void loadStats(false)
       }
-    })()
+    }, AUTO_REFRESH_MS)
+    return () => clearInterval(id)
   }, [])
 
   const cards: QueueCardProps[] = [
@@ -159,6 +174,27 @@ export default function AdminDashboardPage() {
       title="Admin Dashboard"
       subtitle="Review queues across the platform"
     >
+      <div className="lg:col-span-3 flex items-center justify-between mb-3">
+        <div className="text-xs opacity-60" style={{ color: 'var(--text-secondary)' }}>
+          {lastFetched
+            ? `Updated ${Math.floor((Date.now() - lastFetched.getTime()) / 1000)}s ago · auto-refresh every ${AUTO_REFRESH_MS / 1000}s`
+            : 'Loading…'}
+        </div>
+        <button
+          onClick={() => void loadStats(true)}
+          disabled={loading}
+          className="text-xs inline-flex items-center gap-1.5 px-2.5 py-1 rounded transition-colors disabled:opacity-50"
+          style={{
+            background: 'var(--bg-card)',
+            color: 'var(--text-secondary)',
+            border: '1px solid var(--border-color)',
+          }}
+          title="Refresh now"
+        >
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
+        </button>
+      </div>
+
       <div className="lg:col-span-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((c) => (
           <QueueCard key={c.label} {...c} />

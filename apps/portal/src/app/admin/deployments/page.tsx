@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Server } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/components/ui/Toast'
@@ -37,6 +38,7 @@ function timeAgo(d: string | null): string {
 
 export default function AdminDeploymentsPage() {
   const { toast } = useToast()
+  const router = useRouter()
   const [rows, setRows] = useState<DeploymentRow[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED'>(
@@ -152,6 +154,7 @@ export default function AdminDeploymentsPage() {
           columns={columns}
           rows={(rows ?? []) as Row[]}
           loading={loading}
+          onRowClick={(r) => router.push(`/admin/deployments/${r.id}`)}
           empty={
             <EmptyState
               icon={Server}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { ArrowUpToLine, ExternalLink } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/components/ui/Toast'
@@ -57,6 +58,7 @@ function shortWallet(addr: string | null): string {
 
 export default function AdminOperatorWithdrawalsPage() {
   const { toast } = useToast()
+  const router = useRouter()
   const [rows, setRows] = useState<OperatorWithdrawalRow[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'ALL' | OperatorWithdrawalRow['status']>('PENDING')
@@ -195,6 +197,7 @@ export default function AdminOperatorWithdrawalsPage() {
           columns={columns}
           rows={(rows ?? []) as Row[]}
           loading={loading}
+          onRowClick={(r) => router.push(`/admin/operator-withdrawals/${r.id}`)}
           empty={
             <EmptyState
               icon={ArrowUpToLine}
@@ -204,20 +207,6 @@ export default function AdminOperatorWithdrawalsPage() {
           }
         />
 
-        <div
-          className="rounded-lg p-4 text-2xs"
-          style={{
-            background: 'rgba(245, 158, 11, 0.06)',
-            border: '1px solid rgba(245, 158, 11, 0.25)',
-            color: 'var(--text-secondary)',
-          }}
-        >
-          <strong style={{ color: 'var(--warn)' }}>Action endpoints</strong> for
-          this queue (approve, process, process-stripe, complete, reject) live at
-          <span className="font-mono"> PATCH /v1/admin/withdrawals/:id/&lt;action&gt; </span>
-          and are fully working. UI buttons for them are a follow-up. For now,
-          use the API directly or curl.
-        </div>
       </div>
     </DashboardShell>
   )

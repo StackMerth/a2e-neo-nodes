@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Cpu } from 'lucide-react'
 import { apiFetch } from '@/lib/api'
 import { useToast } from '@/components/ui/Toast'
@@ -38,6 +39,7 @@ function timeAgo(d: string | null): string {
 
 export default function AdminComputePage() {
   const { toast } = useToast()
+  const router = useRouter()
   const [rows, setRows] = useState<ComputeRequestRow[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<
@@ -161,6 +163,7 @@ export default function AdminComputePage() {
           columns={columns}
           rows={(rows ?? []) as Row[]}
           loading={loading}
+          onRowClick={(r) => router.push(`/admin/compute/${r.id}`)}
           empty={
             <EmptyState
               icon={Cpu}
