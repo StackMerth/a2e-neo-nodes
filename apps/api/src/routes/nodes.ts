@@ -95,8 +95,14 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         })
       }
 
-      // Get the API key from the request header - will be stored on the node
-      const apiKey = request.headers['x-api-key'] as string
+      // Get the API key from the request header - will be stored on the node.
+      // SECURITY (pen-test A6 2026-06-10): coerce to string explicitly so that
+      // a missing X-API-Key header doesn't blow up the apiKey.startsWith()
+      // check below with `undefined.startsWith is not a function` -> 500.
+      // Authenticated callers without an X-API-Key header simply get
+      // node.apiKey=undefined (i.e. no node-specific key stored), which is
+      // the same outcome as before, just without the crash.
+      const apiKey = (request.headers['x-api-key'] as string | undefined) ?? ''
 
       // If registering via provision job API key, look up the provision job
       let provisionJobId: string | undefined
@@ -767,7 +773,19 @@ export async function nodeRoutes(fastify: FastifyInstance) {
    *      If the drop exceeds BENCHMARK_ANOMALY_THRESHOLD_PCT (default
    *      20%), fires NODE_DEGRADED to alert the operator.
    */
-  fastify.post('/v1/nodes/:id/benchmark/result', async (request, reply) => {
+  fastify.post(
+    '/v1/nodes/:id/benchmark/result',
+    {
+      // SECURITY (pen-test A3 2026-06-10): without an auth preHandler the
+      // route accepted unauthenticated POSTs and let anyone overwrite ANY
+      // node's benchmarkScore. That feeds A1 (reputation inflation) and
+      // B2 (marketplace fake-GPU flooding) directly: a self-inflated
+      // benchmark climbs reputation tier, a sabotage-zeroed benchmark
+      // drops a competitor + fires NODE_DEGRADED + node:benchmark WS
+      // emit. Benchmark must be node-attested.
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
     const { id } = request.params as { id: string }
     const parsed = benchmarkResultSchema.safeParse(request.body)
     if (!parsed.success) {
@@ -777,6 +795,23 @@ export async function nodeRoutes(fastify: FastifyInstance) {
       })
     }
     const result = parsed.data
+
+    // SECURITY (pen-test A3): only the node itself (authed with its own
+    // X-API-Key) or an admin can write a benchmark result for this id.
+    // request.authType is set by the auth plugin: 'node' means the key
+    // was an a2e-node-... key bound to a Node row; authNodeId carries
+    // that row's id. 'admin' is allowed so support can manually correct
+    // anomalies. All other auth types (user/buyer/provision) are denied.
+    if (request.authType === 'admin') {
+      // allowed
+    } else if (request.authType === 'node' && request.authNodeId === id) {
+      // allowed (node writing its own benchmark)
+    } else {
+      return reply.code(403).send({
+        error: 'Forbidden',
+        message: 'Benchmark result can only be submitted by the node itself (X-API-Key) or an admin.',
+      })
+    }
 
     const node = await fastify.prisma.node.findUnique({
       where: { id },
