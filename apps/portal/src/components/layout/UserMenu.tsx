@@ -201,7 +201,7 @@ export function UserMenu({ collapsed, displayName, avatarLetter, role }: UserMen
                   label="Admin Dashboard"
                   onClick={() => {
                     setOpen(false)
-                    router.push('/dashboard')
+                    router.push('/admin')
                   }}
                 />
               )}
