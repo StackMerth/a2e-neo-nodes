@@ -12,6 +12,7 @@ import {
   recordFailedLogin,
   resetLoginAttempts,
 } from '../services/auth/login-rate-limit.js'
+import { checkEmailDomain } from '../services/auth/email-domain-validator.js'
 
 // Validation schemas
 
@@ -166,6 +167,26 @@ export async function portalAuthRoutes(fastify: FastifyInstance) {
     }
 
     const { email, password, role, referralCode } = parsed.data
+
+    // SECURITY (2026-06-11 third-round): synthetic domains like
+    // cpk-redteam.io passed the RFC-reserved blocklist because they're
+    // not reserved. Real MX-record lookup catches them: any forged
+    // domain that can't actually receive mail has no MX. Falls open
+    // on DNS resolver errors so transient outages don't block real
+    // signups.
+    const domainCheck = await checkEmailDomain(email)
+    if (!domainCheck.hasMx) {
+      fastify.log.warn(
+        { email, domain: domainCheck.domain, reason: domainCheck.reason },
+        'Signup rejected: email domain does not accept mail',
+      )
+      return reply.code(400).send({
+        error: 'Validation Error',
+        message:
+          'Email domain does not accept mail (no MX record). ' +
+          'Use a real email address you can receive mail at.',
+      })
+    }
 
     // M5.7 anti-abuse: capture the signup IP. Prefer the first hop in
     // X-Forwarded-For (Render + Vercel always set it) and fall back to

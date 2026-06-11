@@ -514,14 +514,19 @@ export async function verifyTransaction(
   // an invalid signature format — same path that just-shipped Patch #1
   // exercises against bogus "1" * 88 hashes).
   //
-  // FOLLOW-UP (2026-06-11): switched the predicate from devMode to
-  // hasRealConfig. The M1 transitional state — Solana wallet + RPC
-  // configured but PAYMENT_MODE not yet flipped to 'live' — had
-  // devMode=true even with a real treasury, so the reconciler still
-  // auto-marked any settlement verified. Now: any real config (even
-  // devnet) triggers the real on-chain check. Mock-pass only when no
-  // RPC and no payer key are configured at all.
+  // FOLLOW-UP (2026-06-11 third-round): also rejects in prod when config
+  // is missing. Mirrors verifyUsdcDeposit's hard gate. Reconciler must
+  // not auto-mark settlements verified when Solana isn't wired up;
+  // settle them as PENDING admin review instead.
   if (!config.hasRealConfig) {
+    if (process.env.NODE_ENV === 'production') {
+      return {
+        verified: false,
+        confirmations: 0,
+        isDevMode: false,
+        error: 'Solana payer key + RPC not configured in production. Verification refused.',
+      }
+    }
     return {
       verified: true,
       confirmations: 32, // Finalized
@@ -619,24 +624,28 @@ export async function verifyUsdcDeposit(
   isDevMode: boolean
   error?: string
 }> {
-  // SECURITY (2026-06-11 follow-up): the previous predicate was
-  // `config.devMode || startsWith('DEV_') || startsWith('test_')`. Two
-  // separate holes:
-  //   1. Any client could craft txHash:'test_x' / 'DEV_x' and bypass.
-  //   2. devMode was true whenever PAYMENT_MODE !== 'live' — the M1
-  //      transitional state (Solana wallet + devnet RPC configured,
-  //      mainnet flip pending) — so EVERY USDC txHash auto-passed even
-  //      with no prefix. cpk-buyer2's "forged-cpk-no-real-payment-0002"
-  //      and cpk-b4's copy-pasted real-looking signature both verified
-  //      via this branch despite being unrelated to our treasury.
+  // SECURITY (2026-06-11 third-round): the previous predicate hardened
+  // to `!config.hasRealConfig` was still bypassed in prod because Solana
+  // mainnet keys haven't shipped yet (M1 deferred follow-up). In that
+  // state hasRealConfig = false even in NODE_ENV=production, so the
+  // auto-pass branch fires and every USDC txHash verifies as fake.
+  // `cpk-b4r-1781190806@cpk-redteam.io` walked PROVISIONING_EXTERNAL
+  // 15:13:27Z on 2026-06-11 via this path.
   //
-  // Hardened predicate: auto-pass ONLY when neither RPC nor payer key
-  // is configured (true local-dev with zero Solana setup). The prefix
-  // shortcut is removed entirely; if you have any Solana config (even
-  // devnet), we do the real on-chain check. The PAYMENT_MODE flag is
-  // retained for OUTBOUND payouts only (mock vs real send) and is
-  // no longer consulted for inbound verification.
+  // Hardened: in production, never auto-pass. If config is missing in
+  // prod, refuse USDC payments outright — operator must set
+  // SOLANA_PAYER_KEY + SOLANA_RPC_URL or disable USDC paymentSource.
+  // Local dev (NODE_ENV !== 'production') still mocks for convenience.
   if (!config.hasRealConfig) {
+    if (process.env.NODE_ENV === 'production') {
+      return {
+        verified: false,
+        isDevMode: false,
+        error:
+          'USDC payment verification not available: Solana payer key + RPC ' +
+          'not configured in production. Contact admin or use BUYER_BALANCE / STRIPE.',
+      }
+    }
     return { verified: true, isDevMode: true, observedAmountUsd: minAmountUsd }
   }
 

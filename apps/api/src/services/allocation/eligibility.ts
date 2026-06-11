@@ -45,6 +45,14 @@ export type EligibilityFlag =
   | 'HOLD_DAILY_SPEND_EXCEEDED'
   | 'HOLD_CONCURRENT_LIMIT'
   | 'HOLD_UNVERIFIED_EMAIL'
+  // SECURITY (2026-06-11 third-round): the three forged-buyer rounds
+  // (cpk-buyer2, cpk-b4, cpk-b4r) all shared two attributes: emailVerified
+  // was false and successfulRentalCount was 0. Re-enabling these gates
+  // is the verifiable backstop that doesn't depend on the payment
+  // verifier (Solana mainnet keys are still pending) or on predicting
+  // every new fake-domain pattern.
+  | 'HOLD_UNVERIFIED_EMAIL_FIRST_RENTALS' // unverified email + < 3 successful rentals
+  | 'HOLD_FIRST_RENTAL_NEEDS_ADMIN' // successfulRentalCount === 0; human reviews
   // Informational flags. The request is paid and approved; the
   // allocator is searching for capacity. NOT a hold — no admin
   // action is required. The next allocator tick re-probes 10s later.
@@ -74,6 +82,13 @@ export const MANUAL_REVIEW_FLAG = 'MANUAL_REVIEW_PASSED' as const
  * sets status=WAITLISTED with the flags persisted; admins approve from
  * the Needs Review queue.
  */
+// Threshold below which the unverified-email gate fires. Env-tunable so
+// we can dial back once we see false-positives on real buyers.
+const UNVERIFIED_EMAIL_HOLD_BELOW_RENTAL_COUNT = parseInt(
+  process.env.ALLOCATOR_UNVERIFIED_EMAIL_HOLD_BELOW ?? '3',
+  10,
+)
+
 export async function evaluateEligibility(
   prisma: PrismaClient,
   request: Pick<ComputeRequest, 'id' | 'userId' | 'totalCost' | 'gpuCount' | 'gpuTier' | 'eligibilityFlags'>,
@@ -97,15 +112,41 @@ export async function evaluateEligibility(
 
   const flags: EligibilityFlag[] = []
 
-  // HOLD_UNVERIFIED_EMAIL was removed 2026-06-05 per product decision:
-  // unverified-email buyers should still be able to submit compute
-  // requests; the verification gate has been moved to higher-stakes
-  // surfaces (withdrawals, balance topup) and is communicated via
-  // the soft VerifyEmailBanner shown sitewide. Compute is the
-  // headline value-proposition — gating it on a verification flow
-  // produced a dead-end loop where new users hit WAITLISTED with
-  // no obvious path forward. The flag enum is preserved for audit
-  // record compatibility but is no longer ever pushed.
+  // SECURITY (2026-06-11 third-round): re-enabling email-verification
+  // as a gate, but scoped narrowly so it doesn't dead-end real buyers
+  // the way the 2026-06-05 version did. Three forged-buyer rounds
+  // (cpk-buyer2 06-10, cpk-b4 06-11 morning, cpk-b4r 06-11 afternoon)
+  // ALL shared emailVerified=false + successfulRentalCount=0 + USDC
+  // with auto-passed verification. The payment verifier can't be
+  // trusted until Solana mainnet config lands (M1 deferred); these
+  // identity gates are the verifiable backstop.
+
+  // HOLD_FIRST_RENTAL_NEEDS_ADMIN: every brand-new buyer's first
+  // rental goes to admin review. After they complete one, the flag
+  // never fires again. Total friction for a real buyer = one admin
+  // click on first rental, typically minutes. For an attacker = a
+  // human looks at "cpk-b4r-1781190806@cpk-redteam.io" and rejects.
+  if (user.successfulRentalCount === 0) {
+    flags.push('HOLD_FIRST_RENTAL_NEEDS_ADMIN')
+  }
+
+  // HOLD_UNVERIFIED_EMAIL_FIRST_RENTALS: until the buyer has
+  // completed N rentals (default 3), email must be verified. Catches
+  // bots that bypass admin first-rental review somehow (compromised
+  // admin, support social-engineering, etc.) by requiring inbox
+  // control. Doesn't fire after N successful completions so trusted
+  // buyers never re-hit the gate.
+  if (
+    !user.emailVerified &&
+    user.successfulRentalCount < UNVERIFIED_EMAIL_HOLD_BELOW_RENTAL_COUNT
+  ) {
+    flags.push('HOLD_UNVERIFIED_EMAIL_FIRST_RENTALS')
+  }
+
+  // HOLD_UNVERIFIED_EMAIL (the original 2026-06-05 flag) is preserved
+  // in the enum for audit-record compatibility but is no longer
+  // pushed. Use HOLD_UNVERIFIED_EMAIL_FIRST_RENTALS for the new
+  // narrower gate above.
 
   // Concurrent rentals: count active+allocated rentals already in flight
   // for this user. We exclude the request being evaluated so a re-check
