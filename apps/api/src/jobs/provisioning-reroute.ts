@@ -244,13 +244,26 @@ export async function runProvisioningRerouteTick(
 
   // Find ExternalRental rows that have been in PENDING status for
   // longer than SOFT_THRESHOLD_MS since CREATION on a routable
-  // provider. createdAt is immutable, so this signal is robust against
+  // provider, AND haven't yet had an SSH gateway assigned.
+  //
+  // Filter rationale (sshHost: null):
+  //   When ExternalRental.sshHost is populated, the upstream provider
+  //   has committed to the rental — they've allocated a host, assigned
+  //   an SSH gateway endpoint, and the container is in its final boot
+  //   phase. Terminating at that point throws away guaranteed progress
+  //   for a speculative bet that another provider can deliver faster.
+  //   Observed on rental cmq9cf7qu004 2026-06-11: Vast.ai assigned
+  //   ssh3.vast.ai at age 7 min; the rental was 1-3 min from going
+  //   ACTIVE when the 8-min reroute threshold would have killed it.
+  //
+  // createdAt is immutable, so the freshness check is robust against
   // provider-poll-worker chatter that would otherwise keep updatedAt
   // fresh on a stalled rental.
   const stuckRentals = await prisma.externalRental.findMany({
     where: {
       status: 'PENDING',
       createdAt: { lte: cutoff },
+      sshHost: null,
       provider: { in: Array.from(REROUTABLE_SOURCE_PROVIDERS) },
     },
     take: BATCH_SIZE,
