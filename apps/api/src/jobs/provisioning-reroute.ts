@@ -48,10 +48,12 @@ import { provisionShadeFormRental } from '../services/inbound/shadeform-provisio
 import { provisionRunPodRental } from '../services/inbound/runpod-provision.js'
 import { provisionLambdaRental } from '../services/inbound/lambda-provision.js'
 import { provisionIoNetRental } from '../services/inbound/ionet-provision.js'
+import { provisionVastAiRental } from '../services/inbound/vastai-provision.js'
 import { isShadeFormConfigured } from '../services/inbound/shadeform-adapter.js'
 import { isRunPodConfigured } from '../services/inbound/runpod-adapter.js'
 import { isLambdaConfigured } from '../services/inbound/lambda-adapter.js'
 import { isIoNetConfigured } from '../services/inbound/ionet-adapter.js'
+import { isVastAiConfigured } from '../services/inbound/vastai-adapter.js'
 import {
   terminateExternalRentalForRequest,
   UnknownProviderError,
@@ -146,7 +148,7 @@ const REROUTABLE_SOURCE_PROVIDERS = new Set([
 //     Quota-strict. Good last-resort when reliability matters more
 //     than speed.
 interface LadderRung {
-  provider: 'SHADEFORM' | 'RUNPOD' | 'LAMBDA' | 'IONET'
+  provider: 'SHADEFORM' | 'RUNPOD' | 'LAMBDA' | 'IONET' | 'VASTAI'
   isConfigured: () => boolean
   provision: (
     prisma: PrismaClient,
@@ -174,6 +176,26 @@ const FALLBACK_LADDER: LadderRung[] = [
     provider: 'LAMBDA',
     isConfigured: isLambdaConfigured,
     provision: provisionLambdaRental,
+  },
+]
+
+// Consumer GPU ladder. RTX_3090 / RTX_4090 / CONSUMER live only on P2P
+// marketplaces (Vast.ai aggregates residential operators, IO.net is
+// decentralized). Datacenter providers don't carry these. Order:
+//   - Vast.ai first: deepest supply pool for consumer GPUs
+//   - IO.net second: decentralized backup
+// Self-skip rule (rung.provider === er.provider) means a stuck Vast.ai
+// rental walks to IO.net, and vice versa.
+const CONSUMER_FALLBACK_LADDER: LadderRung[] = [
+  {
+    provider: 'VASTAI',
+    isConfigured: isVastAiConfigured,
+    provision: provisionVastAiRental,
+  },
+  {
+    provider: 'IONET',
+    isConfigured: isIoNetConfigured,
+    provision: provisionIoNetRental,
   },
 ]
 
@@ -272,33 +294,19 @@ async function rerouteOne(
   if (cr.adminNote?.includes(REROUTE_MARKER)) return
   if (cr.adminNote?.includes(REROUTE_SKIPPED_MARKER)) return
 
-  // Tier-aware skip: consumer GPUs (RTX_3090, RTX_4090, CONSUMER) live
-  // primarily on Vast.ai / IO.net (P2P consumer hardware). Datacenter
-  // providers in the fallback ladder (Shadeform, Lambda, RunPod Secure)
-  // do not carry these. Terminating the original provider for these
-  // tiers strictly hurts the buyer: we kill the best-supply path then
-  // discover no alternative exists, and fall through to the hard-
-  // timeout refund. The 20-min hard timeout still acts as the safety
-  // net for genuinely stuck consumer rentals.
-  if (CONSUMER_GPU_TIERS.has(cr.gpuTier)) {
-    console.log(
-      `[provisioning-reroute] skipping ${cr.id}: consumer GPU tier ${cr.gpuTier} has no viable datacenter fallback`,
-    )
-    const previousNote = cr.adminNote ?? ''
-    const skipNote =
-      `${REROUTE_SKIPPED_MARKER} tier=${cr.gpuTier} on ${er.provider}; ` +
-      `letting Vast.ai/IO.net complete or hard-timeout at 20min`
-    await prisma.computeRequest.updateMany({
-      where: { id: cr.id, status: 'PROVISIONING_EXTERNAL' },
-      data: {
-        adminNote: previousNote ? `${previousNote}; ${skipNote}` : skipNote,
-      },
-    })
-    return
-  }
+  // Tier-aware ladder pick: consumer GPUs (RTX_3090, RTX_4090, CONSUMER)
+  // only have supply on P2P marketplaces (Vast.ai aggregates residential
+  // operators, IO.net is decentralized). Datacenter providers do not
+  // carry these. Use a consumer-specific mini-ladder (Vast.ai -> IO.net)
+  // instead of the datacenter-heavy default ladder, which would always
+  // refuse for consumer tiers.
+  const ladder = CONSUMER_GPU_TIERS.has(cr.gpuTier)
+    ? CONSUMER_FALLBACK_LADDER
+    : FALLBACK_LADDER
+  const ladderName = CONSUMER_GPU_TIERS.has(cr.gpuTier) ? 'consumer' : 'datacenter'
 
   console.log(
-    `[provisioning-reroute] starting ladder for ${cr.id} from ${er.provider} ` +
+    `[provisioning-reroute] starting ${ladderName} ladder for ${cr.id} from ${er.provider} ` +
       `(${cr.gpuCount}x ${cr.gpuTier}, stuck > ${Math.round(SOFT_THRESHOLD_MS / 60000)}min)`,
   )
 
@@ -343,7 +351,7 @@ async function rerouteOne(
   const attemptedProviders: string[] = []
   let succeededWith: string | null = null
 
-  for (const rung of FALLBACK_LADDER) {
+  for (const rung of ladder) {
     if (rung.provider === er.provider) {
       // Don't reroute a provider to itself, even if it's also in
       // the fallback list (e.g. RunPod stuck rerouted via Shadeform
