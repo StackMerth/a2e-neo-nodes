@@ -438,6 +438,66 @@ export async function createConnectTransfer(args: {
 }
 
 /**
+ * T3.1 follow-up (2026-06-12 sixth-round audit): proportional Stripe
+ * refund for STRIPE_DIRECT rentals. When a buyer cancels or
+ * terminates a card-paid rental, push the unused portion back to the
+ * original card via the Stripe Refunds API instead of crediting the
+ * admin-gated internal balance (the prior fallback). Rail-symmetric:
+ * card payment refunds to card.
+ *
+ * idempotencyKey is the ComputeRequest id with a suffix; Stripe
+ * enforces single-shot processing so a retry can't double-refund.
+ *
+ * Returns the Refund id (`re_xxxxxx`) we persist on the
+ * BalanceTransaction.referenceId or ComputeRequest.adminNote for
+ * audit. Throws on Stripe error so the caller can catch + fall back
+ * to a balance credit (the existing safety net).
+ */
+export async function createStripeRefund(args: {
+  paymentIntentId: string
+  amountUsd: number
+  idempotencyKey: string
+  reason?: 'requested_by_customer' | 'duplicate' | 'fraudulent'
+}): Promise<{ id: string; status: string }> {
+  const stripe = getStripeClient()
+  if (!stripe) throw new Error('Stripe not configured')
+
+  const amountCents = Math.round(args.amountUsd * 100)
+  if (amountCents <= 0) {
+    throw new Error('Refund amount must be > $0.00')
+  }
+
+  const refund = await stripe.refunds.create(
+    {
+      payment_intent: args.paymentIntentId,
+      amount: amountCents,
+      reason: args.reason ?? 'requested_by_customer',
+      metadata: {
+        kind: 'rental_refund',
+      },
+    },
+    { idempotencyKey: args.idempotencyKey },
+  )
+  return { id: refund.id, status: refund.status ?? 'unknown' }
+}
+
+/**
+ * Look up the PaymentIntent ID from a Checkout Session ID. Our
+ * ComputeRequest.txHash for STRIPE_DIRECT rentals stores the
+ * Checkout Session ID (cs_test_... / cs_live_...), but the Refunds
+ * API needs the underlying PaymentIntent ID (pi_xxxxxx). Single
+ * Stripe-side lookup.
+ */
+export async function getPaymentIntentIdFromCheckoutSession(
+  checkoutSessionId: string,
+): Promise<string | null> {
+  const stripe = getStripeClient()
+  if (!stripe) throw new Error('Stripe not configured')
+  const session = await stripe.checkout.sessions.retrieve(checkoutSessionId)
+  return typeof session.payment_intent === 'string' ? session.payment_intent : null
+}
+
+/**
  * Verify a webhook payload against the configured signing secret.
  * Returns the parsed event; throws on signature mismatch so the
  * route can 400 the request.

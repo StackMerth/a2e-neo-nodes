@@ -7,7 +7,7 @@ import { decryptPrivateKey } from '../services/inbound/key-encryption.js'
 import { GPU_TIER_CONFIG, dailyToHourly } from '@a2e/shared'
 import { checkIdempotencyKey, storeIdempotencyResponse } from '../services/idempotency/keys.js'
 import { getSolanaConfig, processPayment, verifyUsdcDeposit } from '../services/payment/solana.js'
-import { createDirectRentalCheckoutSession, isStripeConfigured } from '../services/payment/stripe.js'
+import { createDirectRentalCheckoutSession, isStripeConfigured, createStripeRefund, getPaymentIntentIdFromCheckoutSession } from '../services/payment/stripe.js'
 import { getOperatorBalanceBreakdown } from '../services/settlement/engine.js'
 import {
   getOrCreateBalance,
@@ -868,7 +868,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
     // so the buyer always gets value, just biased toward returning on
     // the rail they paid with.
     let refundIssued = false
-    let refundDestination: 'balance' | 'wallet' | 'internal_spend_reverted' | 'none' = 'none'
+    let refundDestination: 'balance' | 'wallet' | 'stripe_card' | 'internal_spend_reverted' | 'none' = 'none'
     let refundTxHash: string | null = null
     try {
       if (cr.paymentSource === 'USDC') {
@@ -913,11 +913,55 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
           refundIssued = true
           refundDestination = 'balance'
         }
-      } else if (cr.paymentSource === 'BUYER_BALANCE' || cr.paymentSource === 'STRIPE_DIRECT') {
+      } else if (cr.paymentSource === 'STRIPE_DIRECT') {
+        // T3.1 follow-up (2026-06-12 sixth-round audit): rail-symmetric
+        // refund. STRIPE_DIRECT rentals stored the Checkout Session id
+        // in cr.txHash; the Stripe Refunds API needs the underlying
+        // PaymentIntent id, so we resolve via getPaymentIntentIdFromCheckoutSession
+        // then call createStripeRefund for the full unused-portion
+        // amount. Card payment refunds to card. On Stripe API failure
+        // we fall back to a BalanceTransaction credit so the buyer
+        // always gets value, just biased toward the original rail.
+        if (cr.txHash && isStripeConfigured()) {
+          try {
+            const piId = await getPaymentIntentIdFromCheckoutSession(cr.txHash)
+            if (!piId) throw new Error('No PaymentIntent on Stripe Checkout Session')
+            const refund = await createStripeRefund({
+              paymentIntentId: piId,
+              amountUsd: cr.totalCost,
+              idempotencyKey: `cancel:${id}`,
+              reason: 'requested_by_customer',
+            })
+            refundTxHash = refund.id
+            refundIssued = true
+            refundDestination = 'stripe_card'
+          } catch (stripeErr) {
+            // Stripe failed; fall back to balance credit so buyer not left empty.
+            await creditBalance(fastify.prisma, {
+              userId,
+              amountUsd: cr.totalCost,
+              type: 'REFUND_RENTAL',
+              description: `Refund for cancelled ${cr.gpuCount}x ${cr.gpuTier} rental (Stripe refund failed: ${stripeErr instanceof Error ? stripeErr.message : 'unknown'} - credited to balance)`,
+              referenceId: `cancel:${id}`,
+            })
+            refundIssued = true
+            refundDestination = 'balance'
+          }
+        } else {
+          // Stripe not configured or no txHash: balance credit only.
+          await creditBalance(fastify.prisma, {
+            userId,
+            amountUsd: cr.totalCost,
+            type: 'REFUND_RENTAL',
+            description: `Refund for cancelled ${cr.gpuCount}x ${cr.gpuTier} rental (Stripe not available - credited to balance)`,
+            referenceId: `cancel:${id}`,
+          })
+          refundIssued = true
+          refundDestination = 'balance'
+        }
+      } else if (cr.paymentSource === 'BUYER_BALANCE') {
         // BUYER_BALANCE came from the balance, MUST go back to the
-        // balance (same rail). STRIPE_DIRECT credit-as-balance is the
-        // existing T3.1-follow-up shape; closing it on the Stripe
-        // refund API is a separate workstream.
+        // balance (same rail).
         await creditBalance(fastify.prisma, {
           userId,
           amountUsd: cr.totalCost,
@@ -1408,6 +1452,59 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         refundStatus = 'FAILED'
         refundError = err instanceof Error ? err.message : 'Balance credit failed'
         fastify.log.error({ err, requestId: id }, 'BUYER_BALANCE terminate refund failed')
+      }
+    } else if (cr.paymentSource === 'STRIPE_DIRECT') {
+      // T3.1 follow-up (2026-06-12 sixth-round audit): proportional
+      // Stripe refund for early-terminated card-paid rentals. Refunds
+      // the unused portion to the original card via the Refunds API,
+      // not into the admin-gated balance. cr.txHash holds the Stripe
+      // Checkout Session id; we resolve to the underlying PaymentIntent
+      // and refund that amount. On Stripe API failure, fall back to
+      // balance credit so the buyer is whole.
+      if (cr.txHash && isStripeConfigured()) {
+        try {
+          const piId = await getPaymentIntentIdFromCheckoutSession(cr.txHash)
+          if (!piId) throw new Error('No PaymentIntent on Stripe Checkout Session')
+          const refund = await createStripeRefund({
+            paymentIntentId: piId,
+            amountUsd: refundAmount,
+            idempotencyKey: `terminate:${id}`,
+            reason: 'requested_by_customer',
+          })
+          refundTxHash = refund.id
+          refundStatus = 'SENT'
+        } catch (stripeErr) {
+          try {
+            await creditBalance(fastify.prisma, {
+              userId,
+              amountUsd: refundAmount,
+              type: 'REFUND_RENTAL',
+              description: `Refund for terminated rental (Stripe refund failed: ${stripeErr instanceof Error ? stripeErr.message : 'unknown'} - credited to balance)`,
+              referenceId: id,
+            })
+            refundStatus = 'CREDITED_TO_BALANCE'
+            refundError = stripeErr instanceof Error ? stripeErr.message : 'Stripe refund failed; balance-credit fallback'
+          } catch (creditErr) {
+            refundStatus = 'FAILED'
+            refundError = `Stripe refund failed AND balance credit failed`
+            fastify.log.error({ err: creditErr, requestId: id }, 'Both Stripe refund and balance credit failed during terminate')
+          }
+        }
+      } else {
+        // Stripe not configured: balance credit only.
+        try {
+          await creditBalance(fastify.prisma, {
+            userId,
+            amountUsd: refundAmount,
+            type: 'REFUND_RENTAL',
+            description: `Refund for terminated rental (Stripe not configured - credited to balance)`,
+            referenceId: id,
+          })
+          refundStatus = 'CREDITED_TO_BALANCE'
+        } catch (err) {
+          refundStatus = 'FAILED'
+          refundError = err instanceof Error ? err.message : 'Balance credit failed'
+        }
       }
     } else if (!user?.walletAddress) {
       // No wallet on file -> credit the buyer's portal balance instead

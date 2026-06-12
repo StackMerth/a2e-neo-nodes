@@ -843,6 +843,15 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     name: z.string().min(1).max(100).optional(),
     email: z.string().email().optional(),
     walletAddress: z.string().min(32).max(64).optional(),
+    // SECURITY (B1 layer 2, 2026-06-12 sixth-round audit): when
+    // changing walletAddress, the operator MUST prove they control
+    // the new wallet by signing a server-issued nonce. Otherwise an
+    // attacker with a stolen portal session could redirect future
+    // operator payouts to a wallet they control. Signature is base58-
+    // encoded ed25519 (Phantom signMessage shape), nonce is the
+    // value previously returned by /payout-wallet/nonce.
+    walletSignature: z.string().min(1).optional(),
+    walletNonce: z.string().min(1).optional(),
     payoutThreshold: z.number().min(1).max(100000).optional(),
     payoutFrequency: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']).optional(),
     payoutDayOfWeek: z.number().int().min(0).max(6).optional(),
@@ -882,11 +891,58 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
       if (existing) {
         return reply.code(409).send({ error: 'Wallet address already in use' })
       }
+
+      // SECURITY (B1 layer 2, 2026-06-12 sixth-round audit): require
+      // signature proof that the operator controls the new wallet.
+      // The previous flow let any authenticated session set
+      // walletAddress to any value, so an attacker with a stolen
+      // portal session could redirect every future payout to a
+      // wallet they own. Now: server issues a nonce via
+      // POST /payout-wallet/nonce, operator signs it with their
+      // wallet (Phantom signMessage), submits walletAddress +
+      // walletSignature + walletNonce here. We verify the signature
+      // against the NEW walletAddress using the existing
+      // verifyWalletSignature helper. No signature OR bad signature
+      // = 403. Wallet auth is bypassable for the initial
+      // SOLANA_PAYOUT_SIGNATURE_REQUIRED=false escape hatch (for
+      // legacy operators who set wallet pre-feature); default true
+      // in prod.
+      const signatureRequired =
+        (process.env.SOLANA_PAYOUT_SIGNATURE_REQUIRED ?? 'true').toLowerCase() !== 'false'
+      if (signatureRequired) {
+        if (!parsed.data.walletSignature || !parsed.data.walletNonce) {
+          return reply.code(403).send({
+            error: 'signature_required',
+            message:
+              'Changing payout wallet requires proving ownership. Call ' +
+              'POST /v1/portal/node-runner/payout-wallet/nonce to get a ' +
+              'nonce, sign it with the new wallet, and resubmit with ' +
+              'walletSignature + walletNonce.',
+          })
+        }
+        const { verifyWalletSignature } = await import('../services/auth/wallet.js')
+        const verified = verifyWalletSignature(
+          parsed.data.walletAddress,
+          parsed.data.walletSignature,
+          parsed.data.walletNonce,
+        )
+        if (!verified) {
+          return reply.code(403).send({
+            error: 'signature_invalid',
+            message:
+              'Signature did not match the new wallet address. The nonce ' +
+              'is single-use; call /payout-wallet/nonce for a fresh one ' +
+              'and retry.',
+          })
+        }
+      }
     }
 
     // payoutScheduledAt arrives as an ISO string from the form; Prisma
     // needs a Date object. Other fields pass through unchanged.
-    const { payoutScheduledAt, ...rest } = parsed.data
+    // walletSignature + walletNonce are server-side proofs; they
+    // aren't NodeRunner columns, so strip before the update.
+    const { payoutScheduledAt, walletSignature: _ws, walletNonce: _wn, ...rest } = parsed.data
     const updateData: Record<string, unknown> = { ...rest }
     if (payoutScheduledAt !== undefined) {
       updateData.payoutScheduledAt = payoutScheduledAt ? new Date(payoutScheduledAt) : null
@@ -903,6 +959,51 @@ export async function portalNodeRunnerRoutes(fastify: FastifyInstance) {
     })
 
     reply.send({ nodeRunner: updated })
+  })
+
+  /**
+   * POST /v1/portal/node-runner/payout-wallet/nonce
+   *
+   * B1 layer 2 (2026-06-12 sixth-round audit): nonce-issuance endpoint
+   * for the wallet-ownership-signature flow. The operator calls this
+   * with the target walletAddress they want to set as their payout
+   * destination; the server stores a single-use nonce (5-min TTL) and
+   * returns it. The operator signs the nonce with the wallet's
+   * private key (Phantom signMessage), then submits walletAddress +
+   * walletSignature + walletNonce to PATCH /settings. We verify
+   * signature there using the existing verifyWalletSignature helper.
+   *
+   * The exact message the wallet signs (matches verifyWalletSignature):
+   *   `Sign this message to authenticate with TokenOS_DeAI.\n\nNonce: ${nonce}`
+   *
+   * Frontend-side: Phantom returns the signature as a base58 string;
+   * pass that through to walletSignature. The full message text is
+   * built by the verifier so the client never has to.
+   */
+  fastify.post('/v1/portal/node-runner/payout-wallet/nonce', async (request, reply) => {
+    const schema = z.object({
+      walletAddress: z.string().min(32).max(64),
+    })
+    const parsed = schema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'Validation Error',
+        message: parsed.error.errors.map(e => e.message).join(', '),
+      })
+    }
+
+    // We don't require an existing NodeRunner here — first-time
+    // operators setting their wallet during onboarding also hit this
+    // route. The PATCH /settings handler does the actual signature
+    // verification + nodeRunner-context check.
+    const { generateNonce } = await import('../services/auth/wallet.js')
+    const nonce = generateNonce(parsed.data.walletAddress)
+
+    reply.send({
+      nonce,
+      message: `Sign this message to authenticate with TokenOS_DeAI.\n\nNonce: ${nonce}`,
+      expiresInSeconds: 300,
+    })
   })
 
   // ===================================================================

@@ -95,6 +95,43 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         })
       }
 
+      // SECURITY (A7 layer 2, 2026-06-12 sixth-round audit): per-operator
+      // node-registration cap. Combined with the proof-of-GPU listing
+      // filter (A7 layer 1), this limits the marketplace flooding
+      // surface — even if an attacker had functional GPUs they can't
+      // mint unlimited listings under one identity. Default cap is
+      // generous (50) so legitimate datacenter operators are
+      // unaffected; raise via MAX_NODES_PER_OPERATOR env if a real
+      // operator hits the ceiling. Cap is enforced only against
+      // NodeRunner-linked nodes (orphans are already neutralized at
+      // the settlement layer by B1).
+      const NODE_CAP_PER_OPERATOR = parseInt(
+        process.env.MAX_NODES_PER_OPERATOR ?? '50',
+        10,
+      )
+      if (NODE_CAP_PER_OPERATOR > 0 && request.authType === 'user') {
+        const nr = await fastify.prisma.nodeRunner.findUnique({
+          where: { userId: request.user!.userId },
+          select: { id: true },
+        })
+        if (nr) {
+          const nodeCount = await fastify.prisma.node.count({
+            where: { nodeRunnerId: nr.id },
+          })
+          if (nodeCount >= NODE_CAP_PER_OPERATOR) {
+            return reply.code(403).send({
+              error: 'node_cap_exceeded',
+              message:
+                `You have ${nodeCount}/${NODE_CAP_PER_OPERATOR} nodes ` +
+                `registered. Contact support to raise the operator cap if ` +
+                `you legitimately need more.`,
+              currentCount: nodeCount,
+              cap: NODE_CAP_PER_OPERATOR,
+            })
+          }
+        }
+      }
+
       // Get the API key from the request header - will be stored on the node.
       // SECURITY (pen-test A6 2026-06-10): coerce to string explicitly so that
       // a missing X-API-Key header doesn't blow up the apiKey.startsWith()
@@ -480,6 +517,43 @@ export async function nodeRoutes(fastify: FastifyInstance) {
           error: 'Not Found',
           message: 'Node not found',
         })
+      }
+
+      // SECURITY (B1 layer 3, 2026-06-12 sixth-round audit): rate-limit
+      // heartbeats from nodes that haven't yet completed a real
+      // benchmark. The fake-node uptime drain primitive was: register
+      // a node with attacker-controlled wallet, heartbeat at 60s
+      // cadence to bank uptime hours, never run real work. Combined
+      // with the orphan-skip in settlement engine (B1 layer 1) this
+      // already can't pay out; the rate-limit further discourages
+      // spam by capping uptime accrual rate for unverified nodes to
+      // 1 heartbeat every 5 minutes (vs the normal 60s). Real
+      // operators get their benchmark score in the first 10 minutes
+      // post-claim, then heartbeats run at normal cadence. Test seed
+      // nodes (id startsWith 'test-c2-') are exempt for QA flows.
+      const UNVERIFIED_HEARTBEAT_INTERVAL_MS = parseInt(
+        process.env.UNVERIFIED_NODE_HEARTBEAT_INTERVAL_MS ?? '300000',
+        10,
+      )
+      const isVerified =
+        (node.benchmarkScore != null && node.benchmarkScore > 0) ||
+        id.startsWith('test-c2-')
+      if (!isVerified && UNVERIFIED_HEARTBEAT_INTERVAL_MS > 0) {
+        const sinceLast = Date.now() - node.lastHeartbeat.getTime()
+        if (sinceLast < UNVERIFIED_HEARTBEAT_INTERVAL_MS) {
+          const waitMs = UNVERIFIED_HEARTBEAT_INTERVAL_MS - sinceLast
+          return reply.code(429).send({
+            error: 'heartbeat_throttled_pre_verification',
+            message:
+              `Unverified node (no benchmark score yet). Heartbeats ` +
+              `throttled to once every ` +
+              `${Math.round(UNVERIFIED_HEARTBEAT_INTERVAL_MS / 1000)}s ` +
+              `until the standard benchmark image runs against this node. ` +
+              `Wait ${Math.ceil(waitMs / 1000)}s and retry, or run the ` +
+              `benchmark to unlock the normal 60s cadence.`,
+            retryAfterSeconds: Math.ceil(waitMs / 1000),
+          })
+        }
       }
 
       const [updatedNode, heartbeat] = await fastify.prisma.$transaction([
