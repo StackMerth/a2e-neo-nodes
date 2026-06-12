@@ -84,6 +84,7 @@ export async function calculatePendingSettlements(
       nodeRunner: {
         select: {
           id: true,
+          walletAddress: true,
           payoutMode: true,
           payoutScheduledAt: true,
           payoutLockUntil: true,
@@ -176,14 +177,32 @@ export async function calculatePendingSettlements(
       }
     }
 
+    // SECURITY (audit follow-up to B1 layer 2, 2026-06-12 sixth-round
+    // post-commit audit): use the operator's CURRENT NodeRunner.
+    // walletAddress as the payout destination, NOT node.walletAddress.
+    // The old behavior paid whatever wallet was stamped on the Node at
+    // registration time, which meant:
+    //   (a) An operator who changed their payout wallet in /settings
+    //       expecting future payouts to redirect would silently
+    //       continue to receive at the OLD wallet (fund-misdirection
+    //       bug visible to the operator).
+    //   (b) The B1 layer 2 wallet-ownership signature gate on
+    //       NodeRunner.walletAddress was security-theater for payout
+    //       redirection because the actual destination wasn't that
+    //       field. Now it is, so the sig gate prevents payout hijack
+    //       as the threat model intends.
+    // We branch B1 L1 orphan-skip already; this code path always has
+    // a non-null runner. node.walletAddress retained as fallback for
+    // historical rows where the join might be missing.
+    const payoutWallet = runner.walletAddress || node.walletAddress
     settlements.push({
       nodeId: node.id,
-      walletAddress: node.walletAddress,
+      walletAddress: payoutWallet,
       amount: uptimeEarnings.earnings,
       uptimeHours: uptimeEarnings.uptimeHours,
       periodStart,
       periodEnd: effectivePeriodEnd,
-      nodeRunnerId: runner?.id,
+      nodeRunnerId: runner.id,
       isScheduledFire,
       forceReason,
     })
@@ -340,6 +359,17 @@ export async function calculateOperatorSettlements(
   const boundary = cooldownBoundary(periodEnd)
   const effectivePeriodEnd = boundary < periodEnd ? boundary : periodEnd
 
+  // Pull the operator's current payout wallet alongside the node list
+  // so the settlement targets the wallet the operator currently has
+  // set in /settings, not whatever was stamped on each Node at
+  // registration time (see settlement-engine-uses-runner-wallet audit
+  // note in calculatePendingSettlements above).
+  const runner = await prisma.nodeRunner.findUnique({
+    where: { id: nodeRunnerId },
+    select: { walletAddress: true },
+  })
+  if (!runner) return []
+
   const nodes = await prisma.node.findMany({
     where: { nodeRunnerId },
     select: { id: true, walletAddress: true },
@@ -360,7 +390,7 @@ export async function calculateOperatorSettlements(
 
     out.push({
       nodeId: node.id,
-      walletAddress: node.walletAddress,
+      walletAddress: runner.walletAddress || node.walletAddress,
       amount: uptime.earnings,
       uptimeHours: uptime.uptimeHours,
       periodStart,

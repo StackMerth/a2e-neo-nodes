@@ -98,39 +98,22 @@ export async function nodeRoutes(fastify: FastifyInstance) {
       // SECURITY (A7 layer 2, 2026-06-12 sixth-round audit): per-operator
       // node-registration cap. Combined with the proof-of-GPU listing
       // filter (A7 layer 1), this limits the marketplace flooding
-      // surface — even if an attacker had functional GPUs they can't
-      // mint unlimited listings under one identity. Default cap is
-      // generous (50) so legitimate datacenter operators are
-      // unaffected; raise via MAX_NODES_PER_OPERATOR env if a real
-      // operator hits the ceiling. Cap is enforced only against
-      // NodeRunner-linked nodes (orphans are already neutralized at
-      // the settlement layer by B1).
+      // surface. Default cap (50) preserves legitimate datacenter
+      // operators; raise via MAX_NODES_PER_OPERATOR env if needed.
+      //
+      // TOCTOU NOTE (audit follow-up): the count+create is wrapped in a
+      // serializable Prisma transaction with the count INSIDE the
+      // transaction. Postgres' serializable isolation level rejects
+      // conflicting transactions with retry-required errors, so two
+      // parallel registrations both reading the same count + both
+      // trying to create can't both succeed. The cap is now hard, not
+      // soft. Orphan registrations (request.authType != 'user' or no
+      // NodeRunner) skip the cap because B1 layer 1 already
+      // neutralizes them at settlement.
       const NODE_CAP_PER_OPERATOR = parseInt(
         process.env.MAX_NODES_PER_OPERATOR ?? '50',
         10,
       )
-      if (NODE_CAP_PER_OPERATOR > 0 && request.authType === 'user') {
-        const nr = await fastify.prisma.nodeRunner.findUnique({
-          where: { userId: request.user!.userId },
-          select: { id: true },
-        })
-        if (nr) {
-          const nodeCount = await fastify.prisma.node.count({
-            where: { nodeRunnerId: nr.id },
-          })
-          if (nodeCount >= NODE_CAP_PER_OPERATOR) {
-            return reply.code(403).send({
-              error: 'node_cap_exceeded',
-              message:
-                `You have ${nodeCount}/${NODE_CAP_PER_OPERATOR} nodes ` +
-                `registered. Contact support to raise the operator cap if ` +
-                `you legitimately need more.`,
-              currentCount: nodeCount,
-              cap: NODE_CAP_PER_OPERATOR,
-            })
-          }
-        }
-      }
 
       // Get the API key from the request header - will be stored on the node.
       // SECURITY (pen-test A6 2026-06-10): coerce to string explicitly so that
@@ -147,18 +130,65 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         provisionJobId = request.authProvisionId
       }
 
-      const node = await fastify.prisma.node.create({
-        data: {
-          walletAddress,
-          gpuTier: gpuTier as GpuTier,
-          nodeType: nodeType as NodeType,
-          region,
-          agentVersion,
-          apiKey: apiKey.startsWith('a2e-node-') ? apiKey : undefined, // Only store node-specific keys
-          status: 'ONLINE' as NodeStatus,
-          lastHeartbeat: new Date(),
-        },
-      })
+      // capState wraps the sentinel in an object so TypeScript's
+      // control-flow analysis (which can't follow async callbacks)
+      // doesn't narrow the catch-side read down to never.
+      const capState: { exceeded: { count: number } | null } = { exceeded: null }
+      let node
+      try {
+        node = await fastify.prisma.$transaction(async tx => {
+          if (NODE_CAP_PER_OPERATOR > 0 && request.authType === 'user') {
+            const nr = await tx.nodeRunner.findUnique({
+              where: { userId: request.user!.userId },
+              select: { id: true },
+            })
+            if (nr) {
+              const nodeCount = await tx.node.count({
+                where: { nodeRunnerId: nr.id },
+              })
+              if (nodeCount >= NODE_CAP_PER_OPERATOR) {
+                capState.exceeded = { count: nodeCount }
+                throw new Error('NODE_CAP_EXCEEDED')
+              }
+            }
+          }
+          return tx.node.create({
+            data: {
+              walletAddress,
+              gpuTier: gpuTier as GpuTier,
+              nodeType: nodeType as NodeType,
+              region,
+              agentVersion,
+              apiKey: apiKey.startsWith('a2e-node-') ? apiKey : undefined,
+              status: 'ONLINE' as NodeStatus,
+              lastHeartbeat: new Date(),
+            },
+          })
+        }, { isolationLevel: 'Serializable' })
+      } catch (err) {
+        const cap = capState.exceeded
+        if (cap) {
+          return reply.code(403).send({
+            error: 'node_cap_exceeded',
+            message:
+              `You have ${cap.count}/${NODE_CAP_PER_OPERATOR} nodes ` +
+              `registered. Contact support to raise the operator cap if ` +
+              `you legitimately need more.`,
+            currentCount: cap.count,
+            cap: NODE_CAP_PER_OPERATOR,
+          })
+        }
+        // Serializable retry-required errors get this generic 503 so
+        // the caller can retry; very narrow window in practice.
+        const e = err as { code?: string }
+        if (e?.code === 'P2034') {
+          return reply.code(503).send({
+            error: 'tx_serialization_conflict',
+            message: 'Registration race; retry in a moment.',
+          })
+        }
+        throw err
+      }
 
       // If this was a provision job registration, link the node to the provision job
       if (provisionJobId) {
