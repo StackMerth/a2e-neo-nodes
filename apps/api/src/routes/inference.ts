@@ -1531,10 +1531,61 @@ async function handleStreamingChat(
       }
     }
   } catch (err) {
-    // Mid-stream upstream failure. Surface a final error event to
-    // the buyer so their SDK doesn't hang.
+    // Mid-stream error. Could be (a) upstream failure (network drop,
+    // worker crash, OpenAI 500) or (b) buyer disconnect (raw.write
+    // throws once the socket is gone). Both paths reach here.
     const msg = (err as Error).message
-    raw.write(`event: error\ndata: ${JSON.stringify({ error: { message: msg, type: 'server_error' } })}\n\n`)
+    // Best-effort error event in case the buyer is still listening.
+    try {
+      raw.write(`event: error\ndata: ${JSON.stringify({ error: { message: msg, type: 'server_error' } })}\n\n`)
+    } catch {
+      // Buyer socket already gone. That's fine; the meter call below
+      // is the part we care about.
+    }
+
+    // SECURITY (RT-C1, 2026-06-13 internal red-team): meter the
+    // tokens we actually delivered before the stream errored.
+    // Without this, a buyer could exploit mid-stream cancel to get
+    // free inference: SDK disconnects after the first chunk ->
+    // raw.write throws -> catch ran -> meter was skipped -> the
+    // tokens we DID deliver were free. The upstream cost we paid is
+    // real, so we charge for what was delivered. Empty accumulator
+    // (failed before any output) -> zero cost -> meter early-exits
+    // at costUsd <= 0, no debit, no TokenUsage row.
+    if (accumulatedText.length > 0) {
+      const promptText = parsedRequest.messages
+        .map((m) => (typeof m.content === 'string' ? m.content : ''))
+        .join('\n')
+      const counted = countRequest(parsedRequest.model, promptText, accumulatedText)
+      const inputTokens = upstreamUsage?.prompt_tokens ?? counted.inputTokens
+      const outputTokens = upstreamUsage?.completion_tokens ?? counted.outputTokens
+      try {
+        await meterInferenceCall(fastify.prisma, {
+          userId: auth.userId,
+          apiKeyId: auth.keyId,
+          model: parsedRequest.model,
+          inputTokens,
+          outputTokens,
+          referenceId: inferenceRequest.id,
+          operatorId: operatorNodeId,
+          latencyMs: Date.now() - startedAt,
+        })
+      } catch (meterErr) {
+        // Meter is best-effort on the failure path. If the buyer is
+        // insufficiently-funded or the model row vanished, just log
+        // and let the FAILED update below proceed.
+        if (
+          !(meterErr instanceof InsufficientBalanceError) &&
+          !(meterErr instanceof UnknownModelError)
+        ) {
+          fastify.log.error(
+            { err: meterErr, requestId: inferenceRequest.id },
+            'streaming-cancel meter call failed',
+          )
+        }
+      }
+    }
+
     await fastify.prisma.inferenceRequest.update({
       where: { id: inferenceRequest.id },
       data: { status: 'FAILED', errorMessage: msg, completedAt: new Date() },
