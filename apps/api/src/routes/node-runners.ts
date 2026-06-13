@@ -488,10 +488,27 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
   // ==================== INVESTMENTS ====================
 
   // POST /v1/investments - Record a new investment
+  //
+  // SECURITY (N-2, 2026-06-13 HIGH): the previous implementation
+  // stamped `status: txHash ? 'PAID' : 'PENDING'` from the
+  // client-supplied txHash with no verification, no role check, and
+  // no ownership check. A buyer token + foreign nodeRunnerId +
+  // fabricated txHash returned 201 status=PAID for any amount.
+  // Same forgery class as the A9/B3 deploy/rent fixes; never
+  // back-ported to this route.
+  //
+  // Hardened to mirror the deploy/rent flow:
+  //   - authenticate (was there)
+  //   - require ADMIN role (this is a back-office record path; buyers
+  //     don't book investments via this endpoint, the deploy/checkout
+  //     flow does)
+  //   - verify USDC on-chain via verifyUsdcDeposit (for USDC payments)
+  //   - claim txHash in the global ConsumedTxHash ledger (N-5)
+  //   - leave status PENDING when no on-chain proof
   fastify.post(
     '/v1/investments',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: [fastify.authenticate, fastify.requireRole('ADMIN')],
     },
     async (request, reply) => {
       const parseResult = createInvestmentSchema.safeParse(request.body)
@@ -514,6 +531,62 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: 'Node runner not found' })
       }
 
+      // If a txHash is supplied, verify it on chain (USDC) and claim
+      // it in the global ConsumedTxHash ledger before marking PAID.
+      // Stale / synthetic / dev-test hashes that pass the prefix
+      // bypass in non-prod still go through the verifier so the
+      // status reflects real verification state.
+      let verifiedPaid = false
+      let senderWallet: string | null = null
+      let observedAmountUsd = amount
+      if (txHash && (cryptoCurrency ?? 'USDC').toUpperCase() === 'USDC') {
+        const { getSolanaConfig, verifyUsdcDeposit } = await import(
+          '../services/payment/solana.js'
+        )
+        const solanaConfig = await getSolanaConfig(fastify.prisma)
+        const verification = await verifyUsdcDeposit(
+          solanaConfig,
+          txHash,
+          amount,
+        )
+        if (!verification.verified) {
+          return reply.code(402).send({
+            error: 'Payment Required',
+            message:
+              verification.error ??
+              'Could not verify USDC payment on-chain.',
+            submittedTxHash: txHash,
+            expectedAmountUsd: amount,
+          })
+        }
+        verifiedPaid = true
+        senderWallet = verification.sender ?? null
+        observedAmountUsd = verification.observedAmountUsd ?? amount
+
+        // Claim globally (N-5).
+        try {
+          await fastify.prisma.consumedTxHash.create({
+            data: {
+              txHash,
+              consumedFor: 'INVESTMENT_USDC',
+              consumedByUserId: request.user?.userId ?? null,
+              senderWallet,
+              observedAmountUsd,
+            },
+          })
+        } catch (consumeErr) {
+          const e = consumeErr as { code?: string }
+          if (e?.code === 'P2002') {
+            return reply.code(409).send({
+              error: 'tx_hash_already_consumed',
+              message: 'This deposit has already been claimed.',
+              submittedTxHash: txHash,
+            })
+          }
+          throw consumeErr
+        }
+      }
+
       const investment = await fastify.prisma.investment.create({
         data: {
           nodeRunnerId,
@@ -523,8 +596,8 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
           cryptoCurrency,
           txHash,
           gpuTier: gpuTier as GpuTier,
-          status: txHash ? 'PAID' : 'PENDING',
-          confirmedAt: txHash ? new Date() : null,
+          status: verifiedPaid ? 'PAID' : 'PENDING',
+          confirmedAt: verifiedPaid ? new Date() : null,
         },
       })
 
@@ -542,10 +615,14 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
   )
 
   // POST /v1/investments/:id/confirm - Confirm payment received
+  //
+  // SECURITY (N-2 follow-on, 2026-06-13): same forgery class as the
+  // create route. Now gated on ADMIN and verifies USDC on-chain
+  // (with global ConsumedTxHash claim) before flipping status to PAID.
   fastify.post(
     '/v1/investments/:id/confirm',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: [fastify.authenticate, fastify.requireRole('ADMIN')],
     },
     async (request, reply) => {
       const { id } = request.params as { id: string }
@@ -573,6 +650,48 @@ export async function nodeRunnerRoutes(fastify: FastifyInstance) {
           error: 'Invalid Status',
           message: `Investment is ${investment.status}, cannot confirm`,
         })
+      }
+
+      // Verify USDC payment on chain + claim globally.
+      if ((cryptoCurrency ?? 'USDC').toUpperCase() === 'USDC') {
+        const { getSolanaConfig, verifyUsdcDeposit } = await import(
+          '../services/payment/solana.js'
+        )
+        const solanaConfig = await getSolanaConfig(fastify.prisma)
+        const verification = await verifyUsdcDeposit(
+          solanaConfig,
+          txHash,
+          investment.amount,
+        )
+        if (!verification.verified) {
+          return reply.code(402).send({
+            error: 'Payment Required',
+            message: verification.error ?? 'Could not verify USDC payment on-chain.',
+            submittedTxHash: txHash,
+            expectedAmountUsd: investment.amount,
+          })
+        }
+        try {
+          await fastify.prisma.consumedTxHash.create({
+            data: {
+              txHash,
+              consumedFor: 'INVESTMENT_USDC',
+              consumedByUserId: request.user?.userId ?? null,
+              senderWallet: verification.sender ?? null,
+              observedAmountUsd: verification.observedAmountUsd ?? investment.amount,
+            },
+          })
+        } catch (consumeErr) {
+          const e = consumeErr as { code?: string }
+          if (e?.code === 'P2002') {
+            return reply.code(409).send({
+              error: 'tx_hash_already_consumed',
+              message: 'This deposit has already been claimed.',
+              submittedTxHash: txHash,
+            })
+          }
+          throw consumeErr
+        }
       }
 
       const updated = await fastify.prisma.investment.update({

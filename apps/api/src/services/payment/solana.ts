@@ -24,6 +24,14 @@ export interface PaymentResult {
   txHash?: string
   isDevMode: boolean
   error?: string
+  // SECURITY (M-4, 2026-06-13): set when we broadcast a transaction
+  // but couldn't determine its final state (confirm-timeout, RPC
+  // dropped, etc.). The caller MUST NOT fall back to a balance credit
+  // when indeterminate is true, because the broadcast tx may yet
+  // confirm a few slots later and double-pay the buyer. Instead,
+  // callers should retry the on-chain status check (via
+  // verifyTransactionSignature) and act on the resolved outcome.
+  indeterminate?: boolean
 }
 
 export interface BatchPaymentResult {
@@ -283,44 +291,53 @@ export async function processPayment(
     // Create recipient public key
     const recipient = new PublicKey(recipientAddress)
 
+    // SECURITY (M-4, 2026-06-13): split broadcast from confirmation
+    // so we can capture the signature even when confirmation times
+    // out. The prior implementation called sendAndConfirmTransaction
+    // (one method, both steps) inside a try/catch and returned
+    // success:false on ANY exception, including confirm-timeout. But
+    // the broadcast tx may yet finalize a few slots later, and the
+    // caller treats success:false as "we have to credit a fallback,"
+    // resulting in double-pay (on-chain transfer + balance credit
+    // for the same payment).
+    //
+    // New flow:
+    //   1. Build + sign the transaction.
+    //   2. sendRawTransaction (returns signature immediately, no
+    //      wait). Errors here are real broadcast failures (RPC down,
+    //      bad signature). Return success:false, no indeterminate.
+    //   3. Wait for confirmation with a strict timeout. If it
+    //      finalizes, return success:true.
+    //   4. If confirmation throws (timeout, blockheight expired),
+    //      call getSignatureStatus to check current state:
+    //        - finalized -> success:true.
+    //        - err -> success:false with reason.
+    //        - still processing -> success:false with
+    //          indeterminate:true and the broadcast signature so the
+    //          caller can re-verify later.
     let signature: string
-
+    let transaction: Transaction
     if (currency === 'SOL') {
-      // SOL transfer
-      // Note: This sends amountUsd worth of SOL at a fixed rate
-      // In production, you'd fetch real-time SOL/USD price
-      const solAmount = amountUsd / 100 // Simplified: assume $100/SOL for now
+      const solAmount = amountUsd / 100
       const lamports = Math.floor(solAmount * LAMPORTS_PER_SOL)
-
-      const transaction = new Transaction().add(
+      transaction = new Transaction().add(
         SystemProgram.transfer({
           fromPubkey: payer.publicKey,
           toPubkey: recipient,
           lamports,
         })
       )
-
-      signature = await sendAndConfirmTransaction(connection, transaction, [payer], {
-        commitment: 'confirmed',
-      })
     } else {
-      // USDC transfer
       const usdcMint = getUsdcMint(config)
       const amount = Math.floor(amountUsd * Math.pow(10, USDC_DECIMALS))
-
-      // Get payer's token account
       const payerTokenAccount = await getAssociatedTokenAddress(usdcMint, payer.publicKey)
-
-      // Get or create recipient's token account
       const recipientTokenAccount = await getOrCreateAssociatedTokenAccount(
         connection,
         payer,
         usdcMint,
         recipient
       )
-
-      // Create transfer instruction
-      const transaction = new Transaction().add(
+      transaction = new Transaction().add(
         createTransferInstruction(
           payerTokenAccount,
           recipientTokenAccount,
@@ -330,18 +347,93 @@ export async function processPayment(
           TOKEN_PROGRAM_ID
         )
       )
-
-      signature = await sendAndConfirmTransaction(connection, transaction, [payer], {
-        commitment: 'confirmed',
-      })
     }
 
-    console.log(`[Payment] SUCCESS: Transaction confirmed, signature: ${signature}`)
+    // Stamp recent blockhash + sign so we can keep the signature
+    // even if confirmation later fails.
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+    transaction.recentBlockhash = blockhash
+    transaction.feePayer = payer.publicKey
+    transaction.sign(payer)
 
-    return {
-      success: true,
-      txHash: signature,
-      isDevMode: false,
+    // Broadcast step — failures here are real send failures.
+    try {
+      signature = await connection.sendRawTransaction(transaction.serialize(), {
+        skipPreflight: false,
+        maxRetries: 3,
+      })
+    } catch (sendError) {
+      console.error('[Payment] Broadcast failed:', sendError)
+      return {
+        success: false,
+        isDevMode: false,
+        error: sendError instanceof Error ? sendError.message : 'Broadcast failed',
+      }
+    }
+
+    // Confirmation step — separate so we can detect indeterminate.
+    try {
+      const result = await connection.confirmTransaction(
+        { signature, blockhash, lastValidBlockHeight },
+        'confirmed',
+      )
+      if (result.value.err) {
+        return {
+          success: false,
+          isDevMode: false,
+          txHash: signature,
+          error: `Transaction failed on chain: ${JSON.stringify(result.value.err)}`,
+        }
+      }
+      console.log(`[Payment] SUCCESS: Transaction confirmed, signature: ${signature}`)
+      return {
+        success: true,
+        txHash: signature,
+        isDevMode: false,
+      }
+    } catch (confirmError) {
+      // Confirmation timed out or blockheight expired. Check current
+      // status before deciding indeterminate vs failed.
+      console.warn(
+        `[Payment] Confirm threw for ${signature}, re-checking status:`,
+        confirmError instanceof Error ? confirmError.message : confirmError,
+      )
+      try {
+        const status = await connection.getSignatureStatus(signature, {
+          searchTransactionHistory: true,
+        })
+        if (status.value?.err) {
+          return {
+            success: false,
+            isDevMode: false,
+            txHash: signature,
+            error: `Transaction failed on chain: ${JSON.stringify(status.value.err)}`,
+          }
+        }
+        if (
+          status.value?.confirmationStatus === 'confirmed' ||
+          status.value?.confirmationStatus === 'finalized'
+        ) {
+          console.log(`[Payment] SUCCESS (resolved via status): ${signature}`)
+          return {
+            success: true,
+            txHash: signature,
+            isDevMode: false,
+          }
+        }
+      } catch (statusError) {
+        console.error('[Payment] Status re-check failed:', statusError)
+      }
+      // Unknown final state: do NOT let caller fall back to a balance
+      // credit. Indicate indeterminate so they know to retry status
+      // checks or escalate to admin reconciliation.
+      return {
+        success: false,
+        isDevMode: false,
+        indeterminate: true,
+        txHash: signature,
+        error: 'Transaction broadcast but confirmation indeterminate; do not fall back to balance credit. Re-check signature status.',
+      }
     }
   } catch (error) {
     console.error('[Payment] Error processing payment:', error)

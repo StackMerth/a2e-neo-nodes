@@ -72,7 +72,16 @@ function zodErrorBody(err: z.ZodError): { error: string; message: string; issues
 }
 
 export async function externalRoutes(fastify: FastifyInstance): Promise<void> {
+  // SECURITY (N-1, 2026-06-13): all /v1/external/* routes are
+  // admin-only. The plugin's file header has always said so but the
+  // role check was missing, leaving the overflow control plane
+  // (status / deployments / earnings reads PLUS POST /list, PATCH
+  // /config, DELETE /list mutators) reachable by any authenticated
+  // buyer. A buyer could read the overflow config (margin protection,
+  // preferred markets) and could mutate listing state if they fired
+  // the POST/PATCH/DELETE endpoints. Mirrors admin-compute's gate.
   fastify.addHook('preHandler', fastify.authenticate)
+  fastify.addHook('preHandler', fastify.requireRole('ADMIN'))
 
   fastify.get('/v1/external/status', async (_request, reply) => {
     const result = await getExternalStatus(fastify.prisma, fastify.overflowRegistry)

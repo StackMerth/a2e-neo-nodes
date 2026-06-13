@@ -280,7 +280,8 @@ async function cancelAndRefund(
     )
   }
 
-  await prisma.computeRequest.updateMany({
+  // N-4 (2026-06-13): updateMany.count check + shared refund key.
+  const claim = await prisma.computeRequest.updateMany({
     where: { id: cr.id, status: 'PROVISIONING_EXTERNAL' },
     data: {
       status: 'CANCELLED',
@@ -289,15 +290,16 @@ async function cancelAndRefund(
       sshSessionStatus: 'FAILED',
     },
   })
+  if (claim.count === 0) return
 
   if (cr.paymentSource === 'BUYER_BALANCE' && cr.totalCost > 0) {
     try {
       await creditBalance(prisma, {
         userId: cr.userId,
         amountUsd: cr.totalCost,
-        type: 'REFUND_FAILED',
-        description: `Hyperstack fallback failed for rental ${cr.id}`,
-        referenceId: cr.id,
+        type: 'REFUND_RENTAL',
+        description: `Hyperstack fallback failed for rental ${cr.id} (auto-refund)`,
+        referenceId: `cancel:${cr.id}`,
       })
     } catch (err) {
       console.error(`[hyperstack-poll] refund failed for ${cr.id}:`, err)

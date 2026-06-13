@@ -212,12 +212,15 @@ async function timeoutRequest(
       || cr.paymentSource === 'USDC'
       || cr.paymentSource === 'STRIPE_DIRECT'
     ) {
+      // N-4 alignment (2026-06-13): use the shared cancel:<id> key
+      // so the @@unique([type, referenceId]) on BalanceTransaction
+      // cross-protects against the buyer-cancel + poll-worker paths.
       await creditBalance(prisma, {
         userId: cr.userId,
         amountUsd: cr.totalCost,
         type: 'REFUND_RENTAL',
         description: `Refund: provisioning timed out for ${cr.gpuCount}x ${cr.gpuTier}`,
-        referenceId: `provisioning-timeout:${cr.id}`,
+        referenceId: `cancel:${cr.id}`,
       })
     } else if (cr.paymentSource === 'INTERNAL_BALANCE') {
       await prisma.internalSpend.deleteMany({ where: { computeRequestId: cr.id } })

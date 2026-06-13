@@ -18,7 +18,7 @@ export interface UptimeEarnings {
  * A node is considered "online" when heartbeats are received within 90 seconds of each other.
  */
 export async function calculateNodeUptime(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>,
   nodeId: string,
   periodStart: Date,
   periodEnd: Date
@@ -92,7 +92,11 @@ export function getGpuTierRate(gpuTier: GpuTier, customRate?: number | null): nu
  * Calculate uptime-based earnings for a node in a given period
  */
 export async function calculateUptimeEarnings(
-  prisma: PrismaClient,
+  // M-3 (2026-06-13): allow either a top-level client or an interactive
+  // transaction client; the buyer-compute INTERNAL_BALANCE path now
+  // calls the getOperatorBalanceBreakdown chain from inside a
+  // Serializable transaction to close the spend TOCTOU.
+  prisma: PrismaClient | Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>,
   nodeId: string,
   periodStart: Date,
   periodEnd: Date

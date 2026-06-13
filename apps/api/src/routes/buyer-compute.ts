@@ -539,6 +539,43 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         })
       }
       txConfirmedForCreate = true
+
+      // SECURITY (N-5, 2026-06-13 critical): atomic-claim the txHash
+      // in the global ConsumedTxHash ledger BEFORE creating the
+      // ComputeRequest. Without this, a real on-chain Solana deposit
+      // (publicly visible) could be claimed by N different buyer
+      // accounts, each passing verifyUsdcDeposit and minting a free
+      // rental. The ledger's primary-key constraint on txHash
+      // serializes the race: first claimant wins, every subsequent
+      // submission fails with P2002 and we return 409.
+      //
+      // We also pin the depositing wallet (verification.sender) onto
+      // the buyer's profile if they don't already have one set, so
+      // future rentals can verify sender-equals-buyer-wallet.
+      try {
+        await fastify.prisma.consumedTxHash.create({
+          data: {
+            txHash: usdcTxHash,
+            consumedFor: 'COMPUTE_RENT_USDC',
+            consumedByUserId: userId,
+            senderWallet: verification.sender ?? null,
+            observedAmountUsd: verification.observedAmountUsd ?? totalCost,
+          },
+        })
+      } catch (consumeErr) {
+        const e = consumeErr as { code?: string }
+        if (e?.code === 'P2002') {
+          return reply.code(409).send({
+            error: 'tx_hash_already_consumed',
+            message:
+              'This USDC deposit has already been claimed by another ' +
+              'request or account. Each on-chain deposit can fund one ' +
+              'rental or topup. Submit a fresh deposit and retry.',
+            submittedTxHash: usdcTxHash,
+          })
+        }
+        throw consumeErr
+      }
     }
 
     // Common create payload. Built once; the only difference between
@@ -591,26 +628,59 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
 
     let computeRequest
     if (paymentSource === 'INTERNAL_BALANCE' && internalSpendNodeRunnerId) {
-      // Atomic: write the ComputeRequest + InternalSpend row + flip
-      // the placeholder txHash to INTERNAL:<id> in one shot. If any
-      // step fails, the spend is rolled back so the balance never
-      // shrinks without a matching rental.
-      computeRequest = await fastify.prisma.$transaction(async (tx) => {
-        const created = await tx.computeRequest.create({
-          data: { ...baseData, txHash: 'INTERNAL:PENDING' },
-        })
-        await tx.internalSpend.create({
-          data: {
-            nodeRunnerId: internalSpendNodeRunnerId,
-            computeRequestId: created.id,
-            amount: totalCost,
-          },
-        })
-        return tx.computeRequest.update({
-          where: { id: created.id },
-          data: { txHash: `INTERNAL:${created.id}` },
-        })
-      })
+      // SECURITY (M-3, 2026-06-13): re-check available balance INSIDE
+      // a Serializable transaction. The advisory pre-check at line
+      // 423-444 happens before this block, but N parallel
+      // INTERNAL_BALANCE requests could all pass that check and all
+      // reach here. Without the atomic re-check, each request would
+      // create its own InternalSpend row and overspend the operator's
+      // earned balance into negative.
+      //
+      // We compute available again inside the transaction by reading
+      // current sums (matches getOperatorBalanceBreakdown's formula
+      // shape). If the in-flight spend would push past available, we
+      // throw InsufficientBalanceError and let Postgres retry-or-
+      // abort. Serializable isolation ensures that two parallel
+      // transactions cannot both pass this check.
+      try {
+        computeRequest = await fastify.prisma.$transaction(async (tx) => {
+          const breakdown = await getOperatorBalanceBreakdown(tx, internalSpendNodeRunnerId)
+          if (breakdown.available < totalCost) {
+            throw new InsufficientBalanceError(totalCost, breakdown.available)
+          }
+          const created = await tx.computeRequest.create({
+            data: { ...baseData, txHash: 'INTERNAL:PENDING' },
+          })
+          await tx.internalSpend.create({
+            data: {
+              nodeRunnerId: internalSpendNodeRunnerId,
+              computeRequestId: created.id,
+              amount: totalCost,
+            },
+          })
+          return tx.computeRequest.update({
+            where: { id: created.id },
+            data: { txHash: `INTERNAL:${created.id}` },
+          })
+        }, { isolationLevel: 'Serializable' })
+      } catch (err) {
+        if (err instanceof InsufficientBalanceError) {
+          return reply.code(402).send({
+            error: 'Payment Required',
+            message: err.message,
+            required: err.requestedAmount,
+            available: err.currentBalance,
+          })
+        }
+        const e = err as { code?: string }
+        if (e?.code === 'P2034') {
+          return reply.code(503).send({
+            error: 'tx_serialization_conflict',
+            message: 'Concurrent spend; retry in a moment.',
+          })
+        }
+        throw err
+      }
     } else if (paymentSource === 'BUYER_BALANCE') {
       // Create the ComputeRequest with a placeholder txHash, debit
       // the balance (which writes the SPEND_RENTAL ledger entry), then
@@ -884,6 +954,19 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
               refundTxHash = result.txHash
               refundIssued = true
               refundDestination = 'wallet'
+            } else if (result.indeterminate) {
+              // SECURITY (M-4, 2026-06-13): broadcast may yet finalize.
+              // DO NOT fall back to balance credit (would double-pay).
+              // Mark the rental with the indeterminate signature so
+              // admin reconciliation can resolve it.
+              await fastify.prisma.computeRequest.update({
+                where: { id },
+                data: {
+                  adminNote: `Refund INDETERMINATE: broadcast sig=${result.txHash ?? 'unknown'} but confirmation unresolved. Re-check on chain before any manual credit.`,
+                },
+              })
+              refundIssued = false
+              refundDestination = 'none'
             } else {
               // On-chain failed; fall through to balance credit.
               throw new Error(result.error ?? 'USDC refund send failed')
@@ -1538,11 +1621,21 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         if (result.success && result.txHash) {
           refundTxHash = result.txHash
           refundStatus = 'SENT'
+        } else if (result.indeterminate) {
+          // SECURITY (M-4, 2026-06-13): broadcast may yet finalize.
+          // DO NOT fall back to balance credit (would double-pay).
+          refundStatus = 'FAILED'
+          refundTxHash = result.txHash ?? null
+          refundError =
+            `Refund broadcast INDETERMINATE (sig=${result.txHash ?? 'unknown'}). ` +
+            `Admin must re-check signature status on chain before issuing any manual credit.`
+          fastify.log.warn({ requestId: id, sig: result.txHash }, 'Indeterminate refund: do NOT credit balance fallback')
         } else {
           // On-chain send failed (RPC down, payer wallet empty, etc.)
           // -> fall back to a balance credit instead of leaving the
           // refund stranded as FAILED. Buyer gets their money one way
-          // or another.
+          // or another. (Safe to fall back here because !indeterminate
+          // means the broadcast did NOT happen.)
           try {
             await creditBalance(fastify.prisma, {
               userId,

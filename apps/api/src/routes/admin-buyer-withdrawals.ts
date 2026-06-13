@@ -200,6 +200,28 @@ export async function adminBuyerWithdrawalRoutes(fastify: FastifyInstance) {
 
         // processPayment returned success: false
         const errMsg = result.error ?? 'On-chain send failed'
+
+        // SECURITY (M-4, 2026-06-13): if indeterminate, DO NOT credit
+        // the balance back. The broadcast may yet finalize and the
+        // buyer would double-receive (on-chain + balance credit).
+        // Mark INDETERMINATE so admin can re-check signature status.
+        if (result.indeterminate) {
+          await fastify.prisma.buyerWithdrawal.update({
+            where: { id },
+            data: {
+              status: 'PROCESSING',
+              txHash: result.txHash ?? null,
+              error: `INDETERMINATE: broadcast sig=${result.txHash ?? 'unknown'} but confirmation unresolved. Admin must re-check signature on chain before completing or reversing.`,
+            },
+          })
+          return reply.code(202).send({
+            error: 'send_indeterminate',
+            message:
+              'Refund broadcast but confirmation could not be resolved. Status is PROCESSING; admin must verify the signature on chain and complete or reverse manually. Balance NOT refunded to avoid double-pay.',
+            txHash: result.txHash,
+          })
+        }
+
         await fastify.prisma.buyerWithdrawal.update({
           where: { id },
           data: { status: 'FAILED', error: errMsg, processedAt: new Date() },

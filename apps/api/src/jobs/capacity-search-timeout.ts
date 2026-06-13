@@ -199,12 +199,13 @@ async function timeoutSearch(
       || cr.paymentSource === 'USDC'
       || cr.paymentSource === 'STRIPE_DIRECT'
     ) {
+      // N-4 alignment (2026-06-13): shared cancel:<id> key.
       await creditBalance(prisma, {
         userId: cr.userId,
         amountUsd: cr.totalCost,
         type: 'REFUND_RENTAL',
         description: `Refund: capacity search timed out for ${cr.gpuCount}x ${cr.gpuTier}`,
-        referenceId: `capacity-search-timeout:${cr.id}`,
+        referenceId: `cancel:${cr.id}`,
       })
     } else if (cr.paymentSource === 'INTERNAL_BALANCE') {
       await prisma.internalSpend.deleteMany({ where: { computeRequestId: cr.id } })

@@ -247,8 +247,12 @@ export interface OperatorBalanceBreakdown {
  * Returns the split of available vs pending balance for an operator,
  * plus the next unlock timestamp. The dashboard renders this directly.
  */
+// SECURITY (M-3, 2026-06-13): accept either a PrismaClient or an
+// interactive transaction client. The compute-request flow now calls
+// this from inside a Serializable transaction to atomically re-check
+// available balance before creating the InternalSpend row.
 export async function getOperatorBalanceBreakdown(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>,
   nodeRunnerId: string
 ): Promise<OperatorBalanceBreakdown> {
   const now = new Date()

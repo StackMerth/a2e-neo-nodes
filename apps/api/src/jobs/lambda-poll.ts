@@ -246,7 +246,10 @@ async function cancelAndRefund(
   })
   if (!cr || cr.status !== 'PROVISIONING_EXTERNAL') return
 
-  await prisma.computeRequest.updateMany({
+  // N-4 (2026-06-13): capture updateMany.count and bail when 0 so a
+  // buyer-cancel or timeout that already flipped the row doesn't let
+  // us also issue a refund.
+  const claim = await prisma.computeRequest.updateMany({
     where: { id: cr.id, status: 'PROVISIONING_EXTERNAL' },
     data: {
       status: 'CANCELLED',
@@ -255,21 +258,20 @@ async function cancelAndRefund(
       sshSessionStatus: 'FAILED',
     },
   })
+  if (claim.count === 0) return
 
-  // Refund the buyer if they paid from balance. Solana / Stripe topup
-  // paths credited the buyer's balance separately; their
-  // SPEND_RENTAL debit needs a matching REFUND_FAILED credit to net
-  // out. Use the ComputeRequest id as the referenceId so the
-  // (type, referenceId) unique on BalanceTransaction makes the
-  // refund idempotent even if this worker retries.
+  // Refund the buyer if they paid from balance. Aligned to the shared
+  // REFUND_RENTAL / cancel:<id> key so the BalanceTransaction unique
+  // catches cross-path duplicates (buyer-cancel, capacity-search-
+  // timeout, provisioning-timeout, and the 8 poll workers).
   if (cr.paymentSource === 'BUYER_BALANCE' && cr.totalCost > 0) {
     try {
       await creditBalance(prisma, {
         userId: cr.userId,
         amountUsd: cr.totalCost,
-        type: 'REFUND_FAILED',
-        description: `Lambda fallback failed for rental ${cr.id}`,
-        referenceId: cr.id,
+        type: 'REFUND_RENTAL',
+        description: `Lambda fallback failed for rental ${cr.id} (auto-refund)`,
+        referenceId: `cancel:${cr.id}`,
       })
     } catch (err) {
       // eslint-disable-next-line no-console

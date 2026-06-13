@@ -788,7 +788,18 @@ export async function agentRoutes(fastify: FastifyInstance) {
     error: z.string().max(2000).optional(), // required when status=FAILED
   })
 
-  fastify.post('/v1/agent/checkpoints', async (request, reply) => {
+  // SECURITY (N-3, 2026-06-13): all four checkpoint routes now
+  // require authentication AND ownership scoping. Previously they
+  // were unauthenticated, which meant any caller could (a) report
+  // checkpoint status for any rental, (b) presign an upload URL for
+  // any rental's S3 path, (c) presign a download URL for any
+  // checkpoint id by guessing or scraping, (d) mark a restore
+  // applied for any rental. Today most of this is gated because
+  // checkpoint S3 is not configured (503), but the auth gap would
+  // become CRITICAL cross-tenant model/dataset exfiltration the
+  // moment S3 is enabled. Ownership = the authenticated node id (or
+  // its operator's userId) matches the rental's allocated head node.
+  fastify.post('/v1/agent/checkpoints', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     const parsed = checkpointReportSchema.safeParse(request.body)
     if (!parsed.success) {
       return reply.code(400).send({
@@ -809,9 +820,22 @@ export async function agentRoutes(fastify: FastifyInstance) {
 
     const cr = await fastify.prisma.computeRequest.findUnique({
       where: { id: computeRequestId },
-      select: { id: true, userId: true, checkpointStatus: true },
+      select: { id: true, userId: true, checkpointStatus: true, allocatedNodeIds: true },
     })
     if (!cr) return reply.code(404).send({ error: 'ComputeRequest not found' })
+
+    // Ownership check: the caller must be (a) an admin, (b) the
+    // buyer (the rental's userId), or (c) one of the rental's
+    // allocated nodes' agents. Anything else returns 404 (not 403)
+    // to avoid leaking the rental's existence to enumerators.
+    const callerNodeId = request.authType === 'node' ? request.authNodeId : null
+    const callerUserId = request.authType === 'user' ? request.user?.userId : null
+    const isAdmin = request.authType === 'admin'
+    const isBuyer = callerUserId && callerUserId === cr.userId
+    const isOwningNode = callerNodeId && cr.allocatedNodeIds.includes(callerNodeId)
+    if (!isAdmin && !isBuyer && !isOwningNode) {
+      return reply.code(404).send({ error: 'ComputeRequest not found' })
+    }
 
     // Idempotent updates: agent retry of UPLOADING when already UPLOADING
     // is a no-op; READY/FAILED can transition from any state because the
@@ -854,7 +878,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
     checkpointId: z.string().min(8).max(64).optional(), // server generates if omitted
   })
 
-  fastify.post('/v1/agent/checkpoints/upload-url', async (request, reply) => {
+  fastify.post('/v1/agent/checkpoints/upload-url', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     if (!isCheckpointS3Configured()) {
       return reply.code(503).send({
         error: 'Service Unavailable',
@@ -871,15 +895,23 @@ export async function agentRoutes(fastify: FastifyInstance) {
     const { computeRequestId } = parsed.data
     const checkpointId = parsed.data.checkpointId ?? `chk_${crypto.randomBytes(12).toString('hex')}`
 
-    // Resolve the operator via the rental's allocated node. We accept
-    // the request without strict auth here because the agent's API key
-    // is already validated in the heartbeat pipe; in dev mode this
-    // path is exercised manually.
     const cr = await fastify.prisma.computeRequest.findUnique({
       where: { id: computeRequestId },
-      select: { id: true, status: true, allocatedNodeIds: true },
+      select: { id: true, userId: true, status: true, allocatedNodeIds: true },
     })
     if (!cr) return reply.code(404).send({ error: 'ComputeRequest not found' })
+
+    // Ownership check (N-3). Only the rental's allocated node agent,
+    // its owning buyer, or an admin can presign an S3 upload URL for
+    // this rental's checkpoint slot.
+    const callerNodeId = request.authType === 'node' ? request.authNodeId : null
+    const callerUserId = request.authType === 'user' ? request.user?.userId : null
+    const isAdmin = request.authType === 'admin'
+    const isBuyer = callerUserId && callerUserId === cr.userId
+    const isOwningNode = callerNodeId && cr.allocatedNodeIds.includes(callerNodeId)
+    if (!isAdmin && !isBuyer && !isOwningNode) {
+      return reply.code(404).send({ error: 'ComputeRequest not found' })
+    }
     if (cr.status !== 'ACTIVE') {
       return reply.code(409).send({ error: `Rental must be ACTIVE (got ${cr.status})` })
     }
@@ -922,6 +954,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
 
   fastify.post<{ Params: { checkpointId: string } }>(
     '/v1/agent/checkpoints/:checkpointId/download-url',
+    { preHandler: [fastify.authenticate] },
     async (request, reply) => {
       if (!isCheckpointS3Configured()) {
         return reply.code(503).send({
@@ -935,11 +968,30 @@ export async function agentRoutes(fastify: FastifyInstance) {
       // index lookup on the unique lastCheckpointId field.
       const source = await fastify.prisma.computeRequest.findFirst({
         where: { lastCheckpointId: checkpointId },
-        select: { id: true, checkpointBucketUrl: true, checkpointStatus: true },
+        select: {
+          id: true,
+          userId: true,
+          allocatedNodeIds: true,
+          checkpointBucketUrl: true,
+          checkpointStatus: true,
+        },
       })
       if (!source) {
         return reply.code(404).send({ error: 'Checkpoint not found' })
       }
+
+      // Ownership check (N-3). Without this, anyone with a valid
+      // checkpoint id could presign a GET URL for model weights /
+      // datasets / secrets belonging to a different tenant.
+      const callerNodeId = request.authType === 'node' ? request.authNodeId : null
+      const callerUserId = request.authType === 'user' ? request.user?.userId : null
+      const isAdmin = request.authType === 'admin'
+      const isBuyer = callerUserId && callerUserId === source.userId
+      const isOwningNode = callerNodeId && source.allocatedNodeIds.includes(callerNodeId)
+      if (!isAdmin && !isBuyer && !isOwningNode) {
+        return reply.code(404).send({ error: 'Checkpoint not found' })
+      }
+
       if (source.checkpointStatus !== 'READY' || !source.checkpointBucketUrl) {
         return reply.code(409).send({
           error: 'Checkpoint not ready',
@@ -980,7 +1032,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
     error: z.string().max(2000).optional(), // populated if restore failed
   })
 
-  fastify.post('/v1/agent/checkpoints/restore-applied', async (request, reply) => {
+  fastify.post('/v1/agent/checkpoints/restore-applied', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     const parsed = restoreAppliedSchema.safeParse(request.body)
     if (!parsed.success) {
       return reply.code(400).send({
@@ -992,9 +1044,20 @@ export async function agentRoutes(fastify: FastifyInstance) {
 
     const cr = await fastify.prisma.computeRequest.findUnique({
       where: { id: computeRequestId },
-      select: { id: true, userId: true, restoreCheckpointId: true },
+      select: { id: true, userId: true, restoreCheckpointId: true, allocatedNodeIds: true },
     })
     if (!cr) return reply.code(404).send({ error: 'ComputeRequest not found' })
+
+    // Ownership check (N-3).
+    const callerNodeId = request.authType === 'node' ? request.authNodeId : null
+    const callerUserId = request.authType === 'user' ? request.user?.userId : null
+    const isAdmin = request.authType === 'admin'
+    const isBuyer = callerUserId && callerUserId === cr.userId
+    const isOwningNode = callerNodeId && cr.allocatedNodeIds.includes(callerNodeId)
+    if (!isAdmin && !isBuyer && !isOwningNode) {
+      return reply.code(404).send({ error: 'ComputeRequest not found' })
+    }
+
     if (!cr.restoreCheckpointId) {
       return reply.code(409).send({ error: 'Rental has no restoreCheckpointId set' })
     }

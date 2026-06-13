@@ -247,6 +247,36 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
       return
     }
 
+    // SECURITY (N-5, 2026-06-13 critical): atomic-claim the txHash in
+    // the global ConsumedTxHash ledger BEFORE crediting balance.
+    // Without this, a public on-chain deposit could be re-claimed by
+    // N accounts, each crediting a free $X balance. Primary key on
+    // txHash serializes the race: first claim wins, others get 409.
+    try {
+      await fastify.prisma.consumedTxHash.create({
+        data: {
+          txHash,
+          consumedFor: 'TOPUP_SOLANA',
+          consumedByUserId: userId,
+          senderWallet: verification.sender ?? null,
+          observedAmountUsd: verification.observedAmountUsd ?? amountUsd,
+        },
+      })
+    } catch (consumeErr) {
+      const e = consumeErr as { code?: string }
+      if (e?.code === 'P2002') {
+        return reply.status(409).send({
+          error: 'tx_hash_already_consumed',
+          message:
+            'This USDC deposit has already been claimed by another ' +
+            'account or topup. Each on-chain deposit can be credited once. ' +
+            'Submit a fresh deposit and retry.',
+          submittedTxHash: txHash,
+        })
+      }
+      throw consumeErr
+    }
+
     // Credit the balance. DuplicateTransactionError = same txHash was
     // already credited; treat as success and return the current state
     // (idempotent retry).

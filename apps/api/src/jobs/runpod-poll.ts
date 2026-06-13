@@ -227,7 +227,14 @@ async function cancelAndRefund(
   })
   if (!cr || cr.status !== 'PROVISIONING_EXTERNAL') return
 
-  await prisma.computeRequest.updateMany({
+  // SECURITY (N-4, 2026-06-13): capture updateMany.count and bail
+  // when 0. Without this, a buyer-cancel or provisioning-timeout
+  // that ALREADY flipped the row would let this worker still
+  // proceed to credit a fresh refund. Pair with the (REFUND_RENTAL,
+  // cancel:<id>) key alignment below so the cross-path
+  // double-refund is hard-blocked by the (type, referenceId) unique
+  // constraint on BalanceTransaction.
+  const claim = await prisma.computeRequest.updateMany({
     where: { id: cr.id, status: 'PROVISIONING_EXTERNAL' },
     data: {
       status: 'CANCELLED',
@@ -236,15 +243,21 @@ async function cancelAndRefund(
       sshSessionStatus: 'FAILED',
     },
   })
+  if (claim.count === 0) {
+    // Already transitioned out of PROVISIONING_EXTERNAL by another
+    // path (buyer cancel, capacity-search-timeout, provisioning-
+    // timeout). That path owns the refund; we no-op.
+    return
+  }
 
   if (cr.paymentSource === 'BUYER_BALANCE' && cr.totalCost > 0) {
     try {
       await creditBalance(prisma, {
         userId: cr.userId,
         amountUsd: cr.totalCost,
-        type: 'REFUND_FAILED',
-        description: `RunPod fallback failed for rental ${cr.id}`,
-        referenceId: cr.id,
+        type: 'REFUND_RENTAL',
+        description: `RunPod fallback failed for rental ${cr.id} (auto-refund)`,
+        referenceId: `cancel:${cr.id}`,
       })
     } catch (err) {
       // eslint-disable-next-line no-console

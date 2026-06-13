@@ -166,6 +166,50 @@ enum NotificationType {
   ADMIN_REVIEW_REQUIRED
 }
 
+// SECURITY (N-5, 2026-06-13 critical): global consumed-txHash ledger.
+// Closes the cross-user / cross-rail USDC deposit theft vector:
+// previously txHash dedup was per-user findFirst inside buyer-compute,
+// so the same public on-chain deposit could be submitted from N
+// different accounts and each one passed verification (tx exists,
+// paid treasury, amount >= cost) producing N txConfirmed rentals.
+// Now: every USDC txHash consumed by ANY money-credit path
+// (TOPUP_SOLANA, USDC rental create) inserts a row here with the
+// txHash as the primary key. Second use across any account or any
+// rail fails the @unique constraint and the call returns 409.
+//
+// Schema-level guarantee, atomic across paths, immune to per-user
+// dedup races. Combined with the @unique on ComputeRequest.txHash
+// below as belt-and-suspenders. Real Solana sigs only; synthetic
+// hashes (BAL: / INTERNAL: / Stripe session IDs) bypass this ledger.
+model ConsumedTxHash {
+  // The real on-chain Solana signature (88 base58 chars). Primary
+  // key for atomic insert-or-fail.
+  txHash String @id
+  // What kind of credit consumed this hash. Used for diagnostics +
+  // future reporting; the global @unique on the id is what enforces
+  // single-consumption.
+  consumedFor ConsumedTxHashPurpose
+  // Which user / rental / balance row claimed it. Null for admin
+  // backfills.
+  consumedByUserId String?
+  // Which on-chain wallet sent the deposit, as observed by
+  // verifyUsdcDeposit. Used downstream to enforce sender-equals-
+  // buyer-wallet pinning if we want a behavioral layer on top.
+  senderWallet String?
+  // Amount observed on-chain at consumption time, for audit.
+  observedAmountUsd Float
+  consumedAt DateTime @default(now())
+
+  @@index([consumedByUserId])
+  @@index([consumedAt])
+}
+
+enum ConsumedTxHashPurpose {
+  TOPUP_SOLANA       // /v1/buyer/balance/topup-solana
+  COMPUTE_RENT_USDC  // /v1/buyer/compute/request with paymentSource=USDC
+  INVESTMENT_USDC    // legacy /v1/investments USDC path (back-port of N-2 fix)
+}
+
 model User {
   id               String   @id @default(cuid())
   email            String?  @unique
@@ -1371,7 +1415,12 @@ model ComputeRequest {
   totalCost  Float // gpuCount × ratePerDay × durationDays
 
   // Payment
-  txHash               String? // Solana transaction hash (or INTERNAL:<id> for balance spend)
+  // SECURITY (N-5, 2026-06-13 critical): @unique added to close
+  // cross-user reuse. Real USDC sigs are unique on-chain; BAL:* /
+  // INTERNAL:* / Stripe-session-id values are unique by construction.
+  // Null txHashes are permitted and not collated by Postgres unique
+  // (multiple PENDING rows pre-txHash-stamp don't collide).
+  txHash               String?       @unique
   txConfirmed          Boolean       @default(false)
   currency             String        @default("USD")
   // Payment source. USDC = real Solana transfer (txHash is the real
