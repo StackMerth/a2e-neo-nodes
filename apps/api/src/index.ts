@@ -155,6 +155,11 @@ import {
   scheduleCapacitySearchTimeout,
 } from './jobs/capacity-search-timeout'
 import {
+  createTerminatingReaperQueue,
+  createTerminatingReaperWorker,
+  scheduleTerminatingReaperTick,
+} from './jobs/terminating-reaper'
+import {
   createLambdaPollQueue,
   createLambdaPollWorker,
   scheduleLambdaPoll,
@@ -519,6 +524,20 @@ async function start() {
     createCapacitySearchTimeoutWorker({ redis: redisConnection, prisma: server.prisma, io: server.io })
     await scheduleCapacitySearchTimeout(capacitySearchTimeoutQueue)
     server.log.info('Capacity-search timeout worker initialized (60s tick, 15min cutoff)')
+
+    // SECURITY (N-7, 2026-06-13): TERMINATING orphan recovery worker.
+    // The terminate flow's CAS claims ACTIVE -> TERMINATING then runs
+    // the refund + status finalize. If the process dies between the
+    // claim and the finalize, the row sits in TERMINATING forever
+    // (buyer cannot re-terminate, cannot cancel, no refund issued).
+    // This reaper wakes every 5 minutes and finishes the work using
+    // the shared REFUND_RENTAL / cancel:<id> key so it's idempotent
+    // against any in-flight finalize. Tunable via
+    // TERMINATING_REAPER_STALE_MINUTES (default 10).
+    const terminatingReaperQueue = createTerminatingReaperQueue(redisConnection)
+    createTerminatingReaperWorker({ redis: redisConnection, prisma: server.prisma })
+    await scheduleTerminatingReaperTick(terminatingReaperQueue)
+    server.log.info('Terminating reaper initialized (5min tick, 10min stale cutoff)')
 
     // T5b: Lambda status poller. Watches ExternalRental rows the
     // allocator created via the inbound-supply fallback and flips the
