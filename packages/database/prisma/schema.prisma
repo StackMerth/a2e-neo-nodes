@@ -1424,12 +1424,19 @@ model ComputeRequest {
   totalCost  Float // gpuCount × ratePerDay × durationDays
 
   // Payment
-  // SECURITY (N-5, 2026-06-13 critical): @unique added to close
-  // cross-user reuse. Real USDC sigs are unique on-chain; BAL:* /
-  // INTERNAL:* / Stripe-session-id values are unique by construction.
-  // Null txHashes are permitted and not collated by Postgres unique
-  // (multiple PENDING rows pre-txHash-stamp don't collide).
-  txHash               String?       @unique
+  // SECURITY (N-5, 2026-06-13 critical): originally we added @unique
+  // here as belt-and-suspenders on top of the ConsumedTxHash global
+  // ledger. Removed because existing data has legitimate duplicate
+  // placeholders (e.g. multiple 'BAL:PENDING' rows mid-flight) that
+  // would block the migration on prisma db push.
+  //
+  // The cross-user theft fix is still complete: the ConsumedTxHash
+  // table claim fires BEFORE the ComputeRequest is created in the
+  // USDC rental path (buyer-compute.ts) and BEFORE crediting in the
+  // topup path (buyer-balance.ts). A second buyer trying to claim
+  // the same hash fails the ConsumedTxHash primary-key constraint
+  // and the route returns 409 before the rental row is touched.
+  txHash               String?
   txConfirmed          Boolean       @default(false)
   currency             String        @default("USD")
   // Payment source. USDC = real Solana transfer (txHash is the real
