@@ -485,6 +485,11 @@ model NodeRunner {
   // trail. Subtracted from `available` in getOperatorBalanceBreakdown.
   internalSpends InternalSpend[]
 
+  // ZK-UBI accrual ledger. Each row is a rolled-up period of accepted
+  // UbiProof earnings for one of this operator's nodes, already
+  // split 95/5 per the chosen architecture.
+  ubiEarnings UbiEarning[]
+
   @@index([walletAddress])
   @@index([userId])
   @@index([reputationScore])
@@ -808,6 +813,9 @@ model Node {
   provisionJob        ProvisionJob?
   externalDeployments ExternalDeployment[]
   inferenceWorkers    InferenceWorker[]
+  ubiOptIns           NodeUbiOptIn[]
+  ubiProofs           UbiProof[]
+  ubiEarnings         UbiEarning[]
 
   @@index([status])
   @@index([gpuTier])
@@ -2648,4 +2656,159 @@ enum ImageScanStatus {
   RUNNING // Trivy worker is scanning right now
   COMPLETED // results stored, severity counts authoritative
   FAILED // Trivy errored or timed out; errorMessage explains
+}
+
+// ============================================================================
+// ZK-UBI (operator-side baseline income from external proof protocols)
+// ============================================================================
+//
+// What this is, in plain terms: when an operator's GPU is idle (no buyer
+// rental), the node can opt into doing cryptographic proof work for
+// external blockchains (Filecoin C2 sealing, Aleo, StarkNet, etc.) and
+// earn tokens. The platform takes a 95/5 passthrough cut; the rest
+// flows to the operator's USD balance via the same custodial payout
+// pipeline as rentals.
+//
+// Why protocol-agnostic schema: the choice of aggregator partner is a
+// research step we're still resolving (Hoku/Recall/GLIF/etc. for
+// Filecoin, separate stacks for Aleo and StarkNet). Tabling on
+// (protocol, externalProofId) lets us slot adapters in later without
+// rewriting the persistence layer.
+
+enum UbiProtocol {
+  FILECOIN_C2 // Filecoin sealing Commit-2 SNARK proof (GPU-bound)
+  ALEO // Aleo proof generation (future)
+  STARKNET // StarkNet prover (future)
+}
+
+enum UbiOptInStatus {
+  ACTIVE
+  OPTED_OUT
+  SUSPENDED // admin action, abuse / slashing / chargeback
+}
+
+enum UbiProofStatus {
+  PENDING // dispatched to operator, not yet accepted by aggregator
+  ACCEPTED // aggregator confirmed proof valid, earning accrued
+  REJECTED // aggregator rejected (invalid / late / duplicate)
+  EXPIRED // aggregator timed out before we delivered
+}
+
+enum UbiEarningStatus {
+  ACCRUED // visible in operator dashboard
+  PAID // converted + credited to BuyerBalance via withdraw flow
+  REVERSED // chargeback / admin clawback
+}
+
+// Operator opts a specific node into ZK-UBI. One row per opt-in event;
+// the scheduler reads the latest ACTIVE row per (nodeId, protocol)
+// when deciding whether to dispatch proof work to that node.
+model NodeUbiOptIn {
+  id       String         @id @default(cuid())
+  nodeId   String
+  node     Node           @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  protocol UbiProtocol
+  status   UbiOptInStatus @default(ACTIVE)
+
+  // ToS / disclosure version the operator accepted at opt-in. Lets us
+  // surface a re-consent prompt if we update the terms (e.g. slashing
+  // exposure, FIL custody disclosure).
+  consentVersion String
+
+  // Minimum free disk (GB) the operator declared at opt-in. Filecoin
+  // C2 sealing needs sector storage; this gates eligibility per the
+  // architecture decision (require disk for the C2 pilot).
+  declaredFreeDiskGb Int?
+
+  optedInAt  DateTime  @default(now())
+  optedOutAt DateTime?
+
+  @@unique([nodeId, protocol, optedInAt])
+  @@index([nodeId, status])
+  @@index([protocol, status])
+}
+
+// Each proof submitted by an operator's node, via an aggregator
+// partner. The aggregator pays per accepted proof; we record accrual
+// here and split via UbiEarning (rolled up daily).
+model UbiProof {
+  id       String      @id @default(cuid())
+  nodeId   String
+  node     Node        @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  protocol UbiProtocol
+
+  // Aggregator partner that delivered this proof work. Free-form so
+  // we can multi-source (e.g. HOKU + GLIF on Filecoin). Per memory
+  // we have not picked one yet, so values today are placeholder.
+  aggregator String
+
+  // Globally unique proof identifier from the aggregator. Dedupe key
+  // so we never double-accrue.
+  externalProofId String
+
+  // What the proof attests to. For Filecoin C2 this is the sector id
+  // the storage provider requested. Free-form so other protocols can
+  // carry their own identifier shape.
+  targetRef String
+
+  status UbiProofStatus @default(PENDING)
+
+  // Gross token amount earned, stored as a decimal string to avoid
+  // float precision loss across token decimals (atto-FIL = 18
+  // decimals, Aleo credits = different). Use bignumber on read.
+  grossTokenAtto String @default("0")
+
+  // USD equivalent locked at the moment of proof acceptance. This is
+  // the value the 95/5 split is calculated against; eliminates token
+  // price-swing exposure between accrual and payout.
+  grossUsd Float @default(0)
+
+  startedAt    DateTime  @default(now())
+  acceptedAt   DateTime?
+  rejectedAt   DateTime?
+  errorMessage String?
+
+  @@unique([protocol, externalProofId])
+  @@index([nodeId, status])
+  @@index([acceptedAt])
+  @@index([aggregator, status])
+}
+
+// Operator-level accrual ledger. Mirrors the Earning table for
+// rentals: each row is a credit event aggregating accepted UbiProof
+// rows for a node over a period (typically daily). The settlement
+// engine reads ACCRUED rows past the cooldown boundary and rolls
+// them into the operator's withdrawable balance.
+model UbiEarning {
+  id           String     @id @default(cuid())
+  nodeId       String
+  node         Node       @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  nodeRunnerId String
+  nodeRunner   NodeRunner @relation(fields: [nodeRunnerId], references: [id], onDelete: Cascade)
+  protocol     UbiProtocol
+
+  periodStart DateTime
+  periodEnd   DateTime
+
+  // Sum of grossUsd across accepted UbiProof rows in this period.
+  grossUsd    Float
+
+  // 95/5 passthrough split per the chosen architecture (decision
+  // 2026-06-13). Operator gets 95%, platform gets 5%. Computed
+  // here so the dashboard and the withdraw flow don't re-derive.
+  operatorUsd Float
+  platformUsd Float
+
+  status UbiEarningStatus @default(ACCRUED)
+
+  // Cooldown boundary mirror of the rental earnings cooldown. Funds
+  // sit in ACCRUED until availableAt passes; withdraw flow filters
+  // on this so a chargebacked proof can be reversed before payout.
+  availableAt DateTime @default(dbgenerated("CURRENT_TIMESTAMP + INTERVAL '12 hours'"))
+
+  createdAt DateTime @default(now())
+
+  @@index([nodeRunnerId, status])
+  @@index([nodeId, periodStart])
+  @@index([availableAt])
 }
