@@ -746,6 +746,15 @@ model Node {
   benchmarkMatmulTflops     Float?
   benchmarkVramBandwidthGbs Float?
   lastBenchmarkAt           DateTime?
+  // SECURITY (M-1 / N-6, 2026-06-13): tier derived from the
+  // benchmark numbers rather than the operator-declared gpuTier.
+  // Settlement (uptime-calculator) caps the payout rate by this
+  // value so an operator who declares B300 but benchmarks at
+  // RTX_3090 levels gets paid the RTX_3090 rate. Mismatches are
+  // also recorded in Config(`tier-mismatch:<nodeId>`) for admin
+  // review. Pragmatic interim mitigation pending real attestation
+  // (sentinel re-benchmark / TEE proof / stake-slashing).
+  benchmarkAttestedTier     GpuTier?
 
   // C2 wave 2: operator-declared residential-IP marker. Lets operators
   // on home internet (no static IP, behind NAT) opt into the consumer

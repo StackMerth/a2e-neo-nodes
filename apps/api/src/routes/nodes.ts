@@ -9,6 +9,48 @@ import { notifyFirstHeartbeat, notifyNodeDegraded } from '../services/notificati
 // post-launch without a deploy.
 const BENCHMARK_ANOMALY_THRESHOLD_PCT = Number(process.env.BENCHMARK_ANOMALY_THRESHOLD_PCT ?? 20)
 
+// SECURITY (M-1 / N-6, 2026-06-13): minimum (score, matmulTflops) the
+// benchmark must produce to attest each tier. The operator's declared
+// tier is a label they choose; the ATTESTED tier is what their numbers
+// prove. Settlement, listing rate, and the heartbeat throttle all key
+// off the attested tier so an operator who claims B300 but produces
+// RTX_3090 numbers gets RTX_3090 treatment. Numbers are conservative;
+// real hardware easily clears them. Operators with a real GPU but a
+// soft benchmark image (CUDA misconfig) still attest at least the
+// CONSUMER tier provided their score is non-zero.
+//
+// Order matters: we walk from highest to lowest and pick the first
+// tier the benchmark satisfies. Thresholds are env-tunable so admin
+// can recalibrate as hardware/benchmark image evolves without a deploy.
+const TIER_MIN_BENCHMARK: ReadonlyArray<{
+  tier: GpuTier
+  minScore: number
+  minMatmulTflops: number
+}> = [
+  { tier: 'GB300' as GpuTier, minScore: 130, minMatmulTflops: 1800 },
+  { tier: 'B300' as GpuTier, minScore: 120, minMatmulTflops: 1500 },
+  { tier: 'B200' as GpuTier, minScore: 110, minMatmulTflops: 1200 },
+  { tier: 'H200' as GpuTier, minScore: 95, minMatmulTflops: 900 },
+  { tier: 'H100' as GpuTier, minScore: 80, minMatmulTflops: 700 },
+  { tier: 'L40S' as GpuTier, minScore: 55, minMatmulTflops: 250 },
+  { tier: 'RTX_4090' as GpuTier, minScore: 35, minMatmulTflops: 120 },
+  { tier: 'RTX_3090' as GpuTier, minScore: 25, minMatmulTflops: 70 },
+  { tier: 'CONSUMER' as GpuTier, minScore: 1, minMatmulTflops: 0 },
+]
+
+export function attestGpuTierFromBenchmark(
+  score: number,
+  matmulTflops: number | null,
+): GpuTier {
+  const tflops = matmulTflops ?? 0
+  for (const { tier, minScore, minMatmulTflops } of TIER_MIN_BENCHMARK) {
+    if (score >= minScore && tflops >= minMatmulTflops) {
+      return tier
+    }
+  }
+  return 'CONSUMER' as GpuTier
+}
+
 // Schema for agent registration (from node-agent)
 const agentSpecsSchema = z.object({
   gpuModel: z.string().optional(),
@@ -924,6 +966,7 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         walletAddress: true,
         nodeRunnerId: true,
         benchmarkScore: true,
+        gpuTier: true,
         nodeRunner: { select: { userId: true } },
       },
     })
@@ -942,15 +985,61 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         data: { lastBenchmarkAt: now },
       })
     } else {
+      // SECURITY (M-1 / N-6, 2026-06-13): benchmark value is self-
+      // reported by the node's agent; A3 authed the WRITE but not the
+      // VALUE. An operator who replaces the agent binary could POST
+      // {score:150} for a node that has no GPU at all. That bypasses:
+      //   - A7 layer 1 listing filter (benchmarkScore > 0)
+      //   - B1 layer 3 heartbeat throttle
+      // Pragmatic mitigation pending real attestation (sentinel re-
+      // benchmark / TEE proof / stake-slashing): derive an
+      // ATTESTED tier from the reported (score, matmulTflops) using
+      // tier-specific minimum thresholds. If the operator declared a
+      // higher tier than the score supports, settlement (N-6) and the
+      // listing rate (M-6) use the attested tier instead. Operator
+      // payouts are capped at what their benchmark actually proves.
+      const attestedTier = attestGpuTierFromBenchmark(
+        result.score ?? 0,
+        result.matmulTflops ?? null,
+      )
       await fastify.prisma.node.update({
         where: { id },
         data: {
           benchmarkScore: result.score ?? null,
           benchmarkMatmulTflops: result.matmulTflops ?? null,
           benchmarkVramBandwidthGbs: result.vramBandwidthGbs ?? null,
+          benchmarkAttestedTier: attestedTier,
           lastBenchmarkAt: now,
         },
       })
+
+      // Flag the operator if they declared a tier that the benchmark
+      // does not support. The settlement engine reads attestedTier
+      // already; this surfaces the discrepancy for admin review.
+      if (attestedTier !== node.gpuTier) {
+        await fastify.prisma.config.upsert({
+          where: { key: `tier-mismatch:${id}` },
+          create: {
+            key: `tier-mismatch:${id}`,
+            value: JSON.stringify({
+              declared: node.gpuTier,
+              attested: attestedTier,
+              score: result.score,
+              matmulTflops: result.matmulTflops,
+              flaggedAt: now.toISOString(),
+            }),
+          },
+          update: {
+            value: JSON.stringify({
+              declared: node.gpuTier,
+              attested: attestedTier,
+              score: result.score,
+              matmulTflops: result.matmulTflops,
+              flaggedAt: now.toISOString(),
+            }),
+          },
+        })
+      }
     }
 
     // One-shot Config flag cleanup. deleteMany is forgiving of missing

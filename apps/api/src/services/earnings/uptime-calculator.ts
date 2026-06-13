@@ -107,6 +107,7 @@ export async function calculateUptimeEarnings(
       id: true,
       walletAddress: true,
       gpuTier: true,
+      benchmarkAttestedTier: true,
       customRatePerHour: true,
     },
   })
@@ -117,13 +118,29 @@ export async function calculateUptimeEarnings(
 
   const uptimeSeconds = await calculateNodeUptime(prisma, nodeId, periodStart, periodEnd)
   const uptimeHours = uptimeSeconds / 3600
-  const ratePerHour = getGpuTierRate(node.gpuTier, node.customRatePerHour)
+
+  // SECURITY (N-6, 2026-06-13): pay at the LOWER of declared and
+  // attested tier. The declared gpuTier is operator-chosen at
+  // registration; the attestedTier is what their benchmark proves.
+  // Without this cap, an operator declaring B300 with no GPU
+  // (M-1 self-attested benchmark or M-2 advisory tier-mismatch) was
+  // paid the premium rate. Capping at attested means real H100
+  // operators still earn premium, fake-B300-on-cheap-hardware ones
+  // earn only what their numbers support. Null attested (never
+  // benchmarked) falls through to declared so legacy nodes pre-
+  // attestation column don't lose earnings; this is acceptable
+  // because A7 layer 1 already gates LISTING on benchmarkScore > 0,
+  // and B1 layer 1 blocks orphan payouts entirely.
+  const effectiveTier = node.benchmarkAttestedTier
+    ? gpuTierMin(node.gpuTier, node.benchmarkAttestedTier)
+    : node.gpuTier
+  const ratePerHour = getGpuTierRate(effectiveTier, node.customRatePerHour)
   const earnings = uptimeHours * ratePerHour
 
   return {
     nodeId: node.id,
     walletAddress: node.walletAddress,
-    gpuTier: node.gpuTier,
+    gpuTier: effectiveTier,
     periodStart,
     periodEnd,
     uptimeSeconds,
@@ -131,6 +148,15 @@ export async function calculateUptimeEarnings(
     ratePerHour,
     earnings: Math.round(earnings * 100) / 100,
   }
+}
+
+// SECURITY (N-6, 2026-06-13): return the LOWER of two tiers by
+// settlement rate. Used to cap operator payout at what their
+// benchmark actually proves. Imported by settlement engine.
+export function gpuTierMin(a: GpuTier, b: GpuTier): GpuTier {
+  const rateA = getGpuTierRate(a, null)
+  const rateB = getGpuTierRate(b, null)
+  return rateA <= rateB ? a : b
 }
 
 /**

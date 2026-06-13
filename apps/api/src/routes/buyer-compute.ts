@@ -800,7 +800,26 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
       fastify.prisma.computeRequest.count({ where }),
     ])
 
-    reply.send({ requests, total, page, limit, pages: Math.ceil(total / limit) })
+    // SECURITY (LOW Q20/Q26, 2026-06-13): scrub SSH credentials from
+    // non-ACTIVE rows. The list endpoint findMany previously returned
+    // the full row including sshHost/sshPort/sshUsername/sshPassword
+    // for ended rentals; the detail route (above) already scrubs
+    // them. Apply the same scrub on the list so credentials don't
+    // leak past rental lifetime.
+    const scrubbed = requests.map((r) =>
+      r.status === 'ACTIVE'
+        ? r
+        : {
+            ...r,
+            sshHost: null,
+            sshPort: null,
+            sshUsername: null,
+            sshPassword: null,
+            sshPrivateKey: null,
+          },
+    )
+
+    reply.send({ requests: scrubbed, total, page, limit, pages: Math.ceil(total / limit) })
   })
 
   /**

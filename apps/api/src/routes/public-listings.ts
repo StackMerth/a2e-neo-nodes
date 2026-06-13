@@ -42,7 +42,11 @@ const REPUTATION_RANK: Record<ReputationTier, number> = {
   PLATINUM: 3,
 }
 
-const VALID_GPU_TIERS = new Set<GpuTier>(['H100', 'H200', 'L40S', 'B200', 'B300', 'GB300', 'OTHER', 'CONSUMER', 'RTX_4090', 'RTX_3090'])
+// SECURITY (LOW Q16, 2026-06-13): added A100 so /v1/public/listings?gpuTier=A100
+// stops returning 400. A100 nodes are rentable but the filter enum
+// omitted them, so buyers couldn't search the catalog for the SKU
+// they intended to rent.
+const VALID_GPU_TIERS = new Set<GpuTier>(['H100', 'H200', 'A100', 'L40S', 'B200', 'B300', 'GB300', 'OTHER', 'CONSUMER', 'RTX_4090', 'RTX_3090'])
 const VALID_PRICING_TIERS = new Set(['ON_DEMAND', 'SPOT', 'RESERVED'])
 const VALID_REP_TIERS = new Set<ReputationTier>(['BRONZE', 'SILVER', 'GOLD', 'PLATINUM'])
 
@@ -242,11 +246,28 @@ export async function publicListingsRoutes(fastify: FastifyInstance) {
         continue
       }
 
-      const baseRate =
+      // SECURITY (M-6, 2026-06-13): align listing price with what the
+      // buyer is actually charged at rental time. The previous flow
+      // computed listing rate from baseRate * tierMultiplier WITHOUT
+      // applying the per-tier price floor (GPU_TIER_CONFIG[tier].
+      // priceFloor), so consumer SPOT/RESERVED listings advertised
+      // rates below what buyer-compute.ts:380-387 charges via
+      // applyPriceFloor. Apply the same floor here so the catalog is
+      // truthful. Workload-type multiplier (INFERENCE discount,
+      // TRAINING base) varies per-rental; the listing shows the
+      // upper bound (MIXED-equivalent = no discount) so buyers
+      // never see a higher charge than the listing.
+      const cfg =
+        n.gpuTier === 'OTHER' ? null : GPU_TIER_CONFIG[n.gpuTier]
+      const baseRatePerDay =
         n.gpuTier === 'OTHER'
-          ? n.customRatePerHour ?? 0
-          : dailyToHourly(GPU_TIER_CONFIG[n.gpuTier].retailRate)
-      const ratePerHour = Number((baseRate * tierMultiplier).toFixed(4))
+          ? ((n.customRatePerHour ?? 0) * 24)
+          : cfg?.retailRate ?? 0
+      const flooredRatePerDay = Math.max(
+        baseRatePerDay * tierMultiplier,
+        cfg?.priceFloor ?? 0,
+      )
+      const ratePerHour = Number(dailyToHourly(flooredRatePerDay).toFixed(4))
       if (maxRateParam !== undefined && ratePerHour > maxRateParam) continue
       if (ratePerHour <= 0) continue
 

@@ -763,7 +763,11 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
       if (row.emailConfirmExpiry && row.emailConfirmExpiry < new Date()) {
         return reply.code(410).send({
           error: 'token_expired',
-          message: 'Confirmation link expired. Cancel and resubmit the withdrawal.',
+          message:
+            'Confirmation link expired. POST /v1/buyer/balance/withdraw/' +
+            id +
+            '/cancel to reverse and refund the debit, then resubmit.',
+          cancelUrl: `/v1/buyer/balance/withdraw/${id}/cancel`,
         })
       }
 
@@ -802,6 +806,92 @@ export async function buyerBalanceRoutes(fastify: FastifyInstance) {
         status: 'PENDING',
         confirmedAt: new Date(),
         message: 'Confirmation received. Withdrawal is now in admin review.',
+      })
+    },
+  )
+
+  /**
+   * POST /v1/buyer/balance/withdraw/:id/cancel
+   *
+   * SECURITY (M-5, 2026-06-13): closes the large-withdrawal lock.
+   * Previously, withdrawals >= $500 debited the balance immediately
+   * and required email-confirm; if the confirm link expired, the
+   * 410 response told the buyer to "cancel and resubmit" but no
+   * cancel route existed AND the expired row was filtered out of
+   * the admin queue. The debited funds were stranded.
+   *
+   * This route:
+   *   1. Verifies ownership (buyer.id matches withdrawal.userId)
+   *   2. Allows cancel when status === 'PENDING' (regardless of
+   *      email-confirm state — the buyer wants out)
+   *   3. Atomically: flips status to REJECTED + credits the balance
+   *      back via REFUND_FAILED with referenceId='withdraw-cancel:<id>'.
+   *      The (type, referenceId) unique on BalanceTransaction makes
+   *      a buyer-side cancel race idempotent.
+   */
+  fastify.post<{ Params: { id: string } }>(
+    '/v1/buyer/balance/withdraw/:id/cancel',
+    async (request, reply) => {
+      const { id } = request.params
+      const userId = request.user!.userId
+
+      const row = await fastify.prisma.buyerWithdrawal.findUnique({
+        where: { id },
+        select: { id: true, userId: true, status: true, amountUsd: true },
+      })
+      if (!row || row.userId !== userId) {
+        return reply.code(404).send({ error: 'not_found' })
+      }
+      if (row.status !== 'PENDING') {
+        return reply.code(409).send({
+          error: 'invalid_status',
+          message:
+            `Cannot cancel: withdrawal is ${row.status}. Only PENDING ` +
+            `withdrawals (including expired-confirm rows) can be cancelled.`,
+        })
+      }
+
+      // Atomic claim PENDING -> REJECTED. Loser bails before crediting.
+      const claim = await fastify.prisma.buyerWithdrawal.updateMany({
+        where: { id, status: 'PENDING' },
+        data: {
+          status: 'REJECTED',
+          error: 'Cancelled by buyer',
+          processedAt: new Date(),
+          emailConfirmToken: null,
+          emailConfirmExpiry: null,
+        },
+      })
+      if (claim.count === 0) {
+        return reply.code(409).send({
+          error: 'invalid_status',
+          message: 'Cancel race lost; withdrawal already processed.',
+        })
+      }
+
+      try {
+        await creditBalance(fastify.prisma, {
+          userId,
+          amountUsd: row.amountUsd,
+          type: 'REFUND_FAILED',
+          description: `Refund: buyer cancelled withdrawal ${id.slice(0, 8)}`,
+          referenceId: `withdraw-cancel:${id}`,
+        })
+      } catch (err) {
+        const isDuplicate = err instanceof Error && err.name === 'DuplicateTransactionError'
+        if (!isDuplicate) {
+          fastify.log.error(
+            { err, withdrawalId: id },
+            'Buyer-cancel refund credit failed; row is REJECTED but money still owed',
+          )
+        }
+      }
+
+      return reply.send({
+        id,
+        status: 'REJECTED',
+        refunded: row.amountUsd,
+        message: 'Withdrawal cancelled and balance refunded.',
       })
     },
   )
