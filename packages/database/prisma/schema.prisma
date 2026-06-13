@@ -2676,9 +2676,25 @@ enum ImageScanStatus {
 // rewriting the persistence layer.
 
 enum UbiProtocol {
-  FILECOIN_C2 // Filecoin sealing Commit-2 SNARK proof (GPU-bound)
-  ALEO // Aleo proof generation (future)
-  STARKNET // StarkNet prover (future)
+  // 2026-06-13 pilot. Boundless (RISC Zero / ZKC) is a permissionless
+  // ZK prover marketplace on Base; payouts every ~2 days. See
+  // memory/zk_ubi_aggregator_scan_2026_06_13.md for the scan that
+  // pivoted us away from Filecoin C2.
+  BOUNDLESS
+  // Second adapter (defer M2+). Succinct PROVE network; same shape
+  // as Boundless, different token.
+  SUCCINCT
+  // Third adapter (defer M2+). Bittensor SN-compute subnets.
+  BITTENSOR
+  // Kept for future evaluation; Filecoin C2 SaaS is buyer-side and
+  // doesn't fit independent GPU providers today (see scan memory).
+  // Enum value retained so historical rows don't break if we ever
+  // pivot back or run a different Filecoin product (e.g. a
+  // permissionless prover layer later).
+  FILECOIN_C2
+  // Future: Aleo mining-as-target.
+  ALEO
+  STARKNET
 }
 
 enum UbiOptInStatus {
@@ -2715,9 +2731,10 @@ model NodeUbiOptIn {
   // exposure, FIL custody disclosure).
   consentVersion String
 
-  // Minimum free disk (GB) the operator declared at opt-in. Filecoin
-  // C2 sealing needs sector storage; this gates eligibility per the
-  // architecture decision (require disk for the C2 pilot).
+  // Minimum free disk (GB) the operator declared at opt-in. Nullable
+  // because the pilot adapter (Boundless) is pure-compute and doesn't
+  // need sector-size disk. Reserved for protocols that DO (e.g. if
+  // we ever revisit Filecoin C2 via a permissionless layer).
   declaredFreeDiskGb Int?
 
   optedInAt  DateTime  @default(now())

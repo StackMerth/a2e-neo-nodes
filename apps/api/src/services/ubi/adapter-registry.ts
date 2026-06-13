@@ -9,11 +9,11 @@
 
 import type { UbiProtocol } from '@a2e/database'
 import type { UbiAdapter } from './types.js'
-import { filecoinC2Adapter } from './filecoin-c2-adapter.js'
+import { boundlessAdapter } from './boundless-adapter.js'
 
 const REGISTRY: UbiAdapter[] = [
-  filecoinC2Adapter,
-  // Future: aleoAdapter, starknetAdapter
+  boundlessAdapter,
+  // Future: succinctAdapter, bittensorAdapter, aleoAdapter
 ]
 
 export function listAdapters(): UbiAdapter[] {
