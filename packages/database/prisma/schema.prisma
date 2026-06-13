@@ -1347,6 +1347,13 @@ model AuditLog {
 
 model IdempotencyKey {
   id           String   @id // The idempotency key from request header (IS the primary key)
+  // SECURITY (Q11, 2026-06-13): owner-scoped lookups. The lookup is
+  // (id, userId), so even an astronomically-unlikely UUID collision
+  // between two buyers can never cross-contaminate. Nullable for the
+  // backfill window: rows written before Q11 shipped have null userId
+  // and will be ignored by all post-Q11 lookups, expiring naturally
+  // within the 24h TTL.
+  userId       String? // Owner of the key; null for pre-Q11 backfill rows
   endpoint     String // The endpoint this key was used for
   requestHash  String // Hash of the request body for verification
   statusCode   Int? // HTTP status code of the response
@@ -1355,6 +1362,7 @@ model IdempotencyKey {
   createdAt    DateTime @default(now())
 
   @@index([expiresAt])
+  @@index([userId])
 }
 
 // ============================================================================

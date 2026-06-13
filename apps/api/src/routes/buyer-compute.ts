@@ -459,6 +459,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
           idempotencyKey,
           '/v1/buyer/compute/request',
           request.body,
+          userId,
         )
         if (!idempotencyResult.isNew && idempotencyResult.cachedResponse) {
           return reply
@@ -777,6 +778,7 @@ export async function buyerComputeRoutes(fastify: FastifyInstance) {
         request.body,
         201,
         responseBody,
+        userId,
       )
     }
 

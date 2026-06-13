@@ -217,22 +217,48 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
     // For bare metal, admin may still need to provide SSH details separately
     // Auto-allocate assigns the nodes, admin provides SSH in a follow-up or activation step
 
-    // Mark the allocated nodes as assigned to this compute request
-    await fastify.prisma.node.updateMany({
-      where: { id: { in: nodeIds } },
-      data: { assignedComputeRequestId: id },
-    })
-
-    await fastify.prisma.computeRequest.update({
-      where: { id },
-      data: {
-        status: 'APPROVED', // Stays APPROVED — admin needs to provide SSH and activate
-        approvedAt: cr.approvedAt ?? new Date(),
-        allocatedNodeIds: nodeIds,
-        allocationMethod: 'auto',
-        adminNote: `Auto-allocated ${nodeIds.length} nodes: ${nodeIds.join(', ')}`,
-      },
-    })
+    // SECURITY (Q3, 2026-06-13): atomic node-assign + ComputeRequest
+    // status flip. Without a transaction, a crash between the two
+    // writes would strand the nodes assigned to a rental that never
+    // claims them — the allocator can't reassign them (they show
+    // assignedComputeRequestId set) and this rental can't proceed
+    // (status not advanced). Wrap both writes in a $transaction and
+    // re-check ComputeRequest.status inside to prevent TOCTOU with a
+    // concurrent admin action.
+    try {
+      await fastify.prisma.$transaction(async (tx) => {
+        const fresh = await tx.computeRequest.findUnique({
+          where: { id },
+          select: { status: true },
+        })
+        if (!fresh || !['PENDING', 'APPROVED'].includes(fresh.status)) {
+          throw new Error(`status_changed:${fresh?.status ?? 'missing'}`)
+        }
+        await tx.node.updateMany({
+          where: { id: { in: nodeIds } },
+          data: { assignedComputeRequestId: id },
+        })
+        await tx.computeRequest.update({
+          where: { id },
+          data: {
+            status: 'APPROVED', // Stays APPROVED — admin needs to provide SSH and activate
+            approvedAt: cr.approvedAt ?? new Date(),
+            allocatedNodeIds: nodeIds,
+            allocationMethod: 'auto',
+            adminNote: `Auto-allocated ${nodeIds.length} nodes: ${nodeIds.join(', ')}`,
+          },
+        })
+      })
+    } catch (err) {
+      const msg = (err as Error).message
+      if (msg.startsWith('status_changed:')) {
+        return reply.code(409).send({
+          error: 'status_changed',
+          message: `Cannot allocate: status changed to ${msg.split(':')[1]} mid-flight`,
+        })
+      }
+      throw err
+    }
 
     void createNotification(cr.userId, 'COMPUTE_REQUEST_APPROVED', 'Request Approved',
       `Your ${cr.gpuCount}x ${cr.gpuTier} compute request has been approved. Nodes are being prepared.`,
@@ -264,23 +290,45 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
 
     const { nodeIds, sshHost, sshPort, sshUsername, sshPassword } = parsed.data
 
-    // Mark the allocated nodes as assigned to this compute request
-    await fastify.prisma.node.updateMany({
-      where: { id: { in: nodeIds } },
-      data: { assignedComputeRequestId: id },
-    })
-
-    await fastify.prisma.computeRequest.update({
-      where: { id },
-      data: {
-        status: 'ALLOCATED',
-        approvedAt: cr.approvedAt ?? new Date(),
-        allocatedAt: new Date(),
-        allocatedNodeIds: nodeIds,
-        allocationMethod: 'manual',
-        sshHost, sshPort, sshUsername, sshPassword,
-      },
-    })
+    // SECURITY (Q3, 2026-06-13): atomic node-assign + ComputeRequest
+    // transition + SSH detail write. Same crash-window argument as
+    // auto-allocate above; node-assign without status-flip strands
+    // the nodes.
+    try {
+      await fastify.prisma.$transaction(async (tx) => {
+        const fresh = await tx.computeRequest.findUnique({
+          where: { id },
+          select: { status: true, approvedAt: true },
+        })
+        if (!fresh || !['PENDING', 'APPROVED'].includes(fresh.status)) {
+          throw new Error(`status_changed:${fresh?.status ?? 'missing'}`)
+        }
+        await tx.node.updateMany({
+          where: { id: { in: nodeIds } },
+          data: { assignedComputeRequestId: id },
+        })
+        await tx.computeRequest.update({
+          where: { id },
+          data: {
+            status: 'ALLOCATED',
+            approvedAt: fresh.approvedAt ?? new Date(),
+            allocatedAt: new Date(),
+            allocatedNodeIds: nodeIds,
+            allocationMethod: 'manual',
+            sshHost, sshPort, sshUsername, sshPassword,
+          },
+        })
+      })
+    } catch (err) {
+      const msg = (err as Error).message
+      if (msg.startsWith('status_changed:')) {
+        return reply.code(409).send({
+          error: 'status_changed',
+          message: `Cannot allocate: status changed to ${msg.split(':')[1]} mid-flight`,
+        })
+      }
+      throw err
+    }
 
     void createNotification(cr.userId, 'COMPUTE_ALLOCATED', 'Compute Allocated',
       `Your ${cr.gpuCount}x ${cr.gpuTier} compute has been allocated and is being prepared.`,
@@ -372,16 +420,41 @@ export async function adminComputeRoutes(fastify: FastifyInstance) {
     if (!cr) return reply.code(404).send({ error: 'Request not found' })
     if (cr.status !== 'ACTIVE') return reply.code(400).send({ error: `Cannot complete: status is ${cr.status}` })
 
-    // Clear assignedComputeRequestId on nodes that were allocated to this request
-    await fastify.prisma.node.updateMany({
-      where: { assignedComputeRequestId: id },
-      data: { assignedComputeRequestId: null },
-    })
-
-    await fastify.prisma.computeRequest.update({
-      where: { id },
-      data: { status: 'COMPLETED', completedAt: new Date() },
-    })
+    // SECURITY (Q3, 2026-06-13): atomic release-nodes + status-flip.
+    // Without a transaction, a crash between the two would leave the
+    // ComputeRequest stuck in ACTIVE with its nodes already released
+    // (the allocator would re-grab them for a new rental while this
+    // buyer's dashboard still thinks they have access). Re-check the
+    // status inside the tx to avoid double-complete with a concurrent
+    // terminate route.
+    try {
+      await fastify.prisma.$transaction(async (tx) => {
+        const fresh = await tx.computeRequest.findUnique({
+          where: { id },
+          select: { status: true },
+        })
+        if (!fresh || fresh.status !== 'ACTIVE') {
+          throw new Error(`status_changed:${fresh?.status ?? 'missing'}`)
+        }
+        await tx.node.updateMany({
+          where: { assignedComputeRequestId: id },
+          data: { assignedComputeRequestId: null },
+        })
+        await tx.computeRequest.update({
+          where: { id },
+          data: { status: 'COMPLETED', completedAt: new Date() },
+        })
+      })
+    } catch (err) {
+      const msg = (err as Error).message
+      if (msg.startsWith('status_changed:')) {
+        return reply.code(409).send({
+          error: 'status_changed',
+          message: `Cannot complete: status changed to ${msg.split(':')[1]} mid-flight`,
+        })
+      }
+      throw err
+    }
 
     void createNotification(cr.userId, 'COMPUTE_COMPLETED', 'Compute Lease Ended',
       `Your ${cr.gpuCount}x ${cr.gpuTier} compute lease has ended.`,

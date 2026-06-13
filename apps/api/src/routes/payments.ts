@@ -56,6 +56,17 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
       const { settlementId } = request.params as { settlementId: string }
       const { currency = 'USDC' } = request.body as { currency?: 'SOL' | 'USDC' }
 
+      // SECURITY (Q11, 2026-06-13): scope idempotency by caller. For
+      // user JWTs, that's request.user.userId. For raw admin X-API-Key
+      // auth there's no per-user identity, so we bucket all admin
+      // calls under a synthetic 'admin' tag. This is still strictly
+      // better than the prior global lookup because it prevents any
+      // user-side cache hit from being replayed by an admin call (or
+      // vice versa).
+      const callerScope =
+        request.user?.userId ??
+        (request.authType === 'admin' ? '__admin__' : '__anonymous__')
+
       // Check idempotency key if provided
       const idempotencyKey = request.headers['idempotency-key'] as string | undefined
       if (idempotencyKey) {
@@ -63,7 +74,8 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
           fastify.prisma,
           idempotencyKey,
           `/v1/payments/process/${settlementId}`,
-          request.body
+          request.body,
+          callerScope
         )
 
         if (!idempotencyResult.isNew && idempotencyResult.cachedResponse) {
@@ -287,7 +299,8 @@ export async function paymentsRoutes(fastify: FastifyInstance) {
           `/v1/payments/process/${settlementId}`,
           request.body,
           statusCode,
-          responseBody
+          responseBody,
+          callerScope
         )
       }
 
