@@ -119,6 +119,25 @@ export async function agentRoutes(fastify: FastifyInstance) {
         })
       }
 
+      // SECURITY (RT-E4, 2026-06-13 internal red-team): job poll is
+      // the node-agent telling the API which jobs it's ready to
+      // execute and writing back its agentVersion. Without this gate,
+      // any authenticated caller could (a) enumerate assigned jobs
+      // for any node (workload info disclosure), (b) overwrite the
+      // node's agentVersion field. Restrict to the owning node-agent
+      // and admin.
+      const isPollAdmin =
+        request.authType === 'admin' ||
+        (request.authType === 'user' && request.user?.role === 'ADMIN')
+      const isOwningPollNode =
+        request.authType === 'node' && request.authNodeId === id
+      if (!isPollAdmin && !isOwningPollNode) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Only the node-agent or an admin can poll jobs for this node.',
+        })
+      }
+
       // Update agent version if changed
       if (node.agentVersion !== agentVersion) {
         await fastify.prisma.node.update({
@@ -640,12 +659,42 @@ export async function agentRoutes(fastify: FastifyInstance) {
 
       const { command, params } = parseResult.data
 
-      const node = await fastify.prisma.node.findUnique({ where: { id } })
+      const node = await fastify.prisma.node.findUnique({
+        where: { id },
+        include: { nodeRunner: { select: { userId: true } } },
+      })
 
       if (!node) {
         return reply.code(404).send({
           error: 'Not Found',
           message: 'Node not found',
+        })
+      }
+
+      // SECURITY (RT-E3, 2026-06-13 internal red-team): pause /
+      // resume / shutdown are admin-tier operations. Operators
+      // already control their own nodes via PATCH
+      // /v1/portal/node-runner/nodes/:id which has its own ownership
+      // gate. Without this check, any authenticated caller could:
+      //   - pause any competitor's node (DoS the competitor's
+      //     earnings)
+      //   - shutdown any node platform-wide if they enumerate ids
+      //   - emit fake agent:command WS events to mislead operators
+      // We allow: admin role, the owning node-agent (self-pause),
+      // and the owning operator's user JWT (portal compatibility).
+      const isCmdAdmin =
+        request.authType === 'admin' ||
+        (request.authType === 'user' && request.user?.role === 'ADMIN')
+      const isOwningCmdNode =
+        request.authType === 'node' && request.authNodeId === id
+      const isOwningCmdUser =
+        request.authType === 'user' &&
+        node.nodeRunner?.userId != null &&
+        request.user?.userId === node.nodeRunner.userId
+      if (!isCmdAdmin && !isOwningCmdNode && !isOwningCmdUser) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Only the node owner, the node-agent, or an admin can send commands to this node.',
         })
       }
 

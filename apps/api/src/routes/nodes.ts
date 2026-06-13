@@ -591,6 +591,27 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         })
       }
 
+      // SECURITY (RT-E1, 2026-06-13 internal red-team): heartbeat must
+      // come from the owning node-agent or an admin. Without this gate,
+      // any authenticated caller (a buyer JWT, another operator's
+      // node-agent key, a leaked admin proxy) could spoof heartbeats
+      // for any nodeId, enabling: collusion fraud (operator A spoofs B
+      // so B earns fake uptime, off-platform split), operational
+      // disruption (keeping a dead node looking ONLINE so buyer
+      // rentals get allocated to it and fail), and mass dashboard
+      // poisoning (admin-JWT leak lets anyone keep every node green).
+      const isHbAdmin =
+        request.authType === 'admin' ||
+        (request.authType === 'user' && request.user?.role === 'ADMIN')
+      const isOwningHbNode =
+        request.authType === 'node' && request.authNodeId === id
+      if (!isHbAdmin && !isOwningHbNode) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Only the node-agent or an admin can submit heartbeats for this node.',
+        })
+      }
+
       // SECURITY (B1 layer 3, 2026-06-12 sixth-round audit): rate-limit
       // heartbeats from nodes that haven't yet completed a real
       // benchmark. The fake-node uptime drain primitive was: register
@@ -834,6 +855,27 @@ export async function nodeRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({
           error: 'Validation Error',
           message: parsed.error.errors[0]?.message ?? 'Invalid input',
+        })
+      }
+
+      // SECURITY (RT-E2, 2026-06-13 internal red-team): the caller
+      // must be the owning node-agent (authNodeId === nodeId) or an
+      // admin. Without this gate, any authenticated caller could
+      // POST status=TERMINATED for any (node, rental) pair where the
+      // node IS legitimately allocated, killing the buyer's SSH
+      // session and releasing the node back to the idle pool mid-
+      // rental. The downstream allocatedNodeIds check below confirms
+      // the node belongs to the rental; this check confirms the
+      // caller is the node.
+      const isSshAdmin =
+        request.authType === 'admin' ||
+        (request.authType === 'user' && request.user?.role === 'ADMIN')
+      const isOwningSshNode =
+        request.authType === 'node' && request.authNodeId === nodeId
+      if (!isSshAdmin && !isOwningSshNode) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Only the node-agent or an admin can report SSH session status for this node.',
         })
       }
 
