@@ -99,13 +99,13 @@ export async function simulateProofAccepted(
   args: SimulateProofAcceptedArgs,
 ): Promise<{ accrued: boolean; reason?: string }> {
   const feeWei = args.feeWei ?? '285714285714285714' // ~$1 at $3500/ETH
-  const imageId = args.imageId ?? `sim-image-${Date.now().toString(16)}`
+  const requestDigest = args.imageId ?? `0x${'00'.repeat(16)}${Date.now().toString(16).padStart(16, '0')}`
   const requestId = `${SIMULATOR_PROOF_PREFIX}${Date.now()}-${Math.floor(Math.random() * 1e6)}`
 
   const event: BoundlessFulfillEvent = {
     requestId,
     proverAddress: '0xPLATFORM_SIMULATOR',
-    imageId,
+    requestDigest,
     feeWei,
     blockNumber: 0,
     txHash: `simulated-${requestId}`,
