@@ -19,6 +19,7 @@ import {
   PanelLeftClose,
   Users,
   PiggyBank,
+  Sparkles,
 } from 'lucide-react'
 
 const navItems = [
@@ -27,6 +28,9 @@ const navItems = [
   { path: '/nodes', icon: Server, label: 'Nodes' },
   { path: '/deployments', icon: Package, label: 'Deployments' },
   { path: '/earnings', icon: DollarSign, label: 'Earnings' },
+  // ZK-UBI: passive earnings on idle GPU via Boundless proof work.
+  // Opt-in per node, 95/5 split, custodial USD payout.
+  { path: '/ubi', icon: Sparkles, label: 'ZK-UBI' },
   // Pre-loaded credit, same wallet as the buyer portal. Operators top
   // up via Stripe / USDC here, then spend on deployments without a
   // fresh transaction each time.

@@ -203,16 +203,46 @@ PASS criteria:
 
 To progress to the second column, fund M2.1 and deploy M2.2. Until then, the simulator faithfully mimics the row writes the live path will produce.
 
-## Operator-facing UI verification (after M3 ships)
+## Operator-facing UI verification (M3 SHIPPED)
 
-Step 6 will land once M3 ships the operator portal page:
-- Operator logs into portal
-- Sees "ZK-UBI: opt in" pitch on operator dashboard
-- Clicks opt-in → `NodeUbiOptIn` ACTIVE row appears
-- Simulator runs in the background (step 2 + 3 above)
-- Operator dashboard shows accrued USD updating in near-realtime
+The portal page is live at `https://user.tokenos.ai/ubi` for any
+NODE_RUNNER role user. Test from the operator perspective:
 
-Verification will hook into the existing operator earnings dashboard plus a new "ZK-UBI earnings" card.
+### Operator E2E test
+
+1. Log into portal as the operator who owns `NODE_ID`
+2. Navigate to ZK-UBI in the left sidebar (Sparkles icon)
+3. Expected state on first visit:
+   - Three metric cards: Accrued ($0), Paid ($0), Opted-in 0 / N
+   - "Your nodes" lists all the operator's nodes, each with an "Opt in to Boundless" button
+   - "Recent earnings" shows empty state
+4. Click "Opt in to Boundless" on a node
+5. Disclosure modal appears showing the Boundless ToS / risk text
+   - Confirm version string is `boundless-v1-2026-06-14`
+   - "Accept and opt in" button submits the consent
+6. After accept:
+   - Action message at top reads "Opted in. Earnings will start accruing..."
+   - Node row flips to green check + "Opted into BOUNDLESS"
+   - Metrics card "Opted-in nodes" increments
+7. From admin (separate session), inject 10 simulated proofs against the same node ID (step 2 above)
+8. From admin, roll up to a UbiEarning (step 3 above)
+9. Operator refreshes their UBI page:
+   - Accrued metric updates to ~$9.50
+   - "Recent earnings" sidebar shows the new row
+10. Operator clicks "Opt out of BOUNDLESS":
+    - Action message reads "Opted out (1 active rows flipped)"
+    - Node row reverts to red X + "Opt in to Boundless" button
+    - Metrics card "Opted-in nodes" decrements
+11. Admin purges simulator rows (step 5)
+
+PASS criteria:
+- Each UI state transition matches the underlying DB state
+- Consent version stored on the NodeUbiOptIn row matches what the modal showed
+- Earnings table updates after simulator runs without page reload (refresh button works)
+- Opt-out leaves earnings history visible (they're owed to the operator either way)
+- Cross-user ownership check: operator A cannot opt in operator B's node
+  (try POSTing `/v1/portal/ubi/opt-in` with a nodeId belonging to a
+  different operator — should return 403 forbidden)
 
 ## Troubleshooting
 

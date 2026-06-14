@@ -753,6 +753,86 @@ export const buyer = {
   },
 }
 
+// ZK-UBI API (operator-side opt-in + earnings)
+export const ubi = {
+  status: () =>
+    apiFetch<{
+      ok: boolean
+      isAdmin?: boolean
+      nodeRunner: { id: string; name: string } | null
+      nodes: Array<{
+        id: string
+        walletAddress: string
+        gpuTier: string
+        status: string
+        ubiOptIns: Array<{
+          id: string
+          protocol: string
+          consentVersion: string
+          optedInAt: string
+        }>
+      }>
+      totals: { accruedUsd: number; paidUsd: number }
+      recentEarnings: Array<{
+        id: string
+        nodeId: string
+        protocol: string
+        periodStart: string
+        periodEnd: string
+        operatorUsd: number
+        status: string
+      }>
+      consentVersions: Record<string, string>
+    }>('/v1/portal/ubi/status'),
+  earnings: (params?: { cursor?: string; limit?: number; nodeId?: string }) => {
+    const qs = params
+      ? '?' +
+        new URLSearchParams(
+          Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]),
+        ).toString()
+      : ''
+    return apiFetch<{
+      ok: boolean
+      items: Array<{
+        id: string
+        nodeId: string
+        protocol: string
+        periodStart: string
+        periodEnd: string
+        grossUsd: number
+        operatorUsd: number
+        platformUsd: number
+        status: string
+        availableAt: string
+        createdAt: string
+      }>
+      nextCursor: string | null
+    }>(`/v1/portal/ubi/earnings${qs}`)
+  },
+  consentCurrent: (protocol: string) =>
+    apiFetch<{ ok: boolean; protocol: string; version: string; text: string }>(
+      `/v1/portal/ubi/consent-current/${protocol}`,
+    ),
+  optIn: (data: {
+    nodeId: string
+    protocol?: string
+    consentVersion: string
+    declaredFreeDiskGb?: number
+  }) =>
+    apiFetch<{
+      ok: boolean
+      created: boolean
+      optInId: string
+      protocol: string
+      consentVersion: string
+    }>('/v1/portal/ubi/opt-in', { method: 'POST', body: data }),
+  optOut: (data: { nodeId: string; protocol?: string }) =>
+    apiFetch<{ ok: boolean; optedOutCount: number }>('/v1/portal/ubi/opt-out', {
+      method: 'POST',
+      body: data,
+    }),
+}
+
 // Notifications API
 export const notifications = {
   list: (params?: Record<string, string>) => {
