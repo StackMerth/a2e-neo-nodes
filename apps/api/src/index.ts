@@ -55,6 +55,7 @@ import {
   adminWithdrawalRoutes,
   adminBuyerWithdrawalRoutes,
   adminBalanceRoutes,
+  adminUbiRoutes,
   paymentConfigRoutes,
   solanaRpcProxyRoutes,
   inferenceWorkerRoutes,
@@ -370,6 +371,7 @@ async function start() {
     await server.register(adminWithdrawalRoutes)
     await server.register(adminBuyerWithdrawalRoutes)
     await server.register(adminBalanceRoutes)
+    await server.register(adminUbiRoutes)
     await server.register(paymentConfigRoutes)
     await server.register(solanaRpcProxyRoutes)
     await server.register(inferenceWorkerRoutes)
